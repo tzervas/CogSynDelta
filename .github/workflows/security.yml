@@ -61,10 +61,13 @@ jobs:
           upload: true
 
   # Dependency Review (PR only)
+  # Requires GitHub Advanced Security (paid for private repos)
+  # Enable at: Settings > Security > Code security and analysis > Dependency graph
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # Only run on PRs AND when GHAS is enabled (set ENABLE_DEPENDENCY_REVIEW=true)
+    if: github.event_name == 'pull_request' && vars.ENABLE_DEPENDENCY_REVIEW == 'true'
 
     steps:
       - name: Checkout repository
@@ -116,7 +119,7 @@ jobs:
           sarif_file: snyk.sarif
         continue-on-error: true
 
-  # Python-specific security checks
+  # Python-specific security checks (always runs)
   python-security:
     name: Python Security Checks
     runs-on: ubuntu-latest
@@ -140,15 +143,16 @@ jobs:
 
       - name: Run Bandit security linter
         run: |
-          uv tool run bandit -r src/ -f json -o bandit-report.json || true
-          uv tool run bandit -r src/ -ll -ii
-        continue-on-error: true
+          # Run bandit for JSON report (always succeeds)
+          uv tool run bandit -r src/ -f json -o bandit-report.json || echo "Bandit found issues (see report)"
+          # Run bandit for human output (-ll = only medium+, -ii = only medium+ confidence)
+          uv tool run bandit -r src/ -ll -ii || echo "::notice::Bandit found potential security issues. Review bandit-report.json artifact."
 
       - name: Run pip-audit for known vulnerabilities
         run: |
           uv export --no-hashes > requirements-audit.txt
-          uv tool run pip-audit -r requirements-audit.txt --desc on
-        continue-on-error: true
+          # pip-audit may fail if packages don't have vulnerability data yet (Python 3.14 beta)
+          uv tool run pip-audit -r requirements-audit.txt --desc on || echo "::notice::pip-audit completed with findings or unavailable packages."
 
       - name: Upload security reports
         uses: actions/upload-artifact@v6
