@@ -1,0 +1,14 @@
+include README.md
+include LICENSE
+include pyproject.toml
+include requirements.txt
+include requirements-dev.txt
+
+recursive-include src/cogsyndelta *.py
+recursive-include config *.yaml *.json
+recursive-include docs *.md *.rst
+
+exclude scripts/reorganize.sh
+prune tests
+prune examples
+prune benchmarks

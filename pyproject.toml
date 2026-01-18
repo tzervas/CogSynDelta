@@ -1,0 +1,117 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cogsyndelta"
+version = "0.1.0"
+description = "PCN-VAE-GAN hybrid self-improving AI with VL-JEPA, mHC, quantum compute, and production-ready memory management"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "tzervas", email = "111450100+tzervas@users.noreply.github.com"}
+]
+keywords = [
+    "machine-learning",
+    "deep-learning",
+    "pytorch",
+    "vae",
+    "gan",
+    "predictive-coding",
+    "self-improving-ai",
+    "quantum-computing",
+    "memory-management"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "torch>=2.5,<3.0",
+    "torchvision>=0.20,<1.0",
+    "numpy>=2.0,<3.0",
+    "pyyaml>=6.0,<7.0",
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.32,<1.0",
+    "pydantic>=2.10,<3.0",
+    "python-multipart>=0.0.20,<1.0",
+    "websockets>=14.0,<15.0",
+]
+
+[project.optional-dependencies]
+quantum = [
+    "qiskit>=1.3,<2.0",
+    "pennylane>=0.39,<1.0",
+    "cirq>=1.5,<2.0",
+]
+vision = [
+    "opencv-python>=4.10,<5.0",
+    "mss>=10.0,<11.0",
+    "pillow>=11.0,<12.0",
+]
+audio = [
+    "pyaudio>=0.2.14,<1.0",
+    "sounddevice>=0.5,<1.0",
+]
+dev = [
+    "pytest>=8.3,<9.0",
+    "pytest-cov>=6.0,<7.0",
+    "black>=24.10,<25.0",
+    "ruff>=0.8,<1.0",
+    "mypy>=1.13,<2.0",
+    "pre-commit>=4.0,<5.0",
+]
+all = [
+    "cogsyndelta[quantum,vision,audio,dev]"
+]
+
+[project.urls]
+Homepage = "https://github.com/tzervas/CogSynDelta"
+Documentation = "https://github.com/tzervas/CogSynDelta/tree/main/docs"
+Repository = "https://github.com/tzervas/CogSynDelta"
+Issues = "https://github.com/tzervas/CogSynDelta/issues"
+
+[project.scripts]
+cogsyndelta-server = "cogsyndelta.api.server:main"
+cogsyndelta-benchmark = "cogsyndelta.benchmarks.run:main"
+
+[tool.setuptools]
+packages = ["cogsyndelta"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+cogsyndelta = ["config/*.yaml", "config/*.json"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=cogsyndelta --cov-report=html --cov-report=term"
