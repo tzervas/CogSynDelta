@@ -199,15 +199,24 @@ class PCNVAEGANHybrid(nn.Module):
             
         mu, logvar = self.encoder(x)
         
-        # Generate k diverse samples with configurable σ
-        samples = []
-        for i in range(k):
-            # Use higher variance for exploration
-            z = self.reparameterize(mu, logvar, sigma_scale=self.sigma_scale)
-            sample = self.decoder(z)
-            samples.append(sample)
-            
-        return torch.stack(samples)
+        # Generate k diverse samples with configurable σ (batched for efficiency)
+        # Expand mu and logvar to generate all k samples at once
+        mu_expanded = mu.unsqueeze(0).expand(k, -1, -1)  # [k, batch, latent_dim]
+        logvar_expanded = logvar.unsqueeze(0).expand(k, -1, -1)  # [k, batch, latent_dim]
+        
+        # Compute std once
+        std = torch.exp(0.5 * logvar_expanded)
+        eps = torch.randn_like(std)
+        
+        # Batched reparameterization: z = μ + σ * ε
+        z_samples = mu_expanded + self.sigma_scale * std * eps
+        
+        # Decode all samples at once
+        z_flat = z_samples.view(-1, self.latent_dim)  # [k*batch, latent_dim]
+        samples_flat = self.decoder(z_flat)  # [k*batch, input_dim]
+        samples = samples_flat.view(k, x.size(0), -1)  # [k, batch, input_dim]
+        
+        return samples
     
     def culling_phase(self, samples: torch.Tensor, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
