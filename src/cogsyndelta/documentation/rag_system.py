@@ -17,6 +17,7 @@ from llama_index.core import (
     VectorStoreIndex,
     load_index_from_storage,
 )
+from llama_index.core.indices.base import BaseIndex
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.vector_stores.faiss import FaissVectorStore
@@ -49,7 +50,7 @@ class DependencyDocsRAG:
         Settings.num_output = 512
         Settings.context_window = 3900
 
-        self.index: VectorStoreIndex | None = None
+        self.index: BaseIndex[Any] | None = None
         self.metadata_path = self.persist_dir / "metadata.json"
         self.metadata: dict[str, Any] = self._load_metadata()
 
