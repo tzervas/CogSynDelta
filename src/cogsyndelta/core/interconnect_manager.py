@@ -402,7 +402,7 @@ class CongestionController:
             return 5  # Default priority
 
         # Higher usage = higher priority
-        avg_usage = np.mean(history[-10:])
+        avg_usage = float(np.mean(history[-10:]))
         return int(min(10, avg_usage / 100))
 
     def get_statistics(self) -> dict[str, Any]:
