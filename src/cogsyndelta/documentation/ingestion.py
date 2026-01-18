@@ -4,12 +4,12 @@ This module handles fetching documentation from PyPI, GitHub releases,
 and official documentation sites, then preparing it for the RAG system.
 """
 
-import urllib.request
 import json
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
 import re
 import time
+import urllib.request
+from pathlib import Path
+from typing import Any
 
 from llama_index.core import Document
 
@@ -17,7 +17,7 @@ from llama_index.core import Document
 class DocumentIngestionPipeline:
     """Pipeline for ingesting documentation from various sources."""
 
-    def __init__(self, cache_dir: Optional[Path] = None) -> None:
+    def __init__(self, cache_dir: Path | None = None) -> None:
         """Initialize the ingestion pipeline.
 
         Args:
@@ -27,8 +27,8 @@ class DocumentIngestionPipeline:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def fetch_pypi_info(
-        self, package_name: str, version: Optional[str] = None
-    ) -> Tuple[Dict[str, Any], str]:
+        self, package_name: str, version: str | None = None
+    ) -> tuple[dict[str, Any], str]:
         """Fetch package information from PyPI.
 
         Args:
@@ -52,9 +52,7 @@ class DocumentIngestionPipeline:
             print(f"Error fetching PyPI info for {package_name}: {e}")
             return {}, ""
 
-    def fetch_github_release_notes(
-        self, repo_owner: str, repo_name: str, tag: str
-    ) -> Optional[str]:
+    def fetch_github_release_notes(self, repo_owner: str, repo_name: str, tag: str) -> str | None:
         """Fetch release notes from GitHub.
 
         Args:
@@ -75,7 +73,7 @@ class DocumentIngestionPipeline:
             print(f"Error fetching GitHub release for {repo_owner}/{repo_name}/{tag}: {e}")
             return None
 
-    def fetch_url_content(self, url: str) -> Optional[str]:
+    def fetch_url_content(self, url: str) -> str | None:
         """Fetch content from a URL.
 
         Args:
@@ -94,8 +92,8 @@ class DocumentIngestionPipeline:
             return None
 
     def create_documents_from_pypi(
-        self, package_name: str, version: Optional[str] = None
-    ) -> List[Document]:
+        self, package_name: str, version: str | None = None
+    ) -> list[Document]:
         """Create LlamaIndex documents from PyPI package information.
 
         Args:
@@ -158,7 +156,7 @@ class DocumentIngestionPipeline:
 
     def create_documents_from_github_release(
         self, repo_owner: str, repo_name: str, tag: str, package_name: str
-    ) -> List[Document]:
+    ) -> list[Document]:
         """Create documents from GitHub release notes.
 
         Args:
@@ -187,7 +185,7 @@ class DocumentIngestionPipeline:
 
     def create_documents_from_url(
         self, url: str, title: str, package_name: str, chunk_size: int = 10000
-    ) -> List[Document]:
+    ) -> list[Document]:
         """Create documents from a documentation URL.
 
         Args:
@@ -232,7 +230,7 @@ class DocumentIngestionPipeline:
                 doc = Document(
                     text=chunk,
                     metadata={
-                        "title": f"{title} (Part {i+1}/{num_chunks})",
+                        "title": f"{title} (Part {i + 1}/{num_chunks})",
                         "source": "url",
                         "url": url,
                     },
@@ -244,10 +242,10 @@ class DocumentIngestionPipeline:
     def ingest_dependency_docs(
         self,
         package_name: str,
-        version: Optional[str] = None,
-        github_repo: Optional[Tuple[str, str]] = None,
-        doc_urls: Optional[List[Tuple[str, str]]] = None,
-    ) -> Dict[str, List[Document]]:
+        version: str | None = None,
+        github_repo: tuple[str, str] | None = None,
+        doc_urls: list[tuple[str, str]] | None = None,
+    ) -> dict[str, list[Document]]:
         """Ingest all available documentation for a dependency.
 
         Args:
@@ -277,9 +275,7 @@ class DocumentIngestionPipeline:
             owner, repo = github_repo
             tag = f"v{version}" if not version.startswith("v") else version
             print(f"Fetching GitHub release notes for {owner}/{repo} {tag}...")
-            github_docs = self.create_documents_from_github_release(
-                owner, repo, tag, package_name
-            )
+            github_docs = self.create_documents_from_github_release(owner, repo, tag, package_name)
             if github_docs:
                 results["github"] = github_docs
             time.sleep(0.5)
