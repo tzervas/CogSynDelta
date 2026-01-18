@@ -175,9 +175,7 @@ class TestAgentTask:
 
     def test_agent_task_minimal(self) -> None:
         """Test creating agent task with minimal fields."""
-        task = AgentTask(
-            task_type="code_generation", input_data={"problem": "sort a list"}
-        )
+        task = AgentTask(task_type="code_generation", input_data={"problem": "sort a list"})
         assert task.task_type == "code_generation"
         assert task.languages == ["python"]  # default
         assert task.quality_threshold == 0.85  # default
@@ -229,9 +227,7 @@ class TestAgentResult:
 
     def test_agent_result_failed(self) -> None:
         """Test failed agent result."""
-        result = AgentResult(
-            task_id="task-456", status="failed", error="Timeout exceeded"
-        )
+        result = AgentResult(task_id="task-456", status="failed", error="Timeout exceeded")
         assert result.status == "failed"
         assert result.error == "Timeout exceeded"
         assert result.result is None
