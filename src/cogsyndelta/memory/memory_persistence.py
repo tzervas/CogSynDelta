@@ -28,7 +28,6 @@ import pickle
 import os
 import hashlib
 from collections import deque
-import numpy as np
 
 # Import dense differential encoding
 try:
