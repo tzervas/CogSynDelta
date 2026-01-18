@@ -157,7 +157,7 @@ class IntegratedSelfImprovingSystem(nn.Module):
         # Handle single frame or sequence
         if frames.dim() == 4:
             # Single frame
-            batch_size = frames.size(0)
+            _batch_size = frames.size(0)  # kept for future batched processing
             
             # Encode to semantic embedding (silent state)
             semantic_embed = self.vision_encoder(frames)
