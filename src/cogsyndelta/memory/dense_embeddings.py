@@ -14,6 +14,7 @@ Key advantages:
 - Scalable to large memory banks
 """
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -304,7 +305,7 @@ class DenseDifferentialMemoryStore:
     def _find_nearest_reference(self, embedding: torch.Tensor) -> tuple[int, torch.Tensor]:
         """Find nearest reference embedding."""
         similarities = F.cosine_similarity(embedding.unsqueeze(0), self.references, dim=-1)
-        best_idx = similarities.argmax().item()
+        best_idx = int(similarities.argmax().item())
         return best_idx, self.references[best_idx]
 
     def compress_and_store(
@@ -369,7 +370,7 @@ class DenseDifferentialMemoryStore:
             compression_ratio=compression_ratio,
             quantization_bits=(bits_dense + bits_residual) // 2,
             fidelity_score=fidelity,
-            timestamp=torch.get_default_dtype(),  # placeholder
+            timestamp=time.time(),
         )
 
         return {
