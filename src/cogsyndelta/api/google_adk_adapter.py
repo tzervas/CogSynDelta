@@ -529,8 +529,6 @@ def create_adk_compliant_agent(integrated_system: Optional[Any] = None) -> Tuple
 
 
 if __name__ == '__main__':
-    import asyncio
-    
     print("="*70)
     print("GOOGLE ADK COMPLIANCE AND A2A PROTOCOL ADAPTER")
     print("="*70)

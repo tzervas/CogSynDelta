@@ -21,9 +21,9 @@ Key features:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 import pickle
 import os
 import hashlib
@@ -32,7 +32,7 @@ import numpy as np
 
 # Import dense differential encoding
 try:
-    from cogsyndelta.memory.dense_embeddings import DenseDifferentialMemoryStore, DenseEmbeddingEncoder, DifferentialEncoder
+    from cogsyndelta.memory.dense_embeddings import DenseDifferentialMemoryStore
     DENSE_ENCODING_AVAILABLE = True
 except ImportError:
     DENSE_ENCODING_AVAILABLE = False
