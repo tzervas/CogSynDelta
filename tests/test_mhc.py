@@ -135,9 +135,9 @@ class TestContextualAttentionRouter:
 
         importance = router.compute_importance(source, target)
 
-        # Importance should be scalar between 0 and 1
-        assert importance.shape == () or importance.numel() == 1
-        assert 0 <= importance.item() <= 1
+        # Importance is returned as a float between 0 and 1
+        assert isinstance(importance, float)
+        assert 0 <= importance <= 1
 
     def test_allocate_bandwidth(self, router: nn.Module) -> None:
         """Test bandwidth allocation computation."""
@@ -160,16 +160,26 @@ class TestPathwayOptimizer:
         return PathwayOptimizer(embed_dim=512).cuda()
 
     def test_update_strength(self, optimizer: nn.Module) -> None:
-        """Test pathway strength update with reward."""
-        pathway_key = ("section_0", "section_1")
-        initial_strength = 1.0
+        """Test pathway strength evaluation and adjustment."""
+        # Create test tensors on CPU (as the optimizer methods expect)
+        source_state = torch.randn(512)
+        target_state = torch.randn(512)
+        current_strength = 1.0
+        usage_history = 0.5
 
-        # Update with positive reward
-        reward = torch.tensor(1.0, device="cuda")
-        new_strength = optimizer.update_strength(pathway_key, initial_strength, reward)
+        # Evaluate pathway value
+        value = optimizer.evaluate_pathway(
+            source_state, target_state, current_strength, usage_history
+        )
+        assert isinstance(value, float)
 
-        # Strength should increase with positive reward
-        assert new_strength >= initial_strength
+        # Propose adjustment
+        adjustment = optimizer.propose_adjustment(
+            source_state, target_state, current_strength, usage_history
+        )
+        assert isinstance(adjustment, float)
+        # Adjustment should be small (scaled by 0.1)
+        assert -0.1 <= adjustment <= 0.1
 
 
 class TestContextPropagationEngine:
@@ -211,7 +221,7 @@ class TestCongestionController:
     def test_allocate_bandwidth(self, controller) -> None:
         """Test bandwidth allocation."""
         pathway = ("section_0", "section_1")
-        allocated = controller.allocate(pathway, requested_bandwidth=100, priority=5)
+        allocated = controller.allocate(pathway, required_bandwidth=100, priority=5)
 
         assert allocated is True
 
@@ -220,10 +230,10 @@ class TestCongestionController:
         pathway = ("section_0", "section_1")
 
         # Allocate most bandwidth
-        controller.allocate(pathway, requested_bandwidth=900, priority=5)
+        controller.allocate(pathway, required_bandwidth=900, priority=5)
 
         # Try to allocate more than available
-        allocated = controller.allocate(pathway, requested_bandwidth=200, priority=5)
+        allocated = controller.allocate(pathway, required_bandwidth=200, priority=5)
 
         # Should fail or be limited
         # Implementation may vary - just ensure no crash
@@ -232,11 +242,11 @@ class TestCongestionController:
         """Test bandwidth release."""
         pathway = ("section_0", "section_1")
 
-        controller.allocate(pathway, requested_bandwidth=100, priority=5)
+        controller.allocate(pathway, required_bandwidth=100, priority=5)
         controller.release(pathway)
 
         # Should be able to allocate again
-        allocated = controller.allocate(pathway, requested_bandwidth=100, priority=5)
+        allocated = controller.allocate(pathway, required_bandwidth=100, priority=5)
         assert allocated is True
 
     def test_get_statistics(self, controller) -> None:
