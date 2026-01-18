@@ -1,3 +1,6 @@
+# CogSynDelta Pre-commit Configuration
+# See docs/DEVELOPMENT_STANDARDS.md for details
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -6,11 +9,23 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
+        args: ['--maxkb=1000']
       - id: check-merge-conflict
       - id: detect-private-key
       - id: check-toml
       - id: check-json
         exclude: \.ipynb$
+      - id: check-case-conflict
+      - id: check-ast
+      - id: debug-statements
+
+  # Conventional Commits - commit message validation
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.6.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [--strict, --force-scope]
 
   # Ruff - unified linting and formatting (replaces black, isort, flake8)
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -28,3 +43,23 @@ repos:
         additional_dependencies: [torch, numpy, pyyaml, types-PyYAML]
         args: [--ignore-missing-imports, --no-strict-optional]
         exclude: ^(tests/|benchmarks/|examples/|scripts/)
+
+  # Pydocstyle - Google style docstring enforcement
+  - repo: https://github.com/pycqa/pydocstyle
+    rev: 6.3.0
+    hooks:
+      - id: pydocstyle
+        # D100: Missing docstring in public module
+        # D104: Missing docstring in public package
+        # D105: Missing docstring in magic method
+        # D107: Missing docstring in __init__
+        # D103: Missing docstring in public function (allow for demos/tests)
+        # D200: One-line docstring fits on one line (minor style)
+        # D202: No blank lines after function docstring
+        # D205: 1 blank line between summary and description (conflicts)
+        # D212: Multi-line summary at first line (conflicts with D213)
+        # D403: First word should be capitalized (too pedantic)
+        # D415: First line should end with punctuation (too pedantic)
+        args: [--convention=google, "--add-ignore=D100,D103,D104,D105,D107,D200,D202,D205,D212,D403,D415"]
+        files: ^src/
+        exclude: ^src/cogsyndelta/__init__.py$
