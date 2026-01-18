@@ -83,7 +83,7 @@ class LanguageFrameworkEncoder(nn.Module):
         Returns:
             Semantic code embedding [batch, embed_dim]
         """
-        batch_size, seq_len = code_tokens.shape
+        _batch_size, _seq_len = code_tokens.shape  # kept for shape reference
         
         # Token embeddings
         token_embeds = self.token_embed(code_tokens)
@@ -348,7 +348,7 @@ class QualityAssuranceModule(nn.Module):
         Returns:
             Test case embeddings [batch, num_tests, embed_dim]
         """
-        batch_size = solution.size(0)
+        _batch_size = solution.size(0)  # kept for shape reference
         
         # Generate diverse test cases
         tests = []

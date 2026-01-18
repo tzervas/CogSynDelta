@@ -407,7 +407,7 @@ class QuantumHybridBackend(ComputeBackend):
         
         try:
             # Determine optimal split
-            classical_portion = job.parameters.get('classical_ratio', 0.7)
+            _classical_portion = job.parameters.get('classical_ratio', 0.7)  # for future split logic
             
             # Classical pre-processing
             classical_job = ComputeJob(

@@ -26,7 +26,7 @@ def test_vae_loss_formula() -> bool:
     print("TEST 1: VAE Loss Formula")
     print("="*60)
     
-    config = load_config(str(Path(__file__).parent.parent / "config/config.yaml"))
+    _config = load_config(str(Path(__file__).parent.parent / "config/config.yaml"))  # for reference
     model = create_model(str(Path(__file__).parent.parent / 'config/config.yaml'))
     model.eval()
     
@@ -260,7 +260,7 @@ def test_model_components() -> bool:
     print("TEST 6: Model Components")
     print("="*60)
     
-    config = load_config(str(Path(__file__).parent.parent / "config/config.yaml"))
+    _config = load_config(str(Path(__file__).parent.parent / "config/config.yaml"))  # for reference
     model = create_model(str(Path(__file__).parent.parent / 'config/config.yaml'))
     
     print(f"✓ Model architecture:")

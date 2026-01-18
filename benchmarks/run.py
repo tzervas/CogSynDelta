@@ -480,7 +480,7 @@ def validate_compression_claims() -> Tuple[Optional[float], Optional[float]]:
         store = DenseDifferentialMemoryStore(embed_dim=512, dense_dim=64, num_references=10)
         test_embeddings = torch.randn(20, 512)
         
-        compression_benchmark = CompressionBenchmark()
+        _compression_benchmark = CompressionBenchmark()  # kept for future benchmark reporting
         
         # Measure actual compression
         print("\nMeasuring actual compression performance:")
