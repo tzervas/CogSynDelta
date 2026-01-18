@@ -210,8 +210,95 @@ api_server:
       - "*"
     allow_credentials: true
 
-# Extensibility Configuration
-extensibility:
+# Memory Persistence and Compression
+memory_persistence:
+  enabled: true
+  
+  # Dense differential embeddings for high compression
+  dense_encoding:
+    enabled: true  # Use dense differential embeddings + semantic residuals
+    dense_dim: 64  # Compressed dimension (8x compression from 512)
+    num_references: 100  # Reference embeddings for differential encoding
+    update_references_interval: 1000  # Update reference centroids every N memories
+    fidelity_threshold: 0.95  # Minimum reconstruction fidelity
+    
+  # Hierarchical memory storage
+  working_memory:
+    capacity: 100  # Recent memories, uncompressed
+    
+  short_term_memory:
+    capacity: 1000  # Dense differential compressed memories
+    compression_ratio: 0.5
+    
+  long_term_memory:
+    storage_path: "./memory_storage"  # Disk-based archive
+    enable_archiving: true
+    max_compression: true  # Use maximum compression for long-term
+    
+  # Compression settings
+  compression:
+    enabled: true
+    similarity_threshold: 0.85  # Merge memories above this similarity
+    compressed_dim: 256  # Fallback compressed embedding dimension
+    adaptive_quantization: true  # Use adaptive bit precision
+    quantization_bits: [4, 16]  # Min/max bits for quantization
+    
+  # Temporal continuity
+  checkpointing:
+    enabled: true
+    auto_checkpoint_interval: 3600  # seconds (1 hour)
+    checkpoint_dir: "./checkpoints"
+    keep_last_n: 5  # Keep last N checkpoints
+    include_compression_stats: true
+    
+  # Memory management
+  management:
+    importance_weighting: true  # Prioritize important memories
+    access_based_retention: true  # Keep frequently accessed memories
+    auto_cleanup: true  # Clean up old, unused memories
+    cleanup_interval: 86400  # seconds (24 hours)
+    fidelity_based_cleanup: true  # Remove low-fidelity compressed memories
+
+# Safeguards against infinite loops and hazards
+safeguards:
+  enabled: true
+  
+  # Loop detection
+  loop_detection:
+    enabled: true
+    max_iterations: 1000  # Maximum iterations per process
+    max_repetitions: 5  # Maximum state repetitions before breaking
+    state_hash_window: 100  # Window for detecting repetitions
+    
+  # Timeouts
+  timeouts:
+    max_execution_time: 300  # seconds (5 minutes)
+    max_generation_time: 60  # seconds for code generation
+    max_inference_time: 10  # seconds per inference
+    
+  # Resource limits
+  resource_limits:
+    max_memory_usage: 1073741824  # 1GB in bytes
+    max_output_size: 10485760  # 10MB in bytes
+    max_queue_size: 1000  # Maximum items in processing queue
+    
+  # Ethical constraints
+  ethical:
+    enabled: true
+    forbidden_patterns:
+      - "infinite_loop"
+      - "memory_bomb"
+      - "fork_bomb"
+      - "resource_exhaustion"
+    content_filtering: true
+    validate_outputs: true
+    
+  # Circuit breakers
+  circuit_breakers:
+    enabled: true
+    failure_threshold: 3  # Failures before circuit opens
+    recovery_timeout: 60  # seconds before retry
+    half_open_max_calls: 5  # Test calls in half-open state
   # Plugin system for custom compute backends
   custom_backends:
     enabled: true
