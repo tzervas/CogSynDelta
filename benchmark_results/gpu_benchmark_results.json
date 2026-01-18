@@ -1,0 +1,98 @@
+{
+  "device": "cuda",
+  "pytorch_version": "2.9.1+cu128",
+  "timestamp": "2026-01-18T14:58:21.589604",
+  "mnist_training": [
+    {
+      "epoch": 1,
+      "time": 2.6402547359466553,
+      "loss": 0.23121718903467345,
+      "accuracy": 98.28
+    },
+    {
+      "epoch": 2,
+      "time": 2.452171802520752,
+      "loss": 0.0818002930482917,
+      "accuracy": 98.73
+    }
+  ],
+  "cnn_throughput": [
+    {
+      "batch_size": 1,
+      "avg_time_ms": 0.06184185989695835,
+      "std_time_ms": 0.0034527104469709545,
+      "throughput": 16170.276923530633
+    },
+    {
+      "batch_size": 16,
+      "avg_time_ms": 0.11366943996108603,
+      "std_time_ms": 0.0010996139873375433,
+      "throughput": 140759.02903610235
+    },
+    {
+      "batch_size": 64,
+      "avg_time_ms": 0.2116996801851201,
+      "std_time_ms": 0.001888620691846991,
+      "throughput": 302315.0528335017
+    },
+    {
+      "batch_size": 256,
+      "avg_time_ms": 0.44487474999186816,
+      "std_time_ms": 0.0023702865577916394,
+      "throughput": 575442.8634231981
+    }
+  ],
+  "resnet_throughput": [
+    {
+      "batch_size": 8,
+      "avg_time_ms": 1.0759212199627655,
+      "std_time_ms": 0.004433787389341952,
+      "throughput": 7435.488632036513
+    },
+    {
+      "batch_size": 16,
+      "avg_time_ms": 1.7922036602249136,
+      "std_time_ms": 0.005742095177293005,
+      "throughput": 8927.55681460447
+    },
+    {
+      "batch_size": 32,
+      "avg_time_ms": 3.624482379818801,
+      "std_time_ms": 0.0059619494344996865,
+      "throughput": 8828.846893607957
+    },
+    {
+      "batch_size": 64,
+      "avg_time_ms": 8.510980499704601,
+      "std_time_ms": 0.03673351740132566,
+      "throughput": 7519.697642618416
+    }
+  ],
+  "memory_bandwidth": [
+    {
+      "size_mb": 1,
+      "h2d_bandwidth_gbs": 8.58237331513241,
+      "d2h_bandwidth_gbs": 2.5953425130835748
+    },
+    {
+      "size_mb": 10,
+      "h2d_bandwidth_gbs": 16.46084201158598,
+      "d2h_bandwidth_gbs": 5.382460974076184
+    },
+    {
+      "size_mb": 100,
+      "h2d_bandwidth_gbs": 14.652239027202542,
+      "d2h_bandwidth_gbs": 6.527871324313155
+    },
+    {
+      "size_mb": 500,
+      "h2d_bandwidth_gbs": 15.254892391305228,
+      "d2h_bandwidth_gbs": 6.808843748986521
+    },
+    {
+      "size_mb": 1000,
+      "h2d_bandwidth_gbs": 15.168726172734052,
+      "d2h_bandwidth_gbs": 6.70025687614013
+    }
+  ]
+}

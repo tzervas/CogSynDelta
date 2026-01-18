@@ -1,0 +1,47 @@
+# Commit Message Template
+#
+# Format: <type>(<scope>): <subject>
+#
+# <body>
+#
+# <footer>
+#
+# --- TYPES ---
+# feat:     New feature
+# fix:      Bug fix
+# docs:     Documentation only
+# style:    Formatting, no code change
+# refactor: Code change, no feature/fix
+# perf:     Performance improvement
+# test:     Adding/updating tests
+# build:    Build system changes
+# ci:       CI configuration changes
+# chore:    Maintenance tasks
+#
+# --- SCOPES ---
+# core, memory, agents, api, quantum, benchmarks, tests, ci, docs
+#
+# --- RULES ---
+# - Subject line: max 50 chars, imperative mood, no period
+# - Body: wrap at 72 chars, explain WHAT and WHY
+# - Footer: reference issues (Refs: #123, Fixes: #456)
+#
+# --- EXAMPLES ---
+# feat(memory): add tiered compression for long-term storage
+#
+# Implements lossless compression using SVD-based basis vectors
+# for long-term memory tier. This reduces storage requirements
+# by approximately 10-100x while maintaining reconstruction fidelity.
+#
+# Why: Active memory capacity is limited; we need efficient
+# long-term storage without losing information.
+#
+# Refs: #42
+# ---
+# fix(api): handle missing auth header gracefully
+#
+# Returns 401 Unauthorized instead of 500 Internal Server Error
+# when Authorization header is missing from API requests.
+#
+# Fixes: #87
+# ---
