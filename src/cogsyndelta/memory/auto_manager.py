@@ -728,7 +728,7 @@ class IntelligentAutoManager:
     
     def _adapt_thresholds(self, state: SystemState, assessment: Dict) -> None:
         """Adapt thresholds based on performance."""
-        performance = assessment['performance_score']
+        _performance = assessment['performance_score']  # kept for future adaptive logic
         
         # If performance declining, be more conservative
         if len(self.history) > 5:
