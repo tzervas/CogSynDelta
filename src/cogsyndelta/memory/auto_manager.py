@@ -70,14 +70,14 @@ class TemporalContinuityTracker:
     - Causal relationships
     """
     
-    def __init__(self, window_size: int = 100):
+    def __init__(self, window_size: int = 100) -> None:
         self.window_size = window_size
         self.temporal_chain: deque = deque(maxlen=window_size)
         self.causal_graph: Dict[str, Set[str]] = {}  # memory_id -> dependencies
         self.temporal_clusters: List[Set[str]] = []
     
     def add_memory(self, memory_id: str, timestamp: datetime,
-                  dependencies: Optional[Set[str]] = None):
+                  dependencies: Optional[Set[str]] = None) -> Any:
         """Add memory to temporal tracking."""
         self.temporal_chain.append((memory_id, timestamp))
         
@@ -140,7 +140,7 @@ class LoadBalancer(nn.Module):
     - Temporal continuity
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         super(LoadBalancer, self).__init__()
         
         self.embed_dim = embed_dim
@@ -219,7 +219,7 @@ class CullingDecisionMaker(nn.Module):
     Prevents over-culling by maintaining minimum diversity.
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         super(CullingDecisionMaker, self).__init__()
         
         self.embed_dim = embed_dim
@@ -296,8 +296,7 @@ class IntelligentAutoManager:
     def __init__(self, embed_dim: int = 512,
                  max_loaded_memories: int = 1000,
                  max_total_memories: int = 100000,
-                 target_memory_usage: float = 0.7):
-        
+                 target_memory_usage: float = 0.7) -> None:
         self.embed_dim = embed_dim
         self.max_loaded_memories = max_loaded_memories
         self.max_total_memories = max_total_memories
@@ -714,7 +713,7 @@ class IntelligentAutoManager:
         ])
         return features[:15]
     
-    def _update_temporal_tracking(self, unified_manager):
+    def _update_temporal_tracking(self, unified_manager) -> None:
         """Update temporal tracking for all memories."""
         for memory_id, memory in unified_manager.memories.items():
             self.temporal_tracker.add_memory(
@@ -723,7 +722,7 @@ class IntelligentAutoManager:
                 memory.contextual_metadata.dependencies
             )
     
-    def _adapt_thresholds(self, state: SystemState, assessment: Dict):
+    def _adapt_thresholds(self, state: SystemState, assessment: Dict) -> None:
         """Adapt thresholds based on performance."""
         performance = assessment['performance_score']
         

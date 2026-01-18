@@ -83,7 +83,7 @@ Issues = "https://github.com/tzervas/CogSynDelta/issues"
 
 [project.scripts]
 cogsyndelta-server = "cogsyndelta.api.server:main"
-cogsyndelta-benchmark = "cogsyndelta.benchmarks.run:main"
+cogsyndelta-benchmark = "benchmarks.run:main"
 
 [tool.setuptools]
 packages = ["cogsyndelta"]
@@ -107,11 +107,17 @@ ignore = ["E501"]
 python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false
+disallow_untyped_defs = true
+check_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = false
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_optional = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=cogsyndelta --cov-report=html --cov-report=term"
+addopts = "-v"

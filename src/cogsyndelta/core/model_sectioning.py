@@ -83,7 +83,7 @@ class ModelSection(nn.Module):
     
     def __init__(self, section_id: str, region_type: BrainRegionType,
                  input_dim: int, hidden_dim: int, output_dim: int,
-                 num_layers: int = 3):
+                 num_layers: int = 3) -> None:
         super(ModelSection, self).__init__()
         
         self.section_id = section_id
@@ -157,14 +157,14 @@ class ModelSection(nn.Module):
         """Get current section state."""
         return self.section_state
     
-    def save_to_disk(self, path: str):
+    def save_to_disk(self, path: str) -> None:
         """Save section to disk for dynamic loading."""
         torch.save({
             'state_dict': self.state_dict(),
             'metadata': self.metadata
         }, path)
     
-    def load_from_disk(self, path: str):
+    def load_from_disk(self, path: str) -> None:
         """Load section from disk."""
         checkpoint = torch.load(path)
         self.load_state_dict(checkpoint['state_dict'])
@@ -179,7 +179,7 @@ class mHCInterconnect(nn.Module):
     Dynamically routes information between active sections.
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         super(mHCInterconnect, self).__init__()
         
         self.embed_dim = embed_dim
@@ -205,7 +205,7 @@ class mHCInterconnect(nn.Module):
         )
     
     def register_pathway(self, source: str, target: str, 
-                        strength: float = 1.0, latency: float = 0.0):
+                        strength: float = 1.0, latency: float = 0.0) -> Any:
         """Register a communication pathway between sections."""
         pathway = mHCPathway(
             source_section=source,
@@ -272,7 +272,7 @@ class DynamicModelLoader:
     
     def __init__(self, storage_path: str = "./model_sections",
                  max_loaded_sections: int = 5,
-                 memory_limit_mb: float = 1024.0):
+                 memory_limit_mb: float = 1024.0) -> None:
         self.storage_path = storage_path
         self.max_loaded_sections = max_loaded_sections
         self.memory_limit_mb = memory_limit_mb
@@ -288,7 +288,7 @@ class DynamicModelLoader:
         # Load history for intelligent prediction
         self.load_history: List[str] = []
     
-    def register_section(self, section: ModelSection):
+    def register_section(self, section: ModelSection) -> None:
         """Register a section with the loader."""
         self.all_sections_metadata[section.section_id] = section.metadata
         
@@ -328,7 +328,7 @@ class DynamicModelLoader:
         
         return section
     
-    def unload_section(self, section_id: str):
+    def unload_section(self, section_id: str) -> None:
         """Unload a section from memory."""
         if section_id in self.loaded_sections:
             section = self.loaded_sections[section_id]
@@ -341,7 +341,7 @@ class DynamicModelLoader:
             del self.loaded_sections[section_id]
             section.metadata.loaded = False
     
-    def _unload_least_important(self):
+    def _unload_least_important(self) -> None:
         """Unload the least important section based on heuristics."""
         if not self.loaded_sections:
             return
@@ -389,7 +389,7 @@ class SectionedBrainModel(nn.Module):
     - Cross-section inference
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any]) -> None:
         super(SectionedBrainModel, self).__init__()
         
         self.config = config
@@ -460,7 +460,7 @@ class SectionedBrainModel(nn.Module):
         return section_id
     
     def connect_sections(self, source_id: str, target_id: str,
-                        strength: float = 1.0):
+                        strength: float = 1.0) -> Any:
         """Create mHC pathway between sections."""
         self.mhc_interconnect.register_pathway(
             source_id, target_id, strength=strength
