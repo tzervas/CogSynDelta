@@ -1,12 +1,29 @@
 # CogSynDelta: Self-Improving AI System
 
-[![Python](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.9.1+cu128-red.svg)](https://pytorch.org/)
-[![UV](https://img.shields.io/badge/uv-0.7+-blueviolet.svg)](https://docs.astral.sh/uv/)
+<!-- Dynamic Status Badges (main branch) -->
+[![CI/CD](https://github.com/tzervas/CogSynDelta/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tzervas/CogSynDelta/actions/workflows/ci.yml)
+[![Security](https://github.com/tzervas/CogSynDelta/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/tzervas/CogSynDelta/actions/workflows/security.yml)
+[![codecov](https://codecov.io/gh/tzervas/CogSynDelta/graph/badge.svg?token=CODECOV_TOKEN)](https://codecov.io/gh/tzervas/CogSynDelta)
+
+<!-- Third-Party Quality & Security Badges -->
+[![CodeClimate Maintainability](https://api.codeclimate.com/v1/badges/REPO_ID/maintainability)](https://codeclimate.com/github/tzervas/CogSynDelta/maintainability)
+[![Snyk Security](https://snyk.io/test/github/tzervas/CogSynDelta/badge.svg)](https://snyk.io/test/github/tzervas/CogSynDelta)
+
+<!-- Project Info Badges -->
+[![Python](https://img.shields.io/badge/python-3.14+-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.9+-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![CUDA](https://img.shields.io/badge/CUDA-12.8-76B900?logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-toolkit)
+[![uv](https://img.shields.io/badge/uv-0.7+-blueviolet?logo=astral&logoColor=white)](https://docs.astral.sh/uv/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-brightgreen)](https://github.com/tzervas/CogSynDelta/actions)
-[![Type Coverage](https://img.shields.io/badge/type%20coverage-79%25-yellow)](QUALITY_IMPROVEMENTS.md)
-[![Dependencies](https://img.shields.io/badge/dependencies-verified%202026--01--18-success)](GPU_COMPATIBILITY.md)
+
+<!-- Branch-specific badges (develop) -->
+<details>
+<summary>📊 Develop Branch Status</summary>
+
+[![CI/CD (develop)](https://github.com/tzervas/CogSynDelta/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/tzervas/CogSynDelta/actions/workflows/ci.yml?query=branch%3Adevelop)
+[![Security (develop)](https://github.com/tzervas/CogSynDelta/actions/workflows/security.yml/badge.svg?branch=develop)](https://github.com/tzervas/CogSynDelta/actions/workflows/security.yml?query=branch%3Adevelop)
+
+</details>
 
 **A production-ready, brain-inspired self-improving AI system with VL-JEPA, mHC, quantum computing support, and Google ADK compliance.**
 

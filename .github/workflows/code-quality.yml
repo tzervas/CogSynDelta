@@ -1,0 +1,153 @@
+# Third-party code quality analysis for CogSynDelta (Private Repository)
+# Integrates with CodeClimate and SonarCloud for external validation
+
+name: Code Quality
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  UV_VERSION: "0.7.17"
+
+jobs:
+  # CodeClimate integration (requires CC_TEST_REPORTER_ID secret)
+  codeclimate:
+    name: CodeClimate Analysis
+    runs-on: ubuntu-latest
+    # Only run if CodeClimate is configured
+    if: ${{ vars.ENABLE_CODECLIMATE == 'true' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: |
+          uv sync --group dev --no-sources \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
+
+      - name: Setup CodeClimate Test Reporter
+        run: |
+          curl -L https://codeclimate.com/downloads/test-reporter/test-reporter-latest-linux-amd64 > ./cc-test-reporter
+          chmod +x ./cc-test-reporter
+          ./cc-test-reporter before-build
+
+      - name: Run tests with coverage
+        run: |
+          uv run pytest tests/ -v --cov=cogsyndelta --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to CodeClimate
+        env:
+          CC_TEST_REPORTER_ID: ${{ secrets.CC_TEST_REPORTER_ID }}
+        run: |
+          ./cc-test-reporter after-build --exit-code $?
+
+  # SonarCloud integration (requires SONAR_TOKEN secret)
+  sonarcloud:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    # Only run if SonarCloud is configured
+    if: ${{ vars.ENABLE_SONARCLOUD == 'true' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Full history for better analysis
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: |
+          uv sync --group dev --no-sources \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
+
+      - name: Run tests with coverage
+        run: |
+          uv run pytest tests/ -v --cov=cogsyndelta --cov-report=xml
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=tzervas_CogSynDelta
+            -Dsonar.organization=tzervas
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.sources=src/
+            -Dsonar.tests=tests/
+            -Dsonar.python.version=3.14
+
+  # Internal quality metrics (always runs)
+  quality-metrics:
+    name: Quality Metrics
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install analysis tools
+        run: |
+          uv tool install radon
+          uv tool install vulture
+
+      - name: Calculate cyclomatic complexity
+        run: |
+          echo "## Cyclomatic Complexity" > quality-metrics.md
+          uv tool run radon cc src/ -a -s >> quality-metrics.md
+          echo "" >> quality-metrics.md
+          echo "## Maintainability Index" >> quality-metrics.md
+          uv tool run radon mi src/ -s >> quality-metrics.md
+
+      - name: Check for dead code
+        run: |
+          echo "" >> quality-metrics.md
+          echo "## Dead Code Analysis" >> quality-metrics.md
+          uv tool run vulture src/ --min-confidence 80 >> quality-metrics.md || true
+
+      - name: Run internal quality score
+        run: |
+          echo "" >> quality-metrics.md
+          echo "## Internal Quality Score" >> quality-metrics.md
+          uv run --no-project python scripts/quality_control.py src/ >> quality-metrics.md
+
+      - name: Upload quality metrics
+        uses: actions/upload-artifact@v6
+        with:
+          name: quality-metrics
+          path: quality-metrics.md
+          retention-days: 90
