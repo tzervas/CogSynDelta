@@ -38,7 +38,7 @@ class DenseEmbeddingEncoder(nn.Module):
     Uses learned compression with high fidelity preservation.
     """
     
-    def __init__(self, embed_dim: int = 512, dense_dim: int = 64):
+    def __init__(self, embed_dim: int = 512, dense_dim: int = 64) -> None:
         super(DenseEmbeddingEncoder, self).__init__()
         
         self.embed_dim = embed_dim
@@ -136,7 +136,7 @@ class DifferentialEncoder(nn.Module):
     Achieves high compression for similar or temporally adjacent memories.
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         super(DifferentialEncoder, self).__init__()
         
         self.embed_dim = embed_dim
@@ -203,7 +203,7 @@ class AdaptiveQuantizer(nn.Module):
     Adjusts precision based on semantic importance.
     """
     
-    def __init__(self, min_bits: int = 4, max_bits: int = 16):
+    def __init__(self, min_bits: int = 4, max_bits: int = 16) -> None:
         super(AdaptiveQuantizer, self).__init__()
         
         self.min_bits = min_bits
@@ -276,7 +276,7 @@ class DenseDifferentialMemoryStore:
     """
     
     def __init__(self, embed_dim: int = 512, dense_dim: int = 64,
-                 num_references: int = 100):
+                 num_references: int = 100) -> None:
         self.embed_dim = embed_dim
         self.dense_dim = dense_dim
         self.num_references = num_references
@@ -420,7 +420,7 @@ class DenseDifferentialMemoryStore:
         
         return reconstructed
     
-    def update_references(self, new_embeddings: torch.Tensor):
+    def update_references(self, new_embeddings: torch.Tensor) -> None:
         """
         Update reference embeddings using k-means clustering.
         Keeps references aligned with current data distribution.

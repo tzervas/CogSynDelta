@@ -105,7 +105,7 @@ class ADKAgent:
     5. Cleanup
     """
     
-    def __init__(self, agent_id: str, name: str, description: str):
+    def __init__(self, agent_id: str, name: str, description: str) -> None:
         self.agent_id = agent_id
         self.name = name
         self.description = description
@@ -122,7 +122,7 @@ class ADKAgent:
         self.agent_registry: Dict[str, 'ADKAgent'] = {}
     
     def register_tool(self, name: str, func: Callable, description: str,
-                     parameters: Dict[str, Any], required: List[str] = None):
+                     parameters: Dict[str, Any], required: List[str] = None) -> Any:
         """
         Register a tool/function per ADK specification.
         
@@ -216,7 +216,7 @@ class ADKAgent:
             for cap in self.capabilities
         ]
     
-    def reset_conversation(self):
+    def reset_conversation(self) -> None:
         """Reset conversation history."""
         self.conversation_history = []
 
@@ -233,12 +233,12 @@ class A2AProtocolAdapter:
     - Error handling
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.agents: Dict[str, ADKAgent] = {}
         self.message_queue: asyncio.Queue = asyncio.Queue()
         self.pending_requests: Dict[str, asyncio.Future] = {}
     
-    def register_agent(self, agent: ADKAgent):
+    def register_agent(self, agent: ADKAgent) -> Any:
         """Register an agent with the A2A protocol."""
         self.agents[agent.agent_id] = agent
         agent.agent_registry = self.agents
@@ -315,7 +315,7 @@ class CogSynDeltaADKAgent(ADKAgent):
     Integrates our self-improving AI system with Google ADK standards.
     """
     
-    def __init__(self, agent_id: str, integrated_system: Optional[Any] = None):
+    def __init__(self, agent_id: str, integrated_system: Optional[Any] = None) -> None:
         super().__init__(
             agent_id=agent_id,
             name="CogSynDelta Self-Improving AI",
@@ -327,7 +327,7 @@ class CogSynDeltaADKAgent(ADKAgent):
         # Register standard tools
         self._register_standard_tools()
     
-    def _register_standard_tools(self):
+    def _register_standard_tools(self) -> None:
         """Register CogSynDelta-specific tools in ADK format."""
         
         # Tool 1: Process visual input
@@ -459,7 +459,7 @@ class ADKAdapter:
     - Lifecycle management
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.agents: Dict[str, ADKAgent] = {}
         self.a2a_adapter = A2AProtocolAdapter()
     
@@ -570,7 +570,7 @@ if __name__ == '__main__':
     
     # Test A2A protocol
     print("\n[Test 5] Agent-to-Agent communication:")
-    async def test_a2a():
+    async def test_a2a() -> Any:
         # Create second agent
         agent2 = adapter.create_agent(
             agent_id="test_agent_2"

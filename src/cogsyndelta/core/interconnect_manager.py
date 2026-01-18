@@ -70,7 +70,7 @@ class ContextualAttentionRouter(nn.Module):
     - What context is relevant to share
     """
     
-    def __init__(self, embed_dim: int = 512, num_heads: int = 8, num_sections: int = 10):
+    def __init__(self, embed_dim: int = 512, num_heads: int = 8, num_sections: int = 10) -> None:
         super(ContextualAttentionRouter, self).__init__()
         
         self.embed_dim = embed_dim
@@ -182,7 +182,7 @@ class PathwayOptimizer(nn.Module):
     based on successful vs unsuccessful communication patterns.
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         super(PathwayOptimizer, self).__init__()
         
         self.embed_dim = embed_dim
@@ -244,7 +244,7 @@ class ContextPropagationEngine(nn.Module):
     handling multi-hop routing and context accumulation.
     """
     
-    def __init__(self, embed_dim: int = 512, max_hops: int = 3):
+    def __init__(self, embed_dim: int = 512, max_hops: int = 3) -> None:
         super(ContextPropagationEngine, self).__init__()
         
         self.embed_dim = embed_dim
@@ -314,7 +314,7 @@ class CongestionController:
     - Dynamic bandwidth allocation
     """
     
-    def __init__(self, total_bandwidth: int = 10000):
+    def __init__(self, total_bandwidth: int = 10000) -> None:
         self.total_bandwidth = total_bandwidth
         self.allocated_bandwidth: Dict[Tuple[str, str], int] = {}
         self.message_queue: Dict[int, deque] = defaultdict(deque)  # priority -> queue
@@ -359,7 +359,7 @@ class CongestionController:
         self.message_queue[priority].append((pathway, required_bandwidth))
         return False
     
-    def release(self, pathway: Tuple[str, str]):
+    def release(self, pathway: Tuple[str, str]) -> None:
         """Release bandwidth allocation."""
         if pathway in self.allocated_bandwidth:
             del self.allocated_bandwidth[pathway]
@@ -367,7 +367,7 @@ class CongestionController:
             # Process queued messages
             self._process_queue()
     
-    def _process_queue(self):
+    def _process_queue(self) -> None:
         """Process queued messages in priority order."""
         for priority in sorted(self.message_queue.keys(), reverse=True):
             while self.message_queue[priority]:
@@ -412,7 +412,7 @@ class IntelligentInterconnectManager(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512, num_sections: int = 10,
-                 total_bandwidth: int = 10000):
+                 total_bandwidth: int = 10000) -> None:
         super(IntelligentInterconnectManager, self).__init__()
         
         self.embed_dim = embed_dim
@@ -432,7 +432,7 @@ class IntelligentInterconnectManager(nn.Module):
         self.performance_metrics: Dict[str, List[float]] = defaultdict(list)
     
     def register_pathway(self, source: str, target: str,
-                        initial_strength: float = 1.0):
+                        initial_strength: float = 1.0) -> Any:
         """Register a communication pathway."""
         self.pathways[(source, target)] = {
             'strength': initial_strength,
@@ -554,7 +554,7 @@ class IntelligentInterconnectManager(nn.Module):
         
         return []  # No route found
     
-    def optimize_pathways(self, section_states: Dict[str, torch.Tensor]):
+    def optimize_pathways(self, section_states: Dict[str, torch.Tensor]) -> None:
         """Optimize all pathway strengths based on learned patterns."""
         for (source, target), pathway_info in self.pathways.items():
             if source in section_states and target in section_states:
@@ -576,7 +576,7 @@ class IntelligentInterconnectManager(nn.Module):
     
     def _record_communication(self, source: str, target: str,
                             message: torch.Tensor, importance: float,
-                            latency: float):
+                            latency: float) -> Any:
         """Record communication for analysis."""
         context = CommunicationContext(
             source_section=source,
