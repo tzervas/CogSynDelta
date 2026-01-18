@@ -39,6 +39,7 @@ class DenseEmbeddingEncoder(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512, dense_dim: int = 64) -> None:
+        """Initialize dense embedding encoder with bottleneck architecture."""
         super(DenseEmbeddingEncoder, self).__init__()
         
         self.embed_dim = embed_dim
@@ -137,6 +138,7 @@ class DifferentialEncoder(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize differential encoder for delta-based compression."""
         super(DifferentialEncoder, self).__init__()
         
         self.embed_dim = embed_dim
@@ -204,6 +206,7 @@ class AdaptiveQuantizer(nn.Module):
     """
     
     def __init__(self, min_bits: int = 4, max_bits: int = 16) -> None:
+        """Initialize adaptive quantizer with precision range."""
         super(AdaptiveQuantizer, self).__init__()
         
         self.min_bits = min_bits
@@ -277,6 +280,7 @@ class DenseDifferentialMemoryStore:
     
     def __init__(self, embed_dim: int = 512, dense_dim: int = 64,
                  num_references: int = 100) -> None:
+        """Initialize compressor with encoders, quantizer and reference storage."""
         self.embed_dim = embed_dim
         self.dense_dim = dense_dim
         self.num_references = num_references

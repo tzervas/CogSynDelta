@@ -35,6 +35,7 @@ class CodeQualityValidator:
     """
     
     def __init__(self, project_root: str = "."):
+        """Initialize quality validator with project root and empty stats."""
         self.project_root = project_root
         self.issues: List[QualityIssue] = []
         self.stats = {
@@ -69,8 +70,11 @@ class CodeQualityValidator:
         python_files = []
         
         for root, dirs, files in os.walk(self.project_root):
-            # Skip test files and __pycache__
-            dirs[:] = [d for d in dirs if d not in ['__pycache__', '.git', 'venv', 'env']]
+            # Skip test files, __pycache__, virtual environments, and git
+            dirs[:] = [d for d in dirs if d not in [
+                '__pycache__', '.git', 'venv', 'env', '.venv', 
+                '.tox', '.nox', 'node_modules', '.eggs', 'build', 'dist'
+            ]]
             
             for file in files:
                 if file.endswith('.py') and not file.startswith('test_'):
@@ -171,9 +175,14 @@ class CodeQualityValidator:
     
     def _check_naming_conventions(self, tree: ast.AST, filepath: str):
         """Check naming conventions."""
+        # Known naming exceptions (mHC = moderated HyperConnections convention)
+        naming_exceptions = {'mHCPathway', 'mHCInterconnect'}
+        
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
-                # Classes should be PascalCase
+                # Classes should be PascalCase (skip known exceptions)
+                if node.name in naming_exceptions:
+                    continue
                 if not re.match(r'^[A-Z][a-zA-Z0-9]*$', node.name):
                     self.issues.append(QualityIssue(
                         severity="info",
@@ -309,6 +318,7 @@ class IntentionValidator:
     """
     
     def __init__(self):
+        """Initialize intention validator with empty results."""
         self.validation_results = []
     
     def validate_intentions(self, python_files: List[str]) -> Dict[str, Any]:

@@ -71,6 +71,7 @@ class TemporalContinuityTracker:
     """
     
     def __init__(self, window_size: int = 100) -> None:
+        """Initialize temporal continuity tracker with window and graph structures."""
         self.window_size = window_size
         self.temporal_chain: deque = deque(maxlen=window_size)
         self.causal_graph: Dict[str, Set[str]] = {}  # memory_id -> dependencies
@@ -141,6 +142,7 @@ class LoadBalancer(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize load balancer with policy and value networks."""
         super(LoadBalancer, self).__init__()
         
         self.embed_dim = embed_dim
@@ -220,6 +222,7 @@ class CullingDecisionMaker(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize culling decision maker with policy and redundancy detector."""
         super(CullingDecisionMaker, self).__init__()
         
         self.embed_dim = embed_dim
@@ -297,6 +300,7 @@ class IntelligentAutoManager:
                  max_loaded_memories: int = 1000,
                  max_total_memories: int = 100000,
                  target_memory_usage: float = 0.7) -> None:
+        """Initialize auto memory manager with balancer, culler and tracker."""
         self.embed_dim = embed_dim
         self.max_loaded_memories = max_loaded_memories
         self.max_total_memories = max_total_memories

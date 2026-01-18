@@ -18,7 +18,9 @@ from typing import Dict, List, Any, Optional
 
 class MNISTNet(nn.Module):
     """Standard CNN for MNIST (LeNet-5 style)"""
+    
     def __init__(self) -> None:
+        """Initialize CNN layers for MNIST classification."""
         super().__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
@@ -28,6 +30,7 @@ class MNISTNet(nn.Module):
         self.fc2 = nn.Linear(128, 10)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass through conv layers with dropout and softmax output."""
         x = self.conv1(x)
         x = F.relu(x)
         x = self.conv2(x)
@@ -44,7 +47,9 @@ class MNISTNet(nn.Module):
 
 class ResNetBlock(nn.Module):
     """ResNet-like block for benchmarking"""
+    
     def __init__(self, in_channels: int, out_channels: int, stride: int = 1) -> None:
+        """Initialize ResNet block with convolutions and optional shortcut."""
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, 3, stride, 1, bias=False)
         self.bn1 = nn.BatchNorm2d(out_channels)
@@ -59,6 +64,7 @@ class ResNetBlock(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass with residual connection."""
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
         out += self.shortcut(x)
@@ -68,7 +74,9 @@ class ResNetBlock(nn.Module):
 
 class SmallResNet(nn.Module):
     """Small ResNet for benchmarking"""
+    
     def __init__(self, num_classes: int = 10) -> None:
+        """Initialize SmallResNet with configurable output classes."""
         super().__init__()
         self.conv1 = nn.Conv2d(3, 64, 7, 2, 3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
@@ -82,12 +90,14 @@ class SmallResNet(nn.Module):
         self.fc = nn.Linear(256, num_classes)
 
     def _make_layer(self, in_channels: int, out_channels: int, num_blocks: int, stride: int) -> nn.Sequential:
+        """Create a layer of ResNet blocks."""
         layers = [ResNetBlock(in_channels, out_channels, stride)]
         for _ in range(1, num_blocks):
             layers.append(ResNetBlock(out_channels, out_channels, 1))
         return nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass through ResNet layers with global average pooling."""
         x = self.maxpool(F.relu(self.bn1(self.conv1(x))))
         x = self.layer1(x)
         x = self.layer2(x)
