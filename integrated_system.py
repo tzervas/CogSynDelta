@@ -7,6 +7,8 @@ Combines all components:
 - Self-improving agent framework for SWE/AIE/SWD/AID
 - Silent semantic state retention (no token burning)
 - Security hardening and quality assurance
+- Persistent memory with compression and temporal continuity
+- Safeguards against infinite loops and hazards
 """
 
 import torch
@@ -23,6 +25,9 @@ from self_improving_agents import (
     SelfImprovingAgentFramework, AgentType, LanguageFrameworkEncoder,
     SelfImprovementModule, SecurityHardeningModule, QualityAssuranceModule
 )
+from memory_persistence import (
+    PersistentMemoryBank, MemoryCompressor, InfiniteLoopSafeguard
+)
 
 
 class IntegratedSelfImprovingSystem(nn.Module):
@@ -33,6 +38,8 @@ class IntegratedSelfImprovingSystem(nn.Module):
     3. mHC for moderated layer connections
     4. Self-improving agents for multi-language/framework exploration
     5. Security hardening and QA for production-ready outputs
+    6. Persistent memory with compression and temporal continuity
+    7. Safeguards against infinite loops and ethical hazards
     """
     
     def __init__(self, config_path: str = 'config.yaml'):
@@ -55,11 +62,35 @@ class IntegratedSelfImprovingSystem(nn.Module):
             num_layers=vl_config.get('num_vision_layers', 6)
         )
         
-        self.memory_bank = TemporalMemoryBank(
-            memory_size=vl_config.get('memory_size', 1000),
-            embed_dim=embed_dim,
-            num_read_heads=vl_config.get('num_read_heads', 4)
-        )
+        # Replace TemporalMemoryBank with PersistentMemoryBank
+        persist_config = self.config.get('memory_persistence', {})
+        if persist_config.get('enabled', True):
+            self.memory_bank = PersistentMemoryBank(
+                embed_dim=embed_dim,
+                working_capacity=persist_config.get('working_memory', {}).get('capacity', 100),
+                short_term_capacity=persist_config.get('short_term_memory', {}).get('capacity', 1000),
+                storage_path=persist_config.get('long_term_memory', {}).get('storage_path', './memory_storage')
+            )
+        else:
+            # Fallback to original memory bank
+            self.memory_bank = TemporalMemoryBank(
+                memory_size=vl_config.get('memory_size', 1000),
+                embed_dim=embed_dim,
+                num_read_heads=vl_config.get('num_read_heads', 4)
+            )
+        
+        # Safeguards
+        safeguard_config = self.config.get('safeguards', {})
+        if safeguard_config.get('enabled', True):
+            loop_config = safeguard_config.get('loop_detection', {})
+            timeout_config = safeguard_config.get('timeouts', {})
+            self.safeguard = InfiniteLoopSafeguard(
+                max_iterations=loop_config.get('max_iterations', 1000),
+                max_repetitions=loop_config.get('max_repetitions', 5),
+                timeout_seconds=timeout_config.get('max_execution_time', 300)
+            )
+        else:
+            self.safeguard = None
         
         self.hierarchical_pcn = HierarchicalPredictiveCoding(
             embed_dim=embed_dim,
@@ -108,6 +139,8 @@ class IntegratedSelfImprovingSystem(nn.Module):
         Process visual input with silent semantic state retention.
         No token generation - pure embedding prediction.
         
+        Includes safeguards against infinite loops.
+        
         Args:
             frames: Video frames [batch, channels, height, width] or
                    [batch, sequence, channels, height, width]
@@ -115,6 +148,13 @@ class IntegratedSelfImprovingSystem(nn.Module):
         Returns:
             Dictionary with semantic states and predictions
         """
+        # Safeguard check
+        if self.safeguard:
+            is_safe, message = self.safeguard.check_state(frames.flatten()[:512])
+            if not is_safe:
+                self.safeguard.trigger_circuit_breaker(message)
+                raise RuntimeError(f"Safeguard triggered: {message}")
+        
         # Handle single frame or sequence
         if frames.dim() == 4:
             # Single frame
@@ -123,8 +163,8 @@ class IntegratedSelfImprovingSystem(nn.Module):
             # Encode to semantic embedding (silent state)
             semantic_embed = self.vision_encoder(frames)
             
-            # Store in memory bank (persistent semantic state)
-            self.memory_bank.write(semantic_embed)
+            # Store in persistent memory bank
+            self.memory_bank.write(semantic_embed, importance=1.0, source="visual_input")
             
             # Hierarchical predictive coding with mHC
             hpc_output = self.hierarchical_pcn(semantic_embed)
@@ -143,17 +183,29 @@ class IntegratedSelfImprovingSystem(nn.Module):
             
             semantic_states = []
             for t in range(seq_len):
+                # Safeguard check per frame
+                if self.safeguard:
+                    is_safe, message = self.safeguard.check_state(frames[:, t].flatten()[:512])
+                    if not is_safe:
+                        self.safeguard.trigger_circuit_breaker(message)
+                        break
+                
                 frame_t = frames[:, t]
                 semantic_t = self.vision_encoder(frame_t)
                 semantic_states.append(semantic_t)
-                self.memory_bank.write(semantic_t)
+                self.memory_bank.write(semantic_t, importance=1.0, source=f"visual_sequence_{t}")
             
             semantic_sequence = torch.stack(semantic_states, dim=1)
             
-            # Get temporal context from memory
-            temporal_context = self.memory_bank.temporal_context(
-                window_size=self.config['vision_language'].get('temporal_window', 10)
-            )
+            # Get temporal context from persistent memory
+            if hasattr(self.memory_bank, 'temporal_context'):
+                temporal_context = self.memory_bank.temporal_context(
+                    window_size=self.config['vision_language'].get('temporal_window', 10)
+                )
+            else:
+                # Fallback for PersistentMemoryBank
+                query = semantic_states[-1]
+                temporal_context, _ = self.memory_bank.read(query, num_reads=10)
             
             # Process last frame with temporal context
             hpc_output = self.hierarchical_pcn(
