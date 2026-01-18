@@ -1,16 +1,17 @@
 # Development dependencies
 -r requirements.txt
 
-# Testing - Updated 2026-01-18
+# Testing - Pinned for CI/local consistency
 pytest==9.0.2
 pytest-cov==7.0.0
 pytest-asyncio==1.3.0
+pytest-xdist==3.8.0
 
-# Code quality
-black==26.1.0
+# Code quality - Unified tooling
 ruff==0.14.13
 mypy==1.19.1
 pre-commit==4.5.1
+types-PyYAML==6.0.12.20250402
 
 # Documentation
 sphinx==9.1.0
