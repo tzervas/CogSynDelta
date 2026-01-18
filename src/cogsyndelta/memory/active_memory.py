@@ -560,7 +560,18 @@ class ActiveMemoryManager:
             del self.short_term_memory[memory_id]
 
     def _ensure_temporal_continuity(self) -> None:
-        """Ensure temporal continuity in active memory."""
+        """Ensure temporal continuity in active memory.
+
+        Loads memories that are needed for temporal context into active memory.
+        This is a best-effort optimization that gracefully handles missing memories.
+
+        Why: Temporal continuity helps maintain context for sequential operations,
+        but it's not critical for system operation. Memories may be legitimately
+        archived, compacted, or deleted over time as part of normal memory lifecycle.
+
+        See Also:
+            ADR-0004: Graceful Degradation Patterns
+        """
         active_ids = set(self.active_memory.keys())
 
         # Get IDs that should be in active for continuity
@@ -574,11 +585,25 @@ class ActiveMemoryManager:
                     if len(self.active_memory) < self.active_capacity * 1.2:  # Allow 20% overflow
                         self.active_memory[memory_id] = embedding
                 except KeyError:
-                    # Memory not found in any tier - skip silently
+                    # GRACEFUL DEGRADATION: Memory not found in any tier
+                    # WHY: Temporal continuity is best-effort, not critical. The memory
+                    # may have been archived, compacted, or deleted as part of normal
+                    # memory lifecycle. Raising an exception here would break the entire
+                    # memory system for a non-critical optimization.
+                    # WHEN: This occurs when a memory ID from temporal context no longer
+                    # exists in any tier - expected during normal operation over time.
+                    # See: docs/adr/0004-graceful-degradation-patterns.md
                     pass
 
     def _compact_long_term(self) -> None:
-        """Compact long-term memory storage."""
+        """Compact long-term memory storage.
+
+        Re-optimizes basis vectors based on current data samples for better
+        compression efficiency. Gracefully handles corrupted entries.
+
+        Why: Periodic compaction maintains storage efficiency as new memories
+        are added and the data distribution evolves over time.
+        """
         # Re-optimize basis vectors based on current data
         embeddings = []
         for memory_id in list(self.long_term_memory.keys())[:1000]:  # Sample
@@ -586,7 +611,10 @@ class ActiveMemoryManager:
                 emb = self.lossless_compactor.reconstruct(self.long_term_memory[memory_id])
                 embeddings.append(emb)
             except (KeyError, RuntimeError):
-                # Skip corrupted or missing memory entries during compaction
+                # GRACEFUL DEGRADATION: Skip corrupted or missing memory entries
+                # WHY: Compaction should not fail due to individual corrupt entries.
+                # Missing or corrupted entries are logged elsewhere and can be
+                # cleaned up separately without blocking the compaction process.
                 pass
 
         if embeddings:
