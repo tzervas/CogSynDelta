@@ -180,6 +180,10 @@ class PersistentMemoryBank(nn.Module):
     Compression: 10-100x ratio with >0.95 fidelity
     """
 
+    # Type hints for registered buffers
+    working_memory: torch.Tensor
+    short_term_memory: torch.Tensor
+
     def __init__(
         self,
         embed_dim: int = 512,
@@ -227,7 +231,7 @@ class PersistentMemoryBank(nn.Module):
             self.compressor = MemoryCompressor(embed_dim=embed_dim)
 
         # Temporal continuity tracker
-        self.temporal_continuity = {
+        self.temporal_continuity: dict[str, Any] = {
             "last_checkpoint": None,
             "sequence_id": 0,
             "total_memories": 0,
@@ -541,7 +545,7 @@ class InfiniteLoopSafeguard:
         self.start_time = datetime.now()
 
         # Ethical constraints
-        self.ethical_constraints = {
+        self.ethical_constraints: dict[str, Any] = {
             "max_output_size": 10 * 1024 * 1024,  # 10MB
             "max_memory_usage": 1024 * 1024 * 1024,  # 1GB
             "forbidden_patterns": ["infinite_loop", "memory_bomb", "fork_bomb"],

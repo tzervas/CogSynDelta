@@ -235,14 +235,14 @@ class PCNVAEGANHybrid(nn.Module):
             Best sample and selection scores
         """
         # Compute log likelihood for each sample
-        log_likelihoods = []
+        log_likelihood_list: list[torch.Tensor] = []
         for sample in samples:
             # Log likelihood based on reconstruction quality
             mse = F.mse_loss(sample, x.expand_as(sample), reduction="none").sum(dim=-1)
             log_lik = -mse  # Higher is better
-            log_likelihoods.append(log_lik)
+            log_likelihood_list.append(log_lik)
 
-        log_likelihoods = torch.stack(log_likelihoods)  # [k, batch]
+        log_likelihoods = torch.stack(log_likelihood_list)  # [k, batch]
 
         # Simple prior: prefer samples closer to mean
         log_prior = -torch.norm(samples - x.expand_as(samples), dim=-1)  # [k, batch]
@@ -279,16 +279,17 @@ class PCNVAEGANHybrid(nn.Module):
         original_params = {name: param.clone() for name, param in self.named_parameters()}
 
         # Inner loop: Adapt on support set
+        params = list(self.parameters())
         for step in range(self.num_inner_steps):
             recon_x, mu, logvar = self.forward(x_support)
             inner_loss, _ = self.vae_loss(recon_x, x_support, mu, logvar)
 
             # Compute gradients
-            grads = torch.autograd.grad(inner_loss, self.parameters(), create_graph=True)
+            grads = torch.autograd.grad(inner_loss, params, create_graph=True)
 
             # Update parameters with inner learning rate
             with torch.no_grad():
-                for param, grad in zip(self.parameters(), grads):
+                for param, grad in zip(params, grads):
                     param.data = param.data - self.inner_lr * grad
 
         # Outer loop: Evaluate on query set
