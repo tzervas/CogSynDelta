@@ -15,7 +15,13 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Subset
 import argparse
 import os
-from pcn_vae_gan import create_model, load_config
+import sys
+from pathlib import Path
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from cogsyndelta.core.pcn_vae_gan import create_model, load_config
 
 
 def train_epoch(model, dataloader, optimizer, device, config):
@@ -175,7 +181,7 @@ def test_meta_optimization(model, train_loader, device):
 
 def main():
     parser = argparse.ArgumentParser(description='MNIST Test for PCN-VAE-GAN Hybrid')
-    parser.add_argument('--config', type=str, default='config.yaml',
+    parser.add_argument('--config', type=str, default=str(Path(__file__).parent.parent / 'config/config.yaml'),
                         help='Path to config file')
     parser.add_argument('--batch-size', type=int, default=128,
                         help='Batch size for training')

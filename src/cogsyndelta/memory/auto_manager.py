@@ -761,7 +761,7 @@ if __name__ == '__main__':
     print("INTELLIGENT AUTO-MANAGEMENT SYSTEM")
     print("="*70)
     
-    from unified_tools import UnifiedMemoryManager
+    from cogsyndelta.memory.unified_tools import UnifiedMemoryManager
     
     # Create managers
     unified_manager = UnifiedMemoryManager(embed_dim=512)
