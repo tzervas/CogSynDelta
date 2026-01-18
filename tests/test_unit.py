@@ -11,7 +11,13 @@ Tests all components without requiring MNIST download:
 import torch
 import torch.nn.functional as F
 import numpy as np
-from pcn_vae_gan import create_model, load_config
+import sys
+from pathlib import Path
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from cogsyndelta.core.pcn_vae_gan import create_model, load_config
 
 
 def test_vae_loss_formula():
@@ -20,8 +26,8 @@ def test_vae_loss_formula():
     print("TEST 1: VAE Loss Formula")
     print("="*60)
     
-    config = load_config('config.yaml')
-    model = create_model('config.yaml')
+    config = load_config(str(Path(__file__).parent.parent / "config/config.yaml"))
+    model = create_model(str(Path(__file__).parent.parent / 'config/config.yaml'))
     model.eval()
     
     # Create synthetic data
@@ -71,8 +77,8 @@ def test_exploratory_phase_sampling():
     print("TEST 2: Exploratory Phase - Configurable σ Sampling")
     print("="*60)
     
-    config = load_config('config.yaml')
-    model = create_model('config.yaml')
+    config = load_config(str(Path(__file__).parent.parent / "config/config.yaml"))
+    model = create_model(str(Path(__file__).parent.parent / 'config/config.yaml'))
     model.eval()
     
     # Create synthetic data
@@ -126,8 +132,8 @@ def test_culling_phase_bayesian():
     print("TEST 3: Culling Phase - Bayesian Inference")
     print("="*60)
     
-    config = load_config('config.yaml')
-    model = create_model('config.yaml')
+    config = load_config(str(Path(__file__).parent.parent / "config/config.yaml"))
+    model = create_model(str(Path(__file__).parent.parent / 'config/config.yaml'))
     model.eval()
     
     # Create synthetic data
@@ -172,8 +178,8 @@ def test_meta_optimization_maml():
     print("TEST 4: Meta-Optimization - MAML Gradients")
     print("="*60)
     
-    config = load_config('config.yaml')
-    model = create_model('config.yaml')
+    config = load_config(str(Path(__file__).parent.parent / "config/config.yaml"))
+    model = create_model(str(Path(__file__).parent.parent / 'config/config.yaml'))
     model.eval()
     
     print(f"✓ Testing MAML: L_meta = E[L_inner(θ_Φ)]")
@@ -217,7 +223,7 @@ def test_config_loading():
     print("TEST 5: YAML Configuration Loading")
     print("="*60)
     
-    config = load_config('config.yaml')
+    config = load_config(str(Path(__file__).parent.parent / "config/config.yaml"))
     
     print(f"✓ Configuration loaded successfully")
     print(f"\n  Exploratory phase:")
@@ -254,8 +260,8 @@ def test_model_components():
     print("TEST 6: Model Components")
     print("="*60)
     
-    config = load_config('config.yaml')
-    model = create_model('config.yaml')
+    config = load_config(str(Path(__file__).parent.parent / "config/config.yaml"))
+    model = create_model(str(Path(__file__).parent.parent / 'config/config.yaml'))
     
     print(f"✓ Model architecture:")
     print(f"  Input dim: {model.input_dim}")
