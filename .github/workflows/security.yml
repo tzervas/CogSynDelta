@@ -1,0 +1,159 @@
+# Security scanning workflow for CogSynDelta (Private Repository)
+# Includes CodeQL SAST, dependency review, and secret scanning
+
+name: Security
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run weekly security scans
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+# Restrict permissions for security
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+env:
+  UV_VERSION: "0.7.17"
+
+jobs:
+  # CodeQL Static Analysis (SAST)
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          # Use extended queries for more thorough analysis
+          queries: security-extended,security-and-quality
+          # Config for private repo - no code upload
+          config: |
+            paths-ignore:
+              - tests
+              - benchmarks
+              - examples
+              - docs
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+          # Upload to GitHub Security tab only (private)
+          upload: true
+
+  # Dependency Review (PR only)
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Fail on high/critical vulnerabilities
+          fail-on-severity: high
+          # Allow specific licenses
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0
+          # Deny copyleft licenses for proprietary compatibility
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0
+
+  # Snyk Security Scan (requires SNYK_TOKEN secret)
+  snyk:
+    name: Snyk Security Scan
+    runs-on: ubuntu-latest
+    # Only run if SNYK_TOKEN is configured
+    if: ${{ vars.ENABLE_SNYK == 'true' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Generate requirements for Snyk
+        run: |
+          uv export --no-hashes > requirements-snyk.txt
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/python@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --file=requirements-snyk.txt --severity-threshold=high
+
+      - name: Upload Snyk results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: snyk.sarif
+        continue-on-error: true
+
+  # Python-specific security checks
+  python-security:
+    name: Python Security Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install security tools
+        run: |
+          uv tool install bandit
+          uv tool install pip-audit
+
+      - name: Run Bandit security linter
+        run: |
+          uv tool run bandit -r src/ -f json -o bandit-report.json || true
+          uv tool run bandit -r src/ -ll -ii
+        continue-on-error: true
+
+      - name: Run pip-audit for known vulnerabilities
+        run: |
+          uv export --no-hashes > requirements-audit.txt
+          uv tool run pip-audit -r requirements-audit.txt --desc on
+        continue-on-error: true
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+          retention-days: 30
