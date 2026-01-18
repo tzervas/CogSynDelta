@@ -90,6 +90,11 @@ class TemporalMemoryBank(nn.Module):
     Implements silent semantic state retention across time.
     """
 
+    # Type hints for registered buffers
+    memory: torch.Tensor
+    memory_age: torch.Tensor
+    write_pointer: torch.Tensor
+
     def __init__(
         self, memory_size: int = 1000, embed_dim: int = 512, num_read_heads: int = 4
     ) -> None:
@@ -130,17 +135,21 @@ class TemporalMemoryBank(nn.Module):
 
         for i in range(batch_size):
             # Compute write location
-            write_idx = self.write_pointer.item() % self.memory_size
+            write_idx = int(self.write_pointer.item()) % self.memory_size
 
             # Write to memory
             self.memory[write_idx] = content[i].detach()
             self.memory_age[write_idx] = 0  # Reset age
 
             # Update pointer
-            self.write_pointer = (self.write_pointer + 1) % self.memory_size
+            self.write_pointer = torch.tensor(
+                (int(self.write_pointer.item()) + 1) % self.memory_size,
+                dtype=torch.long,
+                device=self.write_pointer.device,
+            )
 
         # Age existing memories
-        self.memory_age += 1
+        self.memory_age = self.memory_age + 1
 
     def read(self, query: torch.Tensor, num_reads: int = 5) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -175,7 +184,8 @@ class TemporalMemoryBank(nn.Module):
             Recent memory states [window_size, embed_dim]
         """
         # Get most recent entries
-        ptr = self.write_pointer.item()
+        ptr = int(self.write_pointer.item())
+
         if ptr < window_size:
             # Wrap around
             recent = torch.cat([self.memory[-(window_size - ptr) :], self.memory[:ptr]], dim=0)

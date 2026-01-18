@@ -145,13 +145,17 @@ class LosslessCompactor(nn.Module):
     def _quantize(self, values: torch.Tensor) -> torch.Tensor:
         """Quantize values to nearest level."""
         # Find nearest quantization level
-        diffs = (values.unsqueeze(-1) - self.quantization_levels).abs()
+        quantization_levels = self.quantization_levels
+        assert isinstance(quantization_levels, torch.Tensor)
+        diffs = (values.unsqueeze(-1) - quantization_levels).abs()
         indices = diffs.argmin(dim=-1)
         return indices.short()
 
     def _dequantize(self, indices: torch.Tensor) -> torch.Tensor:
         """Dequantize indices back to values."""
-        return self.quantization_levels[indices.long()]
+        quantization_levels = self.quantization_levels
+        assert isinstance(quantization_levels, torch.Tensor)
+        return quantization_levels[indices.long()]
 
     def verify_lossless(self, original: torch.Tensor) -> tuple[float, float]:
         """

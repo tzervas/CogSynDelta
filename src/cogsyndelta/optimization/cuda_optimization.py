@@ -139,7 +139,8 @@ class RTX5080Optimizer:
 
         # Compile model (PyTorch 2.0+)
         try:
-            model = torch.compile(model, mode="max-autotune")
+            compiled = torch.compile(model, mode="max-autotune")
+            model = compiled  # type: ignore[assignment]
             print("✅ Model compiled with torch.compile")
         except Exception as e:
             print(f"⚠️  torch.compile not available: {e}")
