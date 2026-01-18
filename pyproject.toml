@@ -263,6 +263,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "PLR2004"]  # Allow asserts and magic values in tests
 "scripts/**/*.py" = ["S603", "S607"]   # Allow subprocess in scripts
+"benchmarks/**/*.py" = ["F841"]        # Allow unused variables in benchmarks (timing loops)
+"examples/**/*.py" = ["F841"]          # Allow unused variables in examples (demos)
 
 [tool.ruff.lint.isort]
 known-first-party = ["cogsyndelta"]

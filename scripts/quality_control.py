@@ -24,6 +24,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -342,7 +343,7 @@ class CodeQualityValidator:
         if self.issues:
             print("\nTop Issues:")
             for issue in sorted(self.issues, key=lambda x: (x.severity, x.file))[:10]:
-                print(f"  [{issue.severity.upper()}] {os.path.basename(issue.file)}:{issue.line}")
+                print(f"  [{issue.severity.upper()}] {Path(issue.file).name}:{issue.line}")
                 print(f"    {issue.message}")
                 print(f"    Suggestion: {issue.suggestion}")
 
@@ -385,8 +386,9 @@ class IntentionValidator:
                         issues = self._validate_function_intention(node, filepath)
                         mismatches.extend(issues)
 
-            except Exception:
-                pass  # Skip files with errors
+            except SyntaxError:
+                # Skip files with syntax errors (can't parse)
+                continue
 
         print(f"\nValidated intentions in {len(python_files)} files")
         print(f"Intention mismatches found: {len(mismatches)}")
