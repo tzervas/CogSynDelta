@@ -39,7 +39,6 @@ jobs:
 
     - name: Type check with mypy
       run: mypy src/
-      continue-on-error: true  # Allow mypy errors during early development
 
   pre-commit:
     name: Pre-commit Checks
