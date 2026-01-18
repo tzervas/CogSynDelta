@@ -1,8 +1,10 @@
 # CogSynDelta: Self-Improving AI System
 
-[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
+[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.5+-red.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-brightgreen)](https://github.com/tzervas/CogSynDelta/actions)
+[![Type Coverage](https://img.shields.io/badge/type%20coverage-79%25-yellow)](QUALITY_IMPROVEMENTS.md)
 
 **A production-ready, brain-inspired self-improving AI system with VL-JEPA, mHC, quantum computing support, and Google ADK compliance.**
 
@@ -24,16 +26,23 @@ CogSynDelta is a cutting-edge self-improving AI architecture designed for real-w
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install -e .
+
+# Install development tools
+pip install -e ".[dev]"
 
 # Start OpenAPI server
-python api_server.py
+python -m cogsyndelta.api.server
+# or
+cogsyndelta-server
 
 # Run benchmarks
-python benchmarks.py
+python -m benchmarks.run
+# or
+cogsyndelta-benchmark
 
 # Run tests
-python test_unit.py
+pytest tests/ -v
 ```
 
 Visit http://localhost:8000/docs for interactive API documentation.
@@ -45,7 +54,7 @@ Visit http://localhost:8000/docs for interactive API documentation.
 - **[Agent Development](docs/AGENT_DEVELOPMENT.md)** - Building custom agents
 - **[Contributing](docs/CONTRIBUTING.md)** - Contribution guidelines
 - **[Configuration](docs/CONFIGURATION.md)** - Configuration reference
-- **[Benchmarks](docs/BENCHMARKS.md)** - Performance measurements
+- **[Quality Improvements](QUALITY_IMPROVEMENTS.md)** - Recent improvements and metrics
 
 ## 🎯 Key Features
 
@@ -79,21 +88,70 @@ All claims are validated with concrete measurements:
 
 ```
 CogSynDelta/
-├── pcn_vae_gan.py              # Core PCN-VAE-GAN hybrid
-├── vl_jepa_extension.py        # VL-JEPA with mHC
-├── memory_persistence.py       # Persistent memory system
-├── dense_embeddings.py         # Dense differential compression
-├── model_sectioning.py         # Dynamic model sectioning
-├── interconnect_manager.py     # Communication management
-├── self_improving_agents.py    # Agent framework
-├── quantum_compute.py          # Quantum computing backends
-├── google_adk_adapter.py       # Google ADK compliance
-├── integrated_system.py        # Complete integrated system
-├── api_server.py              # OpenAPI REST/WebSocket server
-├── benchmarks.py              # Performance validation
-├── config.yaml                # System configuration
-└── docs/                      # Documentation
+├── src/cogsyndelta/
+│   ├── core/                    # Core components
+│   │   ├── pcn_vae_gan.py          # PCN-VAE-GAN hybrid
+│   │   ├── vl_jepa_extension.py    # VL-JEPA with mHC
+│   │   ├── model_sectioning.py     # Dynamic model sectioning
+│   │   ├── interconnect_manager.py # Communication management
+│   │   └── integrated_system.py    # Complete system
+│   ├── memory/                  # Memory systems
+│   │   ├── active_memory.py        # Tiered memory manager
+│   │   ├── memory_persistence.py   # Persistent memory
+│   │   ├── dense_embeddings.py     # Dense compression
+│   │   ├── unified_tools.py        # Memory tools
+│   │   └── auto_manager.py         # Auto-management
+│   ├── agents/                  # Agent systems
+│   │   └── self_improving_agents.py
+│   ├── quantum/                 # Quantum computing
+│   │   └── quantum_compute.py
+│   ├── optimization/            # Performance optimization
+│   │   └── cuda_optimization.py
+│   └── api/                     # API layer
+│       ├── server.py               # FastAPI server
+│       └── google_adk_adapter.py   # ADK compliance
+├── examples/                    # Example scripts
+│   ├── basic_training.py        # MNIST training
+│   ├── memory_management.py     # Memory demo
+│   ├── api_server.py            # API server
+│   ├── self_improving_agents.py # Agent demo
+│   ├── quantum_computing.py     # Quantum demo
+│   └── README.md                # Examples guide
+├── benchmarks/                  # Performance benchmarks
+│   ├── run.py                   # Benchmark suite
+│   └── __init__.py
+├── tests/                       # Test suite
+│   ├── test_unit.py
+│   ├── test_mnist.py
+│   └── test_comprehensive.py
+├── docs/                        # Documentation
+├── config/                      # Configuration files
+├── .github/workflows/           # CI/CD pipelines
+└── pyproject.toml              # Package configuration
 ```
+
+## 💡 Examples
+
+Comprehensive examples are available in the `examples/` directory:
+
+```bash
+# Basic model training
+python examples/basic_training.py
+
+# Memory system demonstration
+python examples/memory_management.py
+
+# Start API server
+python examples/api_server.py
+
+# Self-improving agents
+python examples/self_improving_agents.py
+
+# Quantum computing (requires quantum packages)
+python examples/quantum_computing.py
+```
+
+See [examples/README.md](examples/README.md) for detailed usage instructions.
 
 ## 🔧 Configuration
 
@@ -123,21 +181,38 @@ model_sectioning:
 ## 🧪 Testing & Validation
 
 ```bash
-# Run unit tests
-python test_unit.py
+# Run all tests
+pytest tests/ -v
 
-# Run MNIST test
-python test_mnist.py
+# Run with coverage
+pytest tests/ -v --cov=cogsyndelta --cov-report=html
 
-# Run comprehensive benchmarks
-python benchmarks.py
+# Run specific test suite
+pytest tests/test_unit.py -v
+pytest tests/test_mnist.py -v
+pytest tests/test_comprehensive.py -v
 
-# Validate compression claims
-python -c "from benchmarks import validate_compression_claims; validate_compression_claims()"
+# Run benchmarks
+cogsyndelta-benchmark
+# or
+python -m benchmarks.run
 
-# Validate performance claims
-python -c "from benchmarks import validate_performance_claims; validate_performance_claims()"
+# Code quality checks
+ruff check src/ tests/         # Linting
+black src/ tests/              # Formatting
+mypy src/                      # Type checking
 ```
+
+### CI/CD
+
+Automated testing runs on every push via GitHub Actions:
+- ✅ Multi-Python version testing (3.9, 3.10, 3.11, 3.12)
+- ✅ Code quality checks (ruff, black, mypy)
+- ✅ Test coverage reporting
+- ✅ CodeQL security analysis
+- ✅ Package build verification
+
+See [QUALITY_IMPROVEMENTS.md](QUALITY_IMPROVEMENTS.md) for recent improvements.
 
 ## 🌐 API Usage
 
@@ -217,17 +292,21 @@ Key areas:
 
 ## 📊 Benchmarks
 
-All performance claims are validated with measured benchmarks:
+All performance claims are validated with measured benchmarks. **CPU baseline established** (20-core system):
 
 | Metric | Value | Unit | Validation |
 |--------|-------|------|------------|
-| Compression Ratio | 10-50x | ratio | Measured on test data |
-| Reconstruction Fidelity | >0.95 | cosine similarity | Measured |
-| Inference Time | ~50ms | ms/sample | Measured (CPU) |
-| Memory Usage | ~200MB | MB | Measured |
-| Model Size | ~2.5MB | MB | Measured |
+| Matrix Operations | 8.6 | GFLOPS | ✅ Measured on CPU |
+| NN Inference | 5,152 | samples/sec | ✅ Batch 128, measured |
+| Memory Compression | 16× | ratio | ✅ 27M samples/sec |
+| Compression Fidelity | 0.67 | cosine similarity | ✅ At 2× ratio |
 
-See [BENCHMARKS.md](docs/BENCHMARKS.md) for detailed results.
+**GPU Status:** RTX 5080 detected but not yet supported by PyTorch (sm_120 architecture). See [GPU_COMPATIBILITY.md](GPU_COMPATIBILITY.md) and [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for details.
+
+**Expected GPU Performance** (when supported):
+- Matrix ops: 50-80 TFLOPS (100-200× faster)
+- NN inference: ~250,000 samples/sec (50× faster)  
+- Training: ~500,000 samples/sec
 
 ## 🔒 Safety & Ethics
 

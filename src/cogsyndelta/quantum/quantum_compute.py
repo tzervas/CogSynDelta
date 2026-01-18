@@ -71,13 +71,13 @@ class ComputeResult:
 class ComputeBackend(ABC):
     """Abstract base class for compute backends."""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
         self.backend_type = config.get('type', ComputeBackendType.CLASSICAL_CPU)
         self.initialized = False
     
     @abstractmethod
-    async def initialize(self):
+    async def initialize(self) -> Any:
         """Initialize the compute backend."""
         pass
     
@@ -87,7 +87,7 @@ class ComputeBackend(ABC):
         pass
     
     @abstractmethod
-    async def shutdown(self):
+    async def shutdown(self) -> Any:
         """Clean shutdown of backend."""
         pass
     
@@ -103,7 +103,7 @@ class ComputeBackend(ABC):
 class ClassicalCPUBackend(ComputeBackend):
     """Standard CPU compute backend."""
     
-    async def initialize(self):
+    async def initialize(self) -> Any:
         """Initialize CPU backend."""
         self.device = torch.device('cpu')
         self.initialized = True
@@ -147,7 +147,7 @@ class ClassicalCPUBackend(ComputeBackend):
                 error=str(e)
             )
     
-    async def shutdown(self):
+    async def shutdown(self) -> Any:
         """Shutdown CPU backend."""
         self.initialized = False
 
@@ -155,7 +155,7 @@ class ClassicalCPUBackend(ComputeBackend):
 class ClassicalGPUBackend(ComputeBackend):
     """GPU compute backend."""
     
-    async def initialize(self):
+    async def initialize(self) -> Any:
         """Initialize GPU backend."""
         if torch.cuda.is_available():
             self.device = torch.device('cuda')
@@ -201,7 +201,7 @@ class ClassicalGPUBackend(ComputeBackend):
                 error=str(e)
             )
     
-    async def shutdown(self):
+    async def shutdown(self) -> Any:
         """Shutdown GPU backend."""
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -218,7 +218,7 @@ class QuantumGateBackend(ComputeBackend):
     Supports gate model quantum computers (IBM, Google, IonQ, etc.)
     """
     
-    async def initialize(self):
+    async def initialize(self) -> Any:
         """Initialize quantum backend."""
         # Try to import quantum libraries
         try:
@@ -326,7 +326,7 @@ class QuantumGateBackend(ComputeBackend):
         # Quantum kernels can provide exponential feature space
         return np.exp(-0.5 * np.sum(data**2, axis=-1, keepdims=True))
     
-    async def shutdown(self):
+    async def shutdown(self) -> Any:
         """Shutdown quantum backend."""
         self.initialized = False
 
@@ -337,7 +337,7 @@ class QuantumHybridBackend(ComputeBackend):
     Orchestrates between classical and quantum compute for optimal performance.
     """
     
-    async def initialize(self):
+    async def initialize(self) -> Any:
         """Initialize hybrid backend."""
         self.classical_backend = ClassicalGPUBackend(self.config) if torch.cuda.is_available() else ClassicalCPUBackend(self.config)
         self.quantum_backend = QuantumGateBackend(self.config)
@@ -415,7 +415,7 @@ class QuantumHybridBackend(ComputeBackend):
                 error=str(e)
             )
     
-    async def shutdown(self):
+    async def shutdown(self) -> Any:
         """Shutdown hybrid backend."""
         await self.classical_backend.shutdown()
         await self.quantum_backend.shutdown()
@@ -434,7 +434,7 @@ class SubModelInterface(nn.Module):
     can be offloaded to quantum or other specialized processors.
     """
     
-    def __init__(self, compute_backend: ComputeBackend):
+    def __init__(self, compute_backend: ComputeBackend) -> None:
         super(SubModelInterface, self).__init__()
         self.compute_backend = compute_backend
         self.model_id = None
@@ -471,7 +471,7 @@ class QuantumSubModel(SubModelInterface):
     Can be embedded in classical neural networks to add quantum layers.
     """
     
-    def __init__(self, input_dim: int, output_dim: int, num_qubits: int = 10):
+    def __init__(self, input_dim: int, output_dim: int, num_qubits: int = 10) -> None:
         quantum_backend = QuantumGateBackend({
             'type': ComputeBackendType.QUANTUM_GATE,
             'num_qubits': num_qubits
@@ -523,7 +523,7 @@ class SideModelCoprocessor:
     or specialized processing (e.g., quantum feature extraction).
     """
     
-    def __init__(self, model: nn.Module, compute_backend: ComputeBackend):
+    def __init__(self, model: nn.Module, compute_backend: ComputeBackend) -> None:
         self.model = model
         self.compute_backend = compute_backend
         self.cache = {}
@@ -566,16 +566,16 @@ class ComputeOrchestrator:
     based on workload characteristics and resource availability.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.backends: Dict[ComputeBackendType, ComputeBackend] = {}
         self.job_queue = asyncio.Queue()
         self.active_jobs = {}
     
-    def register_backend(self, backend: ComputeBackend):
+    def register_backend(self, backend: ComputeBackend) -> Any:
         """Register a compute backend."""
         self.backends[backend.backend_type] = backend
     
-    async def initialize_all(self):
+    async def initialize_all(self) -> Any:
         """Initialize all registered backends."""
         for backend in self.backends.values():
             try:
@@ -626,7 +626,7 @@ class ComputeOrchestrator:
         else:
             return ComputeBackendType.CLASSICAL_CPU
     
-    async def shutdown_all(self):
+    async def shutdown_all(self) -> Any:
         """Shutdown all backends."""
         for backend in self.backends.values():
             await backend.shutdown()
@@ -641,7 +641,7 @@ class QuantumEnhancedVAE(nn.Module):
     Example: VAE with quantum sub-model for latent space processing.
     """
     
-    def __init__(self, input_dim: int, latent_dim: int, use_quantum: bool = False):
+    def __init__(self, input_dim: int, latent_dim: int, use_quantum: bool = False) -> None:
         super(QuantumEnhancedVAE, self).__init__()
         
         self.input_dim = input_dim
@@ -698,7 +698,7 @@ if __name__ == '__main__':
     print("="*70)
     print()
     
-    async def demo():
+    async def demo() -> Any:
         # Create orchestrator
         orchestrator = ComputeOrchestrator()
         

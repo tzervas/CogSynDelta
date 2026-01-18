@@ -48,7 +48,7 @@ class LosslessCompactor(nn.Module):
     4. Reconstruct perfectly on demand
     """
     
-    def __init__(self, embed_dim: int = 512, num_basis: int = 128):
+    def __init__(self, embed_dim: int = 512, num_basis: int = 128) -> None:
         super(LosslessCompactor, self).__init__()
         
         self.embed_dim = embed_dim
@@ -184,7 +184,7 @@ class TemporalChainManager:
     - Temporal relevance scores
     """
     
-    def __init__(self, chain_capacity: int = 10000):
+    def __init__(self, chain_capacity: int = 10000) -> None:
         self.chain_capacity = chain_capacity
         
         # Temporal chains
@@ -198,7 +198,7 @@ class TemporalChainManager:
     
     def add_to_chain(self, memory_id: str, timestamp: datetime,
                     causes: Optional[List[str]] = None,
-                    context_ids: Optional[Set[str]] = None):
+                    context_ids: Optional[Set[str]] = None) -> Any:
         """Add memory to temporal chain."""
         # Add to causal chain
         if causes:
@@ -253,7 +253,7 @@ class TemporalChainManager:
         
         return ancestors
     
-    def update_relevance(self, memory_id: str, access_time: datetime):
+    def update_relevance(self, memory_id: str, access_time: datetime) -> None:
         """Update temporal relevance based on access."""
         if memory_id not in self.relevance_scores:
             self.relevance_scores[memory_id] = 1.0
@@ -321,7 +321,7 @@ class ActiveMemoryManager:
     Knowledge: Persistent facts/skills (optimized storage)
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         self.embed_dim = embed_dim
         
         # Memory tiers
@@ -444,7 +444,7 @@ class ActiveMemoryManager:
         
         raise KeyError(f"Memory {memory_id} not found in any tier")
     
-    def manage_tiers(self):
+    def manage_tiers(self) -> None:
         """
         Actively manage memory tiers.
         
@@ -508,7 +508,7 @@ class ActiveMemoryManager:
         """Decompress lossy compressed data."""
         return compressed['data'].float()
     
-    def _promote_to_active(self, memory_id: str, embedding: torch.Tensor):
+    def _promote_to_active(self, memory_id: str, embedding: torch.Tensor) -> None:
         """Promote memory to active tier."""
         if len(self.active_memory) >= self.active_capacity:
             self.manage_tiers()  # Make room
@@ -519,7 +519,7 @@ class ActiveMemoryManager:
         if memory_id in self.short_term_memory:
             del self.short_term_memory[memory_id]
     
-    def _promote_to_short_term(self, memory_id: str, embedding: torch.Tensor):
+    def _promote_to_short_term(self, memory_id: str, embedding: torch.Tensor) -> None:
         """Promote memory to short-term tier."""
         if len(self.short_term_memory) >= self.short_term_capacity:
             self.manage_tiers()  # Make room
@@ -531,7 +531,7 @@ class ActiveMemoryManager:
         if memory_id in self.long_term_memory:
             del self.long_term_memory[memory_id]
     
-    def _demote_to_short_term(self, memory_id: str, embedding: torch.Tensor):
+    def _demote_to_short_term(self, memory_id: str, embedding: torch.Tensor) -> None:
         """Demote memory to short-term tier."""
         compressed = self._compress_lossy(embedding)
         self.short_term_memory[memory_id] = compressed
@@ -540,7 +540,7 @@ class ActiveMemoryManager:
         if memory_id in self.active_memory:
             del self.active_memory[memory_id]
     
-    def _demote_to_long_term(self, memory_id: str, embedding: torch.Tensor):
+    def _demote_to_long_term(self, memory_id: str, embedding: torch.Tensor) -> None:
         """Demote memory to long-term tier with lossless compression."""
         compressed = self.lossless_compactor.compact(embedding)
         self.long_term_memory[memory_id] = compressed
@@ -549,7 +549,7 @@ class ActiveMemoryManager:
         if memory_id in self.short_term_memory:
             del self.short_term_memory[memory_id]
     
-    def _ensure_temporal_continuity(self):
+    def _ensure_temporal_continuity(self) -> None:
         """Ensure temporal continuity in active memory."""
         active_ids = set(self.active_memory.keys())
         
@@ -566,7 +566,7 @@ class ActiveMemoryManager:
                 except KeyError:
                     pass
     
-    def _compact_long_term(self):
+    def _compact_long_term(self) -> None:
         """Compact long-term memory storage."""
         # Re-optimize basis vectors based on current data
         embeddings = []
