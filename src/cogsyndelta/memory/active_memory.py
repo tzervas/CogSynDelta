@@ -565,6 +565,7 @@ class ActiveMemoryManager:
                     if len(self.active_memory) < self.active_capacity * 1.2:  # Allow 20% overflow
                         self.active_memory[memory_id] = embedding
                 except KeyError:
+                    # Memory not found in any tier - skip silently
                     pass
     
     def _compact_long_term(self) -> None:
@@ -575,7 +576,8 @@ class ActiveMemoryManager:
             try:
                 emb = self.lossless_compactor.reconstruct(self.long_term_memory[memory_id])
                 embeddings.append(emb)
-            except:
+            except (KeyError, RuntimeError):
+                # Skip corrupted or missing memory entries during compaction
                 pass
         
         if embeddings:
