@@ -61,7 +61,7 @@ class PerformanceBenchmark:
     - Model size (MB)
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.results: List[BenchmarkResult] = []
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -207,7 +207,7 @@ class CompressionBenchmark:
     - Compression/decompression speed
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.results: List[BenchmarkResult] = []
     
     def measure_compression_ratio(self, original: torch.Tensor, 
@@ -304,7 +304,7 @@ class AccuracyBenchmark:
     Tests actual performance, not theoretical.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.results: List[BenchmarkResult] = []
     
     def measure_vae_loss(self, model, data_loader, num_batches: int = 10) -> Tuple[BenchmarkResult, BenchmarkResult]:
@@ -361,7 +361,7 @@ class BenchmarkSuite:
     Generates reproducible reports with statistical validation.
     """
     
-    def __init__(self, output_dir: str = "./benchmark_results"):
+    def __init__(self, output_dir: str = "./benchmark_results") -> None:
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
         
@@ -445,7 +445,7 @@ class BenchmarkSuite:
         
         return report_path
     
-    def compare_with_baseline(self, baseline_path: str):
+    def compare_with_baseline(self, baseline_path: str) -> None:
         """Compare current results with baseline."""
         with open(baseline_path, 'r') as f:
             baseline = json.load(f)
@@ -458,7 +458,7 @@ class BenchmarkSuite:
                 print(f"  {metric}: {improvement:+.1f}% change")
 
 
-def validate_compression_claims():
+def validate_compression_claims() -> Tuple[Optional[float], Optional[float]]:
     """
     Validate compression ratio and fidelity claims with actual tests.
     
@@ -515,7 +515,7 @@ def validate_compression_claims():
         return None, None
 
 
-def validate_performance_claims():
+def validate_performance_claims() -> Tuple[Optional[BenchmarkResult], Optional[BenchmarkResult], Optional[BenchmarkResult]]:
     """
     Validate inference speed and efficiency claims.
     """
@@ -564,7 +564,7 @@ def validate_performance_claims():
 
 
 
-def main():
+def main() -> None:
     """Main entry point for benchmarks."""
     print("="*70)
     print("COMPREHENSIVE BENCHMARK AND VALIDATION SUITE")

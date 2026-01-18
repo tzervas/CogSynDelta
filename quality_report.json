@@ -3,24 +3,23 @@
   "status": "needs_work",
   "quality_report": {
     "stats": {
-      "files_analyzed": 26,
-      "total_lines": 12692,
-      "total_functions": 329,
-      "total_classes": 120,
-      "issues_found": 116
+      "files_analyzed": 42,
+      "total_lines": 15463,
+      "total_functions": 394,
+      "total_classes": 130,
+      "issues_found": 94
     },
     "issues": {
       "by_severity": {
         "error": 0,
-        "warning": 76,
-        "info": 40
+        "warning": 92,
+        "info": 2
       },
       "by_category": {
-        "docstring": 76,
-        "type_hints": 38,
+        "docstring": 92,
         "naming": 2
       },
-      "total": 116
+      "total": 94
     },
     "quality_score": 0
   },

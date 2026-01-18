@@ -20,9 +20,8 @@ Key features:
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from typing import Dict, List, Optional, Tuple, Set, Any
-from dataclasses import dataclass, field
+from typing import Dict, List, Tuple, Any
+from dataclasses import dataclass
 from collections import defaultdict, deque
 import numpy as np
 

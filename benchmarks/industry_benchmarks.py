@@ -13,9 +13,12 @@ from datetime import datetime
 import json
 
 
+from typing import Dict, List, Any, Optional
+
+
 class MNISTNet(nn.Module):
     """Standard CNN for MNIST (LeNet-5 style)"""
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
@@ -24,7 +27,7 @@ class MNISTNet(nn.Module):
         self.fc1 = nn.Linear(9216, 128)
         self.fc2 = nn.Linear(128, 10)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv1(x)
         x = F.relu(x)
         x = self.conv2(x)
@@ -41,7 +44,7 @@ class MNISTNet(nn.Module):
 
 class ResNetBlock(nn.Module):
     """ResNet-like block for benchmarking"""
-    def __init__(self, in_channels, out_channels, stride=1):
+    def __init__(self, in_channels: int, out_channels: int, stride: int = 1) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, 3, stride, 1, bias=False)
         self.bn1 = nn.BatchNorm2d(out_channels)
@@ -55,7 +58,7 @@ class ResNetBlock(nn.Module):
                 nn.BatchNorm2d(out_channels)
             )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
         out += self.shortcut(x)
@@ -65,7 +68,7 @@ class ResNetBlock(nn.Module):
 
 class SmallResNet(nn.Module):
     """Small ResNet for benchmarking"""
-    def __init__(self, num_classes=10):
+    def __init__(self, num_classes: int = 10) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(3, 64, 7, 2, 3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
@@ -78,13 +81,13 @@ class SmallResNet(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(256, num_classes)
 
-    def _make_layer(self, in_channels, out_channels, num_blocks, stride):
+    def _make_layer(self, in_channels: int, out_channels: int, num_blocks: int, stride: int) -> nn.Sequential:
         layers = [ResNetBlock(in_channels, out_channels, stride)]
         for _ in range(1, num_blocks):
             layers.append(ResNetBlock(out_channels, out_channels, 1))
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.maxpool(F.relu(self.bn1(self.conv1(x))))
         x = self.layer1(x)
         x = self.layer2(x)
@@ -95,10 +98,11 @@ class SmallResNet(nn.Module):
         return x
 
 
-def benchmark_throughput(model, input_shape, device, batch_sizes=[1, 8, 32, 128], num_iterations=100):
+def benchmark_throughput(model: nn.Module, input_shape: tuple, device: torch.device, 
+                        batch_sizes: List[int] = [1, 8, 32, 128], num_iterations: int = 100) -> List[Dict[str, Any]]:
     """Measure inference throughput"""
     model.eval()
-    results = []
+    results: List[Dict[str, Any]] = []
     
     print(f"\n{'='*70}")
     print(f"Throughput Benchmark - {device}")
@@ -143,7 +147,7 @@ def benchmark_throughput(model, input_shape, device, batch_sizes=[1, 8, 32, 128]
     return results
 
 
-def benchmark_mnist_training(device, num_epochs=2):
+def benchmark_mnist_training(device: torch.device, num_epochs: int = 2) -> List[Dict[str, Any]]:
     """Train on MNIST and measure performance"""
     print(f"\n{'='*70}")
     print(f"MNIST Training Benchmark - {device}")
@@ -224,7 +228,7 @@ def benchmark_mnist_training(device, num_epochs=2):
     return results
 
 
-def benchmark_resnet(device, batch_sizes=[16, 32, 64, 128], num_iterations=50):
+def benchmark_resnet(device: torch.device, batch_sizes: List[int] = [16, 32, 64, 128], num_iterations: int = 50) -> List[Dict[str, Any]]:
     """Benchmark ResNet-like model"""
     print(f"\n{'='*70}")
     print(f"ResNet-18 Style Benchmark - {device}")
@@ -236,7 +240,7 @@ def benchmark_resnet(device, batch_sizes=[16, 32, 64, 128], num_iterations=50):
     return benchmark_throughput(model, input_shape, device, batch_sizes, num_iterations)
 
 
-def benchmark_memory_bandwidth(device):
+def benchmark_memory_bandwidth(device: torch.device) -> List[Dict[str, float]]:
     """Benchmark memory bandwidth"""
     print(f"\n{'='*70}")
     print(f"Memory Bandwidth Benchmark - {device}")
@@ -279,7 +283,7 @@ def benchmark_memory_bandwidth(device):
     return results
 
 
-def main():
+def main() -> None:
     """Run comprehensive industry-standard benchmarks"""
     print('='*70)
     print('CogSynDelta - Industry Standard Benchmarks on RTX 5080')
