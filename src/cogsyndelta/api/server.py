@@ -16,7 +16,6 @@ Features:
 """
 
 from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal

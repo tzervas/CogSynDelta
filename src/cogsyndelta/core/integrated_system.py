@@ -14,19 +14,17 @@ Combines all components:
 import torch
 import torch.nn as nn
 from typing import Dict, List, Optional, Any
-import yaml
 
 from cogsyndelta.core.pcn_vae_gan import PCNVAEGANHybrid, load_config
 from cogsyndelta.core.vl_jepa_extension import (
     VisionEncoder, TemporalMemoryBank, HierarchicalPredictiveCoding,
-    JointEmbeddingSpace, FrameBufferAdapter, ModeratedHyperConnection
+    JointEmbeddingSpace, FrameBufferAdapter
 )
 from cogsyndelta.agents.self_improving_agents import (
-    SelfImprovingAgentFramework, AgentType, LanguageFrameworkEncoder,
-    SelfImprovementModule, SecurityHardeningModule, QualityAssuranceModule
+    SelfImprovingAgentFramework,
 )
 from cogsyndelta.memory.memory_persistence import (
-    PersistentMemoryBank, MemoryCompressor, InfiniteLoopSafeguard
+    PersistentMemoryBank, InfiniteLoopSafeguard
 )
 
 
