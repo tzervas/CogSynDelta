@@ -285,8 +285,8 @@ class FlashAttentionOptimized(nn.Module):
                 enable_mem_efficient=True
             ):
                 attn_output = F.scaled_dot_product_attention(q, k, v)
-        except:
-            # Fallback to standard attention
+        except (RuntimeError, AttributeError):
+            # Fallback to standard attention when Flash Attention unavailable
             scale = self.head_dim ** -0.5
             attn = (q @ k.transpose(-2, -1)) * scale
             attn = F.softmax(attn, dim=-1)
