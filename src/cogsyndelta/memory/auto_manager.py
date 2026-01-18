@@ -348,7 +348,13 @@ class IntelligentAutoManager:
         Returns:
             Actions taken and their results
         """
-        actions: dict[str, list[Any]] = {"loaded": [], "unloaded": [], "culled": [], "archived": [], "decisions": []}
+        actions: dict[str, list[Any]] = {
+            "loaded": [],
+            "unloaded": [],
+            "culled": [],
+            "archived": [],
+            "decisions": [],
+        }
 
         # 1. Assess current state
         assessment = self._assess_state(unified_manager, system_state)
