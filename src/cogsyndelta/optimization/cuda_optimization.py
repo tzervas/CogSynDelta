@@ -201,6 +201,10 @@ class RTX5080Optimizer:
         items_per_gb = 10
         max_items = int(available_gb * items_per_gb * 0.8)  # 80% safety margin
 
+        # Handle CPU mode or zero available memory - return full batch
+        if max_items <= 0:
+            return [batch_size]
+
         if batch_size <= max_items:
             return [batch_size]
 

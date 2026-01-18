@@ -144,10 +144,6 @@ class TestRTX5080OptimizerCPU:
             # In CPU mode, embeddings should be returned as-is
             assert torch.equal(optimized, test_embeddings)
 
-    @pytest.mark.xfail(
-        reason="Bug: dynamic_batch_split divides by zero when max_items is 0 in CPU mode",
-        strict=False,
-    )
     def test_dynamic_batch_split_cpu(self, optimizer: RTX5080Optimizer) -> None:
         """Test dynamic batch splitting in CPU mode."""
         splits = optimizer.dynamic_batch_split(batch_size=64)
@@ -166,12 +162,8 @@ class TestRTX5080OptimizerGPU:
         """Mock CUDA as available."""
         with (
             patch("cogsyndelta.optimization.cuda_optimization.CUDA_AVAILABLE", True),
-            patch(
-                "cogsyndelta.optimization.cuda_optimization.TOTAL_MEMORY", 16 * 1024**3
-            ),
-            patch(
-                "cogsyndelta.optimization.cuda_optimization.DEVICE_NAME", "RTX 5080"
-            ),
+            patch("cogsyndelta.optimization.cuda_optimization.TOTAL_MEMORY", 16 * 1024**3),
+            patch("cogsyndelta.optimization.cuda_optimization.DEVICE_NAME", "RTX 5080"),
             patch(
                 "cogsyndelta.optimization.cuda_optimization.COMPUTE_CAPABILITY",
                 (10, 0),
@@ -239,9 +231,7 @@ class TestModelOptimization:
             nn.Linear(256, 10),
         )
 
-    def test_optimize_preserves_architecture(
-        self, simple_model: nn.Module
-    ) -> None:
+    def test_optimize_preserves_architecture(self, simple_model: nn.Module) -> None:
         """Test optimization preserves model architecture."""
         optimizer = RTX5080Optimizer()
         optimized = optimizer.optimize_model(simple_model)
@@ -292,9 +282,7 @@ class TestEmbeddingOptimization:
 
         assert optimized.shape == test_embeddings.shape
 
-    def test_optimize_embeddings_contiguous(
-        self, test_embeddings: torch.Tensor
-    ) -> None:
+    def test_optimize_embeddings_contiguous(self, test_embeddings: torch.Tensor) -> None:
         """Test optimized embeddings are contiguous."""
         optimizer = RTX5080Optimizer()
 
@@ -337,10 +325,6 @@ class TestOptimizationRegressions:
         for key, value in stats.items():
             assert value >= 0, f"Memory stat {key} is negative: {value}"
 
-    @pytest.mark.xfail(
-        reason="Bug: dynamic_batch_split divides by zero when max_items is 0 in CPU mode",
-        strict=False,
-    )
     def test_batch_size_within_bounds(self) -> None:
         """Regression: Batch size must be within configured bounds."""
         optimizer = RTX5080Optimizer()
