@@ -32,7 +32,7 @@ import numpy as np
 
 # Import dense differential encoding
 try:
-    from dense_embeddings import DenseDifferentialMemoryStore, DenseEmbeddingEncoder, DifferentialEncoder
+    from cogsyndelta.memory.dense_embeddings import DenseDifferentialMemoryStore, DenseEmbeddingEncoder, DifferentialEncoder
     DENSE_ENCODING_AVAILABLE = True
 except ImportError:
     DENSE_ENCODING_AVAILABLE = False

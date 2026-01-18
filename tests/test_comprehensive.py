@@ -22,13 +22,18 @@ import numpy as np
 from datetime import datetime, timedelta
 import os
 import tempfile
+import sys
+from pathlib import Path
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
 class TestUnifiedTools(unittest.TestCase):
     """Test unified tools and utilities system."""
     
     def setUp(self):
-        from unified_tools import UnifiedMemoryManager, MemoryType, RelevanceLevel
+        from cogsyndelta.memory.unified_tools import UnifiedMemoryManager, MemoryType, RelevanceLevel
         self.manager = UnifiedMemoryManager(embed_dim=512)
         self.MemoryType = MemoryType
     
@@ -139,8 +144,8 @@ class TestAutoManagement(unittest.TestCase):
     """Test intelligent auto-management system."""
     
     def setUp(self):
-        from auto_manager import IntelligentAutoManager, SystemState
-        from unified_tools import UnifiedMemoryManager, MemoryType
+        from cogsyndelta.memory.auto_manager import IntelligentAutoManager, SystemState
+        from cogsyndelta.memory.unified_tools import UnifiedMemoryManager, MemoryType
         
         self.unified_mgr = UnifiedMemoryManager(embed_dim=512)
         self.auto_mgr = IntelligentAutoManager(
@@ -257,7 +262,7 @@ class TestActiveMemory(unittest.TestCase):
     """Test active memory management with lossless compaction."""
     
     def setUp(self):
-        from active_memory import ActiveMemoryManager, LosslessCompactor
+        from cogsyndelta.memory.active_memory import ActiveMemoryManager, LosslessCompactor
         
         self.manager = ActiveMemoryManager(embed_dim=512)
         self.compactor = LosslessCompactor(embed_dim=512, num_basis=128)
@@ -382,7 +387,7 @@ class TestInterconnectManager(unittest.TestCase):
     """Test intelligent interconnect management."""
     
     def setUp(self):
-        from interconnect_manager import IntelligentInterconnectManager
+        from cogsyndelta.core.interconnect_manager import IntelligentInterconnectManager
         
         self.manager = IntelligentInterconnectManager(
             embed_dim=512,
@@ -446,7 +451,7 @@ class TestModelSectioning(unittest.TestCase):
     """Test dynamic model sectioning."""
     
     def setUp(self):
-        from model_sectioning import SectionedBrainModel, BrainRegionType
+        from cogsyndelta.core.model_sectioning import SectionedBrainModel, BrainRegionType
         
         config = {
             'embed_dim': 512,
@@ -518,10 +523,11 @@ class TestIntegration(unittest.TestCase):
     
     def test_end_to_end_workflow(self):
         """Test complete workflow from input to output."""
-        from integrated_system import IntegratedSelfImprovingSystem
+        from cogsyndelta.core.integrated_system import IntegratedSelfImprovingSystem
         
         # Create system
-        system = IntegratedSelfImprovingSystem('config.yaml')
+        config_path = str(Path(__file__).parent.parent / "config/config.yaml")
+        system = IntegratedSelfImprovingSystem(config_path)
         
         # Process visual input
         frames = torch.randn(2, 3, 224, 224)
@@ -533,8 +539,8 @@ class TestIntegration(unittest.TestCase):
     
     def test_memory_persistence_integration(self):
         """Test memory persistence across the system."""
-        from unified_tools import UnifiedMemoryManager, MemoryType
-        from active_memory import ActiveMemoryManager
+        from cogsyndelta.memory.unified_tools import UnifiedMemoryManager, MemoryType
+        from cogsyndelta.memory.active_memory import ActiveMemoryManager
         
         unified = UnifiedMemoryManager(embed_dim=512)
         active = ActiveMemoryManager(embed_dim=512)
