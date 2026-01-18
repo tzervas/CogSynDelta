@@ -191,7 +191,7 @@ class WebcamAdapter(BaseInputAdapter):
     def __init__(self, config: VideoInputConfig) -> None:
         """Initialize webcam adapter with configuration."""
         self.config = config
-        self.capture = None
+        self.capture: Any = None
 
     async def initialize(self) -> Any:
         """Initialize webcam capture."""
@@ -199,9 +199,10 @@ class WebcamAdapter(BaseInputAdapter):
             import cv2
 
             self.capture = cv2.VideoCapture(self.config.device_id)
-            self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.resolution[0])
-            self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.resolution[1])
-            self.capture.set(cv2.CAP_PROP_FPS, self.config.fps)
+            if self.capture is not None:
+                self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.resolution[0])
+                self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.resolution[1])
+                self.capture.set(cv2.CAP_PROP_FPS, self.config.fps)
         except ImportError:
             raise RuntimeError("OpenCV (cv2) required for webcam input")
 
@@ -230,8 +231,8 @@ class ScreenCaptureAdapter(BaseInputAdapter):
     def __init__(self, config: VideoInputConfig) -> None:
         """Initialize screen capture adapter with configuration."""
         self.config = config
-        self.sct = None
-        self.monitor = None
+        self.sct: Any = None
+        self.monitor: Any = None
 
     async def initialize(self) -> Any:
         """Initialize screen capture."""
@@ -239,7 +240,8 @@ class ScreenCaptureAdapter(BaseInputAdapter):
             import mss
 
             self.sct = mss.mss()
-            self.monitor = self.sct.monitors[1]  # Primary monitor
+            if self.sct is not None:
+                self.monitor = self.sct.monitors[1]  # Primary monitor
         except ImportError:
             raise RuntimeError("mss library required for screen capture")
 
