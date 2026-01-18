@@ -469,7 +469,7 @@ def validate_compression_claims():
     print("="*70)
     
     try:
-        from dense_embeddings import DenseDifferentialMemoryStore
+        from cogsyndelta.memory.dense_embeddings import DenseDifferentialMemoryStore
         
         # Test setup
         store = DenseDifferentialMemoryStore(embed_dim=512, dense_dim=64, num_references=10)
@@ -524,10 +524,15 @@ def validate_performance_claims():
     print("="*70)
     
     try:
-        from pcn_vae_gan import create_model
+        from cogsyndelta.core.pcn_vae_gan import PCN_VAE_GAN
         
         # Create model
-        model = create_model('config.yaml')
+        config = {
+            'input_dim': 784,
+            'hidden_dim': 256,
+            'latent_dim': 64
+        }
+        model = PCN_VAE_GAN(config)
         test_input = torch.randn(1, 784)
         
         # Benchmark
@@ -558,7 +563,9 @@ def validate_performance_claims():
         return None, None, None
 
 
-if __name__ == '__main__':
+
+def main():
+    """Main entry point for benchmarks."""
     print("="*70)
     print("COMPREHENSIVE BENCHMARK AND VALIDATION SUITE")
     print("="*70)
@@ -591,3 +598,7 @@ if __name__ == '__main__':
     print("All claims must be backed by these benchmark results.")
     print("Report any discrepancies for correction.")
     print("="*70)
+
+
+if __name__ == '__main__':
+    main()

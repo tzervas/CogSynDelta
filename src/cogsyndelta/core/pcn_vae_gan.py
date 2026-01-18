@@ -23,7 +23,7 @@ import numpy as np
 class VAEEncoder(nn.Module):
     """VAE Encoder with configurable σ sampling."""
     
-    def __init__(self, input_dim: int, hidden_dim: int, latent_dim: int):
+    def __init__(self, input_dim: int, hidden_dim: int, latent_dim: int) -> None:
         super(VAEEncoder, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc_mu = nn.Linear(hidden_dim, latent_dim)
@@ -49,7 +49,7 @@ class VAEEncoder(nn.Module):
 class VAEDecoder(nn.Module):
     """VAE Decoder for reconstruction."""
     
-    def __init__(self, latent_dim: int, hidden_dim: int, output_dim: int):
+    def __init__(self, latent_dim: int, hidden_dim: int, output_dim: int) -> None:
         super(VAEDecoder, self).__init__()
         self.fc1 = nn.Linear(latent_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)
@@ -78,7 +78,7 @@ class PCNVAEGANHybrid(nn.Module):
     3. Meta-optimization: MAML gradients for meta-learning
     """
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict) -> None:
         super(PCNVAEGANHybrid, self).__init__()
         
         # Load configuration

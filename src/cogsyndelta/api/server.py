@@ -159,7 +159,7 @@ class AgentResult(BaseModel):
 class BaseInputAdapter:
     """Base class for input adapters."""
     
-    async def initialize(self):
+    async def initialize(self) -> Any:
         """Initialize the adapter."""
         pass
     
@@ -167,7 +167,7 @@ class BaseInputAdapter:
         """Read data from input source."""
         raise NotImplementedError
     
-    async def close(self):
+    async def close(self) -> Any:
         """Clean up resources."""
         pass
 
@@ -175,11 +175,11 @@ class BaseInputAdapter:
 class WebcamAdapter(BaseInputAdapter):
     """Webcam video input adapter."""
     
-    def __init__(self, config: VideoInputConfig):
+    def __init__(self, config: VideoInputConfig) -> None:
         self.config = config
         self.capture = None
     
-    async def initialize(self):
+    async def initialize(self) -> Any:
         """Initialize webcam capture."""
         try:
             import cv2
@@ -203,7 +203,7 @@ class WebcamAdapter(BaseInputAdapter):
         frame_tensor = torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0
         return frame_tensor
     
-    async def close(self):
+    async def close(self) -> Any:
         """Release webcam."""
         if self.capture is not None:
             self.capture.release()
@@ -212,12 +212,12 @@ class WebcamAdapter(BaseInputAdapter):
 class ScreenCaptureAdapter(BaseInputAdapter):
     """Desktop screen capture adapter."""
     
-    def __init__(self, config: VideoInputConfig):
+    def __init__(self, config: VideoInputConfig) -> None:
         self.config = config
         self.sct = None
         self.monitor = None
     
-    async def initialize(self):
+    async def initialize(self) -> Any:
         """Initialize screen capture."""
         try:
             import mss
@@ -241,7 +241,7 @@ class ScreenCaptureAdapter(BaseInputAdapter):
         frame_tensor = torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0
         return frame_tensor
     
-    async def close(self):
+    async def close(self) -> Any:
         """Clean up screen capture."""
         if self.sct is not None:
             self.sct.close()
@@ -250,11 +250,11 @@ class ScreenCaptureAdapter(BaseInputAdapter):
 class StreamAdapter(BaseInputAdapter):
     """Generic streaming adapter (RTSP, RTMP, HTTP)."""
     
-    def __init__(self, config: VideoInputConfig):
+    def __init__(self, config: VideoInputConfig) -> None:
         self.config = config
         self.stream = None
     
-    async def initialize(self):
+    async def initialize(self) -> Any:
         """Initialize stream."""
         try:
             import cv2
@@ -276,7 +276,7 @@ class StreamAdapter(BaseInputAdapter):
         frame_tensor = torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0
         return frame_tensor
     
-    async def close(self):
+    async def close(self) -> Any:
         """Release stream."""
         if self.stream is not None:
             self.stream.release()
@@ -285,11 +285,11 @@ class StreamAdapter(BaseInputAdapter):
 class AudioStreamAdapter(BaseInputAdapter):
     """Audio stream adapter."""
     
-    def __init__(self, config: AudioInputConfig):
+    def __init__(self, config: AudioInputConfig) -> None:
         self.config = config
         self.stream = None
     
-    async def initialize(self):
+    async def initialize(self) -> Any:
         """Initialize audio stream."""
         try:
             import pyaudio
@@ -314,7 +314,7 @@ class AudioStreamAdapter(BaseInputAdapter):
         audio_tensor = torch.from_numpy(audio_array)
         return audio_tensor
     
-    async def close(self):
+    async def close(self) -> Any:
         """Stop audio stream."""
         if self.stream is not None:
             self.stream.stop_stream()
@@ -378,7 +378,7 @@ active_adapters = {}
 
 
 @app.on_event("startup")
-async def startup_event():
+async def startup_event() -> Any:
     """Initialize system on startup."""
     print("Initializing Self-Improving AI System...")
     # Load integrated system here
@@ -387,7 +387,7 @@ async def startup_event():
 
 
 @app.on_event("shutdown")
-async def shutdown_event():
+async def shutdown_event() -> Any:
     """Cleanup on shutdown."""
     for adapter in active_adapters.values():
         await adapter.close()
@@ -398,7 +398,7 @@ async def shutdown_event():
 # ============================================================================
 
 @app.post("/api/v1/session/create", response_model=Dict[str, str])
-async def create_session(config: MultimodalInput):
+async def create_session(config: MultimodalInput) -> Any:
     """
     Create a new processing session.
     
@@ -421,7 +421,7 @@ async def process_video(
     session_id: str,
     video_config: VideoInputConfig,
     num_frames: int = 16
-):
+) -> Any:
     """
     Process video input and return semantic states.
     
@@ -469,7 +469,7 @@ async def process_video(
 
 
 @app.websocket("/api/v1/stream/video")
-async def video_stream_endpoint(websocket: WebSocket):
+async def video_stream_endpoint(websocket: WebSocket) -> Any:
     """
     WebSocket endpoint for real-time video streaming.
     
@@ -520,7 +520,7 @@ async def video_stream_endpoint(websocket: WebSocket):
 
 
 @app.post("/api/v1/agent/task", response_model=AgentResult)
-async def create_agent_task(task: AgentTask, background_tasks: BackgroundTasks):
+async def create_agent_task(task: AgentTask, background_tasks: BackgroundTasks) -> Any:
     """
     Create self-improving agent task.
     
@@ -546,7 +546,7 @@ async def create_agent_task(task: AgentTask, background_tasks: BackgroundTasks):
 async def explore_multi_language(
     problem_description: str,
     languages: List[str] = ["python", "rust", "go"]
-):
+) -> Any:
     """
     Explore implementations across multiple languages.
     
@@ -571,7 +571,7 @@ async def explore_multi_language(
 
 
 @app.get("/api/v1/config/adapters")
-async def list_available_adapters():
+async def list_available_adapters() -> Any:
     """
     List all available input/output adapters.
     
@@ -591,7 +591,7 @@ async def query_memory(
     session_id: str,
     query_embedding: List[float],
     num_results: int = 5
-):
+) -> Any:
     """
     Query temporal memory bank for relevant semantic states.
     
@@ -618,7 +618,7 @@ async def query_memory(
 
 
 @app.get("/api/v1/health")
-async def health_check():
+async def health_check() -> Any:
     """Health check endpoint."""
     return {
         "status": "healthy",
@@ -634,7 +634,7 @@ async def health_check():
 
 
 @app.get("/")
-async def root():
+async def root() -> Any:
     """Root endpoint with API documentation link."""
     return {
         "message": "Self-Improving AI System API",

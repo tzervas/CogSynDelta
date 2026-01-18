@@ -40,7 +40,7 @@ class LanguageFrameworkEncoder(nn.Module):
     Enables cross-language/framework learning and exploration.
     """
     
-    def __init__(self, vocab_size: int = 50000, embed_dim: int = 512):
+    def __init__(self, vocab_size: int = 50000, embed_dim: int = 512) -> None:
         super(LanguageFrameworkEncoder, self).__init__()
         
         self.embed_dim = embed_dim
@@ -109,7 +109,7 @@ class SelfImprovementModule(nn.Module):
     Uses prediction errors to drive improvements without external supervision.
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         super(SelfImprovementModule, self).__init__()
         
         self.embed_dim = embed_dim
@@ -198,7 +198,7 @@ class SecurityHardeningModule(nn.Module):
     Identifies vulnerabilities and suggests security improvements.
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         super(SecurityHardeningModule, self).__init__()
         
         self.embed_dim = embed_dim
@@ -283,7 +283,7 @@ class QualityAssuranceModule(nn.Module):
     Ensures high-quality, reliable outputs.
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         super(QualityAssuranceModule, self).__init__()
         
         self.embed_dim = embed_dim
@@ -364,7 +364,7 @@ class MultiLanguageExplorer(nn.Module):
     Enables cross-language learning and solution discovery.
     """
     
-    def __init__(self, embed_dim: int = 512, num_languages: int = 20):
+    def __init__(self, embed_dim: int = 512, num_languages: int = 20) -> None:
         super(MultiLanguageExplorer, self).__init__()
         
         self.embed_dim = embed_dim
@@ -449,7 +449,7 @@ class SelfImprovingAgentFramework(nn.Module):
     Integrates all components for autonomous improvement, exploration, and hardening.
     """
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict) -> None:
         super(SelfImprovingAgentFramework, self).__init__()
         
         self.config = config

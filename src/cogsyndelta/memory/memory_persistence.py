@@ -67,7 +67,7 @@ class MemoryCompressor(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512, compressed_dim: int = 256, 
-                 compression_ratio: float = 0.5):
+                 compression_ratio: float = 0.5) -> None:
         super(MemoryCompressor, self).__init__()
         
         self.embed_dim = embed_dim
@@ -178,7 +178,7 @@ class PersistentMemoryBank(nn.Module):
                  working_capacity: int = 100,
                  short_term_capacity: int = 1000,
                  storage_path: str = "./memory_storage",
-                 use_dense_encoding: bool = True):
+                 use_dense_encoding: bool = True) -> None:
         super(PersistentMemoryBank, self).__init__()
         
         self.embed_dim = embed_dim
@@ -230,7 +230,7 @@ class PersistentMemoryBank(nn.Module):
         }
         
     def write(self, content: torch.Tensor, importance: float = 1.0, 
-             source: str = "unknown"):
+             source: str = "unknown") -> Any:
         """
         Write to persistent memory with metadata.
         
@@ -271,7 +271,7 @@ class PersistentMemoryBank(nn.Module):
             if self.working_pointer >= self.working_capacity:
                 self._compress_to_short_term()
     
-    def _compress_to_short_term(self):
+    def _compress_to_short_term(self) -> None:
         """Compress working memory to short-term storage using dense differential encoding."""
         if self.use_dense_encoding:
             # Use dense differential encoding for maximum compression
@@ -341,7 +341,7 @@ class PersistentMemoryBank(nn.Module):
         # Clear working memory
         self.working_pointer = 0
     
-    def _archive_to_long_term(self):
+    def _archive_to_long_term(self) -> None:
         """Archive short-term memory to disk."""
         # Select memories to archive (importance-weighted)
         importances = torch.tensor([
@@ -461,7 +461,7 @@ class PersistentMemoryBank(nn.Module):
         else:
             return torch.zeros(num_reads, self.embed_dim).to(query.device), []
     
-    def save_checkpoint(self, checkpoint_path: str):
+    def save_checkpoint(self, checkpoint_path: str) -> None:
         """Save temporal continuity checkpoint."""
         checkpoint = {
             'working_memory': self.working_memory.cpu(),
@@ -483,7 +483,7 @@ class PersistentMemoryBank(nn.Module):
         self.temporal_continuity['last_checkpoint'] = datetime.now()
         print(f"✓ Memory checkpoint saved: {checkpoint_path}")
     
-    def load_checkpoint(self, checkpoint_path: str):
+    def load_checkpoint(self, checkpoint_path: str) -> None:
         """Load temporal continuity checkpoint."""
         with open(checkpoint_path, 'rb') as f:
             checkpoint = pickle.load(f)
@@ -534,7 +534,7 @@ class InfiniteLoopSafeguard:
     
     def __init__(self, max_iterations: int = 1000, 
                  max_repetitions: int = 5,
-                 timeout_seconds: float = 300.0):
+                 timeout_seconds: float = 300.0) -> None:
         self.max_iterations = max_iterations
         self.max_repetitions = max_repetitions
         self.timeout_seconds = timeout_seconds
@@ -616,7 +616,7 @@ class InfiniteLoopSafeguard:
         
         return True, "Valid"
     
-    def trigger_circuit_breaker(self, reason: str):
+    def trigger_circuit_breaker(self, reason: str) -> None:
         """Trigger circuit breaker to stop execution."""
         self.loop_state.loop_detected = True
         self.loop_state.last_break = datetime.now()
@@ -624,7 +624,7 @@ class InfiniteLoopSafeguard:
         print(f"   Iterations: {self.iteration_count}")
         print(f"   Time elapsed: {(datetime.now() - self.start_time).total_seconds():.2f}s")
     
-    def reset(self):
+    def reset(self) -> None:
         """Reset safeguard state."""
         self.loop_state = LoopDetectionState(max_repetitions=self.max_repetitions)
         self.iteration_count = 0
