@@ -17,7 +17,7 @@ Key advantages:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any
 import numpy as np
 from dataclasses import dataclass
 

@@ -17,7 +17,7 @@ Design philosophy:
 
 import torch
 import torch.nn as nn
-from typing import Dict, List, Optional, Any, Union, Callable
+from typing import Dict, List, Optional, Any
 from abc import ABC, abstractmethod
 from enum import Enum
 import asyncio

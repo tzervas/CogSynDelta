@@ -14,13 +14,8 @@ Ensures all documentation is aligned and up-to-date.
 """
 
 import os
-import json
-import inspect
-from typing import Dict, List, Any, Optional, Type
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
-import ast
-from datetime import datetime
-import re
 
 
 @dataclass
@@ -57,7 +52,7 @@ class DocumentationGenerator:
         self.api_endpoints: List[APIEndpoint] = []
         self.classes: List[ClassDoc] = []
     
-    def generate_all(self):
+    def generate_all(self) -> None:
         """Generate all documentation."""
         print("="*70)
         print("GENERATING COMPREHENSIVE DOCUMENTATION")

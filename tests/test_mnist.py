@@ -12,11 +12,11 @@ Tests the VAE loss: L = E[||x - x̂||²] + ½(σ² + μ² - 1 - log σ²)
 import torch
 import torch.optim as optim
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 import argparse
-import os
 import sys
 from pathlib import Path
+from typing import Dict, Any
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -24,7 +24,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from cogsyndelta.core.pcn_vae_gan import create_model, load_config
 
 
-def train_epoch(model, dataloader, optimizer, device, config):
+def train_epoch(model: torch.nn.Module, dataloader: DataLoader, optimizer: optim.Optimizer, 
+                device: torch.device, config: Dict[str, Any]) -> Dict[str, float]:
     """Train model for one epoch."""
     model.train()
     total_loss = 0
@@ -59,7 +60,7 @@ def train_epoch(model, dataloader, optimizer, device, config):
     }
 
 
-def test_vae_loss(model, test_loader, device):
+def test_vae_loss(model: torch.nn.Module, test_loader: DataLoader, device: torch.device) -> float:
     """
     Test VAE loss function: L = E[||x - x̂||²] + ½(σ² + μ² - 1 - log σ²)
     
@@ -97,7 +98,8 @@ def test_vae_loss(model, test_loader, device):
     return test_loss / num_batches
 
 
-def test_exploratory_phase(model, test_loader, device, k=10):
+def test_exploratory_phase(model: torch.nn.Module, test_loader: DataLoader, 
+                          device: torch.device, k: int = 10) -> None:
     """Test exploratory phase with configurable σ sampling."""
     model.eval()
     
@@ -123,7 +125,7 @@ def test_exploratory_phase(model, test_loader, device, k=10):
             print(f'  σ scale = {sigma_scale}: latent std = {z.std().item():.4f}')
 
 
-def test_culling_phase(model, test_loader, device):
+def test_culling_phase(model: torch.nn.Module, test_loader: DataLoader, device: torch.device) -> None:
     """Test culling phase with Bayesian inference."""
     model.eval()
     
@@ -154,7 +156,7 @@ def test_culling_phase(model, test_loader, device):
         print(f'Best sample MSE: {best_recon_loss.item():.4f}')
 
 
-def test_meta_optimization(model, train_loader, device):
+def test_meta_optimization(model: torch.nn.Module, train_loader: DataLoader, device: torch.device) -> None:
     """Test meta-optimization with MAML."""
     model.eval()
     
@@ -179,7 +181,7 @@ def test_meta_optimization(model, train_loader, device):
     print(f'KL divergence: {loss_dict["kl_divergence"].item():.4f}')
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description='MNIST Test for PCN-VAE-GAN Hybrid')
     parser.add_argument('--config', type=str, default=str(Path(__file__).parent.parent / 'config/config.yaml'),
                         help='Path to config file')
