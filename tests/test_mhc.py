@@ -155,7 +155,7 @@ class TestPathwayOptimizer:
     @pytest.fixture
     def optimizer(self) -> nn.Module:
         """Create PathwayOptimizer instance on CPU.
-        
+
         Note: PathwayOptimizer.evaluate_pathway/propose_adjustment
         create internal CPU tensors, so the model must be on CPU.
         """
