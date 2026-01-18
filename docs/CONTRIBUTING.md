@@ -35,21 +35,37 @@ Be respectful, inclusive, and professional in all interactions.
 ## Development Setup
 
 ```bash
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # Clone repository
 git clone https://github.com/tzervas/CogSynDelta.git
 cd CogSynDelta
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+# Install all dependencies (uv handles Python 3.14 automatically)
+uv sync
 
-# Install dependencies
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+# Install pre-commit hooks
+uv run pre-commit install
 
 # Run tests
-python test_unit.py
-python benchmarks.py
+uv run pytest tests/ -v
+
+# Run benchmarks
+uv run cogsyndelta-benchmark
+```
+
+### Using uvx for Development Tools
+
+```bash
+# Linting (runs in isolated environment)
+uvx ruff check src/ tests/
+
+# Formatting
+uvx black src/ tests/
+
+# Type checking (uses project config)
+uv run mypy src/
 ```
 
 ## Coding Standards

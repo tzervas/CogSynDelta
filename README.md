@@ -1,7 +1,8 @@
 # CogSynDelta: Self-Improving AI System
 
-[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.9.1-red.svg)](https://pytorch.org/)
+[![Python](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.9.1+cu128-red.svg)](https://pytorch.org/)
+[![UV](https://img.shields.io/badge/uv-0.7+-blueviolet.svg)](https://docs.astral.sh/uv/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-brightgreen)](https://github.com/tzervas/CogSynDelta/actions)
 [![Type Coverage](https://img.shields.io/badge/type%20coverage-79%25-yellow)](QUALITY_IMPROVEMENTS.md)
@@ -19,31 +20,33 @@ CogSynDelta is a cutting-edge self-improving AI architecture designed for real-w
 - **Intelligent Interconnect**: Specialized submodel for managing communication between brain regions
 - **Self-Improving Agents**: Multi-language code generation (SWE/AIE/SWD/AID)
 - **Memory Persistence**: Dense differential embeddings with 10-100x compression
-- **Quantum Computing**: Extensible backend for quantum/classical hybrid processing
+- **Quantum Computing**: Extensible backend for quantum/classical hybrid processing *(backlogged - awaiting Python 3.14 ecosystem support)*
 - **Google ADK Compliance**: Standard agent interface with A2A protocol support
 - **Safeguards**: Loop detection, ethical constraints, resource limits
 
 ## 🚀 Quick Start
 
 ```bash
-# Install dependencies
-pip install -e .
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install development tools
-pip install -e ".[dev]"
+# Clone and setup (uv handles Python 3.14 and all dependencies)
+git clone https://github.com/tzervas/CogSynDelta.git
+cd CogSynDelta
+uv sync
 
 # Start OpenAPI server
-python -m cogsyndelta.api.server
-# or
-cogsyndelta-server
+uv run cogsyndelta-server
 
 # Run benchmarks
-python -m benchmarks.run
-# or
-cogsyndelta-benchmark
+uv run cogsyndelta-benchmark
 
 # Run tests
-pytest tests/ -v
+uv run pytest tests/ -v
+
+# Run any tool without installing globally
+uvx ruff check src/
+uvx black src/ tests/
 ```
 
 Visit http://localhost:8000/docs for interactive API documentation.
@@ -56,6 +59,7 @@ Visit http://localhost:8000/docs for interactive API documentation.
 - **[Contributing](docs/CONTRIBUTING.md)** - Contribution guidelines
 - **[Configuration](docs/CONFIGURATION.md)** - Configuration reference
 - **[Quality Improvements](QUALITY_IMPROVEMENTS.md)** - Recent improvements and metrics
+- **[Roadmap](ROADMAP.md)** - Project roadmap and backlog
 
 ## 🎯 Key Features
 
@@ -137,19 +141,19 @@ Comprehensive examples are available in the `examples/` directory:
 
 ```bash
 # Basic model training
-python examples/basic_training.py
+uv run python examples/basic_training.py
 
 # Memory system demonstration
-python examples/memory_management.py
+uv run python examples/memory_management.py
 
 # Start API server
-python examples/api_server.py
+uv run python examples/api_server.py
 
 # Self-improving agents
-python examples/self_improving_agents.py
+uv run python examples/self_improving_agents.py
 
-# Quantum computing (requires quantum packages)
-python examples/quantum_computing.py
+# Quantum computing (requires Python 3.13 - see ROADMAP.md)
+# python examples/quantum_computing.py
 ```
 
 See [examples/README.md](examples/README.md) for detailed usage instructions.
@@ -183,31 +187,29 @@ model_sectioning:
 
 ```bash
 # Run all tests
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Run with coverage
-pytest tests/ -v --cov=cogsyndelta --cov-report=html
+uv run pytest tests/ -v --cov=cogsyndelta --cov-report=html
 
 # Run specific test suite
-pytest tests/test_unit.py -v
-pytest tests/test_mnist.py -v
-pytest tests/test_comprehensive.py -v
+uv run pytest tests/test_unit.py -v
+uv run pytest tests/test_mnist.py -v
+uv run pytest tests/test_comprehensive.py -v
 
 # Run benchmarks
-cogsyndelta-benchmark
-# or
-python -m benchmarks.run
+uv run cogsyndelta-benchmark
 
-# Code quality checks
-ruff check src/ tests/         # Linting
-black src/ tests/              # Formatting
-mypy src/                      # Type checking
+# Code quality checks (using uvx for isolated tool execution)
+uvx ruff check src/ tests/       # Linting
+uvx black src/ tests/            # Formatting
+uv run mypy src/                 # Type checking (uses project config)
 ```
 
 ### CI/CD
 
 Automated testing runs on every push via GitHub Actions:
-- ✅ Multi-Python version testing (3.9, 3.10, 3.11, 3.12)
+- ✅ Python 3.14 testing
 - ✅ Code quality checks (ruff, black, mypy)
 - ✅ Test coverage reporting
 - ✅ CodeQL security analysis

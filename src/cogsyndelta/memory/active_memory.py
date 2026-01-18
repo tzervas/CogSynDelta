@@ -47,6 +47,7 @@ class LosslessCompactor(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512, num_basis: int = 128) -> None:
+        """Initialize lossless compactor with basis vectors and residual encoder."""
         super(LosslessCompactor, self).__init__()
         
         self.embed_dim = embed_dim
@@ -183,6 +184,7 @@ class TemporalChainManager:
     """
     
     def __init__(self, chain_capacity: int = 10000) -> None:
+        """Initialize temporal chain manager with chain tracking structures."""
         self.chain_capacity = chain_capacity
         
         # Temporal chains
@@ -320,6 +322,7 @@ class ActiveMemoryManager:
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize hierarchical memory with tiers and compaction."""
         self.embed_dim = embed_dim
         
         # Memory tiers
