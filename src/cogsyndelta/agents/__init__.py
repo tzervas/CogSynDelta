@@ -14,10 +14,10 @@ from cogsyndelta.agents.self_improving_agents import (
 __all__ = [
     "AgentType",
     "LanguageFrameworkEncoder",
-    "SelfImprovementModule",
-    "SecurityHardeningModule",
-    "QualityAssuranceModule",
     "MultiLanguageExplorer",
+    "QualityAssuranceModule",
+    "SecurityHardeningModule",
+    "SelfImprovementModule",
     "SelfImprovingAgentFramework",
     "create_agent_framework",
 ]

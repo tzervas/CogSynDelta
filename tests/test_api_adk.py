@@ -423,9 +423,7 @@ class TestCogSynDeltaADKAgent:
     @pytest.fixture
     def agent(self, mock_integrated_system: MagicMock) -> CogSynDeltaADKAgent:
         """Create CogSynDelta ADK agent."""
-        return CogSynDeltaADKAgent(
-            agent_id="cogsyn-001", integrated_system=mock_integrated_system
-        )
+        return CogSynDeltaADKAgent(agent_id="cogsyn-001", integrated_system=mock_integrated_system)
 
     def test_agent_identity(self, agent: CogSynDeltaADKAgent) -> None:
         """Test agent has correct identity."""
@@ -522,9 +520,7 @@ class TestADKAdapter:
         """Create ADK adapter."""
         return ADKAdapter()
 
-    def test_create_agent(
-        self, adapter: ADKAdapter, mock_integrated_system: MagicMock
-    ) -> None:
+    def test_create_agent(self, adapter: ADKAdapter, mock_integrated_system: MagicMock) -> None:
         """Test creating agent through adapter."""
         agent = adapter.create_agent("new-agent", mock_integrated_system)
 
@@ -532,9 +528,7 @@ class TestADKAdapter:
         assert isinstance(agent, CogSynDeltaADKAgent)
         assert "new-agent" in adapter.agents
 
-    def test_get_agent(
-        self, adapter: ADKAdapter, mock_integrated_system: MagicMock
-    ) -> None:
+    def test_get_agent(self, adapter: ADKAdapter, mock_integrated_system: MagicMock) -> None:
         """Test retrieving agent by ID."""
         adapter.create_agent("find-me", mock_integrated_system)
 
