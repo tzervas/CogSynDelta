@@ -260,8 +260,10 @@ class TestModelOptimization:
         optimizer = RTX5080Optimizer()
         optimized = optimizer.optimize_model(simple_model)
 
-        # Create test input on same device as model
-        x = torch.randn(4, 784, device=optimizer.device)
+        # Create test input on same device and dtype as model
+        # The optimizer may convert model to half precision for mixed precision
+        model_dtype = next(optimized.parameters()).dtype
+        x = torch.randn(4, 784, device=optimizer.device, dtype=model_dtype)
 
         # Forward pass should work
         with torch.no_grad():
