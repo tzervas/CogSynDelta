@@ -42,7 +42,7 @@ class IntegratedSelfImprovingSystem(nn.Module):
     7. Safeguards against infinite loops and ethical hazards
     """
     
-    def __init__(self, config_path: str = 'config.yaml'):
+    def __init__(self, config_path: str = 'config.yaml') -> None:
         super(IntegratedSelfImprovingSystem, self).__init__()
         
         # Load configuration

@@ -55,7 +55,7 @@ class TemporalMetadata:
     retention_priority: float = 1.0
     temporal_window: Optional[Tuple[datetime, datetime]] = None
     
-    def update_access(self):
+    def update_access(self) -> None:
         """Update access time and count."""
         self.last_accessed = datetime.now()
         self.access_count += 1
@@ -89,11 +89,11 @@ class ContextualMetadata:
     location: Optional[str] = None
     user_context: Optional[Dict[str, Any]] = None
     
-    def add_tag(self, tag: str):
+    def add_tag(self, tag: str) -> None:
         """Add contextual tag."""
         self.tags.add(tag)
     
-    def link_memory(self, memory_id: str):
+    def link_memory(self, memory_id: str) -> None:
         """Link to related memory."""
         self.related_memories.add(memory_id)
     
@@ -167,7 +167,7 @@ class SkillSchema:
     last_used: datetime
     embedding: Optional[torch.Tensor] = None
     
-    def update_usage(self, success: bool):
+    def update_usage(self, success: bool) -> None:
         """Update skill usage statistics."""
         self.usage_count += 1
         self.last_used = datetime.now()
@@ -209,7 +209,7 @@ class ToolSchema:
     average_latency: float = 0.0
     success_rate: float = 1.0
     
-    def record_usage(self, latency: float, success: bool):
+    def record_usage(self, latency: float, success: bool) -> None:
         """Record tool usage."""
         self.usage_count += 1
         
@@ -244,7 +244,7 @@ class RelevanceScorer(nn.Module):
     - Access patterns
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         super(RelevanceScorer, self).__init__()
         
         self.embed_dim = embed_dim
@@ -296,7 +296,7 @@ class SemanticSearchEngine(nn.Module):
     - Hybrid ranking
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         super(SemanticSearchEngine, self).__init__()
         
         self.embed_dim = embed_dim
@@ -428,7 +428,7 @@ class UnifiedMemoryManager:
     - Track usage patterns
     """
     
-    def __init__(self, embed_dim: int = 512):
+    def __init__(self, embed_dim: int = 512) -> None:
         self.embed_dim = embed_dim
         
         # Storage
@@ -624,7 +624,7 @@ class UnifiedMemoryManager:
         
         return result
     
-    def update_skill(self, skill_id: str, success: bool):
+    def update_skill(self, skill_id: str, success: bool) -> None:
         """Update skill after usage."""
         if skill_id in self.skills:
             self.skills[skill_id].update_usage(success)
@@ -654,7 +654,7 @@ class UnifiedMemoryManager:
             )[:10]
         }
     
-    def export_to_json(self, filepath: str):
+    def export_to_json(self, filepath: str) -> None:
         """Export all data to JSON."""
         data = {
             'memories': [m.to_dict() for m in self.memories.values()],

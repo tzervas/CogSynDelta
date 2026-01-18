@@ -24,7 +24,7 @@ class VisionEncoder(nn.Module):
     """
     
     def __init__(self, image_size: int = 224, patch_size: int = 16, 
-                 in_channels: int = 3, embed_dim: int = 512, num_layers: int = 6):
+                 in_channels: int = 3, embed_dim: int = 512, num_layers: int = 6) -> None:
         super(VisionEncoder, self).__init__()
         
         self.image_size = image_size
@@ -87,7 +87,7 @@ class TemporalMemoryBank(nn.Module):
     """
     
     def __init__(self, memory_size: int = 1000, embed_dim: int = 512, 
-                 num_read_heads: int = 4):
+                 num_read_heads: int = 4) -> None:
         super(TemporalMemoryBank, self).__init__()
         
         self.memory_size = memory_size
@@ -117,7 +117,7 @@ class TemporalMemoryBank(nn.Module):
             nn.Sigmoid()
         )
         
-    def write(self, content: torch.Tensor, importance: Optional[torch.Tensor] = None):
+    def write(self, content: torch.Tensor, importance: Optional[torch.Tensor] = None) -> None:
         """
         Write semantic state to memory without token generation.
         
@@ -195,7 +195,7 @@ class ModeratedHyperConnection(nn.Module):
     Uses gating mechanisms to modulate cross-layer connections dynamically.
     """
     
-    def __init__(self, embed_dim: int):
+    def __init__(self, embed_dim: int) -> None:
         super(ModeratedHyperConnection, self).__init__()
         
         self.embed_dim = embed_dim
@@ -251,7 +251,7 @@ class HierarchicalPredictiveCoding(nn.Module):
     Uses moderated hyper connections for controlled cross-layer information flow.
     """
     
-    def __init__(self, embed_dim: int = 512, num_levels: int = 3):
+    def __init__(self, embed_dim: int = 512, num_levels: int = 3) -> None:
         super(HierarchicalPredictiveCoding, self).__init__()
         
         self.num_levels = num_levels
@@ -370,7 +370,7 @@ class JointEmbeddingSpace(nn.Module):
     Predicts semantic embeddings, not tokens.
     """
     
-    def __init__(self, embed_dim: int = 512, latent_dim: int = 20):
+    def __init__(self, embed_dim: int = 512, latent_dim: int = 20) -> None:
         super(JointEmbeddingSpace, self).__init__()
         
         self.embed_dim = embed_dim
@@ -430,7 +430,7 @@ class FrameBufferAdapter(nn.Module):
     Handles frame buffering, preprocessing, and temporal alignment.
     """
     
-    def __init__(self, buffer_size: int = 16, target_size: int = 224):
+    def __init__(self, buffer_size: int = 16, target_size: int = 224) -> None:
         super(FrameBufferAdapter, self).__init__()
         
         self.buffer_size = buffer_size
@@ -469,7 +469,7 @@ class FrameBufferAdapter(nn.Module):
         
         return frame
     
-    def add_frame(self, frame: torch.Tensor):
+    def add_frame(self, frame: torch.Tensor) -> None:
         """Add frame to buffer."""
         preprocessed = self.preprocess_frame(frame)
         self.frame_buffer.append(preprocessed)

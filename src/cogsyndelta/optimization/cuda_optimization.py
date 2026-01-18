@@ -62,7 +62,7 @@ class RTX5080Optimizer:
     - ~20,000 CUDA cores (estimated)
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         if not CUDA_AVAILABLE:
             warnings.warn("CUDA not available. Using CPU fallback.")
             self.device = torch.device('cpu')
@@ -231,7 +231,7 @@ class RTX5080Optimizer:
         
         return data_gpu
     
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """Clear GPU cache to free memory."""
         if CUDA_AVAILABLE:
             torch.cuda.empty_cache()
@@ -245,7 +245,7 @@ class FlashAttentionOptimized(nn.Module):
     instead of O(N²) for standard attention.
     """
     
-    def __init__(self, embed_dim: int, num_heads: int = 8):
+    def __init__(self, embed_dim: int, num_heads: int = 8) -> None:
         super().__init__()
         self.embed_dim = embed_dim
         self.num_heads = num_heads
@@ -307,7 +307,7 @@ class BalancedTernaryEmbedding(nn.Module):
     - Natural sparsity encoding
     """
     
-    def __init__(self, vocab_size: int, embed_dim: int):
+    def __init__(self, vocab_size: int, embed_dim: int) -> None:
         super().__init__()
         self.vocab_size = vocab_size
         self.embed_dim = embed_dim
@@ -395,7 +395,7 @@ class GPUEmbeddingStore:
     """
     
     def __init__(self, embed_dim: int = 512, max_capacity: int = 100000,
-                 use_ternary: bool = False, optimizer: Optional[RTX5080Optimizer] = None):
+                 use_ternary: bool = False, optimizer: Optional[RTX5080Optimizer] = None) -> None:
         self.embed_dim = embed_dim
         self.max_capacity = max_capacity
         self.use_ternary = use_ternary
