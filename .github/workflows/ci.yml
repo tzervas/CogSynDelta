@@ -11,7 +11,7 @@ env:
   # Pin tool versions for consistency between local and CI
   RUFF_VERSION: "0.14.13"
   MYPY_VERSION: "1.19.1"
-  UV_VERSION: "0.6.14"
+  UV_VERSION: "0.7.17"
   # Pre-download dependencies before any firewall/network restrictions
   UV_LINK_MODE: copy
   UV_COMPILE_BYTECODE: 1
@@ -83,11 +83,9 @@ jobs:
     - name: Set up Python 3.14
       run: uv python install 3.14
 
-    - name: Install minimal dependencies for quality check
-      run: uv sync --no-dev --no-install-project
-
     - name: Run quality checks (90+ required)
-      run: uv run python scripts/quality_control.py src/ --fail-under 90
+      # Quality script uses only stdlib, no dependencies needed
+      run: uv run --no-project python scripts/quality_control.py src/ --fail-under 90
 
   test:
     name: Test on Python 3.14
@@ -108,7 +106,8 @@ jobs:
 
     - name: Install dependencies with CPU-only PyTorch
       run: |
-        uv sync --group dev --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
+        # Override torch sources to use CPU-only builds in CI (no CUDA)
+        uv sync --group dev --index https://download.pytorch.org/whl/cpu
 
     - name: Run tests with pytest
       run: |
