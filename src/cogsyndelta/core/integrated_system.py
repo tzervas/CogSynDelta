@@ -42,6 +42,9 @@ class IntegratedSelfImprovingSystem(nn.Module):
     7. Safeguards against infinite loops and ethical hazards
     """
 
+    # Type hints for instance attributes with multiple possible types
+    memory_bank: PersistentMemoryBank | TemporalMemoryBank
+
     def __init__(self, config_path: str = "config.yaml") -> None:
         """Initialize integrated system with all components from config."""
         super(IntegratedSelfImprovingSystem, self).__init__()
@@ -141,7 +144,7 @@ class IntegratedSelfImprovingSystem(nn.Module):
             nn.Linear(embed_dim // 2, self.config["exploratory"]["latent_dim"]),
         )
 
-    def process_visual_input(self, frames: torch.Tensor) -> dict[str, torch.Tensor]:
+    def process_visual_input(self, frames: torch.Tensor) -> dict[str, Any]:
         """
         Process visual input with silent semantic state retention.
         No token generation - pure embedding prediction.
@@ -171,7 +174,10 @@ class IntegratedSelfImprovingSystem(nn.Module):
             semantic_embed = self.vision_encoder(frames)
 
             # Store in persistent memory bank
-            self.memory_bank.write(semantic_embed, importance=1.0, source="visual_input")
+            if isinstance(self.memory_bank, PersistentMemoryBank):
+                self.memory_bank.write(semantic_embed, importance=1.0, source="visual_input")
+            else:
+                self.memory_bank.write(semantic_embed)
 
             # Hierarchical predictive coding with mHC
             hpc_output = self.hierarchical_pcn(semantic_embed)
@@ -200,12 +206,17 @@ class IntegratedSelfImprovingSystem(nn.Module):
                 frame_t = frames[:, t]
                 semantic_t = self.vision_encoder(frame_t)
                 semantic_states.append(semantic_t)
-                self.memory_bank.write(semantic_t, importance=1.0, source=f"visual_sequence_{t}")
+                if isinstance(self.memory_bank, PersistentMemoryBank):
+                    self.memory_bank.write(
+                        semantic_t, importance=1.0, source=f"visual_sequence_{t}"
+                    )
+                else:
+                    self.memory_bank.write(semantic_t)
 
             semantic_sequence = torch.stack(semantic_states, dim=1)
 
             # Get temporal context from persistent memory
-            if hasattr(self.memory_bank, "temporal_context"):
+            if isinstance(self.memory_bank, TemporalMemoryBank):
                 temporal_context = self.memory_bank.temporal_context(
                     window_size=self.config["vision_language"].get("temporal_window", 10)
                 )
@@ -225,6 +236,8 @@ class IntegratedSelfImprovingSystem(nn.Module):
                 "temporal_context": temporal_context,
                 "hierarchical_output": hpc_output,
             }
+
+        raise ValueError(f"Expected frames with 4 or 5 dimensions, got {frames.dim()}")
 
     def self_improve_solution(
         self,
@@ -362,18 +375,33 @@ class IntegratedSelfImprovingSystem(nn.Module):
                 visual_output = self.process_visual_input(temporal_window.unsqueeze(0))
 
                 # Compute prediction errors (for self-improvement signal)
-                pred_errors = torch.stack(visual_output["hierarchical_output"]["prediction_errors"])
-                mean_error = pred_errors.abs().mean()
+                pred_errors = visual_output["hierarchical_output"]["prediction_errors"]
+                pred_errors_stacked = (
+                    torch.stack(pred_errors) if isinstance(pred_errors, list) else pred_errors
+                )
+                mean_error = pred_errors_stacked.abs().mean()
 
                 learning_history["prediction_errors"].append(mean_error.item())
 
             # Track memory utilization
-            memory_age = self.memory_bank.memory_age
-            learning_history["memory_utilization"].append((memory_age < 100).float().mean().item())
+            if hasattr(self.memory_bank, "memory_age") and isinstance(
+                self.memory_bank, TemporalMemoryBank
+            ):
+                memory_age = self.memory_bank.memory_age
+                learning_history["memory_utilization"].append(
+                    (memory_age < 100).float().mean().item()
+                )
+
+        # Get final semantic state
+        final_state: Any = None
+        if hasattr(self.memory_bank, "temporal_context") and isinstance(
+            self.memory_bank, TemporalMemoryBank
+        ):
+            final_state = self.memory_bank.temporal_context()
 
         return {
             "learning_history": learning_history,
-            "final_semantic_state": self.memory_bank.temporal_context(),
+            "final_semantic_state": final_state,
             "total_cycles": num_cycles,
         }
 
