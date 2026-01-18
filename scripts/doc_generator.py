@@ -14,7 +14,7 @@ Ensures all documentation is aligned and up-to-date.
 """
 
 import os
-from typing import Dict, List, Any, Optional
+from typing import Dict, List
 from dataclasses import dataclass
 
 
