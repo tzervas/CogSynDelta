@@ -83,7 +83,10 @@ def benchmark_neural_network(device: torch.device, batch_sizes: List[int] = [1, 
     
     # Create a simple network similar to CogSynDelta components
     class SimpleNet(nn.Module):
+        """Simple feedforward network for benchmarking neural network operations."""
+        
         def __init__(self) -> None:
+            """Initialize network layers with LayerNorm and ReLU activations."""
             super().__init__()
             self.layers = nn.Sequential(
                 nn.Linear(784, 512),
@@ -99,6 +102,7 @@ def benchmark_neural_network(device: torch.device, batch_sizes: List[int] = [1, 
             )
         
         def forward(self, x: torch.Tensor) -> torch.Tensor:
+            """Forward pass through the network layers."""
             return self.layers(x)
     
     model = SimpleNet().to(device)

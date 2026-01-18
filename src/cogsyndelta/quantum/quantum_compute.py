@@ -1,11 +1,13 @@
 """
-Quantum Computing and Specialized Compute Backend Interface
+Quantum Computing and Specialized Compute Backend Interface.
 
-Extensible compute backend system supporting:
-- Classical compute (CPU/GPU/TPU)
-- Quantum compute (gate-based, annealing, hybrid)
-- Sub-model interfaces for specialized processing
-- Side-model quantum coprocessors
+**FUTURE FEATURE - BACKLOGGED**
+
+This module provides an extensible compute backend system supporting:
+- Classical compute (CPU/GPU/TPU) - IMPLEMENTED
+- Quantum compute (gate-based, annealing, hybrid) - STUB (awaiting ecosystem)
+- Sub-model interfaces for specialized processing - STUB
+- Side-model quantum coprocessors - STUB
 - Easy future integration of novel compute paradigms
 
 Design philosophy:
@@ -13,16 +15,59 @@ Design philosophy:
 - Plugin-based architecture
 - Async/await for quantum job submission
 - Seamless classical-quantum hybrid execution
+
+BACKLOG STATUS:
+    Quantum backends are stub implementations. Full implementations will be
+    added once quantum computing packages (cirq, qiskit, pennylane) support
+    Python 3.14. See ROADMAP.md for updates.
+
+    Current blockers:
+    - cirq depends on typedunits (no cp314 wheels)
+    - qiskit depends on typedunits (transitive)
+    - pennylane depends on typedunits (transitive)
 """
 
 import torch
 import torch.nn as nn
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from abc import ABC, abstractmethod
 from enum import Enum
 import asyncio
 from dataclasses import dataclass
 import numpy as np
+import warnings
+
+
+# Feature availability flag (checked at runtime)
+_QUANTUM_PACKAGES_AVAILABLE = False
+_QUANTUM_BACKLOG_MESSAGE = (
+    "Quantum computing features are backlogged pending Python 3.14 ecosystem "
+    "support. Using classical simulation stubs instead. See ROADMAP.md."
+)
+
+# Try to import quantum packages
+try:
+    import cirq
+    _QUANTUM_PACKAGES_AVAILABLE = True
+except ImportError:
+    pass
+
+try:
+    import qiskit
+    _QUANTUM_PACKAGES_AVAILABLE = True
+except ImportError:
+    pass
+
+try:
+    import pennylane
+    _QUANTUM_PACKAGES_AVAILABLE = True
+except ImportError:
+    pass
+
+
+def _warn_quantum_stub() -> None:
+    """Emit warning that quantum features are using stub implementations."""
+    warnings.warn(_QUANTUM_BACKLOG_MESSAGE, FutureWarning, stacklevel=3)
 
 
 class ComputeBackendType(str, Enum):
@@ -72,6 +117,7 @@ class ComputeBackend(ABC):
     """Abstract base class for compute backends."""
     
     def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize compute backend with configuration."""
         self.config = config
         self.backend_type = config.get('type', ComputeBackendType.CLASSICAL_CPU)
         self.initialized = False
@@ -209,33 +255,36 @@ class ClassicalGPUBackend(ComputeBackend):
 
 
 # ============================================================================
-# Quantum Compute Backends
+# Quantum Compute Backends (STUB IMPLEMENTATIONS)
+# 
+# These are placeholder implementations that simulate quantum behavior using
+# classical computing. They will be replaced with real quantum backends once
+# the quantum ecosystem supports Python 3.14.
 # ============================================================================
 
 class QuantumGateBackend(ComputeBackend):
     """
     Quantum gate-based computing backend.
+    
+    **STUB IMPLEMENTATION** - Uses classical simulation.
+    
     Supports gate model quantum computers (IBM, Google, IonQ, etc.)
+    Will integrate with qiskit, cirq, or pennylane once Python 3.14
+    ecosystem support is available.
     """
     
     async def initialize(self) -> Any:
-        """Initialize quantum backend."""
-        # Try to import quantum libraries
-        try:
-            # Example: Qiskit, Cirq, PennyLane, etc.
-            # import qiskit
-            # self.quantum_provider = qiskit.IBMQ.load_account()
-            pass
-        except ImportError:
-            print("Warning: Quantum libraries not available, using simulator")
+        """Initialize quantum backend (stub - uses simulator)."""
+        _warn_quantum_stub()
         
         self.num_qubits = self.config.get('num_qubits', 20)
-        self.backend_name = self.config.get('backend_name', 'simulator')
+        self.backend_name = self.config.get('backend_name', 'classical_simulator')
         self.initialized = True
+        self._stub_mode = True
     
     async def execute(self, job: ComputeJob) -> ComputeResult:
         """
-        Execute quantum circuit.
+        Execute quantum circuit (stub - classical simulation).
         
         Supports various quantum operations:
         - Variational quantum circuits (VQC)
@@ -435,6 +484,7 @@ class SubModelInterface(nn.Module):
     """
     
     def __init__(self, compute_backend: ComputeBackend) -> None:
+        """Initialize sub-model interface with compute backend."""
         super(SubModelInterface, self).__init__()
         self.compute_backend = compute_backend
         self.model_id = None
@@ -472,6 +522,7 @@ class QuantumSubModel(SubModelInterface):
     """
     
     def __init__(self, input_dim: int, output_dim: int, num_qubits: int = 10) -> None:
+        """Initialize quantum sub-model with encoder/decoder layers."""
         quantum_backend = QuantumGateBackend({
             'type': ComputeBackendType.QUANTUM_GATE,
             'num_qubits': num_qubits
@@ -524,6 +575,7 @@ class SideModelCoprocessor:
     """
     
     def __init__(self, model: nn.Module, compute_backend: ComputeBackend) -> None:
+        """Initialize coprocessor with model and compute backend."""
         self.model = model
         self.compute_backend = compute_backend
         self.cache = {}
@@ -567,6 +619,7 @@ class ComputeOrchestrator:
     """
     
     def __init__(self) -> None:
+        """Initialize orchestrator with empty backend registry."""
         self.backends: Dict[ComputeBackendType, ComputeBackend] = {}
         self.job_queue = asyncio.Queue()
         self.active_jobs = {}
@@ -642,6 +695,7 @@ class QuantumEnhancedVAE(nn.Module):
     """
     
     def __init__(self, input_dim: int, latent_dim: int, use_quantum: bool = False) -> None:
+        """Initialize VAE with optional quantum latent processor."""
         super(QuantumEnhancedVAE, self).__init__()
         
         self.input_dim = input_dim

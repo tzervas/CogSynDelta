@@ -38,6 +38,7 @@ class BenchmarkResult:
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     
     def to_dict(self) -> Dict:
+        """Convert benchmark result to dictionary format."""
         return {
             'metric': self.metric_name,
             'value': self.value,
@@ -62,6 +63,7 @@ class PerformanceBenchmark:
     """
     
     def __init__(self) -> None:
+        """Initialize performance benchmark with empty results and detect device."""
         self.results: List[BenchmarkResult] = []
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -208,6 +210,7 @@ class CompressionBenchmark:
     """
     
     def __init__(self) -> None:
+        """Initialize compression benchmark with empty results."""
         self.results: List[BenchmarkResult] = []
     
     def measure_compression_ratio(self, original: torch.Tensor, 
@@ -305,6 +308,7 @@ class AccuracyBenchmark:
     """
     
     def __init__(self) -> None:
+        """Initialize accuracy benchmark with empty results."""
         self.results: List[BenchmarkResult] = []
     
     def measure_vae_loss(self, model, data_loader, num_batches: int = 10) -> Tuple[BenchmarkResult, BenchmarkResult]:
@@ -362,6 +366,7 @@ class BenchmarkSuite:
     """
     
     def __init__(self, output_dir: str = "./benchmark_results") -> None:
+        """Initialize benchmark suite with output directory and sub-benchmarks."""
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
         
