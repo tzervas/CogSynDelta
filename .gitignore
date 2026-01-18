@@ -209,3 +209,30 @@ __marimo__/
 # Data directories
 data/
 *.pth
+
+# Model checkpoints and weights
+checkpoints/
+*.ckpt
+*.safetensors
+
+# Memory persistence files
+memory_storage/
+*.pkl
+*.pickle
+
+# Logs and outputs
+logs/
+outputs/
+results/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Project-specific
+scripts/reorganize.sh
