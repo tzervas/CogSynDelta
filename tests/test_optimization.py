@@ -260,10 +260,8 @@ class TestModelOptimization:
         optimizer = RTX5080Optimizer()
         optimized = optimizer.optimize_model(simple_model)
 
-        # Create test input
-        x = torch.randn(4, 784)
-        if not CUDA_AVAILABLE:
-            x = x.to(optimizer.device)
+        # Create test input on same device as model
+        x = torch.randn(4, 784, device=optimizer.device)
 
         # Forward pass should work
         with torch.no_grad():
