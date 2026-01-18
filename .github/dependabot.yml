@@ -1,0 +1,67 @@
+# Dependabot configuration for CogSynDelta
+# Documentation: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+
+registries:
+  # PyTorch index for CUDA builds
+  pytorch-cu128:
+    type: python-index
+    url: https://download.pytorch.org/whl/cu128
+    replaces-base: false
+
+updates:
+  # Python dependencies (pyproject.toml / requirements.txt)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    # Group minor/patch updates to reduce PR noise
+    groups:
+      python-minor:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Limit open PRs to avoid overwhelming
+    open-pull-requests-limit: 5
+    # Security updates get priority
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps(python):"
+    # Ignore pre-releases unless explicitly using them
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-prerelease"]
+      # PyTorch CUDA builds handled separately
+      - dependency-name: "torch"
+      - dependency-name: "torchvision"
+      - dependency-name: "torchaudio"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    groups:
+      actions-minor:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "deps(actions):"
