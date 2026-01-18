@@ -183,7 +183,7 @@ def test_exploratory_phase(model: torch.nn.Module, test_loader: DataLoader,
         for sigma_scale in [0.5, 1.0, 2.0]:
             mu, logvar = model.encoder(data)
             z = model.reparameterize(mu, logvar, sigma_scale=sigma_scale)
-            recon = model.decoder(z)
+            _recon = model.decoder(z)  # reconstruction for debugging
             print(f'  σ scale = {sigma_scale}: latent std = {z.std().item():.4f}')
 
 
