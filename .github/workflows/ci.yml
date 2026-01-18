@@ -106,8 +106,8 @@ jobs:
 
     - name: Install dependencies with CPU-only PyTorch
       run: |
-        # Override torch sources to use CPU-only builds in CI (no CUDA)
-        uv sync --group dev --index https://download.pytorch.org/whl/cpu
+        # Use --no-sources to ignore pyproject.toml torch source (cu128), use CPU index instead
+        uv sync --group dev --no-sources --extra-index-url https://download.pytorch.org/whl/cpu
 
     - name: Run tests with pytest
       run: |

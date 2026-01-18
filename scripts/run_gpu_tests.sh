@@ -82,10 +82,10 @@ check_cuda() {
 # Sync project to remote
 sync_project() {
     log_info "Syncing project to ${REMOTE_HOST}:${REMOTE_PROJECT_DIR}..."
-    
+
     # Create remote directory if needed
     ssh "${REMOTE_HOST}" "mkdir -p ${REMOTE_PROJECT_DIR}"
-    
+
     # Rsync with exclusions
     rsync -avz --progress \
         --exclude '.git' \
@@ -101,14 +101,14 @@ sync_project() {
         --exclude 'model_sections/*.pt' \
         "${LOCAL_PROJECT_DIR}/" \
         "${REMOTE_HOST}:${REMOTE_PROJECT_DIR}/"
-    
+
     log_success "Project synced to ${REMOTE_HOST}"
 }
 
 # Run GPU tests
 run_gpu_tests() {
     log_info "Running GPU-enabled tests on ${REMOTE_HOST}..."
-    
+
     ssh -t "${REMOTE_HOST}" "cd ${REMOTE_PROJECT_DIR} && \
         uv sync --group dev && \
         uv run pytest tests/ -v -m 'gpu or cuda' --tb=short 2>&1" || {
@@ -116,40 +116,40 @@ run_gpu_tests() {
         ssh -t "${REMOTE_HOST}" "cd ${REMOTE_PROJECT_DIR} && \
             uv run pytest tests/ -v --tb=short 2>&1"
     }
-    
+
     log_success "GPU tests completed"
 }
 
 # Run GPU benchmarks
 run_benchmarks() {
     log_info "Running GPU benchmarks on ${REMOTE_HOST}..."
-    
+
     ssh -t "${REMOTE_HOST}" "cd ${REMOTE_PROJECT_DIR} && \
         uv sync && \
         uv run python benchmarks/gpu_benchmark.py 2>&1"
-    
+
     log_success "GPU benchmarks completed"
 }
 
 # Run RTX 5080 specific benchmarks
 run_rtx5080_benchmark() {
     log_info "Running RTX 5080 benchmarks on ${REMOTE_HOST}..."
-    
+
     ssh -t "${REMOTE_HOST}" "cd ${REMOTE_PROJECT_DIR} && \
         uv sync && \
         uv run python benchmarks/rtx5080_benchmark.py 2>&1"
-    
+
     log_success "RTX 5080 benchmarks completed"
 }
 
 # Run industry benchmarks
 run_industry_benchmarks() {
     log_info "Running industry standard benchmarks on ${REMOTE_HOST}..."
-    
+
     ssh -t "${REMOTE_HOST}" "cd ${REMOTE_PROJECT_DIR} && \
         uv sync && \
         uv run python benchmarks/industry_benchmarks.py 2>&1"
-    
+
     log_success "Industry benchmarks completed"
 }
 
@@ -179,14 +179,14 @@ print_usage() {
 # Main
 main() {
     local command="${1:-all}"
-    
+
     echo "=============================================="
     echo "  CogSynDelta GPU Tests & Benchmarks Runner"
     echo "=============================================="
     echo ""
-    
+
     check_connection
-    
+
     case "${command}" in
         tests)
             check_cuda
@@ -227,7 +227,7 @@ main() {
             exit 1
             ;;
     esac
-    
+
     echo ""
     log_success "Done!"
 }
