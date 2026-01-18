@@ -7,6 +7,9 @@ This script demonstrates the three phases of the self-improving AI:
 3. Meta-optimization: MAML-based meta-learning
 
 Tests the VAE loss: L = E[||x - x̂||²] + ½(σ² + μ² - 1 - log σ²)
+
+Note: The test_* functions can be run standalone via main() or as pytest tests
+using the fixtures defined below.
 """
 
 import torch
@@ -16,13 +19,71 @@ from torch.utils.data import DataLoader
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Generator
+import pytest
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from cogsyndelta.core.pcn_vae_gan import create_model, load_config
 
+
+# ============================================================================
+# Pytest Fixtures
+# ============================================================================
+
+@pytest.fixture(scope="module")
+def device() -> torch.device:
+    """Provide torch device for tests."""
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+@pytest.fixture(scope="module")
+def config() -> Dict[str, Any]:
+    """Load test configuration."""
+    config_path = str(Path(__file__).parent.parent / "config/config.yaml")
+    return load_config(config_path)
+
+
+@pytest.fixture(scope="module")
+def model(config: Dict[str, Any], device: torch.device) -> torch.nn.Module:
+    """Create and provide the model."""
+    config_path = str(Path(__file__).parent.parent / "config/config.yaml")
+    m = create_model(config_path)
+    return m.to(device)
+
+
+@pytest.fixture(scope="module")
+def test_loader(config: Dict[str, Any]) -> DataLoader:
+    """Provide test data loader."""
+    transform = transforms.Compose([transforms.ToTensor()])
+    test_dataset = datasets.MNIST(
+        './data', train=False, download=True, transform=transform
+    )
+    return DataLoader(
+        test_dataset, 
+        batch_size=config.get('training', {}).get('batch_size', 128),
+        shuffle=False
+    )
+
+
+@pytest.fixture(scope="module")
+def train_loader(config: Dict[str, Any]) -> DataLoader:
+    """Provide training data loader."""
+    transform = transforms.Compose([transforms.ToTensor()])
+    train_dataset = datasets.MNIST(
+        './data', train=True, download=True, transform=transform
+    )
+    return DataLoader(
+        train_dataset,
+        batch_size=config.get('training', {}).get('batch_size', 128),
+        shuffle=True
+    )
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
 
 def train_epoch(model: torch.nn.Module, dataloader: DataLoader, optimizer: optim.Optimizer, 
                 device: torch.device, config: Dict[str, Any]) -> Dict[str, float]:
@@ -60,7 +121,7 @@ def train_epoch(model: torch.nn.Module, dataloader: DataLoader, optimizer: optim
     }
 
 
-def test_vae_loss(model: torch.nn.Module, test_loader: DataLoader, device: torch.device) -> float:
+def test_vae_loss(model: torch.nn.Module, test_loader: DataLoader, device: torch.device) -> None:
     """
     Test VAE loss function: L = E[||x - x̂||²] + ½(σ² + μ² - 1 - log σ²)
     
@@ -95,7 +156,8 @@ def test_vae_loss(model: torch.nn.Module, test_loader: DataLoader, device: torch
     test_e = torch.exp(torch.tensor(1.0))
     print(f'exp(1) = {test_e.item():.6f} (should be ≈ 2.718282)')
     
-    return test_loss / num_batches
+    # Test passes if loss is computed without error
+    assert test_loss >= 0, "Loss should be non-negative"
 
 
 def test_exploratory_phase(model: torch.nn.Module, test_loader: DataLoader, 

@@ -2,12 +2,21 @@
 
 This directory contains example scripts demonstrating various features of CogSynDelta.
 
+## Prerequisites
+
+Install uv and sync dependencies:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+cd CogSynDelta
+uv sync
+```
+
 ## Examples
 
 ### 1. Basic Training (`basic_training.py`)
 Demonstrates basic model training on MNIST dataset:
 ```bash
-python examples/basic_training.py
+uv run python examples/basic_training.py
 ```
 
 **Features:**
@@ -18,7 +27,7 @@ python examples/basic_training.py
 ### 2. Memory Management (`memory_management.py`)
 Demonstrates the tiered memory system:
 ```bash
-python examples/memory_management.py
+uv run python examples/memory_management.py
 ```
 
 **Features:**
@@ -30,7 +39,7 @@ python examples/memory_management.py
 ### 3. API Server (`api_server.py`)
 Starts the FastAPI server:
 ```bash
-python examples/api_server.py
+uv run python examples/api_server.py
 ```
 
 Then test with:
@@ -47,7 +56,7 @@ curl http://localhost:8000/health
 ### 4. Self-Improving Agents (`self_improving_agents.py`)
 Demonstrates agent learning and collaboration:
 ```bash
-python examples/self_improving_agents.py
+uv run python examples/self_improving_agents.py
 ```
 
 **Features:**
@@ -57,12 +66,12 @@ python examples/self_improving_agents.py
 - Adaptive behavior
 
 ### 5. Quantum Computing (`quantum_computing.py`)
-Demonstrates quantum-enhanced neural networks:
-```bash
-# Install quantum dependencies first
-pip install cogsyndelta[quantum]
 
-# Run example
+> **Note:** Quantum packages (qiskit, pennylane, cirq) are not yet compatible with Python 3.14.
+> See [ROADMAP.md](../ROADMAP.md) for status. Use Python 3.13 environment for quantum features.
+
+```bash
+# Requires Python 3.13 environment with quantum packages
 python examples/quantum_computing.py
 ```
 
@@ -72,31 +81,36 @@ python examples/quantum_computing.py
 - Hybrid quantum-classical models
 - Multi-backend support (Qiskit, PennyLane, Cirq)
 
-## Requirements
+## Installation Options
 
-Basic examples require only the core dependencies:
+Basic examples require only the core dependencies (installed by default):
 ```bash
-pip install cogsyndelta
+uv sync
 ```
 
-For quantum examples:
+For vision extras:
 ```bash
-pip install cogsyndelta[quantum]
+uv sync --extra vision
 ```
 
-For vision examples:
+For audio extras:
 ```bash
-pip install cogsyndelta[vision]
+uv sync --extra audio
 ```
 
-For audio examples:
+For GPU optimization (NVIDIA):
 ```bash
-pip install cogsyndelta[audio]
+uv sync --extra gpu-nvidia
+```
+
+For inference providers (OpenAI, Anthropic, etc.):
+```bash
+uv sync --extra inference-providers
 ```
 
 For all features:
 ```bash
-pip install cogsyndelta[all]
+uv sync --extra all
 ```
 
 ## Running on GPU

@@ -23,6 +23,7 @@ class VAEEncoder(nn.Module):
     """VAE Encoder with configurable σ sampling."""
     
     def __init__(self, input_dim: int, hidden_dim: int, latent_dim: int) -> None:
+        """Initialize encoder with linear layers for mu and logvar."""
         super(VAEEncoder, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc_mu = nn.Linear(hidden_dim, latent_dim)
@@ -49,6 +50,7 @@ class VAEDecoder(nn.Module):
     """VAE Decoder for reconstruction."""
     
     def __init__(self, latent_dim: int, hidden_dim: int, output_dim: int) -> None:
+        """Initialize decoder with linear layers for reconstruction."""
         super(VAEDecoder, self).__init__()
         self.fc1 = nn.Linear(latent_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)
@@ -78,6 +80,7 @@ class PCNVAEGANHybrid(nn.Module):
     """
     
     def __init__(self, config: Dict) -> None:
+        """Initialize PCN-VAE-GAN hybrid with encoder, decoder, and discriminator."""
         super(PCNVAEGANHybrid, self).__init__()
         
         # Load configuration

@@ -220,6 +220,9 @@ memory_storage/
 *.pkl
 *.pickle
 
+# Model sections (generated during testing)
+model_sections/
+
 # Logs and outputs
 logs/
 outputs/

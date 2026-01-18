@@ -68,6 +68,7 @@ class MemoryCompressor(nn.Module):
     
     def __init__(self, embed_dim: int = 512, compressed_dim: int = 256, 
                  compression_ratio: float = 0.5) -> None:
+        """Initialize memory compressor with autoencoder architecture."""
         super(MemoryCompressor, self).__init__()
         
         self.embed_dim = embed_dim
@@ -179,6 +180,7 @@ class PersistentMemoryBank(nn.Module):
                  short_term_capacity: int = 1000,
                  storage_path: str = "./memory_storage",
                  use_dense_encoding: bool = True) -> None:
+        """Initialize persistent memory bank with tiered storage."""
         super(PersistentMemoryBank, self).__init__()
         
         self.embed_dim = embed_dim
@@ -535,6 +537,7 @@ class InfiniteLoopSafeguard:
     def __init__(self, max_iterations: int = 1000, 
                  max_repetitions: int = 5,
                  timeout_seconds: float = 300.0) -> None:
+        """Initialize safeguard with iteration limits and ethical constraints."""
         self.max_iterations = max_iterations
         self.max_repetitions = max_repetitions
         self.timeout_seconds = timeout_seconds

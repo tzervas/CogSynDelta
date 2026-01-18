@@ -3,10 +3,23 @@
 ## Quick Start
 
 ### Prerequisites
-- Python 3.9+ (tested up to 3.13)
-- PyTorch 2.9.1 (verified stable release as of 2026-01-18)
-- NVIDIA GPU with CUDA 12.6 or 12.8 support (required for RTX 5080)
+- **Python 3.14+** (managed automatically by uv)
+- **uv** package manager (recommended)
+- NVIDIA GPU with CUDA 12.8 support (optional, for GPU acceleration)
 - 16GB RAM minimum (32GB+ recommended)
+
+### Install uv
+
+```bash
+# Linux/macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Or via pipx
+pipx install uv
+```
 
 ### Basic Installation
 
@@ -15,44 +28,136 @@
 git clone https://github.com/tzervas/CogSynDelta.git
 cd CogSynDelta
 
-# Install in development mode with all dependencies
-pip install -e ".[all]"
+# Install all dependencies (uv handles Python 3.14 automatically)
+uv sync
 
-# Or install just core dependencies
-pip install -e .
+# Verify installation
+uv run python -c "import cogsyndelta; print(f'CogSynDelta ready!')"
 ```
 
 ### Installation Options
 
 ```bash
-# Core only (minimal dependencies)
-pip install -e .
+# Core + dev dependencies (default)
+uv sync
 
-# With quantum computing support
-pip install -e ".[quantum]"
+# Include optional extras
+uv sync --extra vision      # Computer vision support
+uv sync --extra audio       # Audio processing
+uv sync --extra gpu-nvidia  # NVIDIA Triton optimization
+uv sync --extra inference-providers  # Cloud AI providers
+uv sync --extra all         # Everything
 
-# With vision/audio processing
-pip install -e ".[vision,audio]"
-
-# Development tools
-pip install -e ".[dev]"
-
-# Everything
-pip install -e ".[all]"
+# Include documentation tools
+uv sync --group docs
 ```
 
-## From PyPI (when published)
+## Running Commands
+
+### Using uv run (recommended)
 
 ```bash
-pip install cogsyndelta
+# Start API server
+uv run cogsyndelta-server
 
-# With extras
-pip install cogsyndelta[quantum,vision,audio]
+# Run benchmarks
+uv run cogsyndelta-benchmark
+
+# Run tests
+uv run pytest tests/ -v
+
+# Run Python scripts
+uv run python examples/basic_training.py
+```
+
+### Using uvx for tools
+
+```bash
+# Run linting (isolated, doesn't affect project)
+uvx ruff check src/
+
+# Format code
+uvx black src/ tests/
+
+# Type checking (uses project's mypy config)
+uv run mypy src/
+```
+
+## GPU Setup (NVIDIA)
+
+### CUDA 12.8 (Recommended for RTX 40/50 series)
+
+The project is pre-configured to use PyTorch with CUDA 12.8 from the PyTorch index.
+
+```bash
+# Verify CUDA is available after uv sync
+uv run python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
+uv run python -c "import torch; print(f'Device: {torch.cuda.get_device_name(0)}')"
+```
+
+### Alternative CUDA Versions
+
+To use a different CUDA version, edit `pyproject.toml`:
+
+```toml
+[tool.uv.sources]
+# For CUDA 12.6
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }
+
+# For CUDA 12.4
+torch = { index = "pytorch-cu124" }
+torchvision = { index = "pytorch-cu124" }
+
+# For CPU only
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+```
+
+Then regenerate the lock file:
+
+```bash
+uv lock --upgrade-package torch --upgrade-package torchvision
+uv sync
+```
+
+### AMD ROCm
+
+```bash
+# Edit pyproject.toml to use ROCm index
+[tool.uv.sources]
+torch = { index = "pytorch-rocm63" }
+torchvision = { index = "pytorch-rocm63" }
+
+# Regenerate and sync
+uv lock --upgrade-package torch --upgrade-package torchvision
+uv sync
+```
+
+## Development Setup
+
+```bash
+# Clone and sync (includes dev dependencies by default)
+git clone https://github.com/tzervas/CogSynDelta.git
+cd CogSynDelta
+uv sync
+
+# Install pre-commit hooks
+uv run pre-commit install
+
+# Run quality checks
+uvx ruff check src/ tests/
+uvx black --check src/ tests/
+uv run mypy src/
+
+# Run tests with coverage
+uv run pytest tests/ -v --cov=cogsyndelta --cov-report=html
 ```
 
 ## Verify Installation
 
 ```python
+# uv run python
 import cogsyndelta
 print(f"CogSynDelta version: {cogsyndelta.__version__}")
 
@@ -60,140 +165,100 @@ print(f"CogSynDelta version: {cogsyndelta.__version__}")
 from cogsyndelta.optimization.cuda_optimization import get_gpu_optimizer
 optimizer = get_gpu_optimizer()
 print(optimizer.get_memory_stats())
+
+# Test PyTorch CUDA
+import torch
+print(f"PyTorch: {torch.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"CUDA version: {torch.version.cuda}")
+    print(f"Device: {torch.cuda.get_device_name(0)}")
 ```
 
-## Running Tests
+## Reproducible Builds
+
+The `uv.lock` file ensures reproducible builds across all environments:
 
 ```bash
-# All tests
-pytest
+# Install exact versions from lock file
+uv sync --frozen
 
-# Specific test file
-pytest tests/test_unit.py
-
-# With coverage
-pytest --cov=cogsyndelta --cov-report=html
-```
-
-## Running the API Server
-
-```bash
-# Using entry point
-cogsyndelta-server
-
-# Or directly
-python -m cogsyndelta.api.server
-
-# With custom config
-cogsyndelta-server --config config/custom_config.yaml
-```
-
-## Running Benchmarks
-
-```bash
-# Using entry point
-cogsyndelta-benchmark
-
-# Or directly
-python benchmarks/run.py
-```
-
-## GPU Setup (NVIDIA RTX 5080)
-
-### Install CUDA Toolkit
-
-**IMPORTANT**: RTX 5080 requires CUDA 12.8 for full support.
-
-```bash
-# For Ubuntu/Debian - CUDA 12.8
-wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
-sudo dpkg -i cuda-keyring_1.1-1_all.deb
-sudo apt-get update
-sudo apt-get -y install cuda-toolkit-12-8
-
-# Verify
-nvcc --version
-nvidia-smi
-```
-
-### Install PyTorch 2.9.1 with CUDA Support
-
-**Verified as of 2026-01-18**: PyTorch 2.9.1 supports CUDA 12.6 and 12.8.
-
-```bash
-# CUDA 12.8 (recommended for RTX 5080)
-pip3 install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu128
-
-# CUDA 12.6 (alternative)
-pip3 install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu126
-
-# Verify
-python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-```
-
-## Development Setup
-
-```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Install pre-commit hooks
-pre-commit install
-
-# Run code quality checks
-black src/ tests/
-ruff check src/ tests/
-mypy src/
-
-# Run tests
-pytest
+# Update dependencies and regenerate lock
+uv lock --upgrade
+uv sync
 ```
 
 ## Troubleshooting
 
 ### Import Errors
 
-If you get import errors after installation:
-
 ```bash
-# Ensure the package is installed
-pip list | grep cogsyndelta
+# Ensure you're using uv run
+uv run python -c "import cogsyndelta"
 
-# Reinstall in development mode
-pip install -e . --force-reinstall
+# If issues persist, recreate environment
+rm -rf .venv
+uv sync
 ```
 
-### CUDA Issues
+### CUDA Not Found
 
 ```bash
-# Check CUDA availability
-python -c "import torch; print(f'PyTorch: {torch.__version__}')"
-python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-python -c "import torch; print(f'CUDA version: {torch.version.cuda}')"
-python -c "import torch; print(f'Device: {torch.cuda.get_device_name(0)}')"
+# Check PyTorch CUDA status
+uv run python -c "import torch; print(torch.cuda.is_available())"
 
-# If CUDA not found, reinstall PyTorch 2.9.1 with CUDA 12.8
-pip uninstall torch torchvision
-pip3 install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu128
+# Switch to CUDA index if using CPU-only build
+# Edit pyproject.toml [tool.uv.sources] then:
+uv lock --upgrade-package torch
+uv sync
 ```
 
 ### Memory Issues
 
 ```bash
-# Reduce batch size in config/config.yaml
-# Or set environment variable
+# Reduce batch size via environment variable
 export COGSYNDELTA_MAX_BATCH_SIZE=16
+uv run cogsyndelta-server
+```
+
+### Lock File Conflicts
+
+```bash
+# Regenerate lock file
+uv lock
+
+# Force upgrade all packages
+uv lock --upgrade
+
+# Upgrade specific package
+uv lock --upgrade-package torch
+```
+
+## Package Caching
+
+uv automatically caches packages in `~/.cache/uv/`. To manage:
+
+```bash
+# View cache location
+uv cache dir
+
+# Clear cache (if needed)
+uv cache clean
 ```
 
 ## Configuration
 
 Configuration files are located in `config/`:
 - `config.yaml` - Main configuration
-- Custom configs can be created and passed via `--config`
+- Custom configs can be passed via `--config`
+
+```bash
+uv run cogsyndelta-server --config config/custom_config.yaml
+```
 
 ## Next Steps
 
 - See [examples/](examples/) for usage examples
 - Read [docs/](docs/) for detailed documentation
-- Check [benchmarks/](benchmarks/) for performance evaluation
-- Review [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines
+- Check [ROADMAP.md](ROADMAP.md) for project roadmap
+- Review [CONTRIBUTING.md](docs/CONTRIBUTING.md) for development guidelines

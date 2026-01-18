@@ -173,6 +173,7 @@ class WebcamAdapter(BaseInputAdapter):
     """Webcam video input adapter."""
     
     def __init__(self, config: VideoInputConfig) -> None:
+        """Initialize webcam adapter with configuration."""
         self.config = config
         self.capture = None
     
@@ -210,6 +211,7 @@ class ScreenCaptureAdapter(BaseInputAdapter):
     """Desktop screen capture adapter."""
     
     def __init__(self, config: VideoInputConfig) -> None:
+        """Initialize screen capture adapter with configuration."""
         self.config = config
         self.sct = None
         self.monitor = None
@@ -248,6 +250,7 @@ class StreamAdapter(BaseInputAdapter):
     """Generic streaming adapter (RTSP, RTMP, HTTP)."""
     
     def __init__(self, config: VideoInputConfig) -> None:
+        """Initialize stream adapter with configuration."""
         self.config = config
         self.stream = None
     
@@ -283,6 +286,7 @@ class AudioStreamAdapter(BaseInputAdapter):
     """Audio stream adapter."""
     
     def __init__(self, config: AudioInputConfig) -> None:
+        """Initialize audio stream adapter with configuration."""
         self.config = config
         self.stream = None
     
