@@ -51,8 +51,8 @@ async def main():
     print(f"  Qubits: {config['num_qubits']}")
 
     try:
-        # Initialize quantum manager
-        qc_manager = QuantumComputeManager()
+        # Initialize quantum manager (manager provides backend verification)
+        _qc_manager = QuantumComputeManager()
 
         print("\n" + "=" * 60)
         print("Quantum-Enhanced Neural Network")
