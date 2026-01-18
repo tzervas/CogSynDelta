@@ -103,15 +103,19 @@ class TestTemporalMemoryBank:
         query = torch.randn(1, 512, device="cuda")
         result = memory_bank.read(query)
 
-        assert result.shape == (1, 512), f"Expected (1, 512), got {result.shape}"
+        # read() returns tuple: (retrieved, weights)
+        retrieved, weights = result
+        assert retrieved.shape == (1, 512), f"Expected (1, 512), got {retrieved.shape}"
 
     def test_read_empty_memory(self, memory_bank: nn.Module) -> None:
         """Test reading from empty memory returns zeros or handles gracefully."""
         query = torch.randn(1, 512, device="cuda")
         result = memory_bank.read(query)
 
+        # read() returns tuple: (retrieved, weights)
+        retrieved, weights = result
         # Should handle empty memory gracefully
-        assert result.shape == (1, 512)
+        assert retrieved.shape == (1, 512)
 
     def test_memory_wrapping(self, memory_bank: nn.Module) -> None:
         """Test that memory wraps when capacity exceeded."""
@@ -218,7 +222,10 @@ class TestHierarchicalPredictiveCoding:
         x = torch.randn(2, 512, device="cuda")
         output = hpc(x)
 
-        assert output.shape == (2, 512), f"Expected (2, 512), got {output.shape}"
+        # HPC returns dict with final_state key
+        assert isinstance(output, dict)
+        assert "final_state" in output
+        assert output["final_state"].shape == (2, 512), f"Expected (2, 512), got {output['final_state'].shape}"
 
     def test_multi_level_processing(self, hpc: nn.Module) -> None:
         """Test that multiple levels are processed."""
@@ -228,7 +235,7 @@ class TestHierarchicalPredictiveCoding:
         output = hpc(x)
 
         # Output should be different from input due to processing
-        assert not torch.allclose(output, x, atol=1e-3)
+        assert not torch.allclose(output["final_state"], x, atol=1e-3)
 
 
 class TestVLJEPAIntegration:
@@ -256,8 +263,8 @@ class TestVLJEPAIntegration:
         # Store in memory
         memory_bank.write(vision_embed)
 
-        # Retrieve from memory
-        retrieved = memory_bank.read(vision_embed)
+        # Retrieve from memory (returns tuple: retrieved, weights)
+        retrieved, _weights = memory_bank.read(vision_embed)
 
         # Apply mHC connection
         connected = mhc(retrieved, vision_embed)
@@ -282,6 +289,8 @@ class TestVLJEPAIntegration:
         query = torch.randn(1, 512, device="cuda")
         result = memory_bank.read(query)
 
+        # read() returns tuple: (retrieved, weights)
+        retrieved, _weights = result
         # Result should incorporate memory context
-        assert result.shape == (1, 512)
+        assert retrieved.shape == (1, 512)
         assert memory_bank.write_pointer.item() == 10
