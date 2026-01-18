@@ -1,13 +1,13 @@
 # GPU Compatibility Matrix
 
-**Last Verified**: 2026-01-18  
-**PyTorch Version**: 2.9.1 (stable)  
+**Last Verified**: 2026-01-18
+**PyTorch Version**: 2.9.1 (stable)
 **CUDA Versions**: 12.6, 12.8
 
 ## Summary
 
-✅ **PyTorch 2.9.1** is the current stable release  
-✅ **CUDA 12.6 and 12.8** are officially supported  
+✅ **PyTorch 2.9.1** is the current stable release
+✅ **CUDA 12.6 and 12.8** are officially supported
 ⚠️ **RTX 5080 (sm_120)** support status requires verification
 
 ## PyTorch 2.9.1 Specifications
@@ -63,13 +63,13 @@ PyTorch 2.9.1 supports compute capabilities:
    ```bash
    # SSH into akula-prime
    ssh akula-prime
-   
+
    # Install CUDA 12.8 (Ubuntu/Debian)
    wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
    sudo dpkg -i cuda-keyring_1.1-1_all.deb
    sudo apt-get update
    sudo apt-get -y install cuda-toolkit-12-8
-   
+
    # Verify installation
    nvcc --version
    nvidia-smi
@@ -83,12 +83,12 @@ PyTorch 2.9.1 supports compute capabilities:
 3. **Verify GPU Support**:
    ```python
    import torch
-   
+
    print(f"PyTorch version: {torch.__version__}")
    print(f"CUDA available: {torch.cuda.is_available()}")
    print(f"CUDA version: {torch.version.cuda}")
    print(f"cuDNN version: {torch.backends.cudnn.version()}")
-   
+
    if torch.cuda.is_available():
        print(f"GPU count: {torch.cuda.device_count()}")
        print(f"GPU name: {torch.cuda.get_device_name(0)}")
@@ -108,7 +108,7 @@ PyTorch 2.9.1 supports compute capabilities:
 Based on RTX 5080 specifications (Blackwell architecture):
 - **CUDA Cores**: ~10,240
 - **Tensor Cores**: 5th Generation
-- **RT Cores**: 4th Generation  
+- **RT Cores**: 4th Generation
 - **Base Clock**: ~2.6 GHz
 - **Memory**: 16GB GDDR7
 - **Memory Bandwidth**: ~560 GB/s

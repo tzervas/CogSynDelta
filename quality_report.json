@@ -1,12 +1,12 @@
 {
   "overall_score": 100,
-  "status": "ready",
+  "status": "excellent",
   "quality_report": {
     "stats": {
-      "files_analyzed": 42,
-      "total_lines": 15670,
-      "total_functions": 395,
-      "total_classes": 130,
+      "files_analyzed": 26,
+      "total_lines": 10511,
+      "total_functions": 313,
+      "total_classes": 112,
       "issues_found": 0
     },
     "issues": {
@@ -23,5 +23,6 @@
   "intention_report": {
     "total_mismatches": 0,
     "mismatches": []
-  }
+  },
+  "passed": true
 }

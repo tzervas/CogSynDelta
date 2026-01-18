@@ -4,22 +4,22 @@ This module implements a retrieval-augmented generation system for querying
 documentation about project dependencies using LlamaIndex and FAISS.
 """
 
-from pathlib import Path
-from typing import List, Optional, Dict, Any
 import json
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
+import faiss
 from llama_index.core import (
-    VectorStoreIndex,
     Document,
-    StorageContext,
     Settings,
+    StorageContext,
+    VectorStoreIndex,
     load_index_from_storage,
 )
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.vector_stores.faiss import FaissVectorStore
-import faiss
 
 
 class DependencyDocsRAG:
@@ -27,7 +27,7 @@ class DependencyDocsRAG:
 
     def __init__(
         self,
-        persist_dir: Optional[Path] = None,
+        persist_dir: Path | None = None,
         embedding_model: str = "BAAI/bge-small-en-v1.5",
         chunk_size: int = 512,
         chunk_overlap: int = 50,
@@ -45,23 +45,21 @@ class DependencyDocsRAG:
 
         # Configure LlamaIndex settings
         Settings.embed_model = HuggingFaceEmbedding(model_name=embedding_model)
-        Settings.node_parser = SentenceSplitter(
-            chunk_size=chunk_size, chunk_overlap=chunk_overlap
-        )
+        Settings.node_parser = SentenceSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         Settings.num_output = 512
         Settings.context_window = 3900
 
-        self.index: Optional[VectorStoreIndex] = None
+        self.index: VectorStoreIndex | None = None
         self.metadata_path = self.persist_dir / "metadata.json"
-        self.metadata: Dict[str, Any] = self._load_metadata()
+        self.metadata: dict[str, Any] = self._load_metadata()
 
         # Initialize or load existing index
         self._initialize_index()
 
-    def _load_metadata(self) -> Dict[str, Any]:
+    def _load_metadata(self) -> dict[str, Any]:
         """Load metadata about indexed documents."""
         if self.metadata_path.exists():
-            with open(self.metadata_path, "r") as f:
+            with open(self.metadata_path) as f:
                 return json.load(f)
         return {"dependencies": {}, "last_updated": None, "total_docs": 0}
 
@@ -78,9 +76,7 @@ class DependencyDocsRAG:
         if storage_dir.exists() and (storage_dir / "docstore.json").exists():
             # Load existing index
             try:
-                storage_context = StorageContext.from_defaults(
-                    persist_dir=str(storage_dir)
-                )
+                storage_context = StorageContext.from_defaults(persist_dir=str(storage_dir))
                 self.index = load_index_from_storage(storage_context)
                 print(f"Loaded existing index with {self.metadata['total_docs']} documents")
             except Exception as e:
@@ -105,7 +101,7 @@ class DependencyDocsRAG:
 
     def add_documents(
         self,
-        documents: List[Document],
+        documents: list[Document],
         dependency_name: str,
         version: str,
         source: str,
@@ -149,21 +145,17 @@ class DependencyDocsRAG:
             "doc_count": len(documents),
             "last_updated": datetime.now().isoformat(),
         }
-        self.metadata["total_docs"] = self.metadata.get("total_docs", 0) + len(
-            documents
-        )
+        self.metadata["total_docs"] = self.metadata.get("total_docs", 0) + len(documents)
 
         # Persist index and metadata
         self.persist()
-        print(
-            f"Added {len(documents)} documents for {dependency_name} v{version} from {source}"
-        )
+        print(f"Added {len(documents)} documents for {dependency_name} v{version} from {source}")
 
     def query(
         self,
         query_text: str,
         top_k: int = 5,
-        filter_dependency: Optional[str] = None,
+        filter_dependency: str | None = None,
     ) -> str:
         """Query the documentation.
 
@@ -189,7 +181,7 @@ class DependencyDocsRAG:
         response = query_engine.query(query_text)
         return str(response)
 
-    def get_dependency_info(self, dependency_name: str) -> Optional[Dict[str, Any]]:
+    def get_dependency_info(self, dependency_name: str) -> dict[str, Any] | None:
         """Get information about indexed documentation for a dependency.
 
         Args:
@@ -200,7 +192,7 @@ class DependencyDocsRAG:
         """
         return self.metadata["dependencies"].get(dependency_name)
 
-    def list_dependencies(self) -> List[str]:
+    def list_dependencies(self) -> list[str]:
         """List all dependencies with indexed documentation.
 
         Returns:
@@ -217,7 +209,7 @@ class DependencyDocsRAG:
             self._save_metadata()
             print(f"Persisted index to {storage_dir}")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get statistics about the indexed documentation.
 
         Returns:

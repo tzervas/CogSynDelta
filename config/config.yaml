@@ -18,13 +18,13 @@ meta_optimization:
   inner_lr: 0.01  # Inner loop learning rate for MAML
   meta_lr: 0.001  # Meta learning rate
   num_inner_steps: 5  # Number of inner gradient steps
-  
+
 # Training parameters
 training:
   batch_size: 128
   epochs: 10
   learning_rate: 0.001
-  
+
 # VAE loss parameters
 vae_loss:
   reconstruction_weight: 1.0  # Weight for reconstruction loss
@@ -36,16 +36,16 @@ vision_language:
   image_size: 224  # Input image size
   patch_size: 16  # Vision transformer patch size
   num_vision_layers: 6  # Vision encoder depth
-  
+
   # Memory bank for silent semantic state retention
   memory_size: 1000  # Number of semantic states to retain
   num_read_heads: 4  # Multi-head attention for memory read
   temporal_window: 10  # Temporal context window size
-  
+
   # mHC: Moderated Hyper Connections
   num_hierarchical_levels: 3  # Number of hierarchical prediction levels
   moderation_strength: 0.5  # Alpha parameter for connection moderation
-  
+
   # Frame adapter for host video output
   frame_buffer_size: 16  # Number of frames to buffer
   frame_skip: 1  # Process every Nth frame
@@ -55,12 +55,12 @@ agent_framework:
   enabled: true
   agent_types:
     - swe  # Software Engineering
-    - aie  # AI Engineering  
+    - aie  # AI Engineering
     - swd  # Software Development
     - aid  # AI Development
     - security  # Security Testing
     - qa  # Quality Assurance
-  
+
   # Multi-language/framework support
   supported_languages:
     - python
@@ -71,7 +71,7 @@ agent_framework:
     - java
     - cpp
     - csharp
-  
+
   supported_frameworks:
     - pytorch
     - tensorflow
@@ -80,12 +80,12 @@ agent_framework:
     - vue
     - django
     - flask
-  
+
   # Self-improvement parameters
   num_improvement_iterations: 3  # Iterative refinement cycles
   quality_threshold: 0.85  # Minimum quality score
   security_threshold: 0.2  # Maximum acceptable security risk
-  
+
   # Security hardening
   security_hardening:
     enabled: true
@@ -100,7 +100,7 @@ agent_framework:
       - csrf
       - insecure_deserialization
       - logging_monitoring
-  
+
   # Quality assurance
   quality_assurance:
     enabled: true
@@ -119,20 +119,20 @@ compute_backends:
     enabled: true
     prefer_gpu: true  # Use GPU if available
     fallback_cpu: true  # Fallback to CPU if GPU unavailable
-  
+
   # Quantum compute
   quantum:
     enabled: false  # Enable quantum computing features
     backend_type: "simulator"  # Options: simulator, ibm, google, ionq, aws_braket
     num_qubits: 20  # Number of qubits for quantum operations
     shots: 1024  # Number of measurement shots
-    
+
     # Quantum provider configuration (when using real quantum hardware)
     provider:
       name: "ibm"  # ibm, google, ionq, aws_braket
       api_token: null  # Set via environment variable QUANTUM_API_TOKEN
       backend_name: "ibmq_qasm_simulator"
-    
+
     # Hybrid quantum-classical
     hybrid:
       enabled: true
@@ -140,14 +140,14 @@ compute_backends:
       quantum_layers:  # Which layers use quantum processing
         - latent_processing
         - feature_extraction
-  
+
   # Sub-model interfaces
   sub_models:
     enabled: true
     quantum_sub_models:  # Sub-models that can use quantum compute
       - latent_encoder
       - feature_extractor
-    
+
   # Side-model coprocessors
   coprocessors:
     enabled: true
@@ -160,7 +160,7 @@ compute_backends:
 api_server:
   host: "0.0.0.0"
   port: 8000
-  
+
   # Input/output modalities
   supported_modalities:
     - video
@@ -169,7 +169,7 @@ api_server:
     - image
     - code
     - multimodal
-  
+
   # Video input sources
   video_sources:
     webcam:
@@ -186,8 +186,8 @@ api_server:
         - http
         - websocket
         - webrtc
-  
-  # Audio input sources  
+
+  # Audio input sources
   audio_sources:
     microphone:
       enabled: true
@@ -196,13 +196,13 @@ api_server:
       enabled: false
     streaming:
       enabled: true
-  
+
   # WebSocket configuration
   websocket:
     enabled: true
     max_connections: 100
     ping_interval: 30
-  
+
   # CORS configuration
   cors:
     enabled: true
@@ -213,7 +213,7 @@ api_server:
 # Memory Persistence and Compression
 memory_persistence:
   enabled: true
-  
+
   # Dense differential embeddings for high compression
   dense_encoding:
     enabled: true  # Use dense differential embeddings + semantic residuals
@@ -221,20 +221,20 @@ memory_persistence:
     num_references: 100  # Reference embeddings for differential encoding
     update_references_interval: 1000  # Update reference centroids every N memories
     fidelity_threshold: 0.95  # Minimum reconstruction fidelity
-    
+
   # Hierarchical memory storage
   working_memory:
     capacity: 100  # Recent memories, uncompressed
-    
+
   short_term_memory:
     capacity: 1000  # Dense differential compressed memories
     compression_ratio: 0.5
-    
+
   long_term_memory:
     storage_path: "./memory_storage"  # Disk-based archive
     enable_archiving: true
     max_compression: true  # Use maximum compression for long-term
-    
+
   # Compression settings
   compression:
     enabled: true
@@ -242,7 +242,7 @@ memory_persistence:
     compressed_dim: 256  # Fallback compressed embedding dimension
     adaptive_quantization: true  # Use adaptive bit precision
     quantization_bits: [4, 16]  # Min/max bits for quantization
-    
+
   # Temporal continuity
   checkpointing:
     enabled: true
@@ -250,7 +250,7 @@ memory_persistence:
     checkpoint_dir: "./checkpoints"
     keep_last_n: 5  # Keep last N checkpoints
     include_compression_stats: true
-    
+
   # Memory management
   management:
     importance_weighting: true  # Prioritize important memories
@@ -262,26 +262,26 @@ memory_persistence:
 # Safeguards against infinite loops and hazards
 safeguards:
   enabled: true
-  
+
   # Loop detection
   loop_detection:
     enabled: true
     max_iterations: 1000  # Maximum iterations per process
     max_repetitions: 5  # Maximum state repetitions before breaking
     state_hash_window: 100  # Window for detecting repetitions
-    
+
   # Timeouts
   timeouts:
     max_execution_time: 300  # seconds (5 minutes)
     max_generation_time: 60  # seconds for code generation
     max_inference_time: 10  # seconds per inference
-    
+
   # Resource limits
   resource_limits:
     max_memory_usage: 1073741824  # 1GB in bytes
     max_output_size: 10485760  # 10MB in bytes
     max_queue_size: 1000  # Maximum items in processing queue
-    
+
   # Ethical constraints
   ethical:
     enabled: true
@@ -292,7 +292,7 @@ safeguards:
       - "resource_exhaustion"
     content_filtering: true
     validate_outputs: true
-    
+
   # Circuit breakers
   circuit_breakers:
     enabled: true
@@ -303,17 +303,17 @@ safeguards:
   custom_backends:
     enabled: true
     plugin_dir: "./plugins/backends"
-  
+
   # Custom input/output adapters
   custom_adapters:
     enabled: true
     plugin_dir: "./plugins/adapters"
-  
+
   # Custom agent types
   custom_agents:
     enabled: true
     plugin_dir: "./plugins/agents"
-  
+
   # Future extensions (placeholders)
   future_integrations:
     - photonic_computing
@@ -322,4 +322,3 @@ safeguards:
     - neuromorphic_chips
     - analog_compute
     - optical_neural_networks
-
