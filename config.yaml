@@ -29,3 +29,210 @@ training:
 vae_loss:
   reconstruction_weight: 1.0  # Weight for reconstruction loss
   kl_weight: 1.0  # Weight for KL divergence
+
+# VL-JEPA Extension: Vision-Language Joint Embedding
+vision_language:
+  embed_dim: 512  # Semantic embedding dimension
+  image_size: 224  # Input image size
+  patch_size: 16  # Vision transformer patch size
+  num_vision_layers: 6  # Vision encoder depth
+  
+  # Memory bank for silent semantic state retention
+  memory_size: 1000  # Number of semantic states to retain
+  num_read_heads: 4  # Multi-head attention for memory read
+  temporal_window: 10  # Temporal context window size
+  
+  # mHC: Moderated Hyper Connections
+  num_hierarchical_levels: 3  # Number of hierarchical prediction levels
+  moderation_strength: 0.5  # Alpha parameter for connection moderation
+  
+  # Frame adapter for host video output
+  frame_buffer_size: 16  # Number of frames to buffer
+  frame_skip: 1  # Process every Nth frame
+
+# Self-Improving Agent Framework
+agent_framework:
+  enabled: true
+  agent_types:
+    - swe  # Software Engineering
+    - aie  # AI Engineering  
+    - swd  # Software Development
+    - aid  # AI Development
+    - security  # Security Testing
+    - qa  # Quality Assurance
+  
+  # Multi-language/framework support
+  supported_languages:
+    - python
+    - javascript
+    - typescript
+    - rust
+    - go
+    - java
+    - cpp
+    - csharp
+  
+  supported_frameworks:
+    - pytorch
+    - tensorflow
+    - jax
+    - react
+    - vue
+    - django
+    - flask
+  
+  # Self-improvement parameters
+  num_improvement_iterations: 3  # Iterative refinement cycles
+  quality_threshold: 0.85  # Minimum quality score
+  security_threshold: 0.2  # Maximum acceptable security risk
+  
+  # Security hardening
+  security_hardening:
+    enabled: true
+    vulnerability_checks:
+      - injection
+      - xss
+      - broken_auth
+      - sensitive_data
+      - xxe
+      - broken_access
+      - security_misconfig
+      - csrf
+      - insecure_deserialization
+      - logging_monitoring
+  
+  # Quality assurance
+  quality_assurance:
+    enabled: true
+    metrics:
+      - correctness
+      - reliability
+      - performance
+      - maintainability
+      - scalability
+    num_test_cases: 5  # Generated test cases per solution
+
+# Compute Backend Configuration
+compute_backends:
+  # Classical compute
+  classical:
+    enabled: true
+    prefer_gpu: true  # Use GPU if available
+    fallback_cpu: true  # Fallback to CPU if GPU unavailable
+  
+  # Quantum compute
+  quantum:
+    enabled: false  # Enable quantum computing features
+    backend_type: "simulator"  # Options: simulator, ibm, google, ionq, aws_braket
+    num_qubits: 20  # Number of qubits for quantum operations
+    shots: 1024  # Number of measurement shots
+    
+    # Quantum provider configuration (when using real quantum hardware)
+    provider:
+      name: "ibm"  # ibm, google, ionq, aws_braket
+      api_token: null  # Set via environment variable QUANTUM_API_TOKEN
+      backend_name: "ibmq_qasm_simulator"
+    
+    # Hybrid quantum-classical
+    hybrid:
+      enabled: true
+      classical_ratio: 0.7  # Portion of work done classically
+      quantum_layers:  # Which layers use quantum processing
+        - latent_processing
+        - feature_extraction
+  
+  # Sub-model interfaces
+  sub_models:
+    enabled: true
+    quantum_sub_models:  # Sub-models that can use quantum compute
+      - latent_encoder
+      - feature_extractor
+    
+  # Side-model coprocessors
+  coprocessors:
+    enabled: true
+    types:
+      - quantum_feature_extractor
+      - quantum_kernel_evaluator
+      - neuromorphic_processor  # Future: neuromorphic chips
+
+# OpenAPI Server Configuration
+api_server:
+  host: "0.0.0.0"
+  port: 8000
+  
+  # Input/output modalities
+  supported_modalities:
+    - video
+    - audio
+    - text
+    - image
+    - code
+    - multimodal
+  
+  # Video input sources
+  video_sources:
+    webcam:
+      enabled: true
+      default_device: 0
+    screen_capture:
+      enabled: true
+      monitor_index: 1
+    streaming:
+      enabled: true
+      protocols:
+        - rtsp
+        - rtmp
+        - http
+        - websocket
+        - webrtc
+  
+  # Audio input sources  
+  audio_sources:
+    microphone:
+      enabled: true
+      default_device: 0
+    system_audio:
+      enabled: false
+    streaming:
+      enabled: true
+  
+  # WebSocket configuration
+  websocket:
+    enabled: true
+    max_connections: 100
+    ping_interval: 30
+  
+  # CORS configuration
+  cors:
+    enabled: true
+    allow_origins:
+      - "*"
+    allow_credentials: true
+
+# Extensibility Configuration
+extensibility:
+  # Plugin system for custom compute backends
+  custom_backends:
+    enabled: true
+    plugin_dir: "./plugins/backends"
+  
+  # Custom input/output adapters
+  custom_adapters:
+    enabled: true
+    plugin_dir: "./plugins/adapters"
+  
+  # Custom agent types
+  custom_agents:
+    enabled: true
+    plugin_dir: "./plugins/agents"
+  
+  # Future extensions (placeholders)
+  future_integrations:
+    - photonic_computing
+    - dna_computing
+    - molecular_computing
+    - neuromorphic_chips
+    - analog_compute
+    - optical_neural_networks
+
