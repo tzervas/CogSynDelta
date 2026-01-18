@@ -43,9 +43,9 @@
 
 ---
 
-## In Progress (v0.2.0)
+## ✅ Completed (v0.2.0)
 
-### ✅ Test Suite Improvements (Completed)
+### Test Suite Improvements
 - [x] Fix memory retrieval similarity thresholds
 - [x] Update torch.load() calls for weights_only=True (PyTorch 2.6+)
 - [x] Fix import paths in test_comprehensive.py
@@ -148,6 +148,7 @@ Track feature requests at: https://github.com/tzervas/CogSynDelta/issues
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| v0.2.0 | 2026-01-18 | GitHub Actions updates, comprehensive test coverage, module exports |
 | v0.1.0 | 2026-01-18 | Initial release with UV, Python 3.14, full core features |
 
 ---
