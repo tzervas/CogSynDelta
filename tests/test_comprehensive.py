@@ -451,7 +451,7 @@ class TestInterconnectManager(unittest.TestCase):
         # Allocate bandwidth
         success1 = controller.allocate(("s1", "t1"), 3000, priority=5)
         success2 = controller.allocate(("s2", "t2"), 5000, priority=7)
-        success3 = controller.allocate(("s3", "t3"), 4000, priority=3)  # Should fail or preempt
+        _success3 = controller.allocate(("s3", "t3"), 4000, priority=3)  # may fail or preempt
         
         # Verify allocation
         self.assertTrue(success1, "First allocation should succeed")
@@ -519,7 +519,7 @@ class TestModelSectioning(unittest.TestCase):
         
         # Process with selective loading
         input_data = {section_ids[0]: torch.randn(2, 512)}
-        outputs = self.model.forward(input_data, required_sections=[section_ids[0]])
+        _outputs = self.model.forward(input_data, required_sections=[section_ids[0]])
         
         # Verify only needed sections loaded
         self.assertLessEqual(len(self.model.active_sections), 
@@ -571,7 +571,7 @@ class TestIntegration(unittest.TestCase):
         )
         
         # Store in active memory
-        tier = active.store(memory_id, embedding)
+        _tier = active.store(memory_id, embedding)  # tier returned for debugging
         
         # Retrieve
         retrieved, actual_tier = active.retrieve(memory_id)
