@@ -21,9 +21,7 @@ from cogsyndelta.documentation import DependencyValidator
 
 def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Validate project dependencies"
-    )
+    parser = argparse.ArgumentParser(description="Validate project dependencies")
     parser.add_argument(
         "--report",
         "-r",

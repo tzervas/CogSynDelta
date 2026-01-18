@@ -73,7 +73,7 @@ impl LosslessCompactor {
     pub fn compact(&self, embedding: &TernaryTensor) -> CompactRepr {
         // Zero-copy compression where possible
     }
-    
+
     pub fn reconstruct(&self, compact: &CompactRepr) -> TernaryTensor {
         // Guaranteed 100% fidelity
     }
@@ -114,16 +114,16 @@ impl TernaryNumber {
     pub fn add(&self, other: &Self) -> Self {
         // Efficient ternary addition
     }
-    
+
     pub fn multiply(&self, other: &Self) -> Self {
         // Ternary multiplication
     }
-    
+
     // Conversion
     pub fn from_float(f: f32) -> Self {
         // Convert float to balanced ternary
     }
-    
+
     pub fn to_float(&self) -> f32 {
         // Convert back to float
     }
@@ -257,32 +257,32 @@ debug = true
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_ternary_arithmetic() {
         let a = TernaryNumber::from_float(3.5);
         let b = TernaryNumber::from_float(2.5);
         let c = a.add(&b);
-        
+
         assert!((c.to_float() - 6.0).abs() < 1e-6);
     }
-    
+
     #[test]
     fn test_lossless_compression() {
         let original = TernaryTensor::randn(&[512]);
         let compactor = LosslessCompactor::new(512, 128);
-        
+
         let compact = compactor.compact(&original);
         let reconstructed = compactor.reconstruct(&compact);
-        
+
         assert_eq!(original, reconstructed);
     }
-    
+
     #[bench]
     fn bench_inference(b: &mut Bencher) {
         let model = VAEModel::new();
         let input = Tensor::randn(&[1, 784]);
-        
+
         b.iter(|| {
             model.forward(&input)
         });
@@ -300,12 +300,12 @@ fn cogsyndelta(_py: Python, m: &PyModule) -> PyResult<()> {
     fn create_model(config_path: &str) -> PyResult<PyVAEModel> {
         // Rust implementation
     }
-    
+
     #[pyfn(m)]
     fn process_visual_input(frames: &PyArray3<f32>) -> PyResult<PyDict> {
         // Rust implementation
     }
-    
+
     Ok(())
 }
 ```
@@ -318,7 +318,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 fn benchmark_inference(c: &mut Criterion) {
     let model = VAEModel::new();
     let input = Tensor::randn(&[1, 784]);
-    
+
     c.bench_function("vae_inference", |b| {
         b.iter(|| model.forward(black_box(&input)))
     });
@@ -384,7 +384,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-      
+
   bench:
     runs-on: ubuntu-latest
     steps:
@@ -392,7 +392,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: bench
-      
+
   clippy:
     runs-on: ubuntu-latest
     steps:

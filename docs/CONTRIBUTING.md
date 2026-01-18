@@ -84,11 +84,11 @@ def process_embedding(embedding: torch.Tensor,
                      importance: float = 1.0) -> Dict[str, Any]:
     """
     Process embedding with specified importance.
-    
+
     Args:
         embedding: Input embedding tensor [batch, dim]
         importance: Importance weight (0.0-1.0)
-        
+
     Returns:
         Dictionary with processed results
     """
@@ -115,7 +115,7 @@ def test_compression():
     """Test compression maintains fidelity."""
     store = DenseDifferentialMemoryStore(embed_dim=512)
     original = torch.randn(10, 512)
-    
+
     # Compress and retrieve
     for i in range(10):
         stats = store.compress_and_store(original[i], f"test_{i}")

@@ -5,10 +5,11 @@ and querying documentation from all project dependencies.
 """
 
 try:
-    from .rag_system import DependencyDocsRAG
     from .ingestion import DocumentIngestionPipeline
+    from .rag_system import DependencyDocsRAG
     from .validators import DependencyValidator
-    __all__ = ["DependencyDocsRAG", "DocumentIngestionPipeline", "DependencyValidator"]
+
+    __all__ = ["DependencyDocsRAG", "DependencyValidator", "DocumentIngestionPipeline"]
 except ImportError:
     # Handle missing dependencies gracefully
     __all__ = []

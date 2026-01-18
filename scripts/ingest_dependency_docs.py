@@ -17,7 +17,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from cogsyndelta.documentation import DependencyDocsRAG, DocumentIngestionPipeline
 
-
 # Dependency configuration with GitHub repos and doc URLs
 DEPENDENCY_CONFIG = {
     "torch": {
@@ -158,15 +157,9 @@ def ingest_package(
 
 def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Ingest dependency documentation into RAG system"
-    )
-    parser.add_argument(
-        "--package", "-p", help="Specific package to ingest (e.g., 'torch')"
-    )
-    parser.add_argument(
-        "--version", "-v", help="Specific version of the package (default: latest)"
-    )
+    parser = argparse.ArgumentParser(description="Ingest dependency documentation into RAG system")
+    parser.add_argument("--package", "-p", help="Specific package to ingest (e.g., 'torch')")
+    parser.add_argument("--version", "-v", help="Specific version of the package (default: latest)")
     parser.add_argument(
         "--all",
         "-a",
@@ -193,7 +186,7 @@ def main() -> None:
         ingest_package(pipeline, rag, args.package, args.version)
     elif args.all:
         # Ingest all configured packages
-        for package_name in DEPENDENCY_CONFIG.keys():
+        for package_name in DEPENDENCY_CONFIG:
             try:
                 ingest_package(pipeline, rag, package_name)
             except Exception as e:
@@ -212,8 +205,8 @@ def main() -> None:
     print(f"Total dependencies indexed: {stats['total_dependencies']}")
     print(f"Total documents indexed: {stats['total_documents']}")
     print(f"Last updated: {stats['last_updated']}")
-    print(f"\nDependencies with documentation:")
-    for dep_name in sorted(stats['dependencies'].keys()):
+    print("\nDependencies with documentation:")
+    for dep_name in sorted(stats["dependencies"].keys()):
         print(f"  - {dep_name}")
 
     return 0
