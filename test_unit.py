@@ -97,6 +97,12 @@ def test_exploratory_phase_sampling():
             print(f"    σ (std) mean: {std.mean().item():.4f}")
             print(f"    z mean: {z.mean().item():.4f} (should be close to μ)")
             print(f"    z std: {z.std().item():.4f} (should scale with σ)")
+            
+            # Verify z is approximately z ≈ μ + sigma_scale * σ * ε
+            expected_std_range = (sigma_scale * std.mean().item() * 0.5, 
+                                  sigma_scale * std.mean().item() * 1.5)
+            assert expected_std_range[0] <= z.std().item() <= expected_std_range[1], \
+                f"z std {z.std().item()} not in expected range {expected_std_range}"
     
     # Test exploratory phase with k samples
     k = config['exploratory']['k']
