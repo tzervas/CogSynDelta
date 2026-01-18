@@ -726,7 +726,9 @@ def tool_merge_embeddings(
     if weights is None:
         weights = [1.0 / len(embeddings)] * len(embeddings)
 
-    merged = sum(w * emb for w, emb in zip(weights, embeddings))
+    merged = torch.zeros_like(embeddings[0])
+    for w, emb in zip(weights, embeddings):
+        merged = merged + w * emb
     return F.normalize(merged, dim=-1)
 
 
