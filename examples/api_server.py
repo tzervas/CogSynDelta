@@ -13,12 +13,11 @@ Then test with:
     curl http://localhost:8000/health
 """
 
-import asyncio
 import uvicorn
 from cogsyndelta.api.server import app
 
 
-def main():
+def main() -> None:
     """Start the CogSynDelta API server."""
     print("="*60)
     print("CogSynDelta API Server")

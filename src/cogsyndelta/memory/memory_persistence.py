@@ -21,7 +21,7 @@ Key features:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import pickle
