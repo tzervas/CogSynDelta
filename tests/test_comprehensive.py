@@ -15,13 +15,7 @@ All tests include assertions to verify intended functionality.
 """
 
 import torch
-import torch.nn as nn
 import unittest
-import time
-import numpy as np
-from datetime import datetime, timedelta
-import os
-import tempfile
 import sys
 from pathlib import Path
 
@@ -32,12 +26,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 class TestUnifiedTools(unittest.TestCase):
     """Test unified tools and utilities system."""
     
-    def setUp(self):
+    def setUp(self) -> None:
         from cogsyndelta.memory.unified_tools import UnifiedMemoryManager, MemoryType, RelevanceLevel
         self.manager = UnifiedMemoryManager(embed_dim=512)
         self.MemoryType = MemoryType
     
-    def test_store_and_retrieve_memory(self):
+    def test_store_and_retrieve_memory(self) -> None:
         """Test basic memory storage and retrieval."""
         # Store memory
         embedding = torch.randn(512)
@@ -65,7 +59,7 @@ class TestUnifiedTools(unittest.TestCase):
         self.assertEqual(retrieved_memory.memory_id, memory_id)
         self.assertGreater(score, 0.9, "Similarity should be high for identical embedding")
     
-    def test_semantic_search(self):
+    def test_semantic_search(self) -> None:
         """Test semantic search functionality."""
         # Store multiple memories
         embeddings = [torch.randn(512) for _ in range(10)]
@@ -95,7 +89,7 @@ class TestUnifiedTools(unittest.TestCase):
             self.assertIn('tag_0', memory.contextual_metadata.tags)
             self.assertGreaterEqual(memory.relevance, 0.5)
     
-    def test_skill_registration_and_usage(self):
+    def test_skill_registration_and_usage(self) -> None:
         """Test skill registration and tracking."""
         # Register skill
         skill_id = self.manager.register_skill(
@@ -117,7 +111,7 @@ class TestUnifiedTools(unittest.TestCase):
         self.assertEqual(skill.usage_count, 10)
         self.assertAlmostEqual(skill.success_rate, 0.5, delta=0.2)
     
-    def test_tool_registration_and_execution(self):
+    def test_tool_registration_and_execution(self) -> None:
         """Test tool registration and execution."""
         # Define test tool
         def test_tool(x: int, y: int) -> int:
@@ -143,7 +137,7 @@ class TestUnifiedTools(unittest.TestCase):
 class TestAutoManagement(unittest.TestCase):
     """Test intelligent auto-management system."""
     
-    def setUp(self):
+    def setUp(self) -> None:
         from cogsyndelta.memory.auto_manager import IntelligentAutoManager, SystemState
         from cogsyndelta.memory.unified_tools import UnifiedMemoryManager, MemoryType
         
@@ -167,7 +161,7 @@ class TestAutoManagement(unittest.TestCase):
                 tags={f"tag_{i%5}"}
             )
     
-    def test_loading_decisions(self):
+    def test_loading_decisions(self) -> None:
         """Test memory loading decisions."""
         system_state = self.SystemState(
             memory_usage=0.4,  # Below target
@@ -183,7 +177,7 @@ class TestAutoManagement(unittest.TestCase):
         # Should load memories when under capacity
         self.assertGreater(len(actions['loaded']), 0, "Should load memories when under capacity")
     
-    def test_unloading_decisions(self):
+    def test_unloading_decisions(self) -> None:
         """Test memory unloading decisions."""
         # Load many memories
         for memory_id in list(self.unified_mgr.memories.keys())[:60]:
@@ -203,7 +197,7 @@ class TestAutoManagement(unittest.TestCase):
         # Should unload memories when over capacity
         self.assertGreater(len(actions['unloaded']), 0, "Should unload memories when over capacity")
     
-    def test_culling_prevention(self):
+    def test_culling_prevention(self) -> None:
         """Test that over-culling is prevented."""
         # Create diverse memories
         for i in range(50):
@@ -231,7 +225,7 @@ class TestAutoManagement(unittest.TestCase):
         culled_count = len(actions['culled'])
         self.assertLess(culled_count, 10, "Should not over-cull when coherence is high")
     
-    def test_temporal_continuity_preservation(self):
+    def test_temporal_continuity_preservation(self) -> None:
         """Test that temporal continuity is preserved."""
         # Create temporal chain
         memory_ids = []
@@ -261,13 +255,13 @@ class TestAutoManagement(unittest.TestCase):
 class TestActiveMemory(unittest.TestCase):
     """Test active memory management with lossless compaction."""
     
-    def setUp(self):
+    def setUp(self) -> None:
         from cogsyndelta.memory.active_memory import ActiveMemoryManager, LosslessCompactor
         
         self.manager = ActiveMemoryManager(embed_dim=512)
         self.compactor = LosslessCompactor(embed_dim=512, num_basis=128)
     
-    def test_lossless_compression(self):
+    def test_lossless_compression(self) -> None:
         """Test that compression is truly lossless."""
         # Original embedding
         original = torch.randn(512)
@@ -293,7 +287,7 @@ class TestActiveMemory(unittest.TestCase):
         # Verify compression ratio
         self.assertGreater(compact['compression_ratio'], 1.5, "Should achieve compression")
     
-    def test_tier_storage_and_retrieval(self):
+    def test_tier_storage_and_retrieval(self) -> None:
         """Test storage and retrieval across tiers."""
         # Store in different tiers
         memory_ids = []
@@ -342,7 +336,7 @@ class TestActiveMemory(unittest.TestCase):
                 # Short-term allows some loss
                 self.assertGreater(cos_sim, 0.95, "Short-term should maintain high similarity")
     
-    def test_tier_management(self):
+    def test_tier_management(self) -> None:
         """Test automatic tier management."""
         # Fill active memory
         for i in range(150):  # Exceed capacity
@@ -364,7 +358,7 @@ class TestActiveMemory(unittest.TestCase):
                 len(self.manager.long_term_memory))
         self.assertGreater(total, 100, "Memories should be distributed across tiers")
     
-    def test_temporal_continuity_in_active(self):
+    def test_temporal_continuity_in_active(self) -> None:
         """Test that temporal continuity is maintained in active memory."""
         # Create temporal sequence
         memory_ids = []
@@ -386,7 +380,7 @@ class TestActiveMemory(unittest.TestCase):
 class TestInterconnectManager(unittest.TestCase):
     """Test intelligent interconnect management."""
     
-    def setUp(self):
+    def setUp(self) -> None:
         from cogsyndelta.core.interconnect_manager import IntelligentInterconnectManager
         
         self.manager = IntelligentInterconnectManager(
@@ -400,12 +394,12 @@ class TestInterconnectManager(unittest.TestCase):
         self.manager.register_pathway("auditory", "prefrontal", initial_strength=0.8)
         self.manager.register_pathway("prefrontal", "motor", initial_strength=1.0)
     
-    def test_pathway_registration(self):
+    def test_pathway_registration(self) -> None:
         """Test pathway registration."""
         self.assertEqual(len(self.manager.pathways), 3)
         self.assertIn(("visual", "prefrontal"), self.manager.pathways)
     
-    def test_communication_routing(self):
+    def test_communication_routing(self) -> None:
         """Test message routing through pathways."""
         # Create section states
         section_states = {
@@ -428,7 +422,7 @@ class TestInterconnectManager(unittest.TestCase):
         self.assertEqual(routing.route_path, ["visual", "prefrontal"])
         self.assertGreater(routing.bandwidth_required, 0)
     
-    def test_congestion_control(self):
+    def test_congestion_control(self) -> None:
         """Test bandwidth allocation and congestion control."""
         controller = self.manager.congestion_controller
         
@@ -450,7 +444,7 @@ class TestInterconnectManager(unittest.TestCase):
 class TestModelSectioning(unittest.TestCase):
     """Test dynamic model sectioning."""
     
-    def setUp(self):
+    def setUp(self) -> None:
         from cogsyndelta.core.model_sectioning import SectionedBrainModel, BrainRegionType
         
         config = {
@@ -461,7 +455,7 @@ class TestModelSectioning(unittest.TestCase):
         self.model = SectionedBrainModel(config)
         self.BrainRegionType = BrainRegionType
     
-    def test_section_creation(self):
+    def test_section_creation(self) -> None:
         """Test creating specialized sections."""
         section_id = self.model.add_section(
             region_type=self.BrainRegionType.VISUAL_CORTEX,
@@ -473,7 +467,7 @@ class TestModelSectioning(unittest.TestCase):
         self.assertIn(section_id, self.model.sections)
         self.assertEqual(self.model.sections[section_id], self.BrainRegionType.VISUAL_CORTEX.value)
     
-    def test_section_connectivity(self):
+    def test_section_connectivity(self) -> None:
         """Test connecting sections via mHC."""
         visual_id = self.model.add_section(
             self.BrainRegionType.VISUAL_CORTEX, 512, 512, 512
@@ -489,7 +483,7 @@ class TestModelSectioning(unittest.TestCase):
         pathways = self.model.mhc_interconnect.get_active_pathways()
         self.assertIn((visual_id, prefrontal_id), pathways)
     
-    def test_dynamic_loading(self):
+    def test_dynamic_loading(self) -> None:
         """Test dynamic section loading."""
         # Create multiple sections
         section_ids = []
@@ -509,7 +503,7 @@ class TestModelSectioning(unittest.TestCase):
         self.assertLessEqual(len(self.model.active_sections), 
                            self.model.loader.max_loaded_sections)
     
-    def test_scaling_properties(self):
+    def test_scaling_properties(self) -> None:
         """Test automatic scaling with parameters."""
         scaling_info = self.model.get_scaling_info()
         
@@ -521,7 +515,7 @@ class TestModelSectioning(unittest.TestCase):
 class TestIntegration(unittest.TestCase):
     """Integration tests for complete system."""
     
-    def test_end_to_end_workflow(self):
+    def test_end_to_end_workflow(self) -> None:
         """Test complete workflow from input to output."""
         from cogsyndelta.core.integrated_system import IntegratedSelfImprovingSystem
         
@@ -537,7 +531,7 @@ class TestIntegration(unittest.TestCase):
         self.assertIn('semantic_state', result)
         self.assertIsNotNone(result['semantic_state'])
     
-    def test_memory_persistence_integration(self):
+    def test_memory_persistence_integration(self) -> None:
         """Test memory persistence across the system."""
         from cogsyndelta.memory.unified_tools import UnifiedMemoryManager, MemoryType
         from cogsyndelta.memory.active_memory import ActiveMemoryManager
@@ -573,7 +567,7 @@ class TestIntegration(unittest.TestCase):
 class TestCodeQuality(unittest.TestCase):
     """Test code quality and standards compliance."""
     
-    def test_no_syntax_errors(self):
+    def test_no_syntax_errors(self) -> None:
         """Verify all Python files have valid syntax."""
         import py_compile
         import glob
@@ -592,7 +586,7 @@ class TestCodeQuality(unittest.TestCase):
         self.assertEqual(len(errors), 0, 
                         f"Syntax errors found: {errors}")
     
-    def test_import_all_modules(self):
+    def test_import_all_modules(self) -> None:
         """Verify all modules can be imported."""
         modules_to_test = [
             'pcn_vae_gan',
@@ -622,7 +616,7 @@ class TestCodeQuality(unittest.TestCase):
         self.assertEqual(len(import_errors), 0,
                         f"Import errors: {import_errors}")
     
-    def test_docstring_coverage(self):
+    def test_docstring_coverage(self) -> None:
         """Verify major classes and functions have docstrings."""
         import inspect
         from unified_tools import UnifiedMemoryManager
@@ -650,7 +644,7 @@ class TestCodeQuality(unittest.TestCase):
                        f"Many missing docstrings: {missing_docs}")
 
 
-def run_all_tests():
+def run_all_tests() -> unittest.TestResult:
     """Run all tests and generate report."""
     print("="*70)
     print("COMPREHENSIVE TEST SUITE FOR COGSYNDELTA")

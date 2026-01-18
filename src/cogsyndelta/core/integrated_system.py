@@ -13,7 +13,7 @@ Combines all components:
 
 import torch
 import torch.nn as nn
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 import yaml
 
 from pcn_vae_gan import PCNVAEGANHybrid, load_config

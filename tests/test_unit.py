@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from cogsyndelta.core.pcn_vae_gan import create_model, load_config
 
 
-def test_vae_loss_formula():
+def test_vae_loss_formula() -> bool:
     """Test VAE loss formula: L = E[||x - x̂||²] + ½(σ² + μ² - 1 - log σ²)"""
     print("\n" + "="*60)
     print("TEST 1: VAE Loss Formula")
@@ -71,7 +71,7 @@ def test_vae_loss_formula():
     return True
 
 
-def test_exploratory_phase_sampling():
+def test_exploratory_phase_sampling() -> bool:
     """Test exploratory phase: z = μ + σ * ε, ε ~ N(0,1)"""
     print("\n" + "="*60)
     print("TEST 2: Exploratory Phase - Configurable σ Sampling")
@@ -126,7 +126,7 @@ def test_exploratory_phase_sampling():
     return True
 
 
-def test_culling_phase_bayesian():
+def test_culling_phase_bayesian() -> bool:
     """Test culling phase: p(θ|data) ≈ exp(log lik + log prior - log Z)"""
     print("\n" + "="*60)
     print("TEST 3: Culling Phase - Bayesian Inference")
@@ -172,7 +172,7 @@ def test_culling_phase_bayesian():
     return True
 
 
-def test_meta_optimization_maml():
+def test_meta_optimization_maml() -> bool:
     """Test meta-optimization: MAML gradients, L_meta = E[L_inner(θ_Φ)]"""
     print("\n" + "="*60)
     print("TEST 4: Meta-Optimization - MAML Gradients")
@@ -217,7 +217,7 @@ def test_meta_optimization_maml():
     return True
 
 
-def test_config_loading():
+def test_config_loading() -> bool:
     """Test YAML configuration loading"""
     print("\n" + "="*60)
     print("TEST 5: YAML Configuration Loading")
@@ -254,7 +254,7 @@ def test_config_loading():
     return True
 
 
-def test_model_components():
+def test_model_components() -> bool:
     """Test individual model components"""
     print("\n" + "="*60)
     print("TEST 6: Model Components")
@@ -302,7 +302,7 @@ def test_model_components():
     return True
 
 
-def run_all_tests():
+def run_all_tests() -> None:
     """Run all tests"""
     print("\n" + "="*70)
     print(" PCN-VAE-GAN HYBRID SELF-IMPROVING AI - COMPREHENSIVE TEST SUITE")

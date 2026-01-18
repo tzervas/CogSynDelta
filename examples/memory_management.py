@@ -10,10 +10,9 @@ This example demonstrates:
 import torch
 from cogsyndelta.memory.active_memory import TieredMemoryManager
 from cogsyndelta.memory.dense_embeddings import DenseEmbedding
-import time
 
 
-def main():
+def main() -> None:
     """Demonstrate memory management capabilities."""
     print("="*60)
     print("CogSynDelta Memory Management Example")

@@ -10,12 +10,10 @@ This example demonstrates:
 import torch
 import torch.nn.functional as F
 from torchvision import datasets, transforms
-from cogsyndelta.core.integrated_system import CogSynDeltaSystem
 from cogsyndelta.core.pcn_vae_gan import PCN_VAE_GAN
-import yaml
 
 
-def main():
+def main() -> None:
     """Main training loop."""
     print("="*60)
     print("CogSynDelta Basic Training Example")

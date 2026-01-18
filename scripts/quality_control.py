@@ -13,7 +13,7 @@ Ensures code quality through:
 import ast
 import os
 import re
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Any
 from dataclasses import dataclass
 import json
 
@@ -414,7 +414,7 @@ class IntentionValidator:
         return params
 
 
-def run_quality_checks():
+def run_quality_checks() -> None:
     """Run all quality checks."""
     print("="*70)
     print("RUNNING COMPREHENSIVE QUALITY CHECKS")

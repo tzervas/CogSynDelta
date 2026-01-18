@@ -19,10 +19,13 @@ Inspired by embeddenator-core's balanced ternary optimization strategies.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 import numpy as np
 from dataclasses import dataclass
 import warnings
+
+# Use numpy for initialization
+_np = np  # Reference numpy for use in class
 
 # Check CUDA availability
 CUDA_AVAILABLE = torch.cuda.is_available()
