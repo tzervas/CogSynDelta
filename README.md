@@ -1,10 +1,11 @@
 # CogSynDelta: Self-Improving AI System
 
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.5+-red.svg)](https://pytorch.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.9.1-red.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-brightgreen)](https://github.com/tzervas/CogSynDelta/actions)
 [![Type Coverage](https://img.shields.io/badge/type%20coverage-79%25-yellow)](QUALITY_IMPROVEMENTS.md)
+[![Dependencies](https://img.shields.io/badge/dependencies-verified%202026--01--18-success)](GPU_COMPATIBILITY.md)
 
 **A production-ready, brain-inspired self-improving AI system with VL-JEPA, mHC, quantum computing support, and Google ADK compliance.**
 
@@ -301,12 +302,18 @@ All performance claims are validated with measured benchmarks. **CPU baseline es
 | Memory Compression | 16× | ratio | ✅ 27M samples/sec |
 | Compression Fidelity | 0.67 | cosine similarity | ✅ At 2× ratio |
 
-**GPU Status:** RTX 5080 detected but not yet supported by PyTorch (sm_120 architecture). See [GPU_COMPATIBILITY.md](GPU_COMPATIBILITY.md) and [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for details.
+**GPU Status (2026-01-18):** 
+- **PyTorch 2.9.1** supports CUDA 12.6 and 12.8
+- **RTX 5080** on akula-prime workstation (`ssh akula-prime`)
+- All GPU workloads run on akula-prime
+- See [GPU_COMPATIBILITY.md](GPU_COMPATIBILITY.md) for setup instructions
 
-**Expected GPU Performance** (when supported):
-- Matrix ops: 50-80 TFLOPS (100-200× faster)
+**Expected GPU Performance** (RTX 5080):
+- Matrix ops: ~60 TFLOPS (100-150× faster than CPU)
 - NN inference: ~250,000 samples/sec (50× faster)  
-- Training: ~500,000 samples/sec
+- Training: ~500,000 samples/sec with mixed precision
+
+See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for complete results.
 
 ## 🔒 Safety & Ethics
 

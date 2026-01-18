@@ -9,16 +9,18 @@ import time
 import psutil
 import os
 from datetime import datetime
+from typing import Dict, List, Any
 
 
-def get_device_info():
+def get_device_info() -> Dict[str, Any]:
     """Get information about available compute devices."""
-    info = {
+    info: Dict[str, Any] = {
         'cpu_cores': psutil.cpu_count(logical=False),
         'cpu_threads': psutil.cpu_count(logical=True),
         'ram_gb': psutil.virtual_memory().total / (1024**3),
         'pytorch_version': torch.__version__,
         'cuda_available': torch.cuda.is_available(),
+        'working_dir': os.getcwd(),
     }
     
     if torch.cuda.is_available():
@@ -29,7 +31,7 @@ def get_device_info():
     return info
 
 
-def benchmark_matrix_operations(device, sizes=[512, 1024, 2048, 4096]):
+def benchmark_matrix_operations(device: torch.device, sizes: List[int] = [512, 1024, 2048, 4096]) -> List[Dict[str, Any]]:
     """Benchmark matrix multiplication operations."""
     print(f"\n{'='*70}")
     print(f"Matrix Multiplication Benchmark ({device})")
@@ -73,7 +75,7 @@ def benchmark_matrix_operations(device, sizes=[512, 1024, 2048, 4096]):
     return results
 
 
-def benchmark_neural_network(device, batch_sizes=[1, 8, 32, 128]):
+def benchmark_neural_network(device: torch.device, batch_sizes: List[int] = [1, 8, 32, 128]) -> List[Dict[str, Any]]:
     """Benchmark simple neural network forward pass."""
     print(f"\n{'='*70}")
     print(f"Neural Network Benchmark ({device})")
@@ -81,7 +83,7 @@ def benchmark_neural_network(device, batch_sizes=[1, 8, 32, 128]):
     
     # Create a simple network similar to CogSynDelta components
     class SimpleNet(nn.Module):
-        def __init__(self):
+        def __init__(self) -> None:
             super().__init__()
             self.layers = nn.Sequential(
                 nn.Linear(784, 512),
@@ -96,7 +98,7 @@ def benchmark_neural_network(device, batch_sizes=[1, 8, 32, 128]):
                 nn.Linear(128, 64),
             )
         
-        def forward(self, x):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
             return self.layers(x)
     
     model = SimpleNet().to(device)
@@ -141,7 +143,7 @@ def benchmark_neural_network(device, batch_sizes=[1, 8, 32, 128]):
     return results
 
 
-def benchmark_memory_operations(device):
+def benchmark_memory_operations(device: torch.device) -> List[Dict[str, Any]]:
     """Benchmark memory compression operations."""
     print(f"\n{'='*70}")
     print(f"Memory Compression Benchmark ({device})")
@@ -196,7 +198,7 @@ def benchmark_memory_operations(device):
     return results
 
 
-def main():
+def main() -> None:
     """Run complete benchmark suite."""
     print('='*70)
     print('CogSynDelta GPU Benchmark Suite')

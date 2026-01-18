@@ -3,8 +3,9 @@
 ## Quick Start
 
 ### Prerequisites
-- Python 3.9 or higher
-- NVIDIA GPU with CUDA support (optional, but recommended for RTX 5080 optimizations)
+- Python 3.9+ (tested up to 3.13)
+- PyTorch 2.9.1 (verified stable release as of 2026-01-18)
+- NVIDIA GPU with CUDA 12.6 or 12.8 support (required for RTX 5080)
 - 16GB RAM minimum (32GB+ recommended)
 
 ### Basic Installation
@@ -101,23 +102,30 @@ python benchmarks/run.py
 
 ### Install CUDA Toolkit
 
+**IMPORTANT**: RTX 5080 requires CUDA 12.8 for full support.
+
 ```bash
-# For Ubuntu/Debian
+# For Ubuntu/Debian - CUDA 12.8
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
 sudo dpkg -i cuda-keyring_1.1-1_all.deb
 sudo apt-get update
-sudo apt-get -y install cuda-toolkit-12-6
+sudo apt-get -y install cuda-toolkit-12-8
 
 # Verify
 nvcc --version
 nvidia-smi
 ```
 
-### Install PyTorch with CUDA Support
+### Install PyTorch 2.9.1 with CUDA Support
+
+**Verified as of 2026-01-18**: PyTorch 2.9.1 supports CUDA 12.6 and 12.8.
 
 ```bash
-# CUDA 12.1+
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# CUDA 12.8 (recommended for RTX 5080)
+pip3 install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu128
+
+# CUDA 12.6 (alternative)
+pip3 install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu126
 
 # Verify
 python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
@@ -159,12 +167,14 @@ pip install -e . --force-reinstall
 
 ```bash
 # Check CUDA availability
-python -c "import torch; print(torch.cuda.is_available())"
-python -c "import torch; print(torch.cuda.get_device_name(0))"
+python -c "import torch; print(f'PyTorch: {torch.__version__}')"
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+python -c "import torch; print(f'CUDA version: {torch.version.cuda}')"
+python -c "import torch; print(f'Device: {torch.cuda.get_device_name(0)}')"
 
-# If CUDA not found, reinstall PyTorch with CUDA
+# If CUDA not found, reinstall PyTorch 2.9.1 with CUDA 12.8
 pip uninstall torch torchvision
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip3 install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu128
 ```
 
 ### Memory Issues
