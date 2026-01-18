@@ -225,8 +225,8 @@ class PCNVAEGANHybrid(nn.Module):
         Bayesian inference: p(θ|data) ≈ exp(log likelihood + log prior - log Z)
         
         Args:
-            samples: Generated samples from exploratory phase
-            x: Original input for comparison
+            samples: Generated samples from exploratory phase [k, batch, features]
+            x: Original input for comparison [batch, features]
             
         Returns:
             Best sample and selection scores
@@ -239,19 +239,23 @@ class PCNVAEGANHybrid(nn.Module):
             log_lik = -mse  # Higher is better
             log_likelihoods.append(log_lik)
             
-        log_likelihoods = torch.stack(log_likelihoods)
+        log_likelihoods = torch.stack(log_likelihoods)  # [k, batch]
         
         # Simple prior: prefer samples closer to mean
-        log_prior = -torch.norm(samples - x.expand_as(samples), dim=-1)
+        log_prior = -torch.norm(samples - x.expand_as(samples), dim=-1)  # [k, batch]
         
         # Bayesian posterior (unnormalized): log p(θ|data) ≈ log lik + log prior
         log_posterior = log_likelihoods + self.bayesian_prior_weight * log_prior
         
-        # Select best sample based on posterior
-        scores = torch.exp(log_posterior - log_posterior.max())  # Normalize for stability
-        best_idx = scores.argmax()
+        # Select best sample based on posterior (for each batch element)
+        scores = torch.exp(log_posterior - log_posterior.max(dim=0, keepdim=True)[0])  # Normalize for stability
+        best_idx = scores.argmax(dim=0)  # [batch]
         
-        return samples[best_idx], scores
+        # Select best sample for each batch element
+        batch_size = x.size(0)
+        best_samples = torch.stack([samples[best_idx[b], b] for b in range(batch_size)])
+        
+        return best_samples, scores
     
     def meta_optimization_step(self, x_support: torch.Tensor, x_query: torch.Tensor) -> Dict:
         """
