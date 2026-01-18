@@ -459,7 +459,8 @@ class GPUEmbeddingStore:
         # Store on GPU
         if self.use_ternary:
             # Convert to ternary
-            ternary_emb = BalancedTernaryEmbedding.to_ternary(None, embedding)
+            ternary_embedding = BalancedTernaryEmbedding(1, embedding.shape[0])
+            ternary_emb = ternary_embedding.to_ternary(embedding)
             self.storage[idx] = ternary_emb
         else:
             # Store as-is (with GPU optimization)
