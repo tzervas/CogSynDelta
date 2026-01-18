@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=68.0,<69.0", "wheel>=0.42.0,<1.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,7 @@ name = "cogsyndelta"
 version = "0.1.0"
 description = "PCN-VAE-GAN hybrid self-improving AI with VL-JEPA, mHC, quantum compute, and production-ready memory management"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.14"
 license = {text = "MIT"}
 authors = [
     {name = "tzervas", email = "111450100+tzervas@users.noreply.github.com"}
@@ -21,7 +21,9 @@ keywords = [
     "predictive-coding",
     "self-improving-ai",
     "quantum-computing",
-    "memory-management"
+    "memory-management",
+    "cuda",
+    "gpu-acceleration"
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -29,57 +31,53 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
 dependencies = [
-    "torch==2.9.1",  # CUDA 12.6/12.8 support
-    "torchvision==0.24.1",
-    "numpy==2.4.1",
-    "pyyaml==6.0.3",
-    "fastapi==0.128.0",
-    "uvicorn[standard]==0.40.0",
-    "pydantic==2.12.5",
-    "python-multipart==0.0.21",
-    "websockets==16.0",
-    "llama-index-core==0.14.12",
-    "llama-index-embeddings-huggingface==0.14.12",
-    "llama-index-vector-stores-faiss==0.14.12",
-    "faiss-cpu==1.9.0.post1",
+    "torch>=2.9.0,<3.0.0",
+    "torchvision>=0.24.0,<1.0.0",
+    "numpy>=2.4.0,<3.0.0",
+    "pyyaml>=6.0.0,<7.0.0",
+    "fastapi>=0.128.0,<1.0.0",
+    "uvicorn[standard]>=0.40.0,<1.0.0",
+    "pydantic>=2.12.0,<3.0.0",
+    "python-multipart>=0.0.21,<1.0.0",
+    "websockets>=16.0,<17.0",
+    "llama-index-core>=0.14.0,<1.0.0",
+    "llama-index-embeddings-huggingface>=0.6.0,<1.0.0",
+    "llama-index-vector-stores-faiss>=0.5.0,<1.0.0",
+    "faiss-cpu>=1.9.0,<2.0.0",
+    "httpx>=0.28.0,<1.0.0",
+    "aiohttp>=3.11.0,<4.0.0",
 ]
 
 [project.optional-dependencies]
-quantum = [
-    "qiskit==2.3.0",
-    "pennylane==0.44.0",
-    "cirq==1.6.1",
-]
+# NOTE: Quantum packages (qiskit, pennylane, cirq) not compatible with Python 3.14 yet
+# Install manually with Python 3.13 or earlier if needed
 vision = [
-    "opencv-python==4.13.0.90",
-    "mss>=10.0,<11.0",
-    "pillow==12.1.0",
+    "opencv-python>=4.10.0,<5.0.0",
+    "mss>=10.0.0,<11.0.0",
+    "pillow>=11.0.0,<13.0.0",
 ]
 audio = [
-    "pyaudio>=0.2.14,<1.0",
-    "sounddevice>=0.5,<1.0",
+    "pyaudio>=0.2.14,<1.0.0",
+    "sounddevice>=0.5.0,<1.0.0",
 ]
-dev = [
-    "pytest==9.0.2",
-    "pytest-cov==7.0.0",
-    "pytest-asyncio==1.3.0",
-    "black==26.1.0",
-    "ruff==0.14.13",
-    "mypy==1.19.1",
-    "pre-commit==4.5.1",
-    "sphinx==9.1.0",
-    "sphinx-rtd-theme==3.1.0",
+gpu-nvidia = [
+    "triton>=3.3.0,<4.0.0",
+]
+inference-providers = [
+    "openai>=2.15.0,<3.0.0",
+    "anthropic>=0.76.0,<1.0.0",
+    "google-cloud-aiplatform>=1.86.0,<2.0.0",
+    "replicate>=1.0.0,<2.0.0",
+    "together>=1.5.0,<2.0.0",
+    "groq>=1.0.0,<2.0.0",
 ]
 all = [
-    "cogsyndelta[quantum,vision,audio,dev]"
+    "cogsyndelta[vision,audio,gpu-nvidia,inference-providers]"
 ]
 
 [project.urls]
@@ -92,6 +90,66 @@ Issues = "https://github.com/tzervas/CogSynDelta/issues"
 cogsyndelta-server = "cogsyndelta.api.server:main"
 cogsyndelta-benchmark = "benchmarks.run:main"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0,<10.0.0",
+    "pytest-cov>=6.0.0,<8.0.0",
+    "pytest-asyncio>=0.24.0,<2.0.0",
+    "pytest-xdist>=3.6.0,<4.0.0",
+    "black>=25.1.0,<27.0.0",
+    "ruff>=0.9.1,<0.10.0",
+    "mypy>=1.17.0,<2.0.0",
+    "pre-commit>=4.5.0,<5.0.0",
+]
+docs = [
+    "sphinx>=9.0.0,<10.0.0",
+    "sphinx-rtd-theme>=3.1.0,<4.0.0",
+    "myst-parser>=5.0.0,<6.0.0",
+]
+
+[tool.uv]
+add-bounds = "major"
+python-preference = "managed"
+python-downloads = "automatic"
+link-mode = "hardlink"
+compile-bytecode = true
+default-groups = ["dev"]
+cache-keys = [{ file = "pyproject.toml" }, { file = "uv.lock" }]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm63"
+url = "https://download.pytorch.org/whl/rocm6.3"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
 [tool.setuptools]
 packages = ["cogsyndelta"]
 package-dir = {"" = "src"}
@@ -101,17 +159,19 @@ cogsyndelta = ["config/*.yaml", "config/*.json"]
 
 [tool.black]
 line-length = 100
-target-version = ['py39', 'py310', 'py311', 'py312']
+target-version = ['py314']
 include = '\.pyi?$'
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
-select = ["E", "F", "I", "N", "W", "UP"]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.14"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -127,4 +187,5 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v"
+addopts = "-v --tb=short"
+asyncio_mode = "auto"

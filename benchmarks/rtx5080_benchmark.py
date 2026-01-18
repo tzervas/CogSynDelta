@@ -15,7 +15,9 @@ from typing import Dict, List, Any, Tuple
 
 class SimpleCNN(nn.Module):
     """Simple CNN for benchmarking"""
+    
     def __init__(self) -> None:
+        """Initialize CNN layers for image classification."""
         super().__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
@@ -23,6 +25,7 @@ class SimpleCNN(nn.Module):
         self.fc2 = nn.Linear(128, 10)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass with ReLU activations and max pooling."""
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.max_pool2d(x, 2)
@@ -33,7 +36,9 @@ class SimpleCNN(nn.Module):
 
 class ResNetBlock(nn.Module):
     """ResNet block"""
+    
     def __init__(self, channels: int) -> None:
+        """Initialize ResNet block with given channel count."""
         super().__init__()
         self.conv1 = nn.Conv2d(channels, channels, 3, 1, 1, bias=False)
         self.bn1 = nn.BatchNorm2d(channels)
@@ -41,6 +46,7 @@ class ResNetBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(channels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass with residual connection."""
         residual = x
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
@@ -49,7 +55,9 @@ class ResNetBlock(nn.Module):
 
 class LargeResNet(nn.Module):
     """Larger ResNet for benchmarking"""
+    
     def __init__(self) -> None:
+        """Initialize LargeResNet with multiple ResNet blocks and transition layers."""
         super().__init__()
         self.conv1 = nn.Conv2d(3, 64, 7, 2, 3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
@@ -67,6 +75,7 @@ class LargeResNet(nn.Module):
         self.fc = nn.Linear(256, 1000)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass through ResNet layers with transitions and pooling."""
         x = self.maxpool(F.relu(self.bn1(self.conv1(x))))
         x = self.layer1(x)
         x = self.trans1(x)
@@ -219,6 +228,7 @@ def benchmark_matrix_ops(device: torch.device, sizes: List[int] = [1024, 2048, 4
 
 
 def main() -> None:
+    """Run the RTX 5080 GPU benchmark suite with industry standard tests."""
     print('='*80)
     print('RTX 5080 GPU Benchmark - Industry Standard Tests')
     print('='*80)

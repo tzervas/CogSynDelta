@@ -68,7 +68,7 @@ def test_vae_loss_formula() -> bool:
     print(f"  σ (std) = exp(0.5 * logvar) = sqrt(σ²)")
     
     print("\n✅ VAE Loss Formula Test PASSED")
-    return True
+    # Test passes if no assertions fail
 
 
 def test_exploratory_phase_sampling() -> bool:
@@ -123,7 +123,7 @@ def test_exploratory_phase_sampling() -> bool:
         assert samples.shape == torch.Size([k, 1, 784]), "Sample shape mismatch"
     
     print("\n✅ Exploratory Phase Sampling Test PASSED")
-    return True
+    # Test passes if no assertions fail
 
 
 def test_culling_phase_bayesian() -> bool:
@@ -169,7 +169,7 @@ def test_culling_phase_bayesian() -> bool:
         print(f"  Best culled sample MSE: {best_mse.item():.4f}")
     
     print("\n✅ Culling Phase Bayesian Inference Test PASSED")
-    return True
+    # Test passes if no assertions fail
 
 
 def test_meta_optimization_maml() -> bool:
@@ -214,7 +214,7 @@ def test_meta_optimization_maml() -> bool:
     assert params_restored, "Parameters should be restored after meta-optimization"
     
     print("\n✅ Meta-Optimization MAML Test PASSED")
-    return True
+    # Test passes if no assertions fail
 
 
 def test_config_loading() -> bool:
@@ -251,7 +251,7 @@ def test_config_loading() -> bool:
     assert 'vae_loss' in config
     
     print("\n✅ Configuration Loading Test PASSED")
-    return True
+    # Test passes if no assertions fail
 
 
 def test_model_components() -> bool:
@@ -299,7 +299,7 @@ def test_model_components() -> bool:
     print(f"\n  Total parameters: {sum(p.numel() for p in model.parameters())}")
     
     print("\n✅ Model Components Test PASSED")
-    return True
+    # Test passes if no assertions fail
 
 
 def run_all_tests() -> None:

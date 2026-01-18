@@ -16,16 +16,16 @@ import torch.nn as nn
 from typing import Dict, List, Optional, Any
 import yaml
 
-from pcn_vae_gan import PCNVAEGANHybrid, load_config
-from vl_jepa_extension import (
+from cogsyndelta.core.pcn_vae_gan import PCNVAEGANHybrid, load_config
+from cogsyndelta.core.vl_jepa_extension import (
     VisionEncoder, TemporalMemoryBank, HierarchicalPredictiveCoding,
     JointEmbeddingSpace, FrameBufferAdapter, ModeratedHyperConnection
 )
-from self_improving_agents import (
+from cogsyndelta.agents.self_improving_agents import (
     SelfImprovingAgentFramework, AgentType, LanguageFrameworkEncoder,
     SelfImprovementModule, SecurityHardeningModule, QualityAssuranceModule
 )
-from memory_persistence import (
+from cogsyndelta.memory.memory_persistence import (
     PersistentMemoryBank, MemoryCompressor, InfiniteLoopSafeguard
 )
 
@@ -43,6 +43,7 @@ class IntegratedSelfImprovingSystem(nn.Module):
     """
     
     def __init__(self, config_path: str = 'config.yaml') -> None:
+        """Initialize integrated system with all components from config."""
         super(IntegratedSelfImprovingSystem, self).__init__()
         
         # Load configuration

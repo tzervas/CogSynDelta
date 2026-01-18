@@ -40,6 +40,7 @@ class LanguageFrameworkEncoder(nn.Module):
     """
     
     def __init__(self, vocab_size: int = 50000, embed_dim: int = 512) -> None:
+        """Initialize encoder with token and language embeddings."""
         super(LanguageFrameworkEncoder, self).__init__()
         
         self.embed_dim = embed_dim
@@ -109,6 +110,7 @@ class SelfImprovementModule(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize self-improvement module with quality assessor and generators."""
         super(SelfImprovementModule, self).__init__()
         
         self.embed_dim = embed_dim
@@ -198,6 +200,7 @@ class SecurityHardeningModule(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize security module with vulnerability detector and improver."""
         super(SecurityHardeningModule, self).__init__()
         
         self.embed_dim = embed_dim
@@ -283,6 +286,7 @@ class QualityAssuranceModule(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize QA module with quality metrics and test generator."""
         super(QualityAssuranceModule, self).__init__()
         
         self.embed_dim = embed_dim
@@ -364,6 +368,7 @@ class MultiLanguageExplorer(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512, num_languages: int = 20) -> None:
+        """Initialize explorer with language-specific decoders and alignment."""
         super(MultiLanguageExplorer, self).__init__()
         
         self.embed_dim = embed_dim
@@ -449,6 +454,7 @@ class SelfImprovingAgentFramework(nn.Module):
     """
     
     def __init__(self, config: Dict) -> None:
+        """Initialize framework with all self-improvement components."""
         super(SelfImprovingAgentFramework, self).__init__()
         
         self.config = config

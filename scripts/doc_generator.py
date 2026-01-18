@@ -45,6 +45,7 @@ class DocumentationGenerator:
     """
     
     def __init__(self, project_root: str = "."):
+        """Initialize documentation generator with project root path."""
         self.project_root = project_root
         self.docs_dir = os.path.join(project_root, "docs")
         os.makedirs(self.docs_dir, exist_ok=True)

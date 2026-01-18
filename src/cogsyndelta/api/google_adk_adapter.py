@@ -72,6 +72,7 @@ class A2AMessage:
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     
     def to_dict(self) -> Dict:
+        """Convert message to dictionary format for serialization."""
         return {
             "message_id": self.message_id,
             "type": self.message_type.value,
@@ -83,6 +84,7 @@ class A2AMessage:
     
     @classmethod
     def from_dict(cls, data: Dict) -> 'A2AMessage':
+        """Create A2AMessage instance from dictionary."""
         return cls(
             message_id=data["message_id"],
             message_type=MessageType(data["type"]),
@@ -106,6 +108,7 @@ class ADKAgent:
     """
     
     def __init__(self, agent_id: str, name: str, description: str) -> None:
+        """Initialize ADK agent with identity and state management."""
         self.agent_id = agent_id
         self.name = name
         self.description = description
@@ -234,6 +237,7 @@ class A2AProtocolAdapter:
     """
     
     def __init__(self) -> None:
+        """Initialize A2A protocol adapter with message queue and routing."""
         self.agents: Dict[str, ADKAgent] = {}
         self.message_queue: asyncio.Queue = asyncio.Queue()
         self.pending_requests: Dict[str, asyncio.Future] = {}
@@ -316,6 +320,7 @@ class CogSynDeltaADKAgent(ADKAgent):
     """
     
     def __init__(self, agent_id: str, integrated_system: Optional[Any] = None) -> None:
+        """Initialize CogSynDelta ADK agent with integrated system."""
         super().__init__(
             agent_id=agent_id,
             name="CogSynDelta Self-Improving AI",
@@ -460,6 +465,7 @@ class ADKAdapter:
     """
     
     def __init__(self) -> None:
+        """Initialize Google ADK adapter with agent registry and A2A support."""
         self.agents: Dict[str, ADKAgent] = {}
         self.a2a_adapter = A2AProtocolAdapter()
     
