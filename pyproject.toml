@@ -298,3 +298,55 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
 asyncio_mode = "auto"
+
+# =============================================================================
+# Semantic Release Configuration
+# =============================================================================
+[tool.semantic_release]
+version_variables = ["src/cogsyndelta/__init__.py:__version__"]
+version_toml = ["pyproject.toml:project.version"]
+branch = "main"
+build_command = "uv build"
+upload_to_pypi = false
+upload_to_release = true
+commit_message = "chore(release): {version} [skip ci]"
+tag_format = "v{version}"
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.branches.staging]
+match = "staging"
+prerelease = true
+prerelease_token = "rc"
+
+[tool.semantic_release.branches.develop]
+match = "develop"
+prerelease = true
+prerelease_token = "dev"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+
+[tool.semantic_release.changelog]
+template_dir = "templates"
+changelog_file = "CHANGELOG.md"
+
+# =============================================================================
+# Pydocstyle Configuration
+# =============================================================================
+[tool.pydocstyle]
+convention = "google"
+# D100: Missing docstring in public module
+# D104: Missing docstring in public package
+# D105: Missing docstring in magic method
+# D107: Missing docstring in __init__
+# D212: Multi-line docstring summary should start at first line (conflicts with D213)
+# D205: 1 blank line required between summary line and description
+# D415: First line should end with punctuation (too pedantic for early dev)
+add-ignore = ["D100", "D104", "D105", "D107", "D212", "D205", "D415"]
+match = "(?!test_).*\\.py"
+match-dir = "^(?!tests|benchmarks|examples).*"
