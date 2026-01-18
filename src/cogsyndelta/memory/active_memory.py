@@ -682,7 +682,7 @@ if __name__ == '__main__':
     for i in range(50):
         memory_id = f"active_{i}"
         embedding = torch.randn(512)
-        tier = manager.store(memory_id, embedding, 
+        manager.store(memory_id, embedding, 
                            metadata={'type': 'episodic', 'confidence': 0.9},
                            tier_hint="active")
     print(f"  ✓ Stored 50 in active tier")
@@ -691,7 +691,7 @@ if __name__ == '__main__':
     for i in range(500):
         memory_id = f"short_{i}"
         embedding = torch.randn(512)
-        tier = manager.store(memory_id, embedding,
+        manager.store(memory_id, embedding,
                            metadata={'type': 'episodic', 'confidence': 0.7},
                            tier_hint="short")
     print(f"  ✓ Stored 500 in short-term tier")
@@ -700,7 +700,7 @@ if __name__ == '__main__':
     for i in range(100):
         memory_id = f"long_{i}"
         embedding = torch.randn(512)
-        tier = manager.store(memory_id, embedding,
+        manager.store(memory_id, embedding,
                            metadata={'type': 'semantic', 'confidence': 0.95})
     print(f"  ✓ Stored 100 in long-term tier (lossless)")
     
