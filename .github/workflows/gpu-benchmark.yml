@@ -44,17 +44,17 @@ jobs:
       - name: Decode and save benchmark files
         run: |
           TIMESTAMP="${{ inputs.run_date }}_manual"
-          
+
           # If JSON provided, decode it
           if [ -n "${{ inputs.benchmark_json }}" ]; then
             echo "${{ inputs.benchmark_json }}" | base64 -d > benchmark_results/gpu_benchmark_${TIMESTAMP}.json
           fi
-          
+
           # If text provided, decode it
           if [ -n "${{ inputs.benchmark_text }}" ]; then
             echo "${{ inputs.benchmark_text }}" | base64 -d > benchmark_results/gpu_benchmark_${TIMESTAMP}.txt
           fi
-          
+
           # Create badge JSON
           cat > benchmark_results/benchmark_badge.json << EOF
           {
@@ -66,7 +66,7 @@ jobs:
             "logoColor": "white"
           }
           EOF
-          
+
           # Create latest symlink data
           echo "gpu_benchmark_${TIMESTAMP}.json" > benchmark_results/latest_ref.txt
 
@@ -82,10 +82,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
+
           # Add benchmark results
           git add benchmark_results/
-          
+
           # Commit if there are changes
           if git diff --staged --quiet; then
             echo "No changes to commit"
