@@ -14,84 +14,85 @@ Ensures all documentation is aligned and up-to-date.
 """
 
 import os
-from typing import Dict, List
 from dataclasses import dataclass
 
 
 @dataclass
 class APIEndpoint:
     """API endpoint documentation."""
+
     path: str
     method: str
     description: str
-    parameters: List[Dict]
-    responses: Dict[str, str]
-    examples: List[str]
+    parameters: list[dict]
+    responses: dict[str, str]
+    examples: list[str]
 
 
 @dataclass
 class ClassDoc:
     """Class documentation."""
+
     name: str
     description: str
-    methods: List[Dict]
-    attributes: List[Dict]
-    examples: List[str]
+    methods: list[dict]
+    attributes: list[dict]
+    examples: list[str]
 
 
 class DocumentationGenerator:
     """
     Auto-generates documentation from code and configurations.
     """
-    
+
     def __init__(self, project_root: str = "."):
         """Initialize documentation generator with project root path."""
         self.project_root = project_root
         self.docs_dir = os.path.join(project_root, "docs")
         os.makedirs(self.docs_dir, exist_ok=True)
-        
-        self.api_endpoints: List[APIEndpoint] = []
-        self.classes: List[ClassDoc] = []
-    
+
+        self.api_endpoints: list[APIEndpoint] = []
+        self.classes: list[ClassDoc] = []
+
     def generate_all(self) -> None:
         """Generate all documentation."""
-        print("="*70)
+        print("=" * 70)
         print("GENERATING COMPREHENSIVE DOCUMENTATION")
-        print("="*70)
-        
+        print("=" * 70)
+
         # Generate main README
         print("\n[1/7] Generating main README...")
         self._generate_main_readme()
-        
+
         # Generate API documentation
         print("[2/7] Generating API documentation...")
         self._generate_api_docs()
-        
+
         # Generate architecture documentation
         print("[3/7] Generating architecture documentation...")
         self._generate_architecture_docs()
-        
+
         # Generate agent development guide
         print("[4/7] Generating agent development guide...")
         self._generate_agent_guide()
-        
+
         # Generate contribution guidelines
         print("[5/7] Generating contribution guidelines...")
         self._generate_contribution_guide()
-        
+
         # Generate configuration reference
         print("[6/7] Generating configuration reference...")
         self._generate_config_reference()
-        
+
         # Generate code documentation
         print("[7/7] Generating code documentation...")
         self._generate_code_docs()
-        
-        print("\n" + "="*70)
+
+        print("\n" + "=" * 70)
         print("DOCUMENTATION GENERATION COMPLETE")
-        print("="*70)
+        print("=" * 70)
         print(f"\nDocumentation available in: {self.docs_dir}")
-    
+
     def _generate_main_readme(self):
         """Generate main README.md with project overview."""
         readme_content = """# CogSynDelta: Self-Improving AI System
@@ -274,7 +275,7 @@ async def stream_video():
             "source_type": "webcam",
             "fps": 30
         }))
-        
+
         async for message in websocket:
             data = json.loads(message)
             print(f"Semantic state: {data['frame_id']}")
@@ -356,12 +357,12 @@ Built on research from:
 
 **Design a self-improving AI architecture emulating human cognition for novel problem-solving.**
 """
-        
-        with open(os.path.join(self.project_root, "README.md"), 'w') as f:
+
+        with open(os.path.join(self.project_root, "README.md"), "w") as f:
             f.write(readme_content)
-        
+
         print("  ✓ Main README generated")
-    
+
     def _generate_api_docs(self):
         """Generate comprehensive API documentation."""
         api_docs = """# API Reference
@@ -673,14 +674,14 @@ import requests
 class CogSynDeltaClient:
     def __init__(self, base_url="http://localhost:8000/api/v1"):
         self.base_url = base_url
-    
+
     def create_session(self, modalities):
         response = requests.post(
             f"{self.base_url}/session/create",
             json={"modalities": modalities}
         )
         return response.json()
-    
+
     def process_video(self, session_id, config):
         response = requests.post(
             f"{self.base_url}/process/video",
@@ -712,12 +713,12 @@ Interactive documentation:
 http://localhost:8000/docs
 ```
 """
-        
-        with open(os.path.join(self.docs_dir, "API_REFERENCE.md"), 'w') as f:
+
+        with open(os.path.join(self.docs_dir, "API_REFERENCE.md"), "w") as f:
             f.write(api_docs)
-        
+
         print("  ✓ API documentation generated")
-    
+
     def _generate_architecture_docs(self):
         """Generate architecture documentation."""
         arch_docs = """# Architecture Guide
@@ -1015,12 +1016,12 @@ Key configuration sections:
 - `compute_backends`: Quantum and classical compute
 - `api_server`: OpenAPI server settings
 """
-        
-        with open(os.path.join(self.docs_dir, "ARCHITECTURE.md"), 'w') as f:
+
+        with open(os.path.join(self.docs_dir, "ARCHITECTURE.md"), "w") as f:
             f.write(arch_docs)
-        
+
         print("  ✓ Architecture documentation generated")
-    
+
     def _generate_agent_guide(self):
         """Generate agent development guide."""
         agent_guide = """# Agent Development Guide
@@ -1043,10 +1044,10 @@ class MyCustomAgent(ADKAgent):
             name="My Custom Agent",
             description="Description of what this agent does"
         )
-        
+
         # Register tools
         self._register_tools()
-    
+
     def _register_tools(self):
         self.register_tool(
             name="my_tool",
@@ -1063,11 +1064,11 @@ class MyCustomAgent(ADKAgent):
                 "required": ["param1"]
             }
         )
-    
+
     def _my_tool_impl(self, param1: str) -> dict:
         # Tool implementation
         return {"result": f"Processed: {param1}"}
-    
+
     def _generate_response(self, prompt: str) -> str:
         # Response generation logic
         return f"Response to: {prompt}"
@@ -1117,17 +1118,17 @@ Tools must follow JSON Schema format:
 def my_tool(param1: str, param2: int = 10) -> dict:
     \"\"\"
     Tool description.
-    
+
     Args:
         param1: Description of param1
         param2: Description of param2 (default: 10)
-        
+
     Returns:
         Dictionary with result
     \"\"\"
     # Implementation
     result = process(param1, param2)
-    
+
     return {
         "status": "success",
         "result": result,
@@ -1175,11 +1176,11 @@ def my_agent_with_memory(self):
     # Access persistent memory
     if hasattr(self, 'integrated_system'):
         memory_bank = self.integrated_system.memory_bank
-        
+
         # Write to memory
         embedding = torch.randn(1, 512)
         memory_bank.write(embedding, importance=0.9)
-        
+
         # Query memory
         query = torch.randn(1, 512)
         retrieved, metadata = memory_bank.read(query, num_reads=5)
@@ -1191,13 +1192,13 @@ def my_agent_with_memory(self):
 def process_with_sections(self, input_data):
     # Access sectioned model
     sectioned_model = self.integrated_system.sectioned_model
-    
+
     # Process through specific sections
     outputs = sectioned_model.forward(
         input_data={"visual": input_data},
         required_sections=["visual", "prefrontal"]
     )
-    
+
     return outputs
 ```
 
@@ -1216,7 +1217,7 @@ def quantum_processing(self, data):
         input_data=data,
         parameters={'shots': 1024}
     )
-    
+
     # Submit to orchestrator
     result = await orchestrator.submit_job(job)
     return result
@@ -1247,10 +1248,10 @@ Validate inputs before processing:
 def my_tool(self, param: str):
     if not param or not isinstance(param, str):
         return {"status": "error", "error": "Invalid parameter"}
-    
+
     if len(param) > 1000:
         return {"status": "error", "error": "Parameter too long"}
-    
+
     # Process...
 ```
 
@@ -1262,19 +1263,19 @@ Document all tools and methods:
 def my_tool(self, param1: str, param2: int) -> dict:
     \"\"\"
     Brief description.
-    
+
     Detailed description of what this tool does.
-    
+
     Args:
         param1: Description of param1
         param2: Description of param2
-        
+
     Returns:
         Dictionary containing:
         - status: "success" or "error"
         - result: Processed result
         - metadata: Additional information
-        
+
     Examples:
         >>> result = my_tool("test", 10)
         >>> print(result['status'])
@@ -1289,7 +1290,7 @@ Test agents thoroughly:
 ```python
 def test_my_agent():
     agent = MyCustomAgent("test_agent")
-    
+
     # Test tool calling
     message = Message(
         role=AgentRole.USER,
@@ -1299,16 +1300,16 @@ def test_my_agent():
             "arguments": {"param1": "test"}
         }
     )
-    
+
     response = agent.process_message(message)
     assert response.role == AgentRole.FUNCTION
-    
+
     # Test response generation
     message = Message(
         role=AgentRole.USER,
         content="Hello"
     )
-    
+
     response = agent.process_message(message)
     assert response.role == AgentRole.ASSISTANT
 ```
@@ -1327,15 +1328,15 @@ class SafeAgent(ADKAgent):
             max_iterations=100,
             max_repetitions=3
         )
-    
+
     def _generate_response(self, prompt):
         # Check safeguards
         state = torch.tensor([hash(prompt)])
         is_safe, message = self.safeguard.check_state(state)
-        
+
         if not is_safe:
             return f"Safeguard triggered: {message}"
-        
+
         # Generate response...
 ```
 
@@ -1376,12 +1377,12 @@ agent = adapter.create_agent("my_agent_1", MyCustomAgent)
 
 See `examples/agents/` directory for complete agent implementations.
 """
-        
-        with open(os.path.join(self.docs_dir, "AGENT_DEVELOPMENT.md"), 'w') as f:
+
+        with open(os.path.join(self.docs_dir, "AGENT_DEVELOPMENT.md"), "w") as f:
             f.write(agent_guide)
-        
+
         print("  ✓ Agent development guide generated")
-    
+
     def _generate_contribution_guide(self):
         """Generate contribution guidelines."""
         contrib_guide = """# Contributing to CogSynDelta
@@ -1454,11 +1455,11 @@ def process_embedding(embedding: torch.Tensor,
                      importance: float = 1.0) -> Dict[str, Any]:
     \"\"\"
     Process embedding with specified importance.
-    
+
     Args:
         embedding: Input embedding tensor [batch, dim]
         importance: Importance weight (0.0-1.0)
-        
+
     Returns:
         Dictionary with processed results
     \"\"\"
@@ -1485,7 +1486,7 @@ def test_compression():
     \"\"\"Test compression maintains fidelity.\"\"\"
     store = DenseDifferentialMemoryStore(embed_dim=512)
     original = torch.randn(10, 512)
-    
+
     # Compress and retrieve
     for i in range(10):
         stats = store.compress_and_store(original[i], f"test_{i}")
@@ -1640,12 +1641,12 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 Thank you for contributing to CogSynDelta!
 """
-        
-        with open(os.path.join(self.docs_dir, "CONTRIBUTING.md"), 'w') as f:
+
+        with open(os.path.join(self.docs_dir, "CONTRIBUTING.md"), "w") as f:
             f.write(contrib_guide)
-        
+
         print("  ✓ Contribution guide generated")
-    
+
     def _generate_config_reference(self):
         """Generate configuration reference."""
         config_ref = """# Configuration Reference
@@ -1694,27 +1695,27 @@ culling:
 ```yaml
 memory_persistence:
   enabled: true
-  
+
   # Dense differential embeddings
   dense_encoding:
     enabled: true
     dense_dim: 64                    # Compressed dimension
     num_references: 100              # Reference embeddings
     fidelity_threshold: 0.95         # Min reconstruction quality
-  
+
   # Hierarchical storage
   working_memory:
     capacity: 100                    # Working memory size
-  
+
   short_term_memory:
     capacity: 1000                   # Short-term memory size
     compression_ratio: 0.5
-  
+
   long_term_memory:
     storage_path: "./memory_storage" # Disk storage path
     enable_archiving: true
     max_compression: true
-  
+
   # Checkpointing
   checkpointing:
     enabled: true
@@ -1728,25 +1729,25 @@ memory_persistence:
 ```yaml
 safeguards:
   enabled: true
-  
+
   # Loop detection
   loop_detection:
     enabled: true
     max_iterations: 1000             # Max iterations
     max_repetitions: 5               # Max state repeats
-  
+
   # Timeouts
   timeouts:
     max_execution_time: 300          # Seconds
     max_generation_time: 60
     max_inference_time: 10
-  
+
   # Resource limits
   resource_limits:
     max_memory_usage: 1073741824     # 1GB in bytes
     max_output_size: 10485760        # 10MB in bytes
     max_queue_size: 1000
-  
+
   # Ethical constraints
   ethical:
     enabled: true
@@ -1765,12 +1766,12 @@ model_sectioning:
   enabled: true
   max_loaded_sections: 5             # Max sections in memory
   dynamic_loading: true
-  
+
   # Automatic scaling
   memory_scaling:
     enabled: true
     base_memory: 1000
-  
+
   timescale_scaling:
     enabled: true
     base_timescale: 10.0
@@ -1785,14 +1786,14 @@ compute_backends:
     enabled: true
     prefer_gpu: true
     fallback_cpu: true
-  
+
   # Quantum compute
   quantum:
     enabled: false                   # Enable quantum features
     backend_type: "simulator"        # simulator|ibm|google|ionq
     num_qubits: 20
     shots: 1024
-    
+
     provider:
       name: "ibm"
       api_token: null                # Set via env var
@@ -1805,14 +1806,14 @@ compute_backends:
 api_server:
   host: "0.0.0.0"
   port: 8000
-  
+
   # Supported modalities
   supported_modalities:
     - video
     - audio
     - text
     - code
-  
+
   # Video sources
   video_sources:
     webcam:
@@ -1822,7 +1823,7 @@ api_server:
       enabled: true
     streaming:
       enabled: true
-  
+
   # WebSocket
   websocket:
     enabled: true
@@ -1888,7 +1889,7 @@ memory_persistence:
     capacity: 1000
   short_term_memory:
     capacity: 10000
-  
+
 safeguards:
   loop_detection:
     max_iterations: 10000
@@ -1914,7 +1915,7 @@ safeguards:
       - "privilege_escalation"
     content_filtering: true
     validate_outputs: true
-  
+
   resource_limits:
     max_memory_usage: 536870912      # 512MB
     max_output_size: 1048576          # 1MB
@@ -1926,12 +1927,12 @@ safeguards:
 - [API Reference](API_REFERENCE.md)
 - [Contributing](CONTRIBUTING.md)
 """
-        
-        with open(os.path.join(self.docs_dir, "CONFIGURATION.md"), 'w') as f:
+
+        with open(os.path.join(self.docs_dir, "CONFIGURATION.md"), "w") as f:
             f.write(config_ref)
-        
+
         print("  ✓ Configuration reference generated")
-    
+
     def _generate_code_docs(self):
         """Generate code documentation from docstrings."""
         code_docs = """# Code Documentation
@@ -2102,23 +2103,23 @@ TIMEOUT_SECONDS = 300
 - [API Reference](API_REFERENCE.md)
 - [Agent Development](AGENT_DEVELOPMENT.md)
 """
-        
-        with open(os.path.join(self.docs_dir, "CODE_DOCUMENTATION.md"), 'w') as f:
+
+        with open(os.path.join(self.docs_dir, "CODE_DOCUMENTATION.md"), "w") as f:
             f.write(code_docs)
-        
+
         print("  ✓ Code documentation generated")
 
 
-if __name__ == '__main__':
-    print("="*70)
+if __name__ == "__main__":
+    print("=" * 70)
     print("DOCUMENTATION AUTO-GENERATION SYSTEM")
-    print("="*70)
+    print("=" * 70)
     print("\nGenerating comprehensive documentation...")
     print("This ensures all guidance is aligned and up-to-date.")
-    
+
     generator = DocumentationGenerator()
     generator.generate_all()
-    
+
     print("\nGenerated documentation:")
     print("  ✓ README.md - Main project overview")
     print("  ✓ docs/API_REFERENCE.md - Complete API documentation")
@@ -2127,7 +2128,7 @@ if __name__ == '__main__':
     print("  ✓ docs/CONTRIBUTING.md - Contribution guidelines")
     print("  ✓ docs/CONFIGURATION.md - Configuration reference")
     print("  ✓ docs/CODE_DOCUMENTATION.md - Code documentation")
-    
-    print("\n" + "="*70)
+
+    print("\n" + "=" * 70)
     print("ALL DOCUMENTATION ALIGNED AND CURRENT")
-    print("="*70)
+    print("=" * 70)

@@ -228,10 +228,10 @@ Combines reconstruction and KL divergence:
 def vae_loss(self, recon_x, x, mu, logvar):
     # Reconstruction: E[||x - x̂||²]
     recon_loss = F.mse_loss(recon_x, x, reduction='sum') / x.size(0)
-    
+
     # KL: ½ Σ(σ² + μ² - 1 - log σ²)
     kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / x.size(0)
-    
+
     return recon_loss + kl_div
 ```
 
