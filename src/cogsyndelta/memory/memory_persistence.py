@@ -678,7 +678,8 @@ if __name__ == '__main__':
             print(f"  ⚠️  Stopped at iteration {i}: {message}")
             break
         if i % 3 == 0:
-            state = state  # Repeat state to trigger detection
+            # Clone state to reuse (triggers repetition detection)
+            state = state.clone()
     
     print("\n" + "="*70)
     print("TESTS COMPLETE")
