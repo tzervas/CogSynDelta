@@ -455,7 +455,8 @@ class PersistentMemoryBank(nn.Module):
                         data = pickle.load(f)
                         retrieved_list.append(data['embedding'].to(query.device))
                         metadata_list.append(data['metadata'])
-                except:
+                except (FileNotFoundError, pickle.UnpicklingError, KeyError):
+                    # Skip corrupted or missing memory files
                     pass
         
         if retrieved_list:
