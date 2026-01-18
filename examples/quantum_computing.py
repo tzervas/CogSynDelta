@@ -1,17 +1,26 @@
 """
-Quantum Computing Example
+Quantum Computing Example.
+
+**FUTURE FEATURE - BACKLOGGED**
 
 This example demonstrates:
 1. Quantum circuit simulation
 2. Quantum-enhanced neural networks
 3. Hybrid quantum-classical computing
 
-Note: Requires quantum computing packages (qiskit, pennylane, cirq)
-Install with: pip install cogsyndelta[quantum]
+BACKLOG STATUS:
+    Quantum computing features are currently using classical simulation stubs.
+    Full quantum backend integration (qiskit, cirq, pennylane) is backlogged
+    pending Python 3.14 ecosystem support. See ROADMAP.md for updates.
+
+    When quantum packages become available, install with:
+        uv add cogsyndelta[quantum]
 """
 
 import torch
 import asyncio
+import warnings
+from cogsyndelta.quantum import QUANTUM_AVAILABLE, QUANTUM_BACKLOG_REASON
 from cogsyndelta.quantum.quantum_compute import (
     QuantumComputeManager,
     QuantumEnhancedLayer,
@@ -20,20 +29,24 @@ from cogsyndelta.quantum.quantum_compute import (
 
 
 async def main():
-    """Demonstrate quantum computing capabilities."""
+    """Demonstrate quantum computing capabilities (using stubs)."""
     print("="*60)
     print("CogSynDelta Quantum Computing Example")
     print("="*60)
     
+    if not QUANTUM_AVAILABLE:
+        print(f"\n⚠️  WARNING: {QUANTUM_BACKLOG_REASON}")
+        print("Running with classical simulation stubs...\n")
+    
     # Configuration
     config = {
-        'backend': 'qiskit',
+        'backend': 'classical_simulator',  # Using stub
         'num_qubits': 10,
         'shots': 1024
     }
     
     print("\nInitializing quantum compute manager...")
-    print(f"  Backend: {config['backend']}")
+    print(f"  Backend: {config['backend']} (stub)")
     print(f"  Qubits: {config['num_qubits']}")
     
     try:

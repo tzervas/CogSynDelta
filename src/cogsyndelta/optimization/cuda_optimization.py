@@ -66,6 +66,7 @@ class RTX5080Optimizer:
     """
     
     def __init__(self) -> None:
+        """Initialize RTX 5080 optimizer with device configuration."""
         if not CUDA_AVAILABLE:
             warnings.warn("CUDA not available. Using CPU fallback.")
             self.device = torch.device('cpu')
@@ -249,6 +250,7 @@ class FlashAttentionOptimized(nn.Module):
     """
     
     def __init__(self, embed_dim: int, num_heads: int = 8) -> None:
+        """Initialize Flash Attention with multi-head configuration."""
         super().__init__()
         self.embed_dim = embed_dim
         self.num_heads = num_heads
@@ -311,6 +313,7 @@ class BalancedTernaryEmbedding(nn.Module):
     """
     
     def __init__(self, vocab_size: int, embed_dim: int) -> None:
+        """Initialize ternary embedding with int8 storage."""
         super().__init__()
         self.vocab_size = vocab_size
         self.embed_dim = embed_dim
@@ -399,6 +402,7 @@ class GPUEmbeddingStore:
     
     def __init__(self, embed_dim: int = 512, max_capacity: int = 100000,
                  use_ternary: bool = False, optimizer: Optional[RTX5080Optimizer] = None) -> None:
+        """Initialize optimized embedding store with GPU-accelerated storage."""
         self.embed_dim = embed_dim
         self.max_capacity = max_capacity
         self.use_ternary = use_ternary

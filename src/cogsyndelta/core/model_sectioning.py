@@ -82,6 +82,7 @@ class ModelSection(nn.Module):
     def __init__(self, section_id: str, region_type: BrainRegionType,
                  input_dim: int, hidden_dim: int, output_dim: int,
                  num_layers: int = 3) -> None:
+        """Initialize model section with specialized processing layers."""
         super(ModelSection, self).__init__()
         
         self.section_id = section_id
@@ -163,8 +164,15 @@ class ModelSection(nn.Module):
         }, path)
     
     def load_from_disk(self, path: str) -> None:
-        """Load section from disk."""
-        checkpoint = torch.load(path)
+        """Load section from disk.
+        
+        Uses weights_only=False since we serialize ModelSectionMetadata.
+        This is safe for self-generated checkpoints from save_to_disk().
+        """
+        # PyTorch 2.6+ defaults to weights_only=True, but we need to load
+        # custom dataclasses (ModelSectionMetadata). This is safe for
+        # checkpoints we create ourselves.
+        checkpoint = torch.load(path, weights_only=False)
         self.load_state_dict(checkpoint['state_dict'])
         self.metadata = checkpoint['metadata']
 
@@ -178,6 +186,7 @@ class mHCInterconnect(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize mHC interconnect with routing and modulation networks."""
         super(mHCInterconnect, self).__init__()
         
         self.embed_dim = embed_dim
@@ -271,6 +280,7 @@ class DynamicModelLoader:
     def __init__(self, storage_path: str = "./model_sections",
                  max_loaded_sections: int = 5,
                  memory_limit_mb: float = 1024.0) -> None:
+        """Initialize dynamic loader with storage and memory constraints."""
         self.storage_path = storage_path
         self.max_loaded_sections = max_loaded_sections
         self.memory_limit_mb = memory_limit_mb
@@ -388,6 +398,7 @@ class SectionedBrainModel(nn.Module):
     """
     
     def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize sectioned brain model with mHC interconnect and loader."""
         super(SectionedBrainModel, self).__init__()
         
         self.config = config

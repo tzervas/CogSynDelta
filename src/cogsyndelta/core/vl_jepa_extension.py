@@ -25,6 +25,7 @@ class VisionEncoder(nn.Module):
     
     def __init__(self, image_size: int = 224, patch_size: int = 16, 
                  in_channels: int = 3, embed_dim: int = 512, num_layers: int = 6) -> None:
+        """Initialize vision encoder with patch embeddings and transformer."""
         super(VisionEncoder, self).__init__()
         
         self.image_size = image_size
@@ -88,6 +89,7 @@ class TemporalMemoryBank(nn.Module):
     
     def __init__(self, memory_size: int = 1000, embed_dim: int = 512, 
                  num_read_heads: int = 4) -> None:
+        """Initialize temporal memory bank with attention mechanisms."""
         super(TemporalMemoryBank, self).__init__()
         
         self.memory_size = memory_size
@@ -196,6 +198,7 @@ class ModeratedHyperConnection(nn.Module):
     """
     
     def __init__(self, embed_dim: int) -> None:
+        """Initialize mHC with gating and transform networks."""
         super(ModeratedHyperConnection, self).__init__()
         
         self.embed_dim = embed_dim
@@ -252,6 +255,7 @@ class HierarchicalPredictiveCoding(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512, num_levels: int = 3) -> None:
+        """Initialize hierarchical predictive coding with levels and mHC."""
         super(HierarchicalPredictiveCoding, self).__init__()
         
         self.num_levels = num_levels
@@ -371,6 +375,7 @@ class JointEmbeddingSpace(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512, latent_dim: int = 20) -> None:
+        """Initialize joint embedding space with projections and predictor."""
         super(JointEmbeddingSpace, self).__init__()
         
         self.embed_dim = embed_dim
@@ -431,6 +436,7 @@ class FrameBufferAdapter(nn.Module):
     """
     
     def __init__(self, buffer_size: int = 16, target_size: int = 224) -> None:
+        """Initialize frame buffer with preprocessing and temporal pooling."""
         super(FrameBufferAdapter, self).__init__()
         
         self.buffer_size = buffer_size

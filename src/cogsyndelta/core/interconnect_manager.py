@@ -39,6 +39,7 @@ class CommunicationContext:
     bandwidth_used: int
     
     def to_dict(self) -> Dict:
+        """Convert communication context to dictionary format."""
         return {
             'source': self.source_section,
             'target': self.target_section,
@@ -70,6 +71,7 @@ class ContextualAttentionRouter(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512, num_heads: int = 8, num_sections: int = 10) -> None:
+        """Initialize attention router with multi-head attention for routing."""
         super(ContextualAttentionRouter, self).__init__()
         
         self.embed_dim = embed_dim
@@ -182,6 +184,7 @@ class PathwayOptimizer(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize pathway optimizer with value and policy networks."""
         super(PathwayOptimizer, self).__init__()
         
         self.embed_dim = embed_dim
@@ -244,6 +247,7 @@ class ContextPropagationEngine(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512, max_hops: int = 3) -> None:
+        """Initialize context propagation with hop integrators and decay."""
         super(ContextPropagationEngine, self).__init__()
         
         self.embed_dim = embed_dim
@@ -314,6 +318,7 @@ class CongestionController:
     """
     
     def __init__(self, total_bandwidth: int = 10000) -> None:
+        """Initialize congestion controller with bandwidth allocation tracking."""
         self.total_bandwidth = total_bandwidth
         self.allocated_bandwidth: Dict[Tuple[str, str], int] = {}
         self.message_queue: Dict[int, deque] = defaultdict(deque)  # priority -> queue
@@ -412,6 +417,7 @@ class IntelligentInterconnectManager(nn.Module):
     
     def __init__(self, embed_dim: int = 512, num_sections: int = 10,
                  total_bandwidth: int = 10000) -> None:
+        """Initialize interconnect manager with all communication components."""
         super(IntelligentInterconnectManager, self).__init__()
         
         self.embed_dim = embed_dim

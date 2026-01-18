@@ -69,6 +69,7 @@ class TemporalMetadata:
         return self.decay_factor
     
     def to_dict(self) -> Dict:
+        """Convert temporal metadata to dictionary format."""
         return {
             'created_at': self.created_at.isoformat(),
             'last_accessed': self.last_accessed.isoformat(),
@@ -98,6 +99,7 @@ class ContextualMetadata:
         self.related_memories.add(memory_id)
     
     def to_dict(self) -> Dict:
+        """Convert contextual metadata to dictionary format."""
         return {
             'source': self.source,
             'tags': list(self.tags),
@@ -117,6 +119,7 @@ class SemanticResidual:
     detail_level: str  # "fine", "medium", "coarse"
     
     def to_dict(self) -> Dict:
+        """Convert semantic residual to dictionary format."""
         return {
             'shape': list(self.residual_embedding.shape),
             'importance': self.importance,
@@ -183,6 +186,7 @@ class SkillSchema:
             self.proficiency = max(0.0, self.proficiency - 0.005)
     
     def to_dict(self) -> Dict:
+        """Convert skill schema to dictionary format."""
         return {
             'skill_id': self.skill_id,
             'skill_name': self.skill_name,
@@ -221,6 +225,7 @@ class ToolSchema:
         self.success_rate = (1 - alpha) * self.success_rate + alpha * (1.0 if success else 0.0)
     
     def to_dict(self) -> Dict:
+        """Convert tool schema to dictionary format."""
         return {
             'tool_id': self.tool_id,
             'tool_name': self.tool_name,
@@ -245,6 +250,7 @@ class RelevanceScorer(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize relevance scorer with neural network."""
         super(RelevanceScorer, self).__init__()
         
         self.embed_dim = embed_dim
@@ -297,6 +303,7 @@ class SemanticSearchEngine(nn.Module):
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize semantic search engine with relevance scorer."""
         super(SemanticSearchEngine, self).__init__()
         
         self.embed_dim = embed_dim
@@ -429,6 +436,7 @@ class UnifiedMemoryManager:
     """
     
     def __init__(self, embed_dim: int = 512) -> None:
+        """Initialize unified memory manager with storage and search engine."""
         self.embed_dim = embed_dim
         
         # Storage
