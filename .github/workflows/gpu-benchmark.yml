@@ -1,0 +1,117 @@
+# GPU Benchmark workflow for CogSynDelta (Private Repository)
+# Manual trigger for uploading GPU benchmark results from akula-prime
+# Results are stored as artifacts for persistence
+
+name: GPU Benchmarks
+
+on:
+  # Manual trigger with benchmark results upload
+  workflow_dispatch:
+    inputs:
+      benchmark_json:
+        description: 'Benchmark JSON file content (base64 encoded)'
+        required: false
+        type: string
+      benchmark_text:
+        description: 'Benchmark text file content (base64 encoded)'
+        required: false
+        type: string
+      gpu_name:
+        description: 'GPU name (e.g., RTX 5080)'
+        required: true
+        type: string
+        default: 'RTX 5080'
+      run_date:
+        description: 'Benchmark run date (YYYY-MM-DD)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  upload-results:
+    name: Upload Benchmark Results
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Create results directory
+        run: mkdir -p benchmark_results
+
+      - name: Decode and save benchmark files
+        run: |
+          TIMESTAMP="${{ inputs.run_date }}_manual"
+          
+          # If JSON provided, decode it
+          if [ -n "${{ inputs.benchmark_json }}" ]; then
+            echo "${{ inputs.benchmark_json }}" | base64 -d > benchmark_results/gpu_benchmark_${TIMESTAMP}.json
+          fi
+          
+          # If text provided, decode it
+          if [ -n "${{ inputs.benchmark_text }}" ]; then
+            echo "${{ inputs.benchmark_text }}" | base64 -d > benchmark_results/gpu_benchmark_${TIMESTAMP}.txt
+          fi
+          
+          # Create badge JSON
+          cat > benchmark_results/benchmark_badge.json << EOF
+          {
+            "schemaVersion": 1,
+            "label": "GPU Benchmark",
+            "message": "${{ inputs.gpu_name }} | ${{ inputs.run_date }}",
+            "color": "brightgreen",
+            "namedLogo": "nvidia",
+            "logoColor": "white"
+          }
+          EOF
+          
+          # Create latest symlink data
+          echo "gpu_benchmark_${TIMESTAMP}.json" > benchmark_results/latest_ref.txt
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: gpu-benchmark-${{ inputs.run_date }}
+          path: benchmark_results/
+          retention-days: 365
+
+      - name: Update benchmark results in repo
+        if: ${{ inputs.benchmark_json != '' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Add benchmark results
+          git add benchmark_results/
+          
+          # Commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: Update GPU benchmark results (${{ inputs.run_date }})"
+            git push
+          fi
+
+  # Job to run if self-hosted runner is available (future)
+  # Uncomment when akula-prime is configured as a runner
+  # self-hosted-benchmark:
+  #   name: Run GPU Benchmarks (Self-Hosted)
+  #   runs-on: [self-hosted, gpu, akula-prime]
+  #   if: false  # Disabled until self-hosted runner is configured
+  #
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v6
+  #
+  #     - name: Run GPU benchmarks
+  #       run: |
+  #         ./scripts/capture_gpu_benchmarks.sh
+  #
+  #     - name: Upload benchmark artifacts
+  #       uses: actions/upload-artifact@v6
+  #       with:
+  #         name: gpu-benchmark-${{ github.run_id }}
+  #         path: benchmark_results/
+  #         retention-days: 365

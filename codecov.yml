@@ -1,0 +1,57 @@
+# Codecov configuration for CogSynDelta (Private Repository)
+# Documentation: https://docs.codecov.com/docs/codecov-yaml
+
+# Coverage configuration
+coverage:
+  precision: 2
+  round: down
+  range: "60...100"
+
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 2%
+        # Only fail if coverage drops significantly
+        if_ci_failed: error
+
+    patch:
+      default:
+        target: auto
+        threshold: 5%
+        # More lenient for new code during active development
+        if_ci_failed: error
+
+# Ignore paths that don't need coverage
+ignore:
+  - "tests/**/*"
+  - "benchmarks/**/*"
+  - "examples/**/*"
+  - "scripts/**/*"
+  - "docs/**/*"
+  - "**/__pycache__/**"
+  - "**/conftest.py"
+
+# Comment configuration for PRs
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: true
+  # Only post on significant changes
+  require_base: true
+  require_head: true
+
+# Flags for different test types
+flags:
+  unittests:
+    paths:
+      - src/
+    carryforward: true
+
+# GitHub checks integration
+github_checks:
+  annotations: true
+
+# Security: Ensure private repo data is protected
+# Token authentication is required for private repos
+# Set CODECOV_TOKEN in GitHub Secrets
