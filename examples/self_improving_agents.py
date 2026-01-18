@@ -34,7 +34,7 @@ def main() -> None:
 
     # Initialize meta-learning optimizer
     print("\nInitializing meta-learning optimizer...")
-    meta_optimizer = MetaLearningOptimizer(embed_dim=embed_dim)
+    _meta_optimizer = MetaLearningOptimizer(embed_dim=embed_dim)
 
     # Simulate some learning tasks
     print("\n" + "=" * 60)
@@ -74,7 +74,7 @@ def main() -> None:
     config = {"num_agents": 3, "embed_dim": embed_dim, "collaboration_rounds": 2}
 
     print(f"\nInitializing {config['num_agents']} collaborative agents...")
-    multi_agent = MultiAgentCollaboration(config)
+    _multi_agent = MultiAgentCollaboration(config)
 
     # Simulate collaborative task
     task_input = torch.randn(1, embed_dim)
