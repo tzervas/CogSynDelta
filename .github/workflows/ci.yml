@@ -106,8 +106,11 @@ jobs:
 
     - name: Install dependencies with CPU-only PyTorch
       run: |
-        # Use --no-sources to ignore pyproject.toml torch source (cu128), use CPU index instead
-        uv sync --group dev --no-sources --extra-index-url https://download.pytorch.org/whl/cpu
+        # Use --no-sources to bypass pyproject.toml torch source (cu128)
+        # Use --index-strategy unsafe-best-match to allow packages from all indexes
+        uv sync --group dev --no-sources \
+          --extra-index-url https://download.pytorch.org/whl/cpu \
+          --index-strategy unsafe-best-match
 
     - name: Run tests with pytest
       run: |
