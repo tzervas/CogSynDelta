@@ -15,7 +15,7 @@ from cogsyndelta.agents.self_improving_agents import (
 )
 
 
-def main():
+def main() -> None:
     """Demonstrate self-improving agent capabilities."""
     print("="*60)
     print("CogSynDelta Self-Improving Agent Example")

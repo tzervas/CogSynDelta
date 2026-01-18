@@ -15,19 +15,16 @@ Features:
 - Configurable via YAML/JSON
 """
 
-from fastapi import FastAPI, WebSocket, UploadFile, File, HTTPException, BackgroundTasks
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any, Union, Literal
+from typing import Optional, List, Dict, Any, Literal
 from enum import Enum
 import torch
 import numpy as np
 import asyncio
-import io
-import base64
 from datetime import datetime
-import json
 
 
 # ============================================================================

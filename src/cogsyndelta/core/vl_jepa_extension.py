@@ -13,7 +13,7 @@ This module extends the PCN-VAE-GAN hybrid with VL-JEPA-inspired components:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Tuple, Dict, Optional, List
+from typing import Tuple, Dict, Optional
 from collections import deque
 
 

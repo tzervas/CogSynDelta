@@ -10,19 +10,19 @@ import time
 import numpy as np
 from datetime import datetime
 import json
-import os
+from typing import Dict, List, Any, Tuple
 
 
 class SimpleCNN(nn.Module):
     """Simple CNN for benchmarking"""
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
         self.fc1 = nn.Linear(9216, 128)
         self.fc2 = nn.Linear(128, 10)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.max_pool2d(x, 2)
@@ -33,14 +33,14 @@ class SimpleCNN(nn.Module):
 
 class ResNetBlock(nn.Module):
     """ResNet block"""
-    def __init__(self, channels):
+    def __init__(self, channels: int) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(channels, channels, 3, 1, 1, bias=False)
         self.bn1 = nn.BatchNorm2d(channels)
         self.conv2 = nn.Conv2d(channels, channels, 3, 1, 1, bias=False)
         self.bn2 = nn.BatchNorm2d(channels)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
@@ -49,7 +49,7 @@ class ResNetBlock(nn.Module):
 
 class LargeResNet(nn.Module):
     """Larger ResNet for benchmarking"""
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(3, 64, 7, 2, 3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
@@ -66,7 +66,7 @@ class LargeResNet(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(256, 1000)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.maxpool(F.relu(self.bn1(self.conv1(x))))
         x = self.layer1(x)
         x = self.trans1(x)
@@ -78,10 +78,12 @@ class LargeResNet(nn.Module):
         return self.fc(x)
 
 
-def run_inference_benchmark(model, input_shape, device, batch_sizes, num_iterations=100, warmup=20):
+def run_inference_benchmark(model: nn.Module, input_shape: Tuple[int, ...], device: torch.device, 
+                            batch_sizes: List[int], num_iterations: int = 100, 
+                            warmup: int = 20) -> List[Dict[str, Any]]:
     """Run inference throughput benchmark"""
     model.eval()
-    results = []
+    results: List[Dict[str, Any]] = []
     
     for batch_size in batch_sizes:
         inputs = torch.randn(batch_size, *input_shape, device=device)
@@ -121,7 +123,8 @@ def run_inference_benchmark(model, input_shape, device, batch_sizes, num_iterati
     return results
 
 
-def run_training_benchmark(model, input_shape, device, batch_size=64, num_steps=200):
+def run_training_benchmark(model: nn.Module, input_shape: Tuple[int, ...], device: torch.device, 
+                           batch_size: int = 64, num_steps: int = 200) -> Dict[str, Any]:
     """Benchmark training performance"""
     model.train()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
@@ -176,10 +179,10 @@ def run_training_benchmark(model, input_shape, device, batch_size=64, num_steps=
     }
 
 
-def benchmark_matrix_ops(device, sizes=[1024, 2048, 4096, 8192]):
+def benchmark_matrix_ops(device: torch.device, sizes: List[int] = [1024, 2048, 4096, 8192]) -> List[Dict[str, Any]]:
     """Benchmark matrix operations"""
     print(f"\nMatrix Operations Benchmark")
-    results = []
+    results: List[Dict[str, Any]] = []
     
     for size in sizes:
         a = torch.randn(size, size, device=device)
@@ -215,7 +218,7 @@ def benchmark_matrix_ops(device, sizes=[1024, 2048, 4096, 8192]):
     return results
 
 
-def main():
+def main() -> None:
     print('='*80)
     print('RTX 5080 GPU Benchmark - Industry Standard Tests')
     print('='*80)
