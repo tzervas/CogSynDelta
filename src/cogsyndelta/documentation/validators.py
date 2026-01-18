@@ -5,10 +5,11 @@ actual imports, checking version compatibility, and querying the RAG system.
 """
 
 import ast
+import importlib.metadata
+import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Set, Tuple, Optional, Any
-import re
+from typing import Any
 
 
 class DependencyValidator:
@@ -23,7 +24,7 @@ class DependencyValidator:
         self.project_root = Path(project_root)
         self.src_dir = self.project_root / "src"
 
-    def extract_imports_from_file(self, file_path: Path) -> Set[str]:
+    def extract_imports_from_file(self, file_path: Path) -> set[str]:
         """Extract all import statements from a Python file.
 
         Args:
@@ -35,7 +36,7 @@ class DependencyValidator:
         imports = set()
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 tree = ast.parse(f.read(), filename=str(file_path))
 
             for node in ast.walk(tree):
@@ -54,13 +55,13 @@ class DependencyValidator:
 
         return imports
 
-    def scan_project_imports(self) -> Dict[str, List[Path]]:
+    def scan_project_imports(self) -> dict[str, list[Path]]:
         """Scan all Python files in the project for imports.
 
         Returns:
             Dictionary mapping package names to files that import them
         """
-        package_to_files: Dict[str, List[Path]] = {}
+        package_to_files: dict[str, list[Path]] = {}
 
         # Find all Python files
         python_files = list(self.src_dir.rglob("*.py"))
@@ -83,7 +84,7 @@ class DependencyValidator:
 
         return package_to_files
 
-    def parse_requirements_file(self, requirements_path: Path) -> Dict[str, str]:
+    def parse_requirements_file(self, requirements_path: Path) -> dict[str, str]:
         """Parse a requirements.txt file.
 
         Args:
@@ -95,7 +96,7 @@ class DependencyValidator:
         requirements = {}
 
         try:
-            with open(requirements_path, "r") as f:
+            with open(requirements_path) as f:
                 for line in f:
                     line = line.strip()
                     # Skip comments and empty lines
@@ -117,7 +118,7 @@ class DependencyValidator:
 
         return requirements
 
-    def get_installed_version(self, package_name: str) -> Optional[str]:
+    def get_installed_version(self, package_name: str) -> str | None:
         """Get the installed version of a package.
 
         Args:
@@ -140,9 +141,7 @@ class DependencyValidator:
             except:
                 return None
 
-    def check_unused_dependencies(
-        self, requirements_path: Path
-    ) -> Tuple[List[str], List[str]]:
+    def check_unused_dependencies(self, requirements_path: Path) -> tuple[list[str], list[str]]:
         """Check for dependencies declared but not imported.
 
         Args:
@@ -183,13 +182,13 @@ class DependencyValidator:
 
         return sorted(unused), sorted(untracked)
 
-    def validate_all_requirements(self) -> Dict[str, Any]:
+    def validate_all_requirements(self) -> dict[str, Any]:
         """Validate all requirements files in the project.
 
         Returns:
             Validation report dictionary
         """
-        report = {
+        report: dict[str, Any] = {
             "requirements.txt": {},
             "requirements-dev.txt": {},
             "summary": {},

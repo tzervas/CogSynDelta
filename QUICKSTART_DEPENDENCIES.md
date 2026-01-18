@@ -117,7 +117,7 @@ python scripts/validate_dependencies.py
 # DEPENDENCY VALIDATION REPORT
 # Generated: 2026-01-18T...
 # ================================================================================
-# 
+#
 # requirements.txt
 # --------------------------------------------------------------------------------
 # Declared dependencies: 14
@@ -168,7 +168,7 @@ pip3 install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytor
 python3 -c "import torch; print(f'PyTorch: {torch.__version__}')"
 python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 python3 -c "import torch; print(f'CUDA version: {torch.version.cuda}')"
-python3 -c "import torch; print(f'GPU: {torch.cuda.get_device_name(0)}')" 
+python3 -c "import torch; print(f'GPU: {torch.cuda.get_device_name(0)}')"
 ```
 
 ### Run GPU Benchmarks

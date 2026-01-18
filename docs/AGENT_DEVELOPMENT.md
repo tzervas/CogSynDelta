@@ -18,10 +18,10 @@ class MyCustomAgent(ADKAgent):
             name="My Custom Agent",
             description="Description of what this agent does"
         )
-        
+
         # Register tools
         self._register_tools()
-    
+
     def _register_tools(self):
         self.register_tool(
             name="my_tool",
@@ -38,11 +38,11 @@ class MyCustomAgent(ADKAgent):
                 "required": ["param1"]
             }
         )
-    
+
     def _my_tool_impl(self, param1: str) -> dict:
         # Tool implementation
         return {"result": f"Processed: {param1}"}
-    
+
     def _generate_response(self, prompt: str) -> str:
         # Response generation logic
         return f"Response to: {prompt}"
@@ -92,17 +92,17 @@ Tools must follow JSON Schema format:
 def my_tool(param1: str, param2: int = 10) -> dict:
     """
     Tool description.
-    
+
     Args:
         param1: Description of param1
         param2: Description of param2 (default: 10)
-        
+
     Returns:
         Dictionary with result
     """
     # Implementation
     result = process(param1, param2)
-    
+
     return {
         "status": "success",
         "result": result,
@@ -150,11 +150,11 @@ def my_agent_with_memory(self):
     # Access persistent memory
     if hasattr(self, 'integrated_system'):
         memory_bank = self.integrated_system.memory_bank
-        
+
         # Write to memory
         embedding = torch.randn(1, 512)
         memory_bank.write(embedding, importance=0.9)
-        
+
         # Query memory
         query = torch.randn(1, 512)
         retrieved, metadata = memory_bank.read(query, num_reads=5)
@@ -166,13 +166,13 @@ def my_agent_with_memory(self):
 def process_with_sections(self, input_data):
     # Access sectioned model
     sectioned_model = self.integrated_system.sectioned_model
-    
+
     # Process through specific sections
     outputs = sectioned_model.forward(
         input_data={"visual": input_data},
         required_sections=["visual", "prefrontal"]
     )
-    
+
     return outputs
 ```
 
@@ -191,7 +191,7 @@ def quantum_processing(self, data):
         input_data=data,
         parameters={'shots': 1024}
     )
-    
+
     # Submit to orchestrator
     result = await orchestrator.submit_job(job)
     return result
@@ -222,10 +222,10 @@ Validate inputs before processing:
 def my_tool(self, param: str):
     if not param or not isinstance(param, str):
         return {"status": "error", "error": "Invalid parameter"}
-    
+
     if len(param) > 1000:
         return {"status": "error", "error": "Parameter too long"}
-    
+
     # Process...
 ```
 
@@ -237,19 +237,19 @@ Document all tools and methods:
 def my_tool(self, param1: str, param2: int) -> dict:
     """
     Brief description.
-    
+
     Detailed description of what this tool does.
-    
+
     Args:
         param1: Description of param1
         param2: Description of param2
-        
+
     Returns:
         Dictionary containing:
         - status: "success" or "error"
         - result: Processed result
         - metadata: Additional information
-        
+
     Examples:
         >>> result = my_tool("test", 10)
         >>> print(result['status'])
@@ -264,7 +264,7 @@ Test agents thoroughly:
 ```python
 def test_my_agent():
     agent = MyCustomAgent("test_agent")
-    
+
     # Test tool calling
     message = Message(
         role=AgentRole.USER,
@@ -274,16 +274,16 @@ def test_my_agent():
             "arguments": {"param1": "test"}
         }
     )
-    
+
     response = agent.process_message(message)
     assert response.role == AgentRole.FUNCTION
-    
+
     # Test response generation
     message = Message(
         role=AgentRole.USER,
         content="Hello"
     )
-    
+
     response = agent.process_message(message)
     assert response.role == AgentRole.ASSISTANT
 ```
@@ -302,15 +302,15 @@ class SafeAgent(ADKAgent):
             max_iterations=100,
             max_repetitions=3
         )
-    
+
     def _generate_response(self, prompt):
         # Check safeguards
         state = torch.tensor([hash(prompt)])
         is_safe, message = self.safeguard.check_state(state)
-        
+
         if not is_safe:
             return f"Safeguard triggered: {message}"
-        
+
         # Generate response...
 ```
 

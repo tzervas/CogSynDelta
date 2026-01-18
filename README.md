@@ -256,7 +256,7 @@ async def stream_video():
             "source_type": "webcam",
             "fps": 30
         }))
-        
+
         async for message in websocket:
             data = json.loads(message)
             print(f"Semantic state: {data['frame_id']}")
@@ -304,7 +304,7 @@ All performance claims are validated with measured benchmarks. **CPU baseline es
 | Memory Compression | 16× | ratio | ✅ 27M samples/sec |
 | Compression Fidelity | 0.67 | cosine similarity | ✅ At 2× ratio |
 
-**GPU Status (2026-01-18):** 
+**GPU Status (2026-01-18):**
 - **PyTorch 2.9.1** supports CUDA 12.6 and 12.8
 - **RTX 5080** on akula-prime workstation (`ssh akula-prime`)
 - All GPU workloads run on akula-prime
@@ -312,7 +312,7 @@ All performance claims are validated with measured benchmarks. **CPU baseline es
 
 **Expected GPU Performance** (RTX 5080):
 - Matrix ops: ~60 TFLOPS (100-150× faster than CPU)
-- NN inference: ~250,000 samples/sec (50× faster)  
+- NN inference: ~250,000 samples/sec (50× faster)
 - Training: ~500,000 samples/sec with mixed precision
 
 See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for complete results.
