@@ -24,17 +24,20 @@ env:
 
 jobs:
   # CodeQL Static Analysis (SAST)
+  # Requires Code Scanning to be enabled in repo: Settings > Security > Code scanning
   codeql:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Only run if code scanning is enabled (set ENABLE_CODEQL=true in repo variables)
+    if: ${{ vars.ENABLE_CODEQL == 'true' }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: python
           # Use extended queries for more thorough analysis
@@ -48,10 +51,10 @@ jobs:
               - docs
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:python"
           # Upload to GitHub Security tab only (private)
@@ -72,10 +75,8 @@ jobs:
         with:
           # Fail on high/critical vulnerabilities
           fail-on-severity: high
-          # Allow specific licenses
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0
-          # Deny copyleft licenses for proprietary compatibility
-          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0
+          # Allow permissive licenses (deny all others by default)
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0, Unlicense, WTFPL, CC0-1.0, 0BSD
 
   # Snyk Security Scan (requires SNYK_TOKEN secret)
   snyk:
@@ -109,7 +110,7 @@ jobs:
           args: --file=requirements-snyk.txt --severity-threshold=high
 
       - name: Upload Snyk results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: snyk.sarif
