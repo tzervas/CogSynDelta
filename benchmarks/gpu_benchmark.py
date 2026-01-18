@@ -3,9 +3,9 @@ GPU-Ready Benchmark Suite for CogSynDelta
 Measures performance on available hardware (CPU or GPU)
 """
 
-import os
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import psutil
@@ -21,7 +21,7 @@ def get_device_info() -> dict[str, Any]:
         "ram_gb": psutil.virtual_memory().total / (1024**3),
         "pytorch_version": torch.__version__,
         "cuda_available": torch.cuda.is_available(),
-        "working_dir": os.getcwd(),
+        "working_dir": str(Path.cwd()),
     }
 
     if torch.cuda.is_available():
@@ -56,7 +56,7 @@ def benchmark_matrix_operations(
         # Benchmark
         start = time.perf_counter()
         for _ in range(10):
-            c = torch.matmul(a, b)
+            _ = torch.matmul(a, b)
 
         if device.type == "cuda":
             torch.cuda.synchronize()

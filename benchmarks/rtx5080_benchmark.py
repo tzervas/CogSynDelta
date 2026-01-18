@@ -227,7 +227,7 @@ def benchmark_matrix_ops(
         times = []
         for _ in range(20):
             start = time.perf_counter()
-            c = torch.matmul(a, b)
+            _ = torch.matmul(a, b)
             if device.type == "cuda":
                 torch.cuda.synchronize()
             times.append(time.perf_counter() - start)
