@@ -307,14 +307,14 @@ import requests
 class CogSynDeltaClient:
     def __init__(self, base_url="http://localhost:8000/api/v1"):
         self.base_url = base_url
-    
+
     def create_session(self, modalities):
         response = requests.post(
             f"{self.base_url}/session/create",
             json={"modalities": modalities}
         )
         return response.json()
-    
+
     def process_video(self, session_id, config):
         response = requests.post(
             f"{self.base_url}/process/video",

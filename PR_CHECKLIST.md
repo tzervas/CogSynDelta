@@ -2,8 +2,8 @@
 
 ## ✅ Branch Pushed Successfully
 
-**Branch:** `copilot/create-pcn-vae-gan-hybrid`  
-**Commit:** `19ce412`  
+**Branch:** `copilot/create-pcn-vae-gan-hybrid`
+**Commit:** `19ce412`
 **Remote:** https://github.com/tzervas/CogSynDelta
 
 ## 🔗 Create PR

@@ -23,9 +23,7 @@ from cogsyndelta.documentation import DependencyDocsRAG
 
 def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Query dependency documentation RAG system"
-    )
+    parser = argparse.ArgumentParser(description="Query dependency documentation RAG system")
     parser.add_argument(
         "query",
         nargs="?",
@@ -88,7 +86,7 @@ def main() -> None:
         print(f"  Total documents: {stats['total_documents']}")
         print(f"  Last updated: {stats['last_updated']}")
         print("\nDependencies:")
-        for dep_name, sources in sorted(stats['dependencies'].items()):
+        for dep_name, sources in sorted(stats["dependencies"].items()):
             print(f"\n  {dep_name}:")
             for source, info in sources.items():
                 print(f"    - {source}: v{info['version']} ({info['doc_count']} docs)")
