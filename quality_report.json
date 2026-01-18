@@ -1,0 +1,31 @@
+{
+  "overall_score": 0,
+  "status": "needs_work",
+  "quality_report": {
+    "stats": {
+      "files_analyzed": 26,
+      "total_lines": 12692,
+      "total_functions": 329,
+      "total_classes": 120,
+      "issues_found": 116
+    },
+    "issues": {
+      "by_severity": {
+        "error": 0,
+        "warning": 76,
+        "info": 40
+      },
+      "by_category": {
+        "docstring": 76,
+        "type_hints": 38,
+        "naming": 2
+      },
+      "total": 116
+    },
+    "quality_score": 0
+  },
+  "intention_report": {
+    "total_mismatches": 0,
+    "mismatches": []
+  }
+}
