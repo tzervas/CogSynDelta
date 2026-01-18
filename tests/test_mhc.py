@@ -154,14 +154,18 @@ class TestPathwayOptimizer:
 
     @pytest.fixture
     def optimizer(self) -> nn.Module:
-        """Create PathwayOptimizer instance."""
+        """Create PathwayOptimizer instance on CPU.
+        
+        Note: PathwayOptimizer.evaluate_pathway/propose_adjustment
+        create internal CPU tensors, so the model must be on CPU.
+        """
         from cogsyndelta.core.interconnect_manager import PathwayOptimizer
 
-        return PathwayOptimizer(embed_dim=512).cuda()
+        return PathwayOptimizer(embed_dim=512)  # Keep on CPU
 
     def test_update_strength(self, optimizer: nn.Module) -> None:
         """Test pathway strength evaluation and adjustment."""
-        # Create test tensors on CPU (as the optimizer methods expect)
+        # Create test tensors on CPU to match optimizer
         source_state = torch.randn(512)
         target_state = torch.randn(512)
         current_strength = 1.0
