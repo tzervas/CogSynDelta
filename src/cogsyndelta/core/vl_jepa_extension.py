@@ -62,7 +62,7 @@ class VisionEncoder(nn.Module):
         Returns:
             Semantic embeddings [batch, embed_dim] - silent state, no tokens
         """
-        batch_size = x.size(0)
+        _batch_size = x.size(0)  # kept for shape reference
         
         # Patch embedding
         x = self.patch_embed(x)  # [batch, embed_dim, num_patches_h, num_patches_w]
@@ -310,7 +310,7 @@ class HierarchicalPredictiveCoding(nn.Module):
         Returns:
             Dictionary with predictions and prediction errors at each level
         """
-        batch_size = x.size(0)
+        _batch_size = x.size(0)  # kept for shape reference
         
         # Bottom-up pass with mHC
         representations = []
