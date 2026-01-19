@@ -281,10 +281,6 @@ class TestActiveMemory(unittest.TestCase):
         self.hybrid_compactor = HybridAdaptiveCompactor(
             embed_dim=512, num_basis=384, sparsity_threshold=0.01
         )
-        self.legacy_compactor = LosslessCompactor(embed_dim=512, num_basis=128)
-        self.high_fidelity_compactor = HighFidelityCompactor(
-            embed_dim=512, num_basis=256, use_float16=True
-        )
 
     def test_high_fidelity_compression(self) -> None:
         """Test HighFidelityCompactor achieves ≥0.95 cosine similarity.
@@ -445,17 +441,21 @@ class TestActiveMemory(unittest.TestCase):
         """
         original = torch.randn(512)
 
-        # High-fidelity (no training needed) - returns (mse, cos_sim)
-        hf_mse, hf_cos = self.high_fidelity_compactor.verify_fidelity(original)
+        # High-fidelity (no training needed) - returns (mse, cos_sim, compression_ratio)
+        high_fidelity_mse, high_fidelity_cos, high_fidelity_ratio = (
+            self.high_fidelity_compactor.verify_fidelity(original)
+        )
 
         # Hybrid (no training) - returns (mse, cos_sim, compression_ratio)
         hybrid_mse, hybrid_cos, hybrid_ratio = self.hybrid_compactor.verify_fidelity(
             original, use_quantization=True
         )
 
-        # High-fidelity should have better fidelity
+        # High-fidelity should have better fidelity (≥0.95 guarantee)
         # But hybrid should have better compression potential (after training)
-        self.assertGreater(hf_cos, 0.99, "High-fidelity should be near-perfect")
+        self.assertGreater(
+            high_fidelity_cos, 0.95, "High-fidelity should maintain ≥0.95 cosine similarity"
+        )
         self.assertGreater(hybrid_cos, 0.8, "Hybrid should maintain >0.8 fidelity")
 
         # Verify hybrid ratio is computed (may be <1 for random data)

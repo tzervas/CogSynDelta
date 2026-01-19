@@ -6,7 +6,7 @@
 
 ## Context
 
-CogSynDelta's dense differential embedding system currently achieves **0.06 cosine similarity fidelity** when compressing and reconstructing embeddings. This is a **catastrophic failure** (essentially orthogonal to original) vs the target of **≥0.95 fidelity** at 10x compression.
+CogSynDelta's dense differential embedding system currently achieves **0.67 cosine similarity fidelity** when compressing and reconstructing embeddings at 2x compression. This is **significantly below target** vs the goal of **≥0.95 fidelity** at 10x compression (benchmark data from RTX 5080 baseline).
 
 ### Integration with embeddenator-core
 
@@ -20,7 +20,7 @@ The fidelity crisis resolution strategy aligns with embeddenator-core's architec
 
 ### Root Cause Analysis
 
-The 0.06 fidelity indicates fundamental breakdown, not minor quality loss:
+The 0.67 fidelity (from RTX 5080 benchmark results) indicates significant quality loss:
 
 1. **Uncalibrated quantization buckets** - Fixed ranges (e.g., [-1, 1]) don't match actual embedding distribution
 2. **Insufficient bit-width for differential signals** - Differential updates have different statistics than absolute embeddings
@@ -43,7 +43,7 @@ Research shows achievable fidelity by compression ratio:
 
 Implement a **staged recovery approach** with adjustable compression that guarantees fidelity:
 
-### Stage 1: Emergency Calibration (0.06 → 0.85-0.90)
+### Stage 1: Emergency Calibration (0.67 → 0.85-0.90)
 
 ```python
 def calibrate_quantization_ranges(embeddings: torch.Tensor, n_samples: int = 10000):
@@ -194,7 +194,7 @@ class AdaptiveCompressionManager:
 
 ### Positive
 
-- Clear path from 0.06 → ≥0.95 fidelity
+- Clear path from 0.67 → ≥0.95 fidelity
 - **Adjustable compression** with hard fidelity guarantees
 - Brain-inspired architecture alignment (CLS theory)
 - Uses proven techniques (Matryoshka, RVQ, VSA, Hopfield)
@@ -226,7 +226,7 @@ class AdaptiveCompressionManager:
 
 | Phase | Duration | Target Fidelity | Key Deliverables |
 |-------|----------|-----------------|------------------|
-| 1. Calibration | Week 1-2 | 0.06 → 0.85-0.90 | calibration.py, diagnostics.py |
+| 1. Calibration | Week 1-2 | 0.67 → 0.85-0.90 | calibration.py, diagnostics.py |
 | 2. Matryoshka | Week 3-4 | 0.90 → 0.93 | matryoshka.py, AllNLI training |
 | 3. RVQ | Week 5-6 | 0.93 → 0.95+ | residual_quantization.py |
 | 4. Adjustable API | Week 7-8 | Guaranteed 0.95+ | AdaptiveCompressionManager |
