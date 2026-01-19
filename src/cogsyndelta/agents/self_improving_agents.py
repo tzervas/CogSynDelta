@@ -438,19 +438,25 @@ class MultiLanguageExplorer(nn.Module):
         Returns:
             Best language and its implementation
         """
+        if not implementations:
+            raise ValueError("No implementations provided")
+
         # Score each implementation
         scores = []
         langs = []
         impls = []
 
         for lang, impl in implementations.items():
+            # Compute cosine similarity, average across batch if batched
             score = F.cosine_similarity(impl, criteria, dim=-1)
+            if score.dim() > 0:
+                score = score.mean()  # Average across batch for overall score
             scores.append(score)
             langs.append(lang)
             impls.append(impl)
 
         # Select best
-        best_idx = torch.stack(scores).argmax()
+        best_idx = int(torch.stack(scores).argmax().item())  # Get scalar index as int
         best_lang = langs[best_idx]
         best_impl = impls[best_idx]
 
@@ -524,11 +530,11 @@ class SelfImprovingAgentFramework(nn.Module):
             # Update current solution
             current = selected
 
-            # Record iteration
+            # Record iteration (take mean for batched tensors)
             history["iterations"].append(iter_idx)
-            history["quality_scores"].append(quality_metrics["overall"].item())
-            history["security_scores"].append(vulnerabilities["max_risk"].item())
-            history["improvements"].append(selection_score.item())
+            history["quality_scores"].append(quality_metrics["overall"].mean().item())
+            history["security_scores"].append(vulnerabilities["max_risk"].mean().item())
+            history["improvements"].append(selection_score.mean().item())
 
         return {
             "final_solution": current,
@@ -564,8 +570,8 @@ class SelfImprovingAgentFramework(nn.Module):
 
             results[lang] = {
                 "implementation": impl,
-                "quality": quality["overall"].item(),
-                "security_risk": security["max_risk"].item(),
+                "quality": quality["overall"].mean().item(),
+                "security_risk": security["max_risk"].mean().item(),
             }
 
         # Select best

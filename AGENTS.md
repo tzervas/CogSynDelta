@@ -2,7 +2,7 @@
 
 ## About CogSynDelta and AI Agent Development
 
-**CogSynDelta** is a PCN-VAE-GAN hybrid self-improving AI system. This document provides guidance for AI coding agents working on this codebase, following [GitHub Spec-Kit](https://github.com/github/spec-kit) standards for Spec-Driven Development.
+**CogSynDelta** is a PCN-VAE-GAN (+ mHC and VL-JEPA) hybrid self-improving AI system. This document provides guidance for AI coding agents working on this codebase, following [GitHub Spec-Kit](https://github.com/github/spec-kit) standards for Spec-Driven Development.
 
 ---
 

@@ -50,8 +50,22 @@ We will implement a **three-tier memory architecture**:
 ### Compression Strategy
 
 - **Lossless compaction** using SVD-based basis vectors
-- Achieves 10-100x compression while maintaining reconstruction fidelity
 - Dense differential embeddings for efficient delta storage
+- Target: 10-100x compression with high reconstruction fidelity
+
+> **⚠️ KNOWN LIMITATION (2026-01-18)**: Current benchmarks show actual fidelity
+> below target thresholds. Measured on RTX 5080:
+> - 2x compression: 0.670 cosine similarity (target: >0.95)
+> - 4x compression: 0.462 cosine similarity
+> - 16x compression: 0.228 cosine similarity
+>
+> This gap between architecture potential and current implementation is being
+> addressed in `feat/compression-*` research branches. See
+> [specs/compression-research/spec.md](../../specs/compression-research/spec.md)
+> for improvement plan.
+>
+> Per constitution: "All performance claims must be backed by evidence."
+> We report actual measured values, not theoretical capabilities.
 
 ### Alternatives Considered
 
