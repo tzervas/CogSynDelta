@@ -315,12 +315,10 @@ class TestActiveMemory(unittest.TestCase):
 
         # High-fidelity compactor MUST achieve ≥0.95 mean fidelity
         self.assertGreaterEqual(
-            mean_fidelity, 0.95,
-            f"Mean fidelity {mean_fidelity:.4f} should be ≥0.95"
+            mean_fidelity, 0.95, f"Mean fidelity {mean_fidelity:.4f} should be ≥0.95"
         )
         self.assertGreaterEqual(
-            min_fidelity, 0.90,
-            f"Min fidelity {min_fidelity:.4f} should be ≥0.90"
+            min_fidelity, 0.90, f"Min fidelity {min_fidelity:.4f} should be ≥0.90"
         )
 
     def test_lossless_compression(self) -> None:
@@ -373,15 +371,13 @@ class TestActiveMemory(unittest.TestCase):
         # Untrained should still achieve reasonable fidelity (>0.8)
         # because of the orthonormal basis guarantee
         self.assertGreater(
-            cos_sim, 0.8,
-            f"Untrained hybrid compactor fidelity {cos_sim:.4f} should be >0.8"
+            cos_sim, 0.8, f"Untrained hybrid compactor fidelity {cos_sim:.4f} should be >0.8"
         )
 
         # Compression ratio may be <1 for random data (overhead of metadata)
         # After training on real data, this improves significantly
         self.assertGreater(
-            compact["compression_ratio"], 0.5,
-            "Should have reasonable compression ratio"
+            compact["compression_ratio"], 0.5, "Should have reasonable compression ratio"
         )
 
         # Verify diagnostics are present
@@ -434,7 +430,7 @@ class TestActiveMemory(unittest.TestCase):
         self.assertIsNotNone(self.hybrid_compactor.basis_vectors.grad)
         self.assertTrue(
             self.hybrid_compactor.basis_vectors.grad.abs().sum() > 0,
-            "Basis vectors should have non-zero gradients"
+            "Basis vectors should have non-zero gradients",
         )
 
     def test_hybrid_vs_high_fidelity_comparison(self) -> None:
