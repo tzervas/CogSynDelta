@@ -27,26 +27,25 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 from collections import Counter
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import MutableMapping
+    pass
 
 __all__ = [
-    "LogLevel",
-    "LogConfig",
-    "SkipMetrics",
-    "SkipLogEntry",
     "CogSynDeltaLogger",
+    "LogConfig",
+    "LogLevel",
+    "SkipLogEntry",
+    "SkipMetrics",
+    "configure_logging",
     "get_logger",
     "get_skip_metrics",
-    "configure_logging",
 ]
 
 
@@ -194,12 +193,11 @@ class LogConfig:
 
     def __post_init__(self) -> None:
         """Ensure log directory exists."""
+        import contextlib
+
         if self.level == LogLevel.DEBUG:
-            try:
+            with contextlib.suppress(OSError):
                 self.log_dir.mkdir(parents=True, exist_ok=True)
-            except OSError:
-                # Fall back gracefully if we can't create log dir
-                pass
 
     @property
     def log_path(self) -> Path:
@@ -352,7 +350,7 @@ class CogSynDeltaLogger:
 
         # Create structured log entry
         entry = SkipLogEntry(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             level="DEBUG",
             operation=operation,
             category=category,

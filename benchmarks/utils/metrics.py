@@ -30,13 +30,13 @@ if TYPE_CHECKING:
 
 __all__ = [
     "LatencyMetrics",
-    "ThroughputMetrics",
     "MemoryMetrics",
     "QualityMetrics",
+    "ThroughputMetrics",
     "measure_latency",
-    "measure_throughput",
     "measure_memory",
     "measure_quality",
+    "measure_throughput",
 ]
 
 

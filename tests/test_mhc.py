@@ -10,12 +10,10 @@ from __future__ import annotations
 
 import pytest
 import torch
-import torch.nn as nn
+from torch import nn
 
 # Skip all tests if CUDA not available
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA not available"
-)
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 
 
 class TestModeratedHyperConnectionBasic:
@@ -155,7 +153,7 @@ class TestPathwayOptimizer:
     @pytest.fixture
     def optimizer(self) -> nn.Module:
         """Create PathwayOptimizer instance on CPU.
-        
+
         Note: PathwayOptimizer.evaluate_pathway/propose_adjustment
         create internal CPU tensors, so the model must be on CPU.
         """
@@ -205,9 +203,7 @@ class TestContextPropagationEngine:
         intermediate_states = [torch.randn(1, 512, device="cuda") for _ in range(2)]
         target_state = torch.randn(1, 512, device="cuda")
 
-        propagated = propagator.propagate_context(
-            context, intermediate_states, target_state
-        )
+        propagated = propagator.propagate_context(context, intermediate_states, target_state)
 
         assert propagated.shape == (1, 512)
 
@@ -237,7 +233,7 @@ class TestCongestionController:
         controller.allocate(pathway, required_bandwidth=900, priority=5)
 
         # Try to allocate more than available
-        allocated = controller.allocate(pathway, required_bandwidth=200, priority=5)
+        _allocated = controller.allocate(pathway, required_bandwidth=200, priority=5)
 
         # Should fail or be limited
         # Implementation may vary - just ensure no crash
@@ -282,9 +278,7 @@ class TestInterconnectIntegration:
                     manager.register_pathway(f"section_{i}", f"section_{j}")
 
         # Create section states
-        all_states = {
-            f"section_{i}": torch.randn(1, 512, device="cuda") for i in range(4)
-        }
+        all_states = {f"section_{i}": torch.randn(1, 512, device="cuda") for i in range(4)}
 
         # Test communication between all pairs
         successful = 0
@@ -311,9 +305,7 @@ class TestInterconnectIntegration:
         from cogsyndelta.core.interconnect_manager import IntelligentInterconnectManager
         from cogsyndelta.core.vl_jepa_extension import ModeratedHyperConnection
 
-        manager = IntelligentInterconnectManager(
-            embed_dim=512, num_sections=4
-        ).cuda()
+        manager = IntelligentInterconnectManager(embed_dim=512, num_sections=4).cuda()
         mhc = ModeratedHyperConnection(embed_dim=512).cuda()
 
         # Register pathway
@@ -358,9 +350,7 @@ class TestLoggingIntegration:
         initial_count = metrics.total()
 
         # Create and use manager
-        manager = IntelligentInterconnectManager(
-            embed_dim=512, num_sections=4
-        ).cuda()
+        manager = IntelligentInterconnectManager(embed_dim=512, num_sections=4).cuda()
         manager.register_pathway("section_0", "section_1")
 
         # Operations should not crash

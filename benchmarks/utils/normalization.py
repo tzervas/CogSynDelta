@@ -24,14 +24,14 @@ if TYPE_CHECKING:
     pass
 
 __all__ = [
-    "NormalizedThroughput",
-    "NormalizedMemory",
     "NormalizedLatency",
-    "normalize_throughput",
-    "normalize_memory",
-    "normalize_latency",
+    "NormalizedMemory",
+    "NormalizedThroughput",
     "count_parameters",
     "estimate_flops",
+    "normalize_latency",
+    "normalize_memory",
+    "normalize_throughput",
 ]
 
 

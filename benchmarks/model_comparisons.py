@@ -17,13 +17,13 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 __all__ = [
-    "IndustryBaseline",
     "ComparisonResult",
+    "IndustryBaseline",
     "ModelComparisonFramework",
     "generate_comparison_report",
 ]
@@ -198,7 +198,7 @@ class ModelComparisonFramework:
                         delta_pct=delta_pct,
                         cogsyndelta_better=(delta > 0) == higher_is_better,
                         baseline_model=baseline.name,
-                        notes=f"Hardware: {baseline.hardware}. CogSynDelta: {cogsyndelta_params/1e6:.1f}M params vs {baseline.parameters_millions:.1f}M params",
+                        notes=f"Hardware: {baseline.hardware}. CogSynDelta: {cogsyndelta_params / 1e6:.1f}M params vs {baseline.parameters_millions:.1f}M params",
                     )
                 )
 
@@ -239,7 +239,7 @@ class ModelComparisonFramework:
                         delta_pct=delta_pct,
                         cogsyndelta_better=delta < 0,
                         baseline_model=baseline.name,
-                        notes=f"CogSynDelta: {cogsyndelta_params/1e6:.1f}M params vs {baseline.parameters_millions:.1f}M params",
+                        notes=f"CogSynDelta: {cogsyndelta_params / 1e6:.1f}M params vs {baseline.parameters_millions:.1f}M params",
                     )
                 )
 
@@ -311,9 +311,11 @@ class ModelComparisonFramework:
         # Header
         lines.append("## Model Comparison: CogSynDelta vs Industry Baselines")
         lines.append("")
-        lines.append(f"*Generated: {datetime.now(timezone.utc).isoformat()}*")
+        lines.append(f"*Generated: {datetime.now(UTC).isoformat()}*")
         lines.append("")
-        lines.append("> **Methodology**: All industry numbers from published sources (see Source column).")
+        lines.append(
+            "> **Methodology**: All industry numbers from published sources (see Source column)."
+        )
         lines.append("> Hardware varies by model - direct comparisons should account for this.")
         lines.append("> CogSynDelta measured on: RTX 5080 (16GB)")
         lines.append("")
@@ -324,13 +326,17 @@ class ModelComparisonFramework:
 
         lines.append("### Throughput Comparison")
         lines.append("")
-        lines.append("| Model | Params (M) | Throughput (samples/sec) | Per-Billion-Params | Source |")
-        lines.append("|-------|------------|--------------------------|-------------------|--------|")
+        lines.append(
+            "| Model | Params (M) | Throughput (samples/sec) | Per-Billion-Params | Source |"
+        )
+        lines.append(
+            "|-------|------------|--------------------------|-------------------|--------|"
+        )
 
         # CogSynDelta row
         csd_per_billion = csd_throughput / (csd_params / 1e9) if csd_params > 0 else 0
         lines.append(
-            f"| **CogSynDelta** | {csd_params/1e6:.1f} | {csd_throughput:.0f} | {csd_per_billion:.0f} | This benchmark |"
+            f"| **CogSynDelta** | {csd_params / 1e6:.1f} | {csd_throughput:.0f} | {csd_per_billion:.0f} | This benchmark |"
         )
 
         # Industry baselines
@@ -360,7 +366,7 @@ class ModelComparisonFramework:
         # CogSynDelta row
         csd_bytes_per = (csd_memory * 1e6) / csd_params if csd_params > 0 else 0
         lines.append(
-            f"| **CogSynDelta** | {csd_params/1e6:.1f} | {csd_memory:.0f} | {csd_bytes_per:.1f} | This benchmark |"
+            f"| **CogSynDelta** | {csd_params / 1e6:.1f} | {csd_memory:.0f} | {csd_bytes_per:.1f} | This benchmark |"
         )
 
         # Industry baselines
@@ -394,19 +400,25 @@ class ModelComparisonFramework:
                     "reconstruction_cosine_similarity", "N/A"
                 )
                 source = baseline.get("source", "N/A")
-                lines.append(
-                    f"| {baseline['name']} | {ratio}x | {fidelity} | [Link]({source}) |"
-                )
+                lines.append(f"| {baseline['name']} | {ratio}x | {fidelity} | [Link]({source}) |")
 
             lines.append("")
 
         # Honest assessment section
         lines.append("### Honest Assessment")
         lines.append("")
-        lines.append("> **Note**: This comparison is informational, not competitive. CogSynDelta is a")
-        lines.append("> hybrid PCN-VAE-GAN architecture optimized for different use cases than pure")
-        lines.append("> language models (GPT, LLaMA) or embedding models (BERT, Sentence-Transformers).")
-        lines.append("> Direct comparisons should consider architectural differences and intended use.")
+        lines.append(
+            "> **Note**: This comparison is informational, not competitive. CogSynDelta is a"
+        )
+        lines.append(
+            "> hybrid PCN-VAE-GAN architecture optimized for different use cases than pure"
+        )
+        lines.append(
+            "> language models (GPT, LLaMA) or embedding models (BERT, Sentence-Transformers)."
+        )
+        lines.append(
+            "> Direct comparisons should consider architectural differences and intended use."
+        )
         lines.append("")
 
         return "\n".join(lines)
@@ -443,7 +455,7 @@ def generate_comparison_report(
         )
 
         report_data = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "cogsyndelta_metrics": cogsyndelta_metrics,
             "throughput_comparisons": [
                 {
