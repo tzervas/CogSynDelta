@@ -357,7 +357,7 @@ class HybridAdaptiveCompactor(nn.Module):
         )
 
         # Quantization tables for different precision levels
-        self.register_buffer("quant_4bit", torch.linspace(-2, 2, 16))   # 4-bit: 16 levels
+        self.register_buffer("quant_4bit", torch.linspace(-2, 2, 16))  # 4-bit: 16 levels
         self.register_buffer("quant_8bit", torch.linspace(-4, 4, 256))  # 8-bit: 256 levels
 
         # Training mode flag
@@ -404,9 +404,9 @@ class HybridAdaptiveCompactor(nn.Module):
         low_thresh, high_thresh = quant_boundaries[0], quant_boundaries[1]
 
         # Create masks for each precision level
-        high_mask = importance >= high_thresh      # Full precision (float16)
+        high_mask = importance >= high_thresh  # Full precision (float16)
         med_mask = (importance >= low_thresh) & (importance < high_thresh)  # 8-bit
-        low_mask = importance < low_thresh         # 4-bit
+        low_mask = importance < low_thresh  # 4-bit
 
         # Quantize at each level
         quant_4bit = self.quant_4bit
@@ -426,9 +426,9 @@ class HybridAdaptiveCompactor(nn.Module):
         low_indices = self._quantize_to_levels(low_coeffs, quant_4bit)
 
         return {
-            "high_coeffs": high_coeffs.half(),      # float16
+            "high_coeffs": high_coeffs.half(),  # float16
             "high_mask": high_mask,
-            "med_indices": med_indices.byte(),      # uint8
+            "med_indices": med_indices.byte(),  # uint8
             "med_mask": med_mask,
             "low_indices": low_indices.to(torch.int8),  # int8 (4-bit packed later)
             "low_mask": low_mask,
@@ -614,11 +614,11 @@ class HybridAdaptiveCompactor(nn.Module):
         low_count = quantized_coeffs["low_mask"].sum().item()
 
         compressed_bytes = (
-            high_count * 2 +      # float16
-            med_count * 1 +       # uint8
-            low_count * 0.5 +     # int4
-            residual_storage_bytes +
-            32                    # metadata overhead
+            high_count * 2  # float16
+            + med_count * 1  # uint8
+            + low_count * 0.5  # int4
+            + residual_storage_bytes
+            + 32  # metadata overhead
         )
 
         compression_ratio = original_bytes / max(compressed_bytes, 1)
@@ -643,9 +643,7 @@ class HybridAdaptiveCompactor(nn.Module):
                 "med_precision_ratio": med_count / (batch_size * self.num_basis),
                 "low_precision_ratio": low_count / (batch_size * self.num_basis),
                 "residual_sparsity": 1 - sparse_count / (batch_size * self.embed_dim),
-                "basis_capture_ratio": (
-                    1 - true_residual.norm() / embedding.norm()
-                ).item(),
+                "basis_capture_ratio": (1 - true_residual.norm() / embedding.norm()).item(),
             }
 
         return result
@@ -772,7 +770,9 @@ class HybridAdaptiveCompactor(nn.Module):
         # Measured by reconstruction error when that coefficient is zeroed
         with torch.no_grad():
             # Compute per-coefficient importance empirically
-            coeff_importance = coefficients.abs() / (coefficients.abs().sum(dim=-1, keepdim=True) + 1e-8)
+            coeff_importance = coefficients.abs() / (
+                coefficients.abs().sum(dim=-1, keepdim=True) + 1e-8
+            )
 
         importance_loss = F.mse_loss(importance, coeff_importance)
 
@@ -793,10 +793,10 @@ class HybridAdaptiveCompactor(nn.Module):
         # Total Loss
         # ─────────────────────────────────────────────────────────────────
         total_loss = (
-            recon_loss +
-            importance_weight * importance_loss +
-            sparsity_weight * sparsity_loss +
-            0.1 * ortho_loss  # Keep basis orthonormal
+            recon_loss
+            + importance_weight * importance_loss
+            + sparsity_weight * sparsity_loss
+            + 0.1 * ortho_loss  # Keep basis orthonormal
         )
 
         self._training_mode = False
@@ -839,7 +839,9 @@ class HybridAdaptiveCompactor(nn.Module):
             basis_reconstruction = torch.matmul(coefficients, self.basis_vectors)
             true_residual = original - basis_reconstruction
             predicted_residual = self.residual_predictor(coefficients)
-            reconstructed = basis_reconstruction + predicted_residual + (true_residual - predicted_residual)
+            reconstructed = (
+                basis_reconstruction + predicted_residual + (true_residual - predicted_residual)
+            )
 
             if was_1d:
                 reconstructed = reconstructed.squeeze(0)
