@@ -17,15 +17,15 @@ from __future__ import annotations
 import json
 import statistics
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 __all__ = [
-    "MetricDelta",
     "BaselineComparison",
-    "StabilityReport",
     "BenchmarkTracker",
+    "MetricDelta",
+    "StabilityReport",
 ]
 
 # Paths
@@ -298,8 +298,7 @@ class BenchmarkTracker:
 
                     # Determine if higher is better
                     higher_better = any(
-                        pattern in metric_name.lower()
-                        for pattern in higher_is_better_metrics
+                        pattern in metric_name.lower() for pattern in higher_is_better_metrics
                     )
 
                     # For latency, lower is better
@@ -307,11 +306,7 @@ class BenchmarkTracker:
                         higher_better = False
 
                     delta_val = current_value - baseline_value
-                    delta_pct = (
-                        (delta_val / baseline_value * 100)
-                        if baseline_value != 0
-                        else 0
-                    )
+                    delta_pct = (delta_val / baseline_value * 100) if baseline_value != 0 else 0
 
                     # Determine if this is a regression
                     if higher_better:
@@ -351,14 +346,12 @@ class BenchmarkTracker:
         summary = {
             "total_metrics": len(deltas),
             "regressions": sum(1 for d in deltas if d.is_regression),
-            "improvements": sum(
-                1 for d in deltas if d.is_significant and not d.is_regression
-            ),
+            "improvements": sum(1 for d in deltas if d.is_significant and not d.is_regression),
             "stable": sum(1 for d in deltas if not d.is_significant),
         }
 
         return BaselineComparison(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             baseline_timestamp=baseline.get("timestamp", "unknown"),
             baseline_git_sha=baseline.get("git_sha", "unknown"),
             current_git_sha=current_results.get("git_sha", "unknown"),

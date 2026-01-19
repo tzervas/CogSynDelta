@@ -80,9 +80,7 @@ def get_hardware_info() -> dict[str, Any]:
         if torch.cuda.is_available():
             info["cuda_version"] = torch.version.cuda
             info["gpu_name"] = torch.cuda.get_device_name(0)
-            info["gpu_memory_gb"] = torch.cuda.get_device_properties(0).total_memory / (
-                1024**3
-            )
+            info["gpu_memory_gb"] = torch.cuda.get_device_properties(0).total_memory / (1024**3)
     except ImportError:
         info["pytorch_version"] = "not installed"
         info["cuda_available"] = False
@@ -164,9 +162,7 @@ class ModelBenchmarkResult:
             "timestamp": self.timestamp,
             "git_sha": self.git_sha,
             "hardware": self.hardware,
-            "components": {
-                name: asdict(metrics) for name, metrics in self.components.items()
-            },
+            "components": {name: asdict(metrics) for name, metrics in self.components.items()},
             "summary": self.summary,
         }
 
@@ -265,9 +261,7 @@ class PCNVAEGANBenchmark:
             # Throughput
             with torch.no_grad():
                 throughput = measure_throughput(lambda _x=x: model(_x), batch_size=batch_size)
-            metrics.throughput[f"samples_per_sec_bs{batch_size}"] = (
-                throughput.samples_per_sec
-            )
+            metrics.throughput[f"samples_per_sec_bs{batch_size}"] = throughput.samples_per_sec
 
             # Quality (reconstruction fidelity)
             with torch.no_grad():
@@ -303,7 +297,9 @@ class PCNVAEGANBenchmark:
             "bytes_per_param": norm_memory.bytes_per_param,
         }
 
-        print(f"  ✓ PCN-VAE-GAN: {metrics.throughput.get('samples_per_sec_bs32', 0):.0f} samples/sec")
+        print(
+            f"  ✓ PCN-VAE-GAN: {metrics.throughput.get('samples_per_sec_bs32', 0):.0f} samples/sec"
+        )
         return metrics
 
 
@@ -395,9 +391,7 @@ class VLJEPABenchmark:
                 )
 
             metrics.latency_ms[f"vision_encoder_bs{batch_size}"] = latency.mean
-            metrics.throughput[f"images_per_sec_bs{batch_size}"] = (
-                throughput.samples_per_sec
-            )
+            metrics.throughput[f"images_per_sec_bs{batch_size}"] = throughput.samples_per_sec
 
         # Temporal memory bank read/write
         print("  Temporal memory bank...")
@@ -502,9 +496,7 @@ class InterconnectBenchmark:
                 )
 
             metrics.latency_ms[f"gate_bs{batch_size}"] = latency.mean
-            metrics.throughput[f"gate_samples_per_sec_bs{batch_size}"] = (
-                throughput.samples_per_sec
-            )
+            metrics.throughput[f"gate_samples_per_sec_bs{batch_size}"] = throughput.samples_per_sec
 
         # Gate activation statistics
         source = torch.randn(100, 512, device=actual_device)
@@ -517,7 +509,9 @@ class InterconnectBenchmark:
             metrics.quality["gate_output_mean"] = output_magnitude.mean().item()
             metrics.quality["gate_output_std"] = output_magnitude.std().item()
 
-        print(f"  ✓ Interconnect: {metrics.throughput.get('gate_samples_per_sec_bs32', 0):.0f} samples/sec")
+        print(
+            f"  ✓ Interconnect: {metrics.throughput.get('gate_samples_per_sec_bs32', 0):.0f} samples/sec"
+        )
         return metrics
 
 
@@ -583,9 +577,7 @@ class BenchmarkSuite:
         """Generate summary statistics from results."""
         summary: dict[str, Any] = {
             "total_components": len(result.components),
-            "successful_components": len(
-                [c for c in result.components.values() if c.latency_ms]
-            ),
+            "successful_components": len([c for c in result.components.values() if c.latency_ms]),
         }
 
         # Aggregate key metrics
