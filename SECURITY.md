@@ -21,7 +21,7 @@ The CogSynDelta team takes security vulnerabilities seriously. We appreciate you
 
 Instead, please report security vulnerabilities by:
 
-1. **Email**: Send a detailed report to [security@averagejoes-labs.com](mailto:security@averagejoes-labs.com)
+1. **Email**: Send a detailed report to [maintainers@vectorweight.com](mailto:maintainers@vectorweight.com)
 2. **GitHub Security Advisories**: Use [GitHub's private vulnerability reporting](https://github.com/tzervas/CogSynDelta/security/advisories/new) (preferred)
 
 ### What to Include
@@ -106,7 +106,7 @@ This security policy applies to:
 
 - **Primary**: Tyler Zervas (@tzervas)
 - **Organization**: Average Joe's Labs (AJL)
-- **Email**: security@averagejoes-labs.com
+- **Email**: maintainers@vectorweight.com
 
 ## Attribution
 

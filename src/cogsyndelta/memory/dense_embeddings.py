@@ -290,7 +290,7 @@ class DenseDifferentialMemoryStore:
         self.num_references = num_references
 
         # Encoders
-        self.dense_encoder = DenseEmbeddingEncoder(embed_dim, dense_dim)
+        self.dense_encoder = DenseEmbeddingEncoder(embed_dim // 4, dense_dim)
         self.diff_encoder = DifferentialEncoder(embed_dim)
         self.quantizer = AdaptiveQuantizer()
 

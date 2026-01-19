@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Pre-push hook to enforce GPG commit signing
+# Install: git config core.hooksPath .githooks
+
+set -e
+
+# Check if commits being pushed are GPG signed
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # Skip delete operations
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        continue
+    fi
+    
+    # Get range of commits to push
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        # New branch, check all commits
+        range="$local_sha"
+    else
+        # Existing branch, check commits since remote
+        range="$remote_sha..$local_sha"
+    fi
+    
+    # Check each commit for GPG signature
+    unsigned_commits=$(git log --show-signature "$range" 2>&1 | grep -c "gpg: Good signature" || true)
+    total_commits=$(git rev-list --count "$range")
+    
+    if [ "$unsigned_commits" -lt "$total_commits" ]; then
+        echo "❌ ERROR: Not all commits are GPG signed!"
+        echo ""
+        echo "Unsigned commits detected in range: $range"
+        echo "Found $unsigned_commits signed out of $total_commits total commits"
+        echo ""
+        echo "To sign your commits:"
+        echo "  git rebase -i $remote_sha --exec 'git commit --amend --no-edit -S'"
+        echo ""
+        echo "Or amend the last commit:"
+        echo "  git commit --amend -S"
+        echo ""
+        echo "Configure automatic signing:"
+        echo "  git config commit.gpgsign true"
+        echo "  git config user.signingkey YOUR_GPG_KEY_ID"
+        echo ""
+        exit 1
+    fi
+done
+
+echo "✅ All commits are GPG signed"
+exit 0
