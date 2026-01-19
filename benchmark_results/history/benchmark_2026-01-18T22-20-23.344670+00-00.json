@@ -1,0 +1,49 @@
+{
+  "timestamp": "2026-01-18T22:20:23.344670+00:00",
+  "git_sha": "dc42034",
+  "hardware": {
+    "platform": "Linux-6.12.63+deb13-amd64-x86_64-with-glibc2.41",
+    "python_version": "3.14.2",
+    "processor": "",
+    "pytorch_version": "2.9.1+cu128",
+    "cuda_available": true,
+    "cuda_version": "12.8",
+    "gpu_name": "NVIDIA GeForce RTX 5080",
+    "gpu_memory_gb": 15.46807861328125
+  },
+  "components": {
+    "vl-jepa": {
+      "name": "VL-JEPA",
+      "latency_ms": {
+        "vision_encoder_bs1": 1.2154850298975362,
+        "vision_encoder_bs4": 2.067015899992839,
+        "vision_encoder_bs8": 3.3523739493830362,
+        "vision_encoder_bs16": 5.755413630213297,
+        "memory_write": 0.04068339982040925,
+        "memory_read": 0.1489940600367845
+      },
+      "throughput": {
+        "images_per_sec_bs1": 822.0369675204096,
+        "images_per_sec_bs4": 1933.5895715162783,
+        "images_per_sec_bs8": 2384.799999179125,
+        "images_per_sec_bs16": 2781.4961231539874
+      },
+      "memory_mb": {
+        "peak_allocated": 126.8154296875,
+        "model_size": 75.0390625
+      },
+      "quality": {},
+      "normalized": {
+        "param_count": 19671040,
+        "throughput_per_billion_params": 121234.05774067486
+      }
+    }
+  },
+  "summary": {
+    "total_components": 1,
+    "successful_components": 1,
+    "total_parameters": 19671040,
+    "total_parameters_millions": 19.67104,
+    "aggregate_throughput_samples_per_sec": 2384.799999179125
+  }
+}

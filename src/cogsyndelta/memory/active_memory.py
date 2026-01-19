@@ -25,6 +25,11 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from cogsyndelta.core.logging_config import get_logger
+
+# Module logger with skip tracking for graceful degradation
+_logger = get_logger(__name__)
+
 
 @dataclass
 class MemoryTier:
@@ -584,7 +589,7 @@ class ActiveMemoryManager:
                     embedding, _ = self.retrieve(memory_id)
                     if len(self.active_memory) < self.active_capacity * 1.2:  # Allow 20% overflow
                         self.active_memory[memory_id] = embedding
-                except KeyError:
+                except KeyError as e:
                     # GRACEFUL DEGRADATION: Memory not found in any tier
                     # WHY: Temporal continuity is best-effort, not critical. The memory
                     # may have been archived, compacted, or deleted as part of normal
@@ -593,7 +598,14 @@ class ActiveMemoryManager:
                     # WHEN: This occurs when a memory ID from temporal context no longer
                     # exists in any tier - expected during normal operation over time.
                     # See: docs/adr/0004-graceful-degradation-patterns.md
-                    pass
+                    _logger.skip(
+                        category="temporal_continuity_missing",
+                        operation="_ensure_temporal_continuity",
+                        message="Memory not found in any tier during temporal continuity check",
+                        memory_id=str(memory_id),
+                        exception=e,
+                        context={"tiers_checked": ["active", "short_term", "long_term"]},
+                    )
 
     def _compact_long_term(self) -> None:
         """Compact long-term memory storage.
@@ -610,12 +622,19 @@ class ActiveMemoryManager:
             try:
                 emb = self.lossless_compactor.reconstruct(self.long_term_memory[memory_id])
                 embeddings.append(emb)
-            except (KeyError, RuntimeError):
+            except (KeyError, RuntimeError) as e:
                 # GRACEFUL DEGRADATION: Skip corrupted or missing memory entries
                 # WHY: Compaction should not fail due to individual corrupt entries.
                 # Missing or corrupted entries are logged elsewhere and can be
                 # cleaned up separately without blocking the compaction process.
-                pass
+                _logger.skip(
+                    category="compaction_entry_corrupted",
+                    operation="_compact_long_term",
+                    message="Skipping corrupted or missing entry during compaction",
+                    memory_id=str(memory_id),
+                    exception=e,
+                    context={"operation": "reconstruct_for_compaction"},
+                )
 
         if embeddings:
             embeddings_tensor = torch.stack(embeddings)
