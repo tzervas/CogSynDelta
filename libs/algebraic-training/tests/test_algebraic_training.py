@@ -182,7 +182,11 @@ class TestAlgebraicOptimizer:
 
         assert "initial_loss" in results
         assert "final_loss" in results
-        assert results["final_loss"] <= results["initial_loss"]
+        initial = results["initial_loss"]
+        final = results["final_loss"]
+        assert isinstance(initial, float)
+        assert isinstance(final, float)
+        assert final <= initial
 
 
 class TestUnifiedAlgebraicTrainer:
