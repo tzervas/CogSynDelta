@@ -172,11 +172,11 @@ class NTKPredictor(nn.Module):
         # Compute Jacobians in batches to manage memory
         j1_batches = []
         for i in range(0, n1, self.ntk_batch_size):
-            batch = x1[i:i + self.ntk_batch_size]
+            batch = x1[i : i + self.ntk_batch_size]
             # For each sample, get Jacobian
             batch_jacobians = []
             for j in range(batch.shape[0]):
-                jac = get_jacobian(batch[j:j+1])
+                jac = get_jacobian(batch[j : j + 1])
                 batch_jacobians.append(jac)
             j1_batches.append(torch.stack(batch_jacobians))
 
@@ -187,10 +187,10 @@ class NTKPredictor(nn.Module):
         else:
             j2_batches = []
             for i in range(0, n2, self.ntk_batch_size):
-                batch = x2[i:i + self.ntk_batch_size]
+                batch = x2[i : i + self.ntk_batch_size]
                 batch_jacobians = []
                 for j in range(batch.shape[0]):
-                    jac = get_jacobian(batch[j:j+1])
+                    jac = get_jacobian(batch[j : j + 1])
                     batch_jacobians.append(jac)
                 j2_batches.append(torch.stack(batch_jacobians))
             j2 = torch.cat(j2_batches, dim=0)
@@ -468,7 +468,7 @@ class FisherInformationPredictor(nn.Module):
             # Accumulate squared gradients (diagonal Fisher approximation)
             for name, param in self.model.named_parameters():
                 if param.grad is not None:
-                    fisher_diag[name] = fisher_diag[name] + param.grad.data ** 2
+                    fisher_diag[name] = fisher_diag[name] + param.grad.data**2
 
             n_samples += x.shape[0]
 
@@ -504,10 +504,11 @@ class FisherInformationPredictor(nn.Module):
 
         where θ_MAP is the maximum a posteriori estimate.
         """
+
         # Compute Fisher diagonal
         def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
             for i in range(0, len(train_x), 32):
-                yield train_x[i:i+32], train_y[i:i+32]
+                yield train_x[i : i + 32], train_y[i : i + 32]
 
         fisher = self.compute_fisher_matrix(data_gen(), num_batches=len(train_x) // 32)
 
@@ -572,9 +573,11 @@ class FisherInformationPredictor(nn.Module):
         """
         # Compute Fisher (or use cached)
         if not self._fisher_cache:
+
             def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
                 for i in range(0, len(train_x), 32):
-                    yield train_x[i:i+32], train_y[i:i+32]
+                    yield train_x[i : i + 32], train_y[i : i + 32]
+
             self.compute_fisher_matrix(data_gen())
 
         # Compute gradient
@@ -714,16 +717,20 @@ class SpectralWeightPredictor(nn.Module):
             if input_data.shape[1] > in_features:
                 input_data = input_data[:, :in_features]
             else:
-                padding = torch.zeros(input_data.shape[0], in_features - input_data.shape[1],
-                                     device=input_data.device)
+                padding = torch.zeros(
+                    input_data.shape[0], in_features - input_data.shape[1], device=input_data.device
+                )
                 input_data = torch.cat([input_data, padding], dim=1)
 
         if output_data.shape[1] != out_features:
             if output_data.shape[1] > out_features:
                 output_data = output_data[:, :out_features]
             else:
-                padding = torch.zeros(output_data.shape[0], out_features - output_data.shape[1],
-                                     device=output_data.device)
+                padding = torch.zeros(
+                    output_data.shape[0],
+                    out_features - output_data.shape[1],
+                    device=output_data.device,
+                )
                 output_data = torch.cat([output_data, padding], dim=1)
 
         # Compute optimal weights via pseudo-inverse
@@ -772,7 +779,7 @@ class SpectralWeightPredictor(nn.Module):
         # Use SVD to get orthonormal approximation
         U, S, Vh = torch.linalg.svd(first_weights, full_matrices=False)
         # Scale by sqrt of eigenvalues for Xavier-like init
-        predictions[first_name + ".weight"] = (U @ torch.diag(S.sqrt()) @ Vh)
+        predictions[first_name + ".weight"] = U @ torch.diag(S.sqrt()) @ Vh
 
         # Last layer: Hidden -> Output (closed-form optimal)
         if len(layers) > 1:
@@ -887,7 +894,9 @@ class AlgebraicOptimizer:
         if self.method in ("ntk", "hybrid"):
             # NTK predictions (output-level)
             ntk_pred = self.ntk_predictor.predict_training_dynamics(
-                train_x, train_y, train_x,
+                train_x,
+                train_y,
+                train_x,
                 learning_rate=learning_rate,
                 training_time=float(num_epochs),
             )
@@ -964,10 +973,7 @@ class AlgebraicOptimizer:
                     if blend_factor >= 1.0:
                         param.copy_(weights[name])
                     else:
-                        param.copy_(
-                            blend_factor * weights[name] +
-                            (1 - blend_factor) * param.data
-                        )
+                        param.copy_(blend_factor * weights[name] + (1 - blend_factor) * param.data)
 
     def fast_train(
         self,
@@ -1153,9 +1159,7 @@ class InterconnectAlgebraicOptimizer(AlgebraicOptimizer):
             "transfer_matrix": transfer_matrix,
             "source_dim": source_flat.shape[1],
             "target_dim": target_flat.shape[1],
-            "reconstruction_error": F.mse_loss(
-                source_flat @ transfer_matrix, target_flat
-            ).item(),
+            "reconstruction_error": F.mse_loss(source_flat @ transfer_matrix, target_flat).item(),
         }
 
     def optimize_mhc_gates(
@@ -1191,9 +1195,7 @@ class InterconnectAlgebraicOptimizer(AlgebraicOptimizer):
         # target_logits = logit(target_modulation)
         target_logits = torch.logit(target_modulation.clamp(0.01, 0.99))
 
-        optimal_weights = spectral.predict_network_weights(
-            context_data, target_logits
-        )
+        optimal_weights = spectral.predict_network_weights(context_data, target_logits)
 
         return optimal_weights
 
@@ -1225,7 +1227,7 @@ class InterconnectAlgebraicOptimizer(AlgebraicOptimizer):
         # Second pass: Cross-model coordination
         model_names = list(results.keys())
         for i, source in enumerate(model_names):
-            for target in model_names[i+1:]:
+            for target in model_names[i + 1 :]:
                 if source in representations and target in representations:
                     # Find shared data
                     source_repr = representations[source]
@@ -1237,8 +1239,7 @@ class InterconnectAlgebraicOptimizer(AlgebraicOptimizer):
                     target_repr = target_repr[:min_samples]
 
                     transfer = self.predict_cross_model_transfer(
-                        source, target,
-                        train_data[source][0][:min_samples]
+                        source, target, train_data[source][0][:min_samples]
                     )
 
                     results[f"{source}_to_{target}_transfer"] = transfer
@@ -1375,7 +1376,7 @@ class MHCAlgebraicOptimizer(nn.Module):
 
         # Extract weight and bias
         W = solution[:-1, :].T  # [embed_dim, 2*embed_dim]
-        b = solution[-1, :]      # [embed_dim]
+        b = solution[-1, :]  # [embed_dim]
 
         return {
             "gate_weight": W,
@@ -1410,7 +1411,7 @@ class MHCAlgebraicOptimizer(nn.Module):
         diff_modulated = modulated - target_states
 
         numerator = (diff_desired * diff_modulated).sum()
-        denominator = (diff_modulated ** 2).sum() + self.regularization
+        denominator = (diff_modulated**2).sum() + self.regularization
 
         optimal_alpha = (numerator / denominator).clamp(0.0, 1.0)
 
@@ -1520,7 +1521,7 @@ class PathwayStrengthPredictor:
 
             # Linear solution
             diff = desired - target_current
-            source_norm = (source_contribution ** 2).sum() + self.regularization
+            source_norm = (source_contribution**2).sum() + self.regularization
 
             optimal_strength = (diff * source_contribution).sum() / source_norm
             return optimal_strength.clamp(0.0, 1.0).item()
@@ -1695,7 +1696,9 @@ class WeightDistributionPredictor:
                 else:
                     # Tile variance statistics
                     var_repeats = (param_size // var_size) + 1
-                    pred_var = weight_variance_flat.repeat(var_repeats)[:param_size].view(param.shape)
+                    pred_var = weight_variance_flat.repeat(var_repeats)[:param_size].view(
+                        param.shape
+                    )
 
                 # Identify outliers (high variance = uncertain = potential outlier)
                 var_threshold = pred_var.mean() + 2 * pred_var.std()
@@ -1888,7 +1891,9 @@ class UnifiedAlgebraicTrainer:
         print("  [1/5] Predicting training dynamics via NTK...")
         try:
             ntk_results = self.ntk_predictor.predict_training_dynamics(
-                train_x, train_y, train_x,
+                train_x,
+                train_y,
+                train_x,
                 learning_rate=learning_rate,
                 training_time=float(target_epochs),
             )
@@ -1999,7 +2004,8 @@ class UnifiedAlgebraicTrainer:
 
             # Natural gradient update
             updates = self.fisher_predictor.compute_natural_gradient_update(
-                train_x, train_y,
+                train_x,
+                train_y,
                 learning_rate=0.5 / (step + 1),  # Decaying LR
             )
 

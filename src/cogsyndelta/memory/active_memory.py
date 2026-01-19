@@ -303,9 +303,7 @@ class ResidualBoostCompactor(nn.Module):
         self.use_predictors = use_predictors
 
         # Compute basis sizes for each stage
-        self.stage_sizes = [
-            max(16, int(embed_dim * ratio)) for ratio in stage_ratios[:num_stages]
-        ]
+        self.stage_sizes = [max(16, int(embed_dim * ratio)) for ratio in stage_ratios[:num_stages]]
 
         # ═══════════════════════════════════════════════════════════════════
         # CRITICAL FIX: Create globally orthogonal bases across ALL stages
@@ -333,7 +331,7 @@ class ResidualBoostCompactor(nn.Module):
         self.stage_bases = nn.ParameterList()
         offset = 0
         for size in self.stage_sizes:
-            stage_basis = global_basis[:, offset:offset + size].T.clone()
+            stage_basis = global_basis[:, offset : offset + size].T.clone()
             self.stage_bases.append(nn.Parameter(stage_basis))
             offset += size
 
@@ -374,9 +372,9 @@ class ResidualBoostCompactor(nn.Module):
         self.register_buffer("quant_4bit", torch.linspace(-2, 2, 16))
 
         # Learned scale factors per stage (adapts to residual magnitudes)
-        self.stage_scales = nn.ParameterList([
-            nn.Parameter(torch.ones(1) * (0.5 ** i)) for i in range(num_stages)
-        ])
+        self.stage_scales = nn.ParameterList(
+            [nn.Parameter(torch.ones(1) * (0.5**i)) for i in range(num_stages)]
+        )
 
     def _orthogonalize_bases(self) -> None:
         """Project all stage bases back to orthonormal manifold."""
@@ -413,28 +411,25 @@ class ResidualBoostCompactor(nn.Module):
         if mode == "lossless":
             # All stages use float16
             return coefficients.half(), "float16"
-        elif mode == "aggressive":
+        if mode == "aggressive":
             # Stage 0: int8, Stage 1+: int4
             if stage == 0:
                 diffs = (scaled.unsqueeze(-1) - quant_8bit).abs()
                 indices = diffs.argmin(dim=-1)
                 return indices.byte(), "int8"
-            else:
-                diffs = (scaled.unsqueeze(-1) - quant_4bit).abs()
-                indices = diffs.argmin(dim=-1)
-                return indices.to(torch.int8), "int4"
-        else:  # "balanced"
-            # Stage 0: float16, Stage 1: int8, Stage 2+: int4
-            if stage == 0:
-                return coefficients.half(), "float16"
-            elif stage == 1:
-                diffs = (scaled.unsqueeze(-1) - quant_8bit).abs()
-                indices = diffs.argmin(dim=-1)
-                return indices.byte(), "int8"
-            else:
-                diffs = (scaled.unsqueeze(-1) - quant_4bit).abs()
-                indices = diffs.argmin(dim=-1)
-                return indices.to(torch.int8), "int4"
+            diffs = (scaled.unsqueeze(-1) - quant_4bit).abs()
+            indices = diffs.argmin(dim=-1)
+            return indices.to(torch.int8), "int4"
+        # Stage 0: float16, Stage 1: int8, Stage 2+: int4
+        if stage == 0:
+            return coefficients.half(), "float16"
+        if stage == 1:
+            diffs = (scaled.unsqueeze(-1) - quant_8bit).abs()
+            indices = diffs.argmin(dim=-1)
+            return indices.byte(), "int8"
+        diffs = (scaled.unsqueeze(-1) - quant_4bit).abs()
+        indices = diffs.argmin(dim=-1)
+        return indices.to(torch.int8), "int4"
 
     def _dequantize_stage(
         self,
@@ -452,12 +447,12 @@ class ResidualBoostCompactor(nn.Module):
 
         if dtype_used == "float16":
             return quantized.float()
-        elif dtype_used == "int8":
+        if dtype_used == "int8":
             values = quant_8bit[quantized.long()]
             return values * scale
-        else:  # "int4"
-            values = quant_4bit[quantized.long()]
-            return values * scale
+        # "int4"
+        values = quant_4bit[quantized.long()]
+        return values * scale
 
     def compact(
         self,
@@ -516,20 +511,26 @@ class ResidualBoostCompactor(nn.Module):
             # ─────────────────────────────────────────────────────────────
             quantized, dtype_used = self._quantize_stage(coefficients, stage_idx, mode)
 
-            stage_data.append({
-                "quantized": quantized,
-                "dtype": dtype_used,
-                "basis_size": self.stage_sizes[stage_idx],
-            })
+            stage_data.append(
+                {
+                    "quantized": quantized,
+                    "dtype": dtype_used,
+                    "basis_size": self.stage_sizes[stage_idx],
+                }
+            )
 
             if return_diagnostics:
                 residual_norm = current_residual.norm(dim=-1).mean().item()
-                captured = (current_residual.norm(dim=-1) - prediction_error.norm(dim=-1)).mean().item()
-                diagnostics.append({
-                    "stage": stage_idx,
-                    "residual_norm_before": residual_norm,
-                    "variance_captured": captured / (residual_norm + 1e-8),
-                })
+                captured = (
+                    (current_residual.norm(dim=-1) - prediction_error.norm(dim=-1)).mean().item()
+                )
+                diagnostics.append(
+                    {
+                        "stage": stage_idx,
+                        "residual_norm_before": residual_norm,
+                        "variance_captured": captured / (residual_norm + 1e-8),
+                    }
+                )
 
             # Update residual for next stage
             current_residual = prediction_error
@@ -682,7 +683,7 @@ class ResidualBoostCompactor(nn.Module):
             stage_weights: Weight for each stage's loss (default: 1/2^stage)
         """
         if stage_weights is None:
-            stage_weights = tuple(1.0 / (2 ** i) for i in range(self.num_stages))
+            stage_weights = tuple(1.0 / (2**i) for i in range(self.num_stages))
 
         current_residual = embeddings.clone()
         total_loss = torch.tensor(0.0, device=embeddings.device)
@@ -906,7 +907,7 @@ class HybridAdaptiveCompactor(nn.Module):
         )
 
         # Quantization tables for different precision levels
-        self.register_buffer("quant_4bit", torch.linspace(-2, 2, 16))   # 4-bit: 16 levels
+        self.register_buffer("quant_4bit", torch.linspace(-2, 2, 16))  # 4-bit: 16 levels
         self.register_buffer("quant_8bit", torch.linspace(-4, 4, 256))  # 8-bit: 256 levels
 
         # Training mode flag
@@ -953,9 +954,9 @@ class HybridAdaptiveCompactor(nn.Module):
         low_thresh, high_thresh = quant_boundaries[0], quant_boundaries[1]
 
         # Create masks for each precision level
-        high_mask = importance >= high_thresh      # Full precision (float16)
+        high_mask = importance >= high_thresh  # Full precision (float16)
         med_mask = (importance >= low_thresh) & (importance < high_thresh)  # 8-bit
-        low_mask = importance < low_thresh         # 4-bit
+        low_mask = importance < low_thresh  # 4-bit
 
         # Quantize at each level
         quant_4bit = self.quant_4bit
@@ -975,9 +976,9 @@ class HybridAdaptiveCompactor(nn.Module):
         low_indices = self._quantize_to_levels(low_coeffs, quant_4bit)
 
         return {
-            "high_coeffs": high_coeffs.half(),      # float16
+            "high_coeffs": high_coeffs.half(),  # float16
             "high_mask": high_mask,
-            "med_indices": med_indices.byte(),      # uint8
+            "med_indices": med_indices.byte(),  # uint8
             "med_mask": med_mask,
             "low_indices": low_indices.to(torch.int8),  # int8 (4-bit packed later)
             "low_mask": low_mask,
@@ -1163,11 +1164,11 @@ class HybridAdaptiveCompactor(nn.Module):
         low_count = quantized_coeffs["low_mask"].sum().item()
 
         compressed_bytes = (
-            high_count * 2 +      # float16
-            med_count * 1 +       # uint8
-            low_count * 0.5 +     # int4
-            residual_storage_bytes +
-            32                    # metadata overhead
+            high_count * 2  # float16
+            + med_count * 1  # uint8
+            + low_count * 0.5  # int4
+            + residual_storage_bytes
+            + 32  # metadata overhead
         )
 
         compression_ratio = original_bytes / max(compressed_bytes, 1)
@@ -1192,9 +1193,7 @@ class HybridAdaptiveCompactor(nn.Module):
                 "med_precision_ratio": med_count / (batch_size * self.num_basis),
                 "low_precision_ratio": low_count / (batch_size * self.num_basis),
                 "residual_sparsity": 1 - sparse_count / (batch_size * self.embed_dim),
-                "basis_capture_ratio": (
-                    1 - true_residual.norm() / embedding.norm()
-                ).item(),
+                "basis_capture_ratio": (1 - true_residual.norm() / embedding.norm()).item(),
             }
 
         return result
@@ -1321,7 +1320,9 @@ class HybridAdaptiveCompactor(nn.Module):
         # Measured by reconstruction error when that coefficient is zeroed
         with torch.no_grad():
             # Compute per-coefficient importance empirically
-            coeff_importance = coefficients.abs() / (coefficients.abs().sum(dim=-1, keepdim=True) + 1e-8)
+            coeff_importance = coefficients.abs() / (
+                coefficients.abs().sum(dim=-1, keepdim=True) + 1e-8
+            )
 
         importance_loss = F.mse_loss(importance, coeff_importance)
 
@@ -1342,10 +1343,10 @@ class HybridAdaptiveCompactor(nn.Module):
         # Total Loss
         # ─────────────────────────────────────────────────────────────────
         total_loss = (
-            recon_loss +
-            importance_weight * importance_loss +
-            sparsity_weight * sparsity_loss +
-            0.1 * ortho_loss  # Keep basis orthonormal
+            recon_loss
+            + importance_weight * importance_loss
+            + sparsity_weight * sparsity_loss
+            + 0.1 * ortho_loss  # Keep basis orthonormal
         )
 
         self._training_mode = False
@@ -1388,7 +1389,9 @@ class HybridAdaptiveCompactor(nn.Module):
             basis_reconstruction = torch.matmul(coefficients, self.basis_vectors)
             true_residual = original - basis_reconstruction
             predicted_residual = self.residual_predictor(coefficients)
-            reconstructed = basis_reconstruction + predicted_residual + (true_residual - predicted_residual)
+            reconstructed = (
+                basis_reconstruction + predicted_residual + (true_residual - predicted_residual)
+            )
 
             if was_1d:
                 reconstructed = reconstructed.squeeze(0)

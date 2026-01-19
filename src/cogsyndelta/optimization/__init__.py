@@ -5,15 +5,6 @@ This module provides:
 2. Algebraic training (predict training outcomes without backprop)
 """
 
-from cogsyndelta.optimization.cuda_optimization import (
-    COMPUTE_CAPABILITY,
-    CUDA_AVAILABLE,
-    DEVICE_NAME,
-    TOTAL_MEMORY,
-    GPUConfig,
-    RTX5080Optimizer,
-)
-
 from cogsyndelta.optimization.algebraic_training import (
     AlgebraicOptimizer,
     FisherInformationPredictor,
@@ -25,8 +16,16 @@ from cogsyndelta.optimization.algebraic_training import (
     UnifiedAlgebraicTrainer,
     WeightDistributionPredictor,
 )
+from cogsyndelta.optimization.cuda_optimization import (
+    COMPUTE_CAPABILITY,
+    CUDA_AVAILABLE,
+    DEVICE_NAME,
+    TOTAL_MEMORY,
+    GPUConfig,
+    RTX5080Optimizer,
+)
 
-__all__ = [
+__all__ = [  # noqa: RUF022 - Grouped by category for readability
     # GPU optimization
     "COMPUTE_CAPABILITY",
     "CUDA_AVAILABLE",
