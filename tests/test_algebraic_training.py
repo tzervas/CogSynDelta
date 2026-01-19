@@ -9,8 +9,8 @@ from __future__ import annotations
 import unittest
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 
 class SimpleNetwork(nn.Module):
@@ -45,7 +45,8 @@ class TestAlgebraicOptimizer(unittest.TestCase):
     def test_predict_training_outcome(self) -> None:
         """Test that we can predict training outcomes."""
         predictions = self.optimizer.predict_training_outcome(
-            self.train_x, self.train_y,
+            self.train_x,
+            self.train_y,
             learning_rate=0.01,
             num_epochs=10,
         )
@@ -72,7 +73,8 @@ class TestAlgebraicOptimizer(unittest.TestCase):
     def test_fast_train(self) -> None:
         """Test fast training with natural gradient."""
         results = self.optimizer.fast_train(
-            self.train_x, self.train_y,
+            self.train_x,
+            self.train_y,
             num_natural_steps=3,
         )
 
@@ -114,9 +116,7 @@ class TestSpectralWeightPredictor(unittest.TestCase):
         input_data = torch.randn(100, 32)
         output_data = torch.randn(100, 64)
 
-        weights = self.predictor.predict_layer_weights(
-            input_data, output_data, (32, 64)
-        )
+        weights = self.predictor.predict_layer_weights(input_data, output_data, (32, 64))
 
         self.assertEqual(weights.shape, (64, 32))
 
@@ -135,9 +135,10 @@ class TestFisherInformationPredictor(unittest.TestCase):
 
     def test_compute_fisher_matrix(self) -> None:
         """Test Fisher matrix computation."""
+
         def data_gen():
             for i in range(0, 100, 32):
-                yield self.train_x[i:i+32], self.train_y[i:i+32]
+                yield self.train_x[i : i + 32], self.train_y[i : i + 32]
 
         fisher = self.predictor.compute_fisher_matrix(data_gen(), num_batches=3)
 
@@ -179,9 +180,7 @@ class TestMHCAlgebraicOptimizer(unittest.TestCase):
         target = torch.randn(32, 64)
         desired = torch.randn(32, 64)
 
-        gates = self.optimizer.compute_optimal_gate_values(
-            source, target, desired, alpha=0.5
-        )
+        gates = self.optimizer.compute_optimal_gate_values(source, target, desired, alpha=0.5)
 
         self.assertEqual(gates.shape, (32, 64))
         # Gates should be in valid sigmoid range
@@ -193,9 +192,7 @@ class TestMHCAlgebraicOptimizer(unittest.TestCase):
         source_target = torch.randn(100, 128)  # Concatenated [source; target]
         optimal_gates = torch.sigmoid(torch.randn(100, 64))
 
-        weights = self.optimizer.predict_gate_network_weights(
-            source_target, optimal_gates
-        )
+        weights = self.optimizer.predict_gate_network_weights(source_target, optimal_gates)
 
         self.assertIn("gate_weight", weights)
         self.assertIn("gate_bias", weights)
@@ -261,9 +258,7 @@ class TestPathwayStrengthPredictor(unittest.TestCase):
             "section_c": torch.randn(50, 64),
         }
 
-        decisions = self.predictor.predict_routing_decisions(
-            section_states, bandwidth_constraint=3
-        )
+        decisions = self.predictor.predict_routing_decisions(section_states, bandwidth_constraint=3)
 
         # Should respect bandwidth constraint
         self.assertLessEqual(len(decisions), 3)
@@ -305,9 +300,7 @@ class TestWeightDistributionPredictor(unittest.TestCase):
 
     def test_predict_convergence_time(self) -> None:
         """Test convergence time prediction."""
-        convergence = self.predictor.predict_convergence_time(
-            self.train_x, learning_rate=0.01
-        )
+        convergence = self.predictor.predict_convergence_time(self.train_x, learning_rate=0.01)
 
         self.assertIn("estimated_epochs", convergence)
         self.assertIn("condition_number", convergence)
@@ -359,7 +352,8 @@ class TestUnifiedAlgebraicTrainer(unittest.TestCase):
     def test_train_algebraically(self) -> None:
         """Test full algebraic training."""
         results = self.trainer.train_algebraically(
-            self.train_x, self.train_y,
+            self.train_x,
+            self.train_y,
             target_epochs=10,
             apply_weights=True,
         )
@@ -371,7 +365,8 @@ class TestUnifiedAlgebraicTrainer(unittest.TestCase):
     def test_quick_optimize(self) -> None:
         """Test quick optimization."""
         results = self.trainer.quick_optimize(
-            self.train_x, self.train_y,
+            self.train_x,
+            self.train_y,
             num_natural_steps=3,
         )
 
@@ -448,9 +443,11 @@ class TestAlgebraicVsBackprop(unittest.TestCase):
 
         # Algebraic should be competitive (within 2x of backprop for linear case)
         # For linear regression, closed-form is actually OPTIMAL
-        self.assertLess(algebraic_mse, backprop_mse * 2,
-                       f"Algebraic MSE {algebraic_mse:.6f} should be close to "
-                       f"backprop MSE {backprop_mse:.6f}")
+        self.assertLess(
+            algebraic_mse,
+            backprop_mse * 2,
+            f"Algebraic MSE {algebraic_mse:.6f} should be close to backprop MSE {backprop_mse:.6f}",
+        )
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 # ADR-0009 Reference Materials
 
-**Document Type**: Reference  
-**Parent ADR**: ADR-0009 (Algebraic Training Optimization)  
-**Date**: 2026-01-19  
+**Document Type**: Reference
+**Parent ADR**: ADR-0009 (Algebraic Training Optimization)
+**Date**: 2026-01-19
 **Version**: 1.0
 
 ---

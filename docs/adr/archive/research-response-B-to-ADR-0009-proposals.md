@@ -170,10 +170,10 @@ from mup import MuReadout, set_base_shapes, MuAdam
 class MyTransformer(nn.Module):
     def __init__(self, width):
         self.readout = MuReadout(width, d_out)  # NOT nn.Linear
-        
+
     def forward(self, x):
         # Critical: use 1/d instead of 1/√d for attention
-        attention_scores = query @ key.T * 8 / d  
+        attention_scores = query @ key.T * 8 / d
 ```
 
 The key scaling rules differ fundamentally from standard parameterization: output weight initialization scales as **O(1/fan_in)** rather than O(1/√fan_in), and Adam learning rates for hidden layers scale inversely with width. The "coord check" verification plots activation magnitudes across widths—if μP is implemented correctly, these remain **stable regardless of width**. The `mutransformers` library extends this to HuggingFace models directly.

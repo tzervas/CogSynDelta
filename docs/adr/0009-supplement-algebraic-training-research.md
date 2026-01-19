@@ -1,9 +1,9 @@
 # ADR-0009 Supplement: Algebraic Training Research Agenda
 
-**Document Type**: Research Supplement  
-**Parent ADR**: ADR-0009 (Algebraic Training Optimization)  
-**Date**: 2026-01-19  
-**Status**: Active Research  
+**Document Type**: Research Supplement
+**Parent ADR**: ADR-0009 (Algebraic Training Optimization)
+**Date**: 2026-01-19
+**Status**: Active Research
 
 ---
 
@@ -318,7 +318,7 @@ For neural networks, $h^{-1}$ doesn't exist globally, but **local inverses** exi
 def algebraic_fold(W_0, X, Y, target_loss):
     """
     Fold weights from W_0 to target achieving target_loss.
-    
+
     Steps:
     1. Compute target predictions Y_hat that would achieve target_loss
     2. Find weights W* that produce Y_hat on X
@@ -326,15 +326,15 @@ def algebraic_fold(W_0, X, Y, target_loss):
     """
     # Step 1: Target predictions (many valid solutions)
     Y_hat = compute_target_predictions(Y, target_loss)
-    
+
     # Step 2: Inverse mapping (use pseudo-inverse + correction)
     W_star = solve_inverse_mapping(W_0, X, Y_hat)
-    
+
     # Step 3: Verify and refine
     actual_loss = compute_loss(W_star, X, Y)
     if actual_loss > target_loss:
         W_star = refine_with_natural_gradient(W_star, X, Y, steps=3)
-    
+
     return W_star
 ```
 
@@ -361,7 +361,7 @@ def algebraic_fold(W_0, X, Y, target_loss):
    - MNIST/CIFAR (classification)
    - Language modeling (perplexity)
    - Regression (synthetic + real)
-   
+
 2. **Metrics**:
    - Accuracy vs. full training
    - Compute time reduction
