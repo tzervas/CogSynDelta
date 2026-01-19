@@ -185,12 +185,12 @@ class HighFidelityCompactor(nn.Module):
 
         return reconstructed
 
-    def verify_fidelity(self, original: torch.Tensor) -> tuple[float, float]:
+    def verify_fidelity(self, original: torch.Tensor) -> tuple[float, float, float]:
         """
         Verify compression fidelity.
 
         Returns:
-            (mse_error, cosine_similarity)
+            (mse_error, cosine_similarity, compression_ratio)
         """
         compact = self.compact(original)
         reconstructed = self.reconstruct(compact)
@@ -202,8 +202,15 @@ class HighFidelityCompactor(nn.Module):
 
         mse = F.mse_loss(original, reconstructed).item()
         cos_sim = F.cosine_similarity(original, reconstructed, dim=-1).mean().item()
+        
+        # Calculate actual compression ratio based on storage
+        # Original: embed_dim * 4 bytes (float32)
+        # Compressed: num_basis * 2 bytes (float16 coefficients) + residual
+        original_bytes = self.embed_dim * 4
+        compressed_bytes = compact["compression_ratio"]  # Already calculated in compact()
+        compression_ratio = original_bytes / compressed_bytes if compressed_bytes > 0 else 0.0
 
-        return mse, cos_sim
+        return mse, cos_sim, compression_ratio
 
 
 class HybridAdaptiveCompactor(nn.Module):
@@ -503,7 +510,7 @@ class HybridAdaptiveCompactor(nn.Module):
             indices = mask.nonzero(as_tuple=False)  # [num_nonzero, 2]
             values = residual[mask]
 
-        return values.half(), indices.short(), torch.tensor(residual.shape)
+        return values.half(), indices.short(), torch.tensor(residual.shape, device=values.device)
 
     def _sparse_decode_residual(
         self,
@@ -583,14 +590,24 @@ class HybridAdaptiveCompactor(nn.Module):
         if mode == "lossless":
             # Store full residual (highest fidelity)
             sparse_values = prediction_error.half().flatten()
-            sparse_indices = torch.arange(sparse_values.numel(), dtype=torch.short)
-            residual_shape = torch.tensor(prediction_error.shape)
+            sparse_indices = torch.arange(
+                sparse_values.numel(), dtype=torch.short, device=sparse_values.device
+            )
+            residual_shape = torch.tensor(
+                prediction_error.shape, device=prediction_error.device
+            )
             residual_storage_bytes = sparse_values.numel() * 2  # float16
         elif mode == "aggressive":
             # Skip residual entirely (highest compression)
-            sparse_values = torch.tensor([], dtype=torch.float16)
-            sparse_indices = torch.tensor([], dtype=torch.short)
-            residual_shape = torch.tensor(prediction_error.shape)
+            sparse_values = torch.tensor(
+                [], dtype=torch.float16, device=prediction_error.device
+            )
+            sparse_indices = torch.tensor(
+                [], dtype=torch.short, device=prediction_error.device
+            )
+            residual_shape = torch.tensor(
+                prediction_error.shape, device=prediction_error.device
+            )
             residual_storage_bytes = 0
         else:  # "balanced" (default)
             # Sparse-encode the prediction error
@@ -799,6 +816,18 @@ class HybridAdaptiveCompactor(nn.Module):
             + 0.1 * ortho_loss  # Keep basis orthonormal
         )
 
+        if getattr(self, "_training_mode", False):
+            _logger.debug(
+                "HighFidelityCompactor training step completed",
+                extra={
+                    "loss_total": float(total_loss.detach().cpu()),
+                    "loss_recon": float(recon_loss.detach().cpu()),
+                    "loss_importance": float(importance_loss.detach().cpu()),
+                    "loss_sparsity": float(sparsity_loss.detach().cpu()),
+                    "loss_ortho": float(ortho_loss.detach().cpu()),
+                },
+            )
+
         self._training_mode = False
 
         return {
@@ -847,7 +876,10 @@ class HybridAdaptiveCompactor(nn.Module):
                 reconstructed = reconstructed.squeeze(0)
                 original = original.squeeze(0)
 
-            compression_ratio = self.embed_dim / self.num_basis
+            # Calculate theoretical upper bound (without quantization overhead)
+            # This doesn't account for metadata, residuals, or actual data types
+            # Note: Actual compression ratio may be lower due to storage overhead
+            compression_ratio = self.embed_dim / self.num_basis  # Theoretical upper bound
 
         # Handle batch dimension for metrics
         if original.dim() == 1:
@@ -870,9 +902,7 @@ class HybridAdaptiveCompactor(nn.Module):
             "num_basis": self.num_basis,
             "sparsity_threshold": self.sparsity_threshold,
             "theoretical_compression": self.embed_dim / self.num_basis,
-            "quant_boundaries": self.quant_boundaries.tolist()
-            if isinstance(self.quant_boundaries, torch.Tensor)
-            else self.quant_boundaries,
+            "quant_boundaries": self.quant_boundaries.tolist(),
         }
 
 
