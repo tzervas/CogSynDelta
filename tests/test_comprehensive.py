@@ -263,18 +263,62 @@ class TestAutoManagement(unittest.TestCase):
 
 
 class TestActiveMemory(unittest.TestCase):
-    """Test active memory management with lossless compaction."""
+    """Test active memory management with high-fidelity compaction."""
 
     def setUp(self) -> None:
-        from cogsyndelta.memory.active_memory import ActiveMemoryManager, LosslessCompactor
+        from cogsyndelta.memory.active_memory import (
+            ActiveMemoryManager,
+            HighFidelityCompactor,
+            LosslessCompactor,
+        )
 
-        self.manager = ActiveMemoryManager(embed_dim=512)
-        self.compactor = LosslessCompactor(embed_dim=512, num_basis=128)
+        self.manager = ActiveMemoryManager(embed_dim=512, use_high_fidelity=True)
+        self.legacy_compactor = LosslessCompactor(embed_dim=512, num_basis=128)
+        self.high_fidelity_compactor = HighFidelityCompactor(
+            embed_dim=512, num_basis=256, use_float16=True
+        )
+
+    def test_high_fidelity_compression(self) -> None:
+        """Test HighFidelityCompactor achieves ≥0.95 cosine similarity.
+
+        The HighFidelityCompactor uses orthonormal basis decomposition with
+        explicit residual storage, guaranteeing high fidelity without training.
+        This is the recommended compactor for production use.
+        """
+        # Test over multiple random embeddings
+        cos_sims = []
+        for _ in range(100):
+            original = torch.randn(512)
+
+            # Compress with high-fidelity compactor
+            compact = self.high_fidelity_compactor.compact(original)
+
+            # Reconstruct
+            reconstructed = self.high_fidelity_compactor.reconstruct(compact)
+
+            # Compute fidelity
+            cos_sim = torch.nn.functional.cosine_similarity(
+                original.unsqueeze(0), reconstructed.unsqueeze(0), dim=-1
+            ).item()
+            cos_sims.append(cos_sim)
+
+        mean_fidelity = sum(cos_sims) / len(cos_sims)
+        min_fidelity = min(cos_sims)
+
+        # High-fidelity compactor MUST achieve ≥0.95 mean fidelity
+        self.assertGreaterEqual(
+            mean_fidelity, 0.95,
+            f"Mean fidelity {mean_fidelity:.4f} should be ≥0.95"
+        )
+        self.assertGreaterEqual(
+            min_fidelity, 0.90,
+            f"Min fidelity {min_fidelity:.4f} should be ≥0.90"
+        )
 
     def test_lossless_compression(self) -> None:
-        """Test compression functionality.
+        """Test legacy LosslessCompactor compression functionality.
 
-        Note: The compactor uses learned basis vectors. Without training,
+        Note: The legacy compactor uses learned basis vectors. Without training,
         reconstruction won't be perfectly lossless. This test verifies the
         compression mechanism works and maintains reasonable fidelity.
         """
@@ -282,10 +326,10 @@ class TestActiveMemory(unittest.TestCase):
         original = torch.randn(512)
 
         # Compress
-        compact = self.compactor.compact(original)
+        compact = self.legacy_compactor.compact(original)
 
         # Reconstruct
-        reconstructed = self.compactor.reconstruct(compact)
+        reconstructed = self.legacy_compactor.reconstruct(compact)
 
         # Verify reconstruction quality
         mse = torch.nn.functional.mse_loss(original, reconstructed).item()
