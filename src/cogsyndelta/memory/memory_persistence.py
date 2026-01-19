@@ -30,6 +30,11 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from cogsyndelta.core.logging_config import get_logger
+
+# Module logger with skip tracking for graceful degradation
+_logger = get_logger(__name__)
+
 # Import dense differential encoding
 try:
     from cogsyndelta.memory.dense_embeddings import DenseDifferentialMemoryStore
@@ -456,9 +461,16 @@ class PersistentMemoryBank(nn.Module):
                         data = pickle.load(f)
                         retrieved_list.append(data["embedding"].to(query.device))
                         metadata_list.append(data["metadata"])
-                except (FileNotFoundError, pickle.UnpicklingError, KeyError):
+                except (FileNotFoundError, pickle.UnpicklingError, KeyError) as e:
                     # Skip corrupted or missing memory files
-                    pass
+                    _logger.skip(
+                        category="long_term_retrieval_failed",
+                        operation="read",
+                        message="Skipping corrupted or missing long-term memory file",
+                        memory_id=str(mem_hash),
+                        exception=e,
+                        context={"filename": str(filename)},
+                    )
 
         if retrieved_list:
             return torch.stack(retrieved_list[:num_reads]), metadata_list[:num_reads]
