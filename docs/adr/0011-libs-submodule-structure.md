@@ -1,9 +1,9 @@
 # ADR-0011: Library Submodule Structure for Extractable Components
 
-**Status**: Proposed  
-**Date**: 2026-01-19  
-**Authors**: @tzervas  
-**Supersedes**: None  
+**Status**: Proposed
+**Date**: 2026-01-19
+**Authors**: @tzervas
+**Supersedes**: None
 **Related**: ADR-0009 (Algebraic Training)
 
 ---

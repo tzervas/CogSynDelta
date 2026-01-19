@@ -170,7 +170,7 @@ class MHCAlgebraicOptimizer(nn.Module):
         diff_modulated = modulated - target_states
 
         numerator = (diff_desired * diff_modulated).sum()
-        denominator = (diff_modulated ** 2).sum() + self.regularization
+        denominator = (diff_modulated**2).sum() + self.regularization
 
         optimal_alpha = (numerator / denominator).clamp(0.0, 1.0)
 
@@ -352,9 +352,7 @@ class InterconnectAlgebraicOptimizer(AlgebraicOptimizer):
             "transfer_matrix": transfer_matrix,
             "source_dim": source_flat.shape[1],
             "target_dim": target_flat.shape[1],
-            "reconstruction_error": F.mse_loss(
-                source_flat @ transfer_matrix, target_flat
-            ).item(),
+            "reconstruction_error": F.mse_loss(source_flat @ transfer_matrix, target_flat).item(),
         }
 
     def optimize_mhc_gates(
@@ -387,9 +385,7 @@ class InterconnectAlgebraicOptimizer(AlgebraicOptimizer):
 
         target_logits = torch.logit(target_modulation.clamp(0.01, 0.99))
 
-        optimal_weights = spectral.predict_network_weights(
-            context_data, target_logits
-        )
+        optimal_weights = spectral.predict_network_weights(context_data, target_logits)
 
         return optimal_weights
 
@@ -422,7 +418,7 @@ class InterconnectAlgebraicOptimizer(AlgebraicOptimizer):
 
         model_names = list(results.keys())
         for i, source in enumerate(model_names):
-            for target in model_names[i+1:]:
+            for target in model_names[i + 1 :]:
                 if source in representations and target in representations:
                     source_repr = representations[source]
                     target_repr = representations[target]
@@ -432,8 +428,7 @@ class InterconnectAlgebraicOptimizer(AlgebraicOptimizer):
                     target_repr = target_repr[:min_samples]
 
                     transfer = self.predict_cross_model_transfer(
-                        source, target,
-                        train_data[source][0][:min_samples]
+                        source, target, train_data[source][0][:min_samples]
                     )
 
                     results[f"{source}_to_{target}_transfer"] = transfer
@@ -487,7 +482,7 @@ class PathwayStrengthPredictor:
             desired = communication_outcomes.mean(dim=0)
 
             diff = desired - target_current
-            source_norm = (source_contribution ** 2).sum() + self.regularization
+            source_norm = (source_contribution**2).sum() + self.regularization
 
             optimal_strength = (diff * source_contribution).sum() / source_norm
             return optimal_strength.clamp(0.0, 1.0).item()

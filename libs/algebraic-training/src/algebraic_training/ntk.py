@@ -1,15 +1,15 @@
 """
 Neural Tangent Kernel (NTK) Predictor.
 
-Predict training dynamics using Neural Tangent Kernel theory. In the 
-infinite-width (or sufficiently wide) limit, neural network training 
+Predict training dynamics using Neural Tangent Kernel theory. In the
+infinite-width (or sufficiently wide) limit, neural network training
 becomes a LINEAR dynamics problem with closed-form solution.
 
 Mathematical Foundation:
     In the NTK regime, training dynamics are:
-    
+
     f(x, t) = f(x, 0) + Θ(x, X_train) @ K⁻¹ @ (1 - e^{-ηKt}) @ (Y - f(X, 0))
-    
+
     where:
         - Θ(x, X) is the NTK between test point x and training data X
         - K = Θ(X, X) is the NTK Gram matrix on training data
@@ -132,10 +132,10 @@ class NTKPredictor(nn.Module):
         # Compute Jacobians in batches
         j1_batches = []
         for i in range(0, n1, self.ntk_batch_size):
-            batch = x1[i:i + self.ntk_batch_size]
+            batch = x1[i : i + self.ntk_batch_size]
             batch_jacobians = []
             for j in range(batch.shape[0]):
-                jac = get_jacobian(batch[j:j+1])
+                jac = get_jacobian(batch[j : j + 1])
                 batch_jacobians.append(jac)
             j1_batches.append(torch.stack(batch_jacobians))
 
@@ -146,10 +146,10 @@ class NTKPredictor(nn.Module):
         else:
             j2_batches = []
             for i in range(0, n2, self.ntk_batch_size):
-                batch = x2[i:i + self.ntk_batch_size]
+                batch = x2[i : i + self.ntk_batch_size]
                 batch_jacobians = []
                 for j in range(batch.shape[0]):
-                    jac = get_jacobian(batch[j:j+1])
+                    jac = get_jacobian(batch[j : j + 1])
                     batch_jacobians.append(jac)
                 j2_batches.append(torch.stack(batch_jacobians))
             j2 = torch.cat(j2_batches, dim=0)
@@ -178,7 +178,7 @@ class NTKPredictor(nn.Module):
         Mathematical derivation:
             Under gradient flow (continuous-time gradient descent):
             df/dt = -η Θ(x, X) (f(X) - Y)
-            
+
             Solution: f(x, t) = f(x, 0) - Θ(x, X) K⁻¹ (I - e^{-ηKt}) (f(X, 0) - Y)
 
         Args:

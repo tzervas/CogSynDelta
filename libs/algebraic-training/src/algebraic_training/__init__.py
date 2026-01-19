@@ -7,7 +7,7 @@ through algebraic and analytical principles rather than iterative optimization.
 
 Core Components:
     - NTKPredictor: Neural Tangent Kernel for training dynamics
-    - FisherInformationPredictor: Natural gradient optimization  
+    - FisherInformationPredictor: Natural gradient optimization
     - SpectralWeightPredictor: Eigenvalue-based weight prediction
     - AlgebraicOptimizer: Combined optimization interface
     - UnifiedAlgebraicTrainer: High-level training API
@@ -42,7 +42,7 @@ __version__ = "0.1.0"
 __all__ = [
     # Core classes
     "NTKPredictor",
-    "FisherInformationPredictor", 
+    "FisherInformationPredictor",
     "SpectralWeightPredictor",
     "AlgebraicOptimizer",
     "UnifiedAlgebraicTrainer",

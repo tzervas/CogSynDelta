@@ -69,8 +69,8 @@ from algebraic_training import NTKPredictor
 
 ntk = NTKPredictor(model)
 predictions = ntk.compute_training_predictions(
-    train_x, train_y, 
-    learning_rate=0.01, 
+    train_x, train_y,
+    learning_rate=0.01,
     n_steps=100
 )
 ```

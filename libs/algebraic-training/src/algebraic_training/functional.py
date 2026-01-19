@@ -51,7 +51,8 @@ def predict_training(
     """
     trainer = UnifiedAlgebraicTrainer(model)
     return trainer.train_algebraically(
-        train_x, train_y,
+        train_x,
+        train_y,
         target_epochs=epochs,
         learning_rate=learning_rate,
         apply_weights=apply_weights,
@@ -177,7 +178,7 @@ def compute_fisher(
 
     def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
         for i in range(0, len(train_x), 32):
-            yield train_x[i:i+32], train_y[i:i+32]
+            yield train_x[i : i + 32], train_y[i : i + 32]
 
     return fisher_predictor.compute_fisher_matrix(data_gen())
 

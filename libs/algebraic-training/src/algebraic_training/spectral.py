@@ -125,8 +125,7 @@ class SpectralWeightPredictor(nn.Module):
                 input_data = input_data[:, :in_features]
             else:
                 padding = torch.zeros(
-                    input_data.shape[0], in_features - input_data.shape[1],
-                    device=input_data.device
+                    input_data.shape[0], in_features - input_data.shape[1], device=input_data.device
                 )
                 input_data = torch.cat([input_data, padding], dim=1)
 
@@ -135,8 +134,9 @@ class SpectralWeightPredictor(nn.Module):
                 output_data = output_data[:, :out_features]
             else:
                 padding = torch.zeros(
-                    output_data.shape[0], out_features - output_data.shape[1],
-                    device=output_data.device
+                    output_data.shape[0],
+                    out_features - output_data.shape[1],
+                    device=output_data.device,
                 )
                 output_data = torch.cat([output_data, padding], dim=1)
 
@@ -186,7 +186,7 @@ class SpectralWeightPredictor(nn.Module):
         )
 
         U, S, Vh = torch.linalg.svd(first_weights, full_matrices=False)
-        predictions[first_name + ".weight"] = (U @ torch.diag(S.sqrt()) @ Vh)
+        predictions[first_name + ".weight"] = U @ torch.diag(S.sqrt()) @ Vh
 
         if len(layers) > 1:
             last_name, last_layer = layers[-1]
@@ -206,9 +206,7 @@ class SpectralWeightPredictor(nn.Module):
             predictions[last_name + ".weight"] = last_weights
 
         for name, layer in layers[1:-1]:
-            weight = torch.randn(
-                layer.out_features, layer.in_features, device=train_x.device
-            )
+            weight = torch.randn(layer.out_features, layer.in_features, device=train_x.device)
             Q, _ = torch.linalg.qr(weight.T)
             predictions[name + ".weight"] = Q.T * (2.0 / layer.in_features) ** 0.5
 

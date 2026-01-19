@@ -96,7 +96,9 @@ class AlgebraicOptimizer:
 
         if self.method in ("ntk", "hybrid"):
             ntk_pred = self.ntk_predictor.predict_training_dynamics(
-                train_x, train_y, train_x,
+                train_x,
+                train_y,
+                train_x,
                 learning_rate=learning_rate,
                 training_time=float(num_epochs),
             )
@@ -178,10 +180,7 @@ class AlgebraicOptimizer:
                     if blend_factor >= 1.0:
                         param.copy_(weights[name])
                     else:
-                        param.copy_(
-                            blend_factor * weights[name] +
-                            (1 - blend_factor) * param.data
-                        )
+                        param.copy_(blend_factor * weights[name] + (1 - blend_factor) * param.data)
 
     def fast_train(
         self,

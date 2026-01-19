@@ -90,7 +90,9 @@ class UnifiedAlgebraicTrainer:
             print("  [1/4] Predicting training dynamics via NTK...")
         try:
             ntk_results = self.ntk_predictor.predict_training_dynamics(
-                train_x, train_y, train_x,
+                train_x,
+                train_y,
+                train_x,
                 learning_rate=learning_rate,
                 training_time=float(target_epochs),
             )
@@ -167,7 +169,8 @@ class UnifiedAlgebraicTrainer:
                 losses.append(loss)
 
             updates = self.fisher_predictor.compute_natural_gradient_update(
-                train_x, train_y,
+                train_x,
+                train_y,
                 learning_rate=0.5 / (step + 1),
             )
 

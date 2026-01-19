@@ -1,13 +1,13 @@
 """
 Weight Distribution Predictor.
 
-Predict the distribution of weights after training using statistical 
+Predict the distribution of weights after training using statistical
 mechanics and mean field theory.
 
 Mathematical Foundation:
     In wide networks with MSE loss, weights converge to:
         W ~ N(μ*, Σ*)
-    
+
     where:
         μ* = (XᵀX + λI)⁻¹ XᵀY  (mean = ridge regression solution)
         Σ* = σ² (XᵀX + λI)⁻¹   (covariance = inverse Fisher)
@@ -106,7 +106,9 @@ class WeightDistributionPredictor:
                     pred_var = weight_variance_flat[:param_size].view(param.shape)
                 else:
                     var_repeats = (param_size // var_size) + 1
-                    pred_var = weight_variance_flat.repeat(var_repeats)[:param_size].view(param.shape)
+                    pred_var = weight_variance_flat.repeat(var_repeats)[:param_size].view(
+                        param.shape
+                    )
 
                 var_threshold = pred_var.mean() + 2 * pred_var.std()
                 outlier_mask = pred_var > var_threshold

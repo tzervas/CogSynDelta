@@ -10,7 +10,7 @@ Mathematical Foundation:
         F = E_{x,y}[∇log p(y|x,θ) ∇log p(y|x,θ)ᵀ]
 
     Natural gradient: Δθ = F⁻¹ ∇L
-    
+
     This is equivalent to gradient descent in the space of probability
     distributions, not weight space - much more efficient!
 
@@ -113,7 +113,7 @@ class FisherInformationPredictor(nn.Module):
 
             for name, param in self.model.named_parameters():
                 if param.grad is not None:
-                    fisher_diag[name] = fisher_diag[name] + param.grad.data ** 2
+                    fisher_diag[name] = fisher_diag[name] + param.grad.data**2
 
             n_samples += x.shape[0]
 
@@ -141,7 +141,7 @@ class FisherInformationPredictor(nn.Module):
         Mathematical basis:
             Under natural gradient with FIM F:
             θ_{t+1} = θ_t - η F⁻¹ ∇L
-            
+
             The weights converge to a distribution:
             θ* ~ N(θ_MAP, F⁻¹)
 
@@ -153,9 +153,10 @@ class FisherInformationPredictor(nn.Module):
         Returns:
             Dictionary with predicted weight statistics per parameter
         """
+
         def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
             for i in range(0, len(train_x), 32):
-                yield train_x[i:i+32], train_y[i:i+32]
+                yield train_x[i : i + 32], train_y[i : i + 32]
 
         fisher = self.compute_fisher_matrix(data_gen(), num_batches=len(train_x) // 32)
 
@@ -219,9 +220,11 @@ class FisherInformationPredictor(nn.Module):
             Dictionary mapping parameter names to their updates
         """
         if not self._fisher_cache:
+
             def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
                 for i in range(0, len(train_x), 32):
-                    yield train_x[i:i+32], train_y[i:i+32]
+                    yield train_x[i : i + 32], train_y[i : i + 32]
+
             self.compute_fisher_matrix(data_gen())
 
         self.model.zero_grad()

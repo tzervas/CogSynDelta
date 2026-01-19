@@ -62,7 +62,9 @@ class TestNTKPredictor:
         ntk = NTKPredictor(model)
 
         results = ntk.predict_training_dynamics(
-            train_x[:20], train_y[:20], train_x[:20],
+            train_x[:20],
+            train_y[:20],
+            train_x[:20],
             learning_rate=0.01,
             training_time=10.0,
         )
@@ -85,7 +87,7 @@ class TestFisherInformationPredictor:
 
         def data_gen():
             for i in range(0, 50, 10):
-                yield train_x[i:i+10], train_y[i:i+10]
+                yield train_x[i : i + 10], train_y[i : i + 10]
 
         fisher_diag = fisher.compute_fisher_matrix(data_gen())
 
@@ -134,9 +136,7 @@ class TestSpectralWeightPredictor:
         train_x, train_y = training_data
         spectral = SpectralWeightPredictor(model)
 
-        weights = spectral.predict_layer_weights(
-            train_x, train_y, (10, 5)
-        )
+        weights = spectral.predict_layer_weights(train_x, train_y, (10, 5))
 
         assert weights.shape == (5, 10)
 
@@ -152,7 +152,8 @@ class TestAlgebraicOptimizer:
         optimizer = AlgebraicOptimizer(model, method="hybrid")
 
         results = optimizer.predict_training_outcome(
-            train_x[:30], train_y[:30],
+            train_x[:30],
+            train_y[:30],
             learning_rate=0.01,
             num_epochs=10,
         )
@@ -166,9 +167,7 @@ class TestAlgebraicOptimizer:
         train_x, train_y = training_data
         optimizer = AlgebraicOptimizer(model)
 
-        weights = optimizer.compute_optimal_weights(
-            train_x[:50], train_y[:50], method="spectral"
-        )
+        weights = optimizer.compute_optimal_weights(train_x[:50], train_y[:50], method="spectral")
 
         assert len(weights) > 0
 
@@ -179,9 +178,7 @@ class TestAlgebraicOptimizer:
         train_x, train_y = training_data
         optimizer = AlgebraicOptimizer(model)
 
-        results = optimizer.fast_train(
-            train_x[:50], train_y[:50], num_natural_steps=3
-        )
+        results = optimizer.fast_train(train_x[:50], train_y[:50], num_natural_steps=3)
 
         assert "initial_loss" in results
         assert "final_loss" in results
@@ -199,7 +196,8 @@ class TestUnifiedAlgebraicTrainer:
         trainer = UnifiedAlgebraicTrainer(model)
 
         results = trainer.train_algebraically(
-            train_x[:30], train_y[:30],
+            train_x[:30],
+            train_y[:30],
             target_epochs=10,
             apply_weights=False,
             verbose=False,
@@ -228,9 +226,7 @@ class TestUnifiedAlgebraicTrainer:
         train_x, train_y = training_data
         trainer = UnifiedAlgebraicTrainer(model)
 
-        results = trainer.quick_optimize(
-            train_x[:50], train_y[:50], num_natural_steps=3
-        )
+        results = trainer.quick_optimize(train_x[:50], train_y[:50], num_natural_steps=3)
 
         assert "initial_loss" in results
         assert "final_loss" in results
