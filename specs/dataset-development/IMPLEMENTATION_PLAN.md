@@ -751,7 +751,7 @@ class CompressionCurve:
     """Precomputed rate-distortion curve."""
     ratios: list[float]       # [4, 6, 8, 10, 12, 16, 20]
     fidelities: list[float]   # [0.98, 0.96, 0.95, 0.94, 0.92, 0.90, 0.85]
-    
+
     def find_ratio_for_fidelity(self, target: float) -> float:
         """Find max compression ratio achieving target fidelity."""
         for ratio, fidelity in zip(self.ratios, self.fidelities):
@@ -770,7 +770,7 @@ def precompute_curve(
     for ratio in ratios:
         result = manager.compress(calibration_embeddings, target_ratio=ratio)
         fidelities.append(result.actual_fidelity)
-    
+
     return CompressionCurve(ratios=ratios, fidelities=fidelities)
 ```
 
@@ -821,7 +821,7 @@ The implementation builds on composable primitives from embeddenator sister proj
 def test_fidelity_guarantee():
     """CRITICAL: Fidelity guarantee must never be violated."""
     manager = AdaptiveCompressionManager(target_fidelity=0.95)
-    
+
     # Test across various compression targets
     for target_ratio in [4, 8, 12, 16, 20, 30]:
         result = manager.compress(test_embeddings, target_ratio=target_ratio)
@@ -834,11 +834,11 @@ def test_fidelity_guarantee():
 def test_compression_optimizes_within_constraint():
     """Verify compression is maximized within fidelity constraint."""
     manager = AdaptiveCompressionManager(target_fidelity=0.95)
-    
+
     # Should achieve close to max compression when data allows
     easy_result = manager.compress(easy_to_compress_embeddings)
     assert easy_result.compression_ratio >= 10.0
-    
+
     # Should reduce compression for difficult data
     hard_result = manager.compress(hard_to_compress_embeddings)
     assert hard_result.actual_fidelity >= 0.95  # Still meets guarantee
@@ -851,13 +851,13 @@ def benchmark_adjustable_compression():
     """Benchmark adjustable compression on standard datasets."""
     datasets = ['allnli', 'msmarco', 'laion_embeddings', 'gist1m']
     fidelity_targets = [0.90, 0.95, 0.97, 0.99]
-    
+
     results = []
     for dataset in datasets:
         for target in fidelity_targets:
             manager = AdaptiveCompressionManager(target_fidelity=target)
             embeddings = load_benchmark_embeddings(dataset)
-            
+
             result = manager.compress(embeddings)
             results.append({
                 'dataset': dataset,
@@ -866,7 +866,7 @@ def benchmark_adjustable_compression():
                 'compression_ratio': result.compression_ratio,
                 'method': result.method,
             })
-    
+
     return pd.DataFrame(results)
 ```
 

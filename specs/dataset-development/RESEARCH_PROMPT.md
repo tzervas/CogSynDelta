@@ -509,7 +509,7 @@ Reference state-of-the-art techniques: QINCo2, BitNet b1.58, Matryoshka MRL.
 
 ### Prompt 1: Dataset Discovery
 ```
-Given the CogSynDelta architecture described above, identify the top 20 public datasets 
+Given the CogSynDelta architecture described above, identify the top 20 public datasets
 that would be most valuable for training each brain region submodel. For each dataset provide:
 1. Name and source URL
 2. Size and format

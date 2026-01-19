@@ -174,7 +174,7 @@ class CompressionConfig:
 
 class AdaptiveCompressionManager:
     """Compress with guaranteed fidelity, maximizing compression ratio."""
-    
+
     def compress(
         self,
         embeddings: torch.Tensor,
@@ -239,7 +239,7 @@ class AdaptiveCompressionManager:
 def test_fidelity_guarantee():
     """Verify fidelity never drops below threshold."""
     manager = AdaptiveCompressionManager(min_fidelity=0.95)
-    
+
     for compression_ratio in [4, 8, 12, 16, 20]:
         result = manager.compress(test_embeddings, target_ratio=compression_ratio)
         assert result.actual_fidelity >= 0.95, f"Fidelity {result.actual_fidelity} < 0.95"
