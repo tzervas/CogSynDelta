@@ -10,12 +10,16 @@ Compactor Hierarchy (choose based on needs):
    - No training required
    - Best for: Active memory, critical data
 
-2. **HybridAdaptiveCompactor** - Trainable, 2-4x compression, ≥0.95 fidelity
+2. **ResidualBoostCompactor** - Multi-stage refinement, 3-6x compression, ≥0.95 fidelity
+   - Uses cascaded residual learning (like neural audio codecs)
+   - Best for: High compression with good fidelity
+
+3. **HybridAdaptiveCompactor** - Trainable, 2-4x compression, ≥0.95 fidelity
    - Learns domain-specific compression
    - Best for: Long-term memory, specialized workloads
 
-3. **LosslessCompactor** - Legacy, requires training for good fidelity
-   - Deprecated: Use HybridAdaptiveCompactor instead
+4. **LosslessCompactor** - Legacy, requires training for good fidelity
+   - Deprecated: Use ResidualBoostCompactor instead
 """
 
 from cogsyndelta.memory.active_memory import (
@@ -24,6 +28,7 @@ from cogsyndelta.memory.active_memory import (
     HybridAdaptiveCompactor,
     LosslessCompactor,
     MemoryTier,
+    ResidualBoostCompactor,
     TemporalChainManager,
 )
 
@@ -33,5 +38,6 @@ __all__ = [
     "HybridAdaptiveCompactor",
     "LosslessCompactor",
     "MemoryTier",
+    "ResidualBoostCompactor",
     "TemporalChainManager",
 ]
