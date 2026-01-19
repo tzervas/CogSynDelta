@@ -263,18 +263,64 @@ class TestAutoManagement(unittest.TestCase):
 
 
 class TestActiveMemory(unittest.TestCase):
-    """Test active memory management with lossless compaction."""
+    """Test active memory management with high-fidelity compaction."""
 
     def setUp(self) -> None:
-        from cogsyndelta.memory.active_memory import ActiveMemoryManager, LosslessCompactor
+        from cogsyndelta.memory.active_memory import (
+            ActiveMemoryManager,
+            HighFidelityCompactor,
+            HybridAdaptiveCompactor,
+            LosslessCompactor,
+        )
 
-        self.manager = ActiveMemoryManager(embed_dim=512)
-        self.compactor = LosslessCompactor(embed_dim=512, num_basis=128)
+        self.manager = ActiveMemoryManager(embed_dim=512, use_high_fidelity=True)
+        self.legacy_compactor = LosslessCompactor(embed_dim=512, num_basis=128)
+        self.high_fidelity_compactor = HighFidelityCompactor(
+            embed_dim=512, num_basis=256, use_float16=True
+        )
+        self.hybrid_compactor = HybridAdaptiveCompactor(
+            embed_dim=512, num_basis=384, sparsity_threshold=0.01
+        )
+
+    def test_high_fidelity_compression(self) -> None:
+        """Test HighFidelityCompactor achieves ≥0.95 cosine similarity.
+
+        The HighFidelityCompactor uses orthonormal basis decomposition with
+        explicit residual storage, guaranteeing high fidelity without training.
+        This is the recommended compactor for production use.
+        """
+        # Test over multiple random embeddings
+        cos_sims = []
+        for _ in range(100):
+            original = torch.randn(512)
+
+            # Compress with high-fidelity compactor
+            compact = self.high_fidelity_compactor.compact(original)
+
+            # Reconstruct
+            reconstructed = self.high_fidelity_compactor.reconstruct(compact)
+
+            # Compute fidelity
+            cos_sim = torch.nn.functional.cosine_similarity(
+                original.unsqueeze(0), reconstructed.unsqueeze(0), dim=-1
+            ).item()
+            cos_sims.append(cos_sim)
+
+        mean_fidelity = sum(cos_sims) / len(cos_sims)
+        min_fidelity = min(cos_sims)
+
+        # High-fidelity compactor MUST achieve ≥0.95 mean fidelity
+        self.assertGreaterEqual(
+            mean_fidelity, 0.95, f"Mean fidelity {mean_fidelity:.4f} should be ≥0.95"
+        )
+        self.assertGreaterEqual(
+            min_fidelity, 0.90, f"Min fidelity {min_fidelity:.4f} should be ≥0.90"
+        )
 
     def test_lossless_compression(self) -> None:
-        """Test compression functionality.
+        """Test legacy LosslessCompactor compression functionality.
 
-        Note: The compactor uses learned basis vectors. Without training,
+        Note: The legacy compactor uses learned basis vectors. Without training,
         reconstruction won't be perfectly lossless. This test verifies the
         compression mechanism works and maintains reasonable fidelity.
         """
@@ -282,10 +328,10 @@ class TestActiveMemory(unittest.TestCase):
         original = torch.randn(512)
 
         # Compress
-        compact = self.compactor.compact(original)
+        compact = self.legacy_compactor.compact(original)
 
         # Reconstruct
-        reconstructed = self.compactor.reconstruct(compact)
+        reconstructed = self.legacy_compactor.reconstruct(compact)
 
         # Verify reconstruction quality
         mse = torch.nn.functional.mse_loss(original, reconstructed).item()
@@ -300,6 +346,117 @@ class TestActiveMemory(unittest.TestCase):
 
         # Verify compression ratio
         self.assertGreater(compact["compression_ratio"], 1.0, "Should achieve some compression")
+
+    def test_hybrid_adaptive_compressor_untrained(self) -> None:
+        """Test HybridAdaptiveCompactor without training.
+
+        Even without training, the hybrid compactor should achieve reasonable
+        fidelity due to its orthonormal basis decomposition. The compression
+        ratio will improve significantly after training.
+        """
+        # Test single embedding
+        original = torch.randn(512)
+        compact = self.hybrid_compactor.compact(original, return_diagnostics=True)
+        reconstructed = self.hybrid_compactor.reconstruct(compact)
+
+        # Compute fidelity
+        cos_sim = torch.nn.functional.cosine_similarity(
+            original.unsqueeze(0), reconstructed.unsqueeze(0), dim=-1
+        ).item()
+
+        # Untrained should still achieve reasonable fidelity (>0.8)
+        # because of the orthonormal basis guarantee
+        self.assertGreater(
+            cos_sim, 0.8, f"Untrained hybrid compactor fidelity {cos_sim:.4f} should be >0.8"
+        )
+
+        # Compression ratio may be <1 for random data (overhead of metadata)
+        # After training on real data, this improves significantly
+        self.assertGreater(
+            compact["compression_ratio"], 0.5, "Should have reasonable compression ratio"
+        )
+
+        # Verify diagnostics are present
+        self.assertIn("diagnostics", compact)
+        self.assertIn("basis_capture_ratio", compact["diagnostics"])
+
+    def test_hybrid_adaptive_compressor_batch(self) -> None:
+        """Test HybridAdaptiveCompactor with batched input."""
+        batch = torch.randn(16, 512)
+
+        compact = self.hybrid_compactor.compact(batch)
+        reconstructed = self.hybrid_compactor.reconstruct(compact)
+
+        # Verify shape
+        self.assertEqual(reconstructed.shape, batch.shape)
+
+        # Verify fidelity for each sample
+        cos_sims = torch.nn.functional.cosine_similarity(batch, reconstructed, dim=-1)
+        mean_fidelity = cos_sims.mean().item()
+
+        self.assertGreater(mean_fidelity, 0.8, "Batch fidelity should be >0.8")
+
+    def test_hybrid_adaptive_training_step(self) -> None:
+        """Test HybridAdaptiveCompactor training capability.
+
+        The hybrid compactor should be trainable with proper gradients
+        flowing through all components.
+        """
+        batch = torch.randn(8, 512)
+
+        # Run training step
+        loss_dict = self.hybrid_compactor.training_step(batch)
+
+        # Verify all loss components are computed
+        self.assertIn("loss", loss_dict)
+        self.assertIn("recon_loss", loss_dict)
+        self.assertIn("importance_loss", loss_dict)
+        self.assertIn("sparsity_loss", loss_dict)
+        self.assertIn("ortho_loss", loss_dict)
+
+        # Verify losses are reasonable (not NaN/Inf)
+        for name, loss in loss_dict.items():
+            self.assertFalse(torch.isnan(loss), f"{name} should not be NaN")
+            self.assertFalse(torch.isinf(loss), f"{name} should not be Inf")
+
+        # Verify gradients flow
+        loss_dict["loss"].backward()
+
+        # Check gradients exist
+        self.assertIsNotNone(self.hybrid_compactor.basis_vectors.grad)
+        self.assertTrue(
+            self.hybrid_compactor.basis_vectors.grad.abs().sum() > 0,
+            "Basis vectors should have non-zero gradients",
+        )
+
+    def test_hybrid_vs_high_fidelity_comparison(self) -> None:
+        """Compare HybridAdaptiveCompactor vs HighFidelityCompactor.
+
+        The hybrid compactor trades some fidelity for better compression.
+        This test verifies the trade-off is within acceptable bounds.
+        """
+        original = torch.randn(512)
+
+        # High-fidelity (no training needed) - returns (mse, cos_sim, compression_ratio)
+        high_fidelity_mse, high_fidelity_cos, high_fidelity_ratio = (
+            self.high_fidelity_compactor.verify_fidelity(original)
+        )
+
+        # Hybrid (no training) - returns (mse, cos_sim, compression_ratio)
+        hybrid_mse, hybrid_cos, hybrid_ratio = self.hybrid_compactor.verify_fidelity(
+            original, use_quantization=True
+        )
+
+        # High-fidelity should have better fidelity (≥0.95 guarantee)
+        # But hybrid should have better compression potential (after training)
+        self.assertGreater(
+            high_fidelity_cos, 0.95, "High-fidelity should maintain ≥0.95 cosine similarity"
+        )
+        self.assertGreater(hybrid_cos, 0.8, "Hybrid should maintain >0.8 fidelity")
+
+        # Verify hybrid ratio is computed (may be <1 for random data)
+        self.assertIsInstance(hybrid_ratio, float)
+        self.assertGreater(hybrid_ratio, 0, "Compression ratio should be positive")
 
     def test_tier_storage_and_retrieval(self) -> None:
         """Test storage and retrieval across tiers."""
