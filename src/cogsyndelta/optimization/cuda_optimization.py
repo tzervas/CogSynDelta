@@ -90,9 +90,9 @@ class RTX5080Optimizer:
         # Create CUDA streams for concurrent execution
         self.streams = [torch.cuda.Stream() for _ in range(self.config.num_streams)]
 
-        # Setup mixed precision
+        # Setup mixed precision (using modern torch.amp API)
         if self.config.use_mixed_precision:
-            self.scaler = torch.cuda.amp.GradScaler()
+            self.scaler = torch.amp.GradScaler("cuda")
 
         print(f"🚀 GPU Optimization for {DEVICE_NAME}")
         print(f"   Total Memory: {TOTAL_MEMORY / (1024**3):.2f} GB")
