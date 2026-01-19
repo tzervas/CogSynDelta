@@ -228,10 +228,6 @@ class TestMultiLanguageExplorer:
             assert lang in implementations
             assert implementations[lang].shape == test_embeddings.shape
 
-    @pytest.mark.xfail(
-        reason="Bug: select_best_implementation fails with empty langs list - IndexError",
-        strict=False,
-    )
     def test_select_best_implementation(
         self, explorer: MultiLanguageExplorer, test_embeddings: torch.Tensor
     ) -> None:
@@ -268,10 +264,6 @@ class TestSelfImprovingAgentFramework:
         assert framework.quality_assurance is not None
         assert framework.multi_lang_explorer is not None
 
-    @pytest.mark.xfail(
-        reason="Bug: improve_solution fails with batch tensors - cannot convert 2 elements to Scalar",
-        strict=False,
-    )
     def test_improve_solution(
         self, framework: SelfImprovingAgentFramework, test_tokens: torch.Tensor
     ) -> None:
@@ -285,10 +277,6 @@ class TestSelfImprovingAgentFramework:
         assert result["final_solution"].shape[-1] == 512
         assert len(result["history"]["iterations"]) == 2
 
-    @pytest.mark.xfail(
-        reason="Bug: explore_multi_language fails with batch tensors - cannot convert 2 elements to Scalar",
-        strict=False,
-    )
     def test_explore_multi_language(
         self, framework: SelfImprovingAgentFramework, test_tokens: torch.Tensor
     ) -> None:
