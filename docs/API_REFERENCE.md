@@ -297,6 +297,101 @@ Currently no rate limiting. Future versions may implement:
 - 100 requests/minute per IP
 - 10 concurrent WebSocket connections
 
+## Algebraic Training API
+
+The algebraic training module provides analytical methods for training optimization.
+
+### Python SDK Usage
+
+```python
+from cogsyndelta.optimization import UnifiedAlgebraicTrainer
+from cogsyndelta.optimization import NTKPredictor, FisherInformationPredictor
+import torch
+
+# Initialize with a PyTorch model
+model = MyModel()
+trainer = UnifiedAlgebraicTrainer(model)
+
+# Algebraic training (closed-form solutions where possible)
+train_x = torch.randn(1000, 784)
+train_y = torch.randn(1000, 10)
+results = trainer.train_algebraically(train_x, train_y, target_epochs=100)
+
+print(f"Achieved loss: {results['final_loss']:.6f}")
+print(f"Epochs simulated: {results['epochs_simulated']}")
+```
+
+### Trainability Analysis
+
+```python
+# Analyze model trainability before training
+analysis = trainer.analyze_trainability(train_x, train_y)
+
+print(f"Trainability score: {analysis['trainability_score']:.3f}")
+print(f"Recommended LR: {analysis['recommended_learning_rate']:.6f}")
+print(f"Convergence prediction: {analysis['convergence_epochs']} epochs")
+```
+
+### Individual Predictors
+
+#### NTK Predictor
+
+```python
+from cogsyndelta.optimization import NTKPredictor
+
+ntk = NTKPredictor(model)
+predictions = ntk.compute_training_predictions(
+    train_x, train_y, learning_rate=0.01, n_steps=100
+)
+```
+
+#### Fisher Information
+
+```python
+from cogsyndelta.optimization import FisherInformationPredictor
+
+fisher = FisherInformationPredictor(model)
+natural_grad = fisher.compute_natural_gradient_update(
+    train_x, train_y, learning_rate=0.1
+)
+```
+
+#### Spectral Methods
+
+```python
+from cogsyndelta.optimization import SpectralWeightPredictor
+
+spectral = SpectralWeightPredictor(model)
+for layer_name, optimal_weights in spectral.compute_optimal_weights(train_x, train_y):
+    print(f"{layer_name}: {optimal_weights.shape}")
+```
+
+### mHC Gate Optimization
+
+```python
+from cogsyndelta.optimization import MHCAlgebraicOptimizer
+
+mhc = MHCAlgebraicOptimizer(embed_dim=256)
+optimal_gates = mhc.compute_optimal_gate_values(
+    source_input=source_tensor,
+    target_input=target_tensor,
+    desired_output=desired_tensor
+)
+```
+
+### API Reference
+
+| Class | Purpose | Key Methods |
+|-------|---------|-------------|
+| `UnifiedAlgebraicTrainer` | High-level API | `train_algebraically()`, `analyze_trainability()` |
+| `NTKPredictor` | Neural Tangent Kernel | `compute_training_predictions()` |
+| `FisherInformationPredictor` | Natural gradient | `compute_natural_gradient_update()` |
+| `SpectralWeightPredictor` | Eigenvalue methods | `compute_optimal_weights()` |
+| `MHCAlgebraicOptimizer` | Gate optimization | `compute_optimal_gate_values()` |
+| `PathwayStrengthPredictor` | Routing optimization | `compute_optimal_pathway_strengths()` |
+
+---
+
 ## SDK Examples
 
 ### Python
