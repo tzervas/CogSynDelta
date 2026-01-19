@@ -1,6 +1,6 @@
 # Dataset Development Specification
 
-> Specification for CogSynDelta training dataset development, acquisition, and management—with critical focus on compression fidelity recovery.
+> Specification for CogSynDelta training dataset development, acquisition, and management—with critical focus on compression fidelity recovery and adjustable compression ratio system.
 
 ## Status
 
@@ -10,11 +10,22 @@
 | **Status** | Draft |
 | **Author** | @tzervas |
 | **Created** | 2026-01-18 |
-| **Updated** | 2026-01-18 |
+| **Updated** | 2026-01-19 |
 
 ## Problem Statement
 
 CogSynDelta's brain-inspired architecture requires specialized datasets for each submodel (brain region) to achieve domain expertise. **CRITICAL**: Current compression fidelity is **0.06** (catastrophic failure) vs target **≥0.95**.
+
+### Integration with embeddenator-core Ecosystem
+
+This specification leverages the **embeddenator** family of component libraries:
+- **embeddenator-core**: Core embedding compression primitives and interfaces
+- **embeddenator-vsa**: Vector Symbolic Architecture operations (binding, bundling)
+- **embeddenator-rvq**: Residual Vector Quantization with adaptive staging
+- **embeddenator-calibration**: Adaptive calibration infrastructure
+- **embeddenator-hopfield**: Modern Hopfield Networks for active memory
+
+The CogSynDelta memory system builds on these composable primitives.
 
 ### Current State (CRITICAL)
 

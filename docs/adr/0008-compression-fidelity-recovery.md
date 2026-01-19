@@ -2,11 +2,21 @@
 
 ## Status
 
-**ACCEPTED** - 2026-01-18
+**ACCEPTED** - 2026-01-19
 
 ## Context
 
 CogSynDelta's dense differential embedding system currently achieves **0.06 cosine similarity fidelity** when compressing and reconstructing embeddings. This is a **catastrophic failure** (essentially orthogonal to original) vs the target of **≥0.95 fidelity** at 10x compression.
+
+### Integration with embeddenator-core
+
+This ADR leverages the **embeddenator** family of component libraries:
+- **embeddenator-core**: Core embedding compression primitives
+- **embeddenator-vsa**: Vector Symbolic Architecture operations
+- **embeddenator-rvq**: Residual Vector Quantization
+- **embeddenator-calibration**: Adaptive calibration infrastructure
+
+The fidelity crisis resolution strategy aligns with embeddenator-core's architecture for maximum code reuse and interoperability.
 
 ### Root Cause Analysis
 
@@ -115,19 +125,80 @@ class AdaptiveCompressionManager:
 
 ### Stage 5: VSA/Holographic Integration (brain-inspired)
 
-For the hippocampus memory tier:
-- **Modern Hopfield Networks** for active memory (exponential capacity: 2^(d/2))
-- **VSA binding** for temporal context (torchhd library)
-- **FAISS** for precise similarity search on compressed vectors
+For the hippocampus memory tier, implement holographic computing with guaranteed capacity bounds:
+
+**Vector Symbolic Architecture (VSA) Operations:**
+```python
+# MAP-B binding (Hadamard product) - 100% fidelity for atomic vectors
+def map_bind(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    return a * b  # Element-wise multiplication
+
+# HRR binding (circular convolution) - ~95% fidelity at d=10,000
+def hrr_bind(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    a_fft = torch.fft.fft(a, dim=-1)
+    b_fft = torch.fft.fft(b, dim=-1)
+    return torch.fft.ifft(a_fft * b_fft, dim=-1).real
+```
+
+**Modern Hopfield Networks for Active Memory:**
+- Storage capacity: ~2^(d/2) patterns (exponential in dimension)
+- One-step convergence via transformer attention equivalent
+- β parameter controls metastable states vs precise retrieval
+
+**Tiered Memory Architecture:**
+```
+ACTIVE MEMORY (Hopfield, ~100 items, minutes)
+    ↓ consolidation
+SHORT-TERM MEMORY (VSA bundling, ~10K items, hours)
+    ↓ consolidation
+LONG-TERM MEMORY (FAISS IVF-PQ, millions+, permanent)
+```
+
+**Capacity Bounds:** For bundling k items from M-item codebook at fidelity S:
+```
+n ≥ k / (1 - S²) × log(M)
+```
+At k=20, M=1000, S=0.95: n ≥ 2,050 dimensions (use n≥10,000 for reliability)
+
+### Stage 6: Adjustable Compression with Fidelity Guarantees
+
+```python
+@dataclass
+class CompressionConfig:
+    """Adjustable compression targeting fidelity over ratio."""
+    min_fidelity: float = 0.95       # Hard constraint
+    target_ratio: float = 10.0       # Soft target
+    max_ratio: float = 20.0          # Upper bound
+    adaptive_stages: bool = True     # Early-stop RVQ
+    fallback_lossless: bool = True   # FP16 if fidelity unachievable
+
+class AdaptiveCompressionManager:
+    """Compress with guaranteed fidelity, maximizing compression ratio."""
+    
+    def compress(
+        self,
+        embeddings: torch.Tensor,
+        config: CompressionConfig = CompressionConfig(),
+    ) -> CompressionResult:
+        """
+        Strategy:
+        1. Try Matryoshka truncation (fastest, ~4-12x, 0.88-0.97)
+        2. Add RVQ if fidelity insufficient (~8-16x, 0.90-0.97)
+        3. Reduce compression if still below target
+        4. Fall back to FP16 if fidelity unachievable
+        """
+        ...
+```
 
 ## Consequences
 
 ### Positive
 
 - Clear path from 0.06 → ≥0.95 fidelity
-- Adjustable compression with guarantees
-- Brain-inspired architecture alignment
-- Uses proven techniques (Matryoshka, RVQ, VSA)
+- **Adjustable compression** with hard fidelity guarantees
+- Brain-inspired architecture alignment (CLS theory)
+- Uses proven techniques (Matryoshka, RVQ, VSA, Hopfield)
+- Interoperates with embeddenator-core component libraries
 
 ### Negative
 
@@ -135,34 +206,58 @@ For the hippocampus memory tier:
 - May need to retrain existing models
 - Storage format changes required
 - Performance overhead for calibration
+- VSA requires high dimensions (≥10,000 for reliability)
+
+### Neutral
+
+- Trade-off between compression ratio and fidelity is explicit
+- Calibration data requirements (≥10K representative embeddings)
 
 ### Risks
 
 | Risk | Mitigation |
 |------|------------|
-| Calibration drift | Periodic recalibration on new data |
+| Calibration drift | Periodic recalibration, online statistics |
 | RVQ codebook overfitting | Train on diverse datasets (AllNLI, LAION) |
 | VSA dimension requirements | Use d≥10,000 for reliable operations |
+| Fidelity regression | Continuous monitoring, alert at <0.93 |
 
 ## Implementation Plan
 
-| Phase | Duration | Target |
-|-------|----------|--------|
-| Calibration | Week 1-2 | 0.06 → 0.85-0.90 |
-| Matryoshka | Week 3-4 | 0.90 → 0.93 |
-| RVQ | Week 5-6 | 0.93 → 0.95+ |
-| VSA Integration | Week 7-8 | Brain-inspired memory |
-| Optimization | Week 9-12 | Performance tuning |
+| Phase | Duration | Target Fidelity | Key Deliverables |
+|-------|----------|-----------------|------------------|
+| 1. Calibration | Week 1-2 | 0.06 → 0.85-0.90 | calibration.py, diagnostics.py |
+| 2. Matryoshka | Week 3-4 | 0.90 → 0.93 | matryoshka.py, AllNLI training |
+| 3. RVQ | Week 5-6 | 0.93 → 0.95+ | residual_quantization.py |
+| 4. Adjustable API | Week 7-8 | Guaranteed 0.95+ | AdaptiveCompressionManager |
+| 5. VSA/Hopfield | Week 9-10 | Brain-inspired tier | vsa_memory.py, hopfield.py |
+| 6. Optimization | Week 11-12 | RTX 5080 tuning | Triton kernels, BF16 |
+
+## Testing Strategy
+
+```python
+def test_fidelity_guarantee():
+    """Verify fidelity never drops below threshold."""
+    manager = AdaptiveCompressionManager(min_fidelity=0.95)
+    
+    for compression_ratio in [4, 8, 12, 16, 20]:
+        result = manager.compress(test_embeddings, target_ratio=compression_ratio)
+        assert result.actual_fidelity >= 0.95, f"Fidelity {result.actual_fidelity} < 0.95"
+        # Ratio may be lower than target if fidelity constraint active
+        print(f"Target {compression_ratio}x → Actual {result.compression_ratio:.1f}x @ {result.actual_fidelity:.3f}")
+```
 
 ## References
 
 - Kusupati et al. "Matryoshka Representation Learning" (NeurIPS 2022)
 - Ma et al. "BitNet b1.58" (arXiv:2402.17764)
-- QINCo2 (Meta AI, ICLR 2025)
+- QINCo2 (Meta AI, ICLR 2025, arXiv:2501.03078)
 - Ramsauer et al. "Hopfield Networks is All You Need" (arXiv:2008.02217)
+- Howard & Kahana "Temporal Context Model" (2002)
 - torchhd library: https://github.com/hyperdimensional-computing/torchhd
 - vector-quantize-pytorch: https://github.com/lucidrains/vector-quantize-pytorch
+- embeddenator-core: Sister project for embedding compression primitives
 
 ---
 
-*Authored: 2026-01-18 | Supersedes: None | Related: ADR-0002*
+*Authored: 2026-01-19 | Supersedes: None | Related: ADR-0002, ADR-0004*

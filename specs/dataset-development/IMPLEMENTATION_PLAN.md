@@ -711,8 +711,164 @@ class ModernHopfieldLayer(nn.Module):
 | Phase 1 | 0.85-0.90 | Baseline | 🔴 Not started |
 | Phase 2 | 0.88-0.97 | 4x-12x | 🔴 Not started |
 | Phase 3 | 0.95-0.97 | 8x-16x | 🔴 Not started |
-| Phase 4 | **≥0.95** | **4x-20x** | 🔴 Not started |
+| Phase 4 | **≥0.95** | **4x-20x (adjustable)** | 🔴 Not started |
 | Phase 5 | Brain-inspired | + VSA | 🔴 Not started |
+
+---
+
+## Adjustable Compression API Design
+
+The key innovation is **fidelity-first compression** where the hard constraint is fidelity (≥0.95) and compression ratio is optimized within that constraint.
+
+### API Usage Examples
+
+```python
+# Initialize with fidelity guarantee
+manager = AdaptiveCompressionManager(
+    target_fidelity=0.95,  # Hard constraint
+    max_compression=20.0,   # Soft target
+)
+
+# Compress with automatic ratio selection
+result = manager.compress(embeddings)
+# result.compression_ratio might be 12x if that's max achieving 0.95
+
+# Compress with specific target (will auto-reduce if needed)
+result = manager.compress(embeddings, target_ratio=16.0)
+# If 16x only achieves 0.92, result.compression_ratio might be 10x
+
+# Check guarantees
+assert result.actual_fidelity >= 0.95  # Always holds
+```
+
+### Compression Curve Precomputation
+
+For efficiency, precompute rate-distortion curves per embedding type:
+
+```python
+@dataclass
+class CompressionCurve:
+    """Precomputed rate-distortion curve."""
+    ratios: list[float]       # [4, 6, 8, 10, 12, 16, 20]
+    fidelities: list[float]   # [0.98, 0.96, 0.95, 0.94, 0.92, 0.90, 0.85]
+    
+    def find_ratio_for_fidelity(self, target: float) -> float:
+        """Find max compression ratio achieving target fidelity."""
+        for ratio, fidelity in zip(self.ratios, self.fidelities):
+            if fidelity >= target:
+                max_ratio = ratio
+        return max_ratio
+
+
+def precompute_curve(
+    manager: AdaptiveCompressionManager,
+    calibration_embeddings: torch.Tensor,
+    ratios: list[float] = [4, 6, 8, 10, 12, 16, 20],
+) -> CompressionCurve:
+    """Precompute rate-distortion curve on calibration set."""
+    fidelities = []
+    for ratio in ratios:
+        result = manager.compress(calibration_embeddings, target_ratio=ratio)
+        fidelities.append(result.actual_fidelity)
+    
+    return CompressionCurve(ratios=ratios, fidelities=fidelities)
+```
+
+---
+
+## Integration with embeddenator-core Ecosystem
+
+The implementation builds on composable primitives from embeddenator sister projects:
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CogSynDelta Memory                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │            AdaptiveCompressionManager                │   │
+│  │  (CogSynDelta integration layer)                    │   │
+│  └─────────────────────────────────────────────────────┘   │
+│           │              │              │                    │
+│           ▼              ▼              ▼                    │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐           │
+│  │embeddenator │ │embeddenator │ │embeddenator │           │
+│  │-calibration │ │-rvq         │ │-vsa         │           │
+│  └─────────────┘ └─────────────┘ └─────────────┘           │
+│           │              │              │                    │
+│           ▼              ▼              ▼                    │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │               embeddenator-core                      │   │
+│  │  (Shared types, interfaces, utilities)              │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                              │
+│  External Dependencies:                                      │
+│  ┌─────────┐ ┌─────────────────────┐ ┌─────────┐          │
+│  │ torchhd │ │vector-quantize-torch│ │ FAISS   │          │
+│  └─────────┘ └─────────────────────┘ └─────────┘          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Testing Strategy
+
+### Unit Tests
+
+```python
+def test_fidelity_guarantee():
+    """CRITICAL: Fidelity guarantee must never be violated."""
+    manager = AdaptiveCompressionManager(target_fidelity=0.95)
+    
+    # Test across various compression targets
+    for target_ratio in [4, 8, 12, 16, 20, 30]:
+        result = manager.compress(test_embeddings, target_ratio=target_ratio)
+        assert result.actual_fidelity >= 0.95, (
+            f"Fidelity guarantee violated: {result.actual_fidelity} < 0.95 "
+            f"at target ratio {target_ratio}"
+        )
+
+
+def test_compression_optimizes_within_constraint():
+    """Verify compression is maximized within fidelity constraint."""
+    manager = AdaptiveCompressionManager(target_fidelity=0.95)
+    
+    # Should achieve close to max compression when data allows
+    easy_result = manager.compress(easy_to_compress_embeddings)
+    assert easy_result.compression_ratio >= 10.0
+    
+    # Should reduce compression for difficult data
+    hard_result = manager.compress(hard_to_compress_embeddings)
+    assert hard_result.actual_fidelity >= 0.95  # Still meets guarantee
+```
+
+### Benchmark Suite
+
+```python
+def benchmark_adjustable_compression():
+    """Benchmark adjustable compression on standard datasets."""
+    datasets = ['allnli', 'msmarco', 'laion_embeddings', 'gist1m']
+    fidelity_targets = [0.90, 0.95, 0.97, 0.99]
+    
+    results = []
+    for dataset in datasets:
+        for target in fidelity_targets:
+            manager = AdaptiveCompressionManager(target_fidelity=target)
+            embeddings = load_benchmark_embeddings(dataset)
+            
+            result = manager.compress(embeddings)
+            results.append({
+                'dataset': dataset,
+                'target_fidelity': target,
+                'actual_fidelity': result.actual_fidelity,
+                'compression_ratio': result.compression_ratio,
+                'method': result.method,
+            })
+    
+    return pd.DataFrame(results)
+```
 
 ---
 
@@ -720,11 +876,12 @@ class ModernHopfieldLayer(nn.Module):
 
 - Kusupati et al. "Matryoshka Representation Learning" (NeurIPS 2022)
 - Ma et al. "BitNet b1.58" (arXiv:2402.17764)
-- QINCo2 (Meta AI, ICLR 2025)
+- QINCo2 (Meta AI, ICLR 2025, arXiv:2501.03078)
 - Ramsauer et al. "Hopfield Networks is All You Need" (arXiv:2008.02217)
 - torchhd: https://github.com/hyperdimensional-computing/torchhd
 - vector-quantize-pytorch: https://github.com/lucidrains/vector-quantize-pytorch
+- embeddenator-core ecosystem: Sister projects for embedding compression
 
 ---
 
-*Last Updated: January 18, 2026*
+*Last Updated: January 19, 2026*

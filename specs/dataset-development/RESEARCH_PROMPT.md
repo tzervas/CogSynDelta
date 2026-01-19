@@ -38,6 +38,45 @@ We need datasets and techniques for:
 
 ---
 
+## 🔧 ADJUSTABLE COMPRESSION RESEARCH NEEDS
+
+**PRIORITY 2**: Design adjustable compression system with fidelity guarantees.
+
+### Core Requirements
+
+1. **Adjustable Compression Ratio**: 4x-20x with configurable target
+2. **Hard Fidelity Constraint**: ≥0.95 cosine similarity (non-negotiable)
+3. **Automatic Fallback**: Reduce compression if fidelity unachievable at target
+4. **Performance Target**: RTX 5080 @ 960 GB/s bandwidth, BF16 operations
+
+### Research Questions for Adjustable Compression
+
+1. **Rate-Distortion Optimization**
+   - How to find optimal compression ratio for given fidelity target?
+   - Binary search vs learned predictor for ratio selection?
+   - How to handle different embedding types (code, text, image)?
+
+2. **Early-Stop Residual Quantization**
+   - Optimal stopping criterion for RVQ stages?
+   - Fidelity prediction without full decode?
+   - Codebook sharing across stages vs independent?
+
+3. **Adaptive Bit Allocation**
+   - Per-dimension importance weighting?
+   - Learned vs heuristic bit allocation?
+   - Dynamic adjustment based on embedding content?
+
+### Integration with embeddenator-core Ecosystem
+
+The implementation builds on the **embeddenator** family of component libraries:
+- **embeddenator-core**: Core embedding compression primitives
+- **embeddenator-vsa**: Vector Symbolic Architecture operations
+- **embeddenator-rvq**: Residual Vector Quantization
+- **embeddenator-calibration**: Adaptive calibration infrastructure
+- **embeddenator-hopfield**: Modern Hopfield Networks
+
+---
+
 ## Context: CogSynDelta Architecture
 
 CogSynDelta is a PCN-VAE-GAN hybrid self-improving AI system with the following core components:
@@ -611,6 +650,90 @@ QUESTIONS:
 Provide PyTorch implementation with type hints and Google-style docstrings.
 ```
 
+### Prompt 8: Dataset Curation for Maximum Retrieval Accuracy
+```
+The current 0.65 overall retrieval accuracy is wasting resources with the current methodology.
+We need datasets optimized for maximum retrieval accuracy, not just compression fidelity.
+
+REQUIREMENTS:
+- Retrieval accuracy: ≥0.90 Recall@10 at 10x compression
+- Semantic preservation across compression
+- Domain coverage: code, text, multimodal
+
+RESEARCH QUESTIONS:
+1. Which datasets produce highest-quality retrieval models?
+   - AllNLI for contrastive training
+   - MS MARCO for passage retrieval
+   - BEIR for cross-domain evaluation
+
+2. Data cleaning for retrieval quality:
+   - Removing near-duplicates that confuse similarity
+   - Hard negative mining strategies
+   - Curriculum learning from easy to hard pairs
+
+3. How to balance fidelity vs retrieval accuracy?
+   - Sometimes lower fidelity gives better retrieval (regularization)
+   - Optimal training objectives for retrieval
+   - Multi-task training strategies
+
+4. Domain-specific calibration:
+   - Code embeddings vs text embeddings
+   - Different quantization ranges per domain
+   - Transfer learning between domains
+
+5. Evaluation protocol:
+   - Which benchmarks best predict real-world retrieval?
+   - How to detect overfitting to specific benchmarks?
+   - Continuous evaluation during training
+
+Provide dataset recommendations and training recipes.
+```
+
+---
+
+## 🧠 VSA and Holographic Computing Section
+
+Based on exhaustive research, the following techniques provide provable fidelity guarantees:
+
+### Vector Symbolic Architectures (VSA)
+
+**Key Properties for CogSynDelta:**
+- Quasi-orthogonality in high dimensions (~10,000) ensures minimal interference
+- Binding operations are invertible (enables reconstruction)
+- Bundling provides superposition storage (multiple items in one vector)
+- Capacity bounds: n ≥ k / (1 - S²) × log(M) for k items, M codebook, S fidelity
+
+**Recommended Operations:**
+
+| VSA Type | Operation | Fidelity | Use Case |
+|----------|-----------|----------|----------|
+| **MAP-B** | Hadamard (x⊙y) | 100% | Temporal binding |
+| **FHRR** | Complex mult | 100% | Phase-based binding |
+| **HRR** | Circular conv | ~95% @ d=10K | Scalable binding |
+| **BSC** | XOR | 100% | Binary codes |
+
+### Modern Hopfield Networks
+
+**Exponential Capacity:** Storage capacity ~2^(d/2) patterns (vs d/4log(d) for classical)
+**One-Step Convergence:** Update rule equivalent to transformer attention
+**Integration:** Replace active memory tier with Modern Hopfield layer
+
+```python
+# Modern Hopfield energy with log-sum-exp
+def energy(state, patterns, beta=8.0):
+    dots = torch.mm(state, patterns.T) * beta
+    lse = torch.logsumexp(dots, dim=-1)
+    return -lse / beta + 0.5 * (state ** 2).sum(dim=-1)
+```
+
+### Implementation Libraries
+
+| Library | Stars | Features | CogSynDelta Use |
+|---------|-------|----------|-----------------|
+| **torchhd** | 600+ | GPU VSA ops | Short-term memory |
+| **vector-quantize-pytorch** | 3.7K | RVQ, FSQ, LFQ | Compression |
+| **hopfield-layers** | 1K+ | Modern Hopfield | Active memory |
+
 ---
 
 ## Sister Projects (embeddenator-core ecosystem)
@@ -619,10 +742,36 @@ The following libraries form the embeddenator-core ecosystem for high-fidelity e
 
 | Library | Purpose | License | URL |
 |---------|---------|---------|-----|
+| **embeddenator-core** | Core compression primitives | Proprietary | Sister project |
+| **embeddenator-vsa** | VSA binding/bundling | Proprietary | Sister project |
+| **embeddenator-rvq** | Residual VQ | Proprietary | Sister project |
 | **torchhd** | VSA operations (GPU) | MIT | github.com/hyperdimensional-computing/torchhd |
 | **vector-quantize-pytorch** | RVQ, FSQ, LFQ | MIT | github.com/lucidrains/vector-quantize-pytorch |
 | **sentence-transformers** | Matryoshka models | Apache-2.0 | github.com/UKPLab/sentence-transformers |
 | **FAISS** | Similarity search | MIT | github.com/facebookresearch/faiss |
+
+---
+
+## Critical Datasets Summary
+
+### For Fidelity Recovery (Priority)
+
+| Dataset | Size | License | Purpose | Relevance |
+|---------|------|---------|---------|-----------|
+| **AllNLI** | 1M+ pairs | CC-BY/MIT | Contrastive training | 10/10 |
+| **LAION-5B Embeddings** | 5.85B | CC-BY-4.0 | Codebook learning | 10/10 |
+| **STS Benchmark** | 8.6K pairs | Permissive | Fidelity evaluation | 10/10 |
+| **GIST-1M** | 1M × 960d | CC0 | High-dim quantization | 10/10 |
+| **MTEB Suite** | 58 datasets | Apache-2.0 | Multi-task eval | 10/10 |
+
+### For Retrieval Accuracy
+
+| Dataset | Size | License | Purpose | Relevance |
+|---------|------|---------|---------|-----------|
+| **MS MARCO** | 8.8M passages | MIT | Passage retrieval | 9/10 |
+| **BEIR** | 18 datasets | Apache-2.0 | Cross-domain eval | 9/10 |
+| **Natural Questions** | 300K | Apache-2.0 | QA retrieval | 8/10 |
+| **CodeSearchNet** | 6M | MIT | Code retrieval | 9/10 |
 
 ---
 
@@ -635,5 +784,5 @@ The following libraries form the embeddenator-core ecosystem for high-fidelity e
 
 ---
 
-*Generated: January 18, 2026*
-*Version: 1.1.0 - Updated with compression fidelity recovery focus*
+*Generated: January 19, 2026*
+*Version: 1.2.0 - Updated with adjustable compression, VSA/holographic computing, and embeddenator-core integration*
