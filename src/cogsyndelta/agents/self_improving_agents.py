@@ -456,7 +456,7 @@ class MultiLanguageExplorer(nn.Module):
             impls.append(impl)
 
         # Select best
-        best_idx = torch.stack(scores).argmax().item()  # Get scalar index
+        best_idx = int(torch.stack(scores).argmax().item())  # Get scalar index as int
         best_lang = langs[best_idx]
         best_impl = impls[best_idx]
 

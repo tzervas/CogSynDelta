@@ -13,7 +13,7 @@ After detailed analysis via GitHub API, we have confirmed:
 
 ### Option A: Accept Mixed Verification State (PRAGMATIC)
 
-**Rationale**: 
+**Rationale**:
 - `af0c1c4` was created by GitHub Copilot workspace agent - this is expected bot behavior
 - GitHub Copilot's bot cannot have user GPG keys registered
 - This commit WILL show unverified regardless of what we do

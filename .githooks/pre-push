@@ -10,7 +10,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
         continue
     fi
-    
+
     # Get range of commits to push
     if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
         # New branch, check all commits
@@ -19,11 +19,11 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         # Existing branch, check commits since remote
         range="$remote_sha..$local_sha"
     fi
-    
+
     # Check each commit for GPG signature
     unsigned_commits=$(git log --show-signature "$range" 2>&1 | grep -c "gpg: Good signature" || true)
     total_commits=$(git rev-list --count "$range")
-    
+
     if [ "$unsigned_commits" -lt "$total_commits" ]; then
         echo "❌ ERROR: Not all commits are GPG signed!"
         echo ""

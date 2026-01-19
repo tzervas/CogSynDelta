@@ -142,13 +142,13 @@ graph TB
         VLJEPA[VL-JEPA Extension]
         MHC[mHC Pathways]
     end
-    
+
     subgraph Memory["Tiered Memory"]
         Active[Active Memory]
         Short[Short-term Memory]
         Long[Long-term Memory]
     end
-    
+
     Core --> Memory
 ```
 
