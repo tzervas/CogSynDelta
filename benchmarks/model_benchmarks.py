@@ -24,9 +24,8 @@ import argparse
 import json
 import platform
 import subprocess
-import sys
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -34,11 +33,11 @@ if TYPE_CHECKING:
     pass
 
 __all__ = [
-    "ModelBenchmarkResult",
     "BenchmarkSuite",
+    "InterconnectBenchmark",
+    "ModelBenchmarkResult",
     "PCNVAEGANBenchmark",
     "VLJEPABenchmark",
-    "InterconnectBenchmark",
     "run_full_benchmark",
 ]
 
@@ -50,9 +49,12 @@ HISTORY_DIR = BENCHMARK_DIR / "history"
 
 def get_git_sha() -> str:
     """Get current git commit SHA."""
+    import shutil
+
+    git_path = shutil.which("git") or "/usr/bin/git"
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
+            [git_path, "rev-parse", "--short", "HEAD"],
             capture_output=True,
             text=True,
             check=True,
@@ -78,9 +80,7 @@ def get_hardware_info() -> dict[str, Any]:
         if torch.cuda.is_available():
             info["cuda_version"] = torch.version.cuda
             info["gpu_name"] = torch.cuda.get_device_name(0)
-            info["gpu_memory_gb"] = torch.cuda.get_device_properties(0).total_memory / (
-                1024**3
-            )
+            info["gpu_memory_gb"] = torch.cuda.get_device_properties(0).total_memory / (1024**3)
     except ImportError:
         info["pytorch_version"] = "not installed"
         info["cuda_available"] = False
@@ -94,7 +94,7 @@ def print_methodology_header() -> None:
     print("=" * 80)
     print("COGSYNDELTA MODEL BENCHMARK - METHODOLOGY DISCLOSURE")
     print("=" * 80)
-    print(f"Date: {datetime.now(timezone.utc).isoformat()}")
+    print(f"Date: {datetime.now(UTC).isoformat()}")
     print(f"Git SHA: {get_git_sha()}")
     print(f"Platform: {info['platform']}")
     print(f"Python: {info['python_version']}")
@@ -162,9 +162,7 @@ class ModelBenchmarkResult:
             "timestamp": self.timestamp,
             "git_sha": self.git_sha,
             "hardware": self.hardware,
-            "components": {
-                name: asdict(metrics) for name, metrics in self.components.items()
-            },
+            "components": {name: asdict(metrics) for name, metrics in self.components.items()},
             "summary": self.summary,
         }
 
@@ -257,15 +255,13 @@ class PCNVAEGANBenchmark:
 
             # Latency
             with torch.no_grad():
-                latency = measure_latency(lambda: model(x))
+                latency = measure_latency(lambda _x=x: model(_x))
             metrics.latency_ms[f"forward_bs{batch_size}"] = latency.mean
 
             # Throughput
             with torch.no_grad():
-                throughput = measure_throughput(lambda: model(x), batch_size=batch_size)
-            metrics.throughput[f"samples_per_sec_bs{batch_size}"] = (
-                throughput.samples_per_sec
-            )
+                throughput = measure_throughput(lambda _x=x: model(_x), batch_size=batch_size)
+            metrics.throughput[f"samples_per_sec_bs{batch_size}"] = throughput.samples_per_sec
 
             # Quality (reconstruction fidelity)
             with torch.no_grad():
@@ -301,7 +297,9 @@ class PCNVAEGANBenchmark:
             "bytes_per_param": norm_memory.bytes_per_param,
         }
 
-        print(f"  ✓ PCN-VAE-GAN: {metrics.throughput.get('samples_per_sec_bs32', 0):.0f} samples/sec")
+        print(
+            f"  ✓ PCN-VAE-GAN: {metrics.throughput.get('samples_per_sec_bs32', 0):.0f} samples/sec"
+        )
         return metrics
 
 
@@ -387,15 +385,13 @@ class VLJEPABenchmark:
             x = torch.randn(batch_size, 3, 224, 224, device=actual_device)
 
             with torch.no_grad():
-                latency = measure_latency(lambda: vision_encoder(x))
+                latency = measure_latency(lambda _x=x: vision_encoder(_x))
                 throughput = measure_throughput(
-                    lambda: vision_encoder(x), batch_size=batch_size
+                    lambda _x=x: vision_encoder(_x), batch_size=batch_size
                 )
 
             metrics.latency_ms[f"vision_encoder_bs{batch_size}"] = latency.mean
-            metrics.throughput[f"images_per_sec_bs{batch_size}"] = (
-                throughput.samples_per_sec
-            )
+            metrics.throughput[f"images_per_sec_bs{batch_size}"] = throughput.samples_per_sec
 
         # Temporal memory bank read/write
         print("  Temporal memory bank...")
@@ -494,15 +490,13 @@ class InterconnectBenchmark:
             target = torch.randn(batch_size, 512, device=actual_device)
 
             with torch.no_grad():
-                latency = measure_latency(lambda: gate(source, target))
+                latency = measure_latency(lambda _s=source, _t=target: gate(_s, _t))
                 throughput = measure_throughput(
-                    lambda: gate(source, target), batch_size=batch_size
+                    lambda _s=source, _t=target: gate(_s, _t), batch_size=batch_size
                 )
 
             metrics.latency_ms[f"gate_bs{batch_size}"] = latency.mean
-            metrics.throughput[f"gate_samples_per_sec_bs{batch_size}"] = (
-                throughput.samples_per_sec
-            )
+            metrics.throughput[f"gate_samples_per_sec_bs{batch_size}"] = throughput.samples_per_sec
 
         # Gate activation statistics
         source = torch.randn(100, 512, device=actual_device)
@@ -515,7 +509,9 @@ class InterconnectBenchmark:
             metrics.quality["gate_output_mean"] = output_magnitude.mean().item()
             metrics.quality["gate_output_std"] = output_magnitude.std().item()
 
-        print(f"  ✓ Interconnect: {metrics.throughput.get('gate_samples_per_sec_bs32', 0):.0f} samples/sec")
+        print(
+            f"  ✓ Interconnect: {metrics.throughput.get('gate_samples_per_sec_bs32', 0):.0f} samples/sec"
+        )
         return metrics
 
 
@@ -556,7 +552,7 @@ class BenchmarkSuite:
             components = list(self.benchmarks.keys())
 
         result = ModelBenchmarkResult(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             git_sha=get_git_sha(),
             hardware=get_hardware_info(),
             components={},
@@ -581,9 +577,7 @@ class BenchmarkSuite:
         """Generate summary statistics from results."""
         summary: dict[str, Any] = {
             "total_components": len(result.components),
-            "successful_components": len(
-                [c for c in result.components.values() if c.latency_ms]
-            ),
+            "successful_components": len([c for c in result.components.values() if c.latency_ms]),
         }
 
         # Aggregate key metrics
@@ -642,7 +636,7 @@ def run_full_benchmark(
         if metrics.throughput:
             key = next(
                 (k for k in metrics.throughput if "bs32" in k or "bs8" in k),
-                list(metrics.throughput.keys())[0] if metrics.throughput else None,
+                next(iter(metrics.throughput.keys())) if metrics.throughput else None,
             )
             if key:
                 print(f"  Throughput: {metrics.throughput[key]:.0f} samples/sec")

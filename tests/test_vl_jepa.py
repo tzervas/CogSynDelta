@@ -10,12 +10,10 @@ from __future__ import annotations
 
 import pytest
 import torch
-import torch.nn as nn
+from torch import nn
 
 # Skip all tests if CUDA not available
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA not available"
-)
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 
 
 class TestVisionEncoder:
@@ -225,7 +223,9 @@ class TestHierarchicalPredictiveCoding:
         # HPC returns dict with final_state key
         assert isinstance(output, dict)
         assert "final_state" in output
-        assert output["final_state"].shape == (2, 512), f"Expected (2, 512), got {output['final_state'].shape}"
+        assert output["final_state"].shape == (2, 512), (
+            f"Expected (2, 512), got {output['final_state'].shape}"
+        )
 
     def test_multi_level_processing(self, hpc: nn.Module) -> None:
         """Test that multiple levels are processed."""
