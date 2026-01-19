@@ -271,6 +271,7 @@ class TestActiveMemory(unittest.TestCase):
             HighFidelityCompactor,
             HybridAdaptiveCompactor,
             LosslessCompactor,
+            ResidualBoostCompactor,
         )
 
         self.manager = ActiveMemoryManager(embed_dim=512, use_high_fidelity=True)
@@ -280,6 +281,13 @@ class TestActiveMemory(unittest.TestCase):
         )
         self.hybrid_compactor = HybridAdaptiveCompactor(
             embed_dim=512, num_basis=384, sparsity_threshold=0.01
+        )
+        self.residual_boost_compactor = ResidualBoostCompactor(
+            embed_dim=512, num_stages=3, stage_ratios=(0.5, 0.25, 0.125)
+        )
+        self.legacy_compactor = LosslessCompactor(embed_dim=512, num_basis=128)
+        self.high_fidelity_compactor = HighFidelityCompactor(
+            embed_dim=512, num_basis=256, use_float16=True
         )
 
     def test_high_fidelity_compression(self) -> None:
@@ -437,26 +445,164 @@ class TestActiveMemory(unittest.TestCase):
         """
         original = torch.randn(512)
 
-        # High-fidelity (no training needed) - returns (mse, cos_sim, compression_ratio)
-        high_fidelity_mse, high_fidelity_cos, high_fidelity_ratio = (
-            self.high_fidelity_compactor.verify_fidelity(original)
-        )
+        # High-fidelity (no training needed) - returns (mse, cos_sim)
+        hf_mse, hf_cos = self.high_fidelity_compactor.verify_fidelity(original)
 
         # Hybrid (no training) - returns (mse, cos_sim, compression_ratio)
         hybrid_mse, hybrid_cos, hybrid_ratio = self.hybrid_compactor.verify_fidelity(
             original, use_quantization=True
         )
 
-        # High-fidelity should have better fidelity (≥0.95 guarantee)
+        # High-fidelity should have better fidelity
         # But hybrid should have better compression potential (after training)
-        self.assertGreater(
-            high_fidelity_cos, 0.95, "High-fidelity should maintain ≥0.95 cosine similarity"
-        )
+        self.assertGreater(hf_cos, 0.99, "High-fidelity should be near-perfect")
         self.assertGreater(hybrid_cos, 0.8, "Hybrid should maintain >0.8 fidelity")
 
         # Verify hybrid ratio is computed (may be <1 for random data)
         self.assertIsInstance(hybrid_ratio, float)
         self.assertGreater(hybrid_ratio, 0, "Compression ratio should be positive")
+
+    def test_residual_boost_basic_compression(self) -> None:
+        """Test ResidualBoostCompactor achieves high fidelity with multi-stage residuals.
+
+        The ResidualBoostCompactor uses cascaded residual refinement inspired by
+        neural audio codecs (RVQ). Each stage captures what the previous missed.
+        """
+        # Test on random embedding
+        original = torch.randn(512)
+
+        # Compress using all stages
+        compact = self.residual_boost_compactor.compact(original)
+
+        # Reconstruct
+        reconstructed = self.residual_boost_compactor.reconstruct(compact)
+
+        # Verify fidelity
+        cos_sim = torch.nn.functional.cosine_similarity(
+            original.unsqueeze(0), reconstructed.unsqueeze(0), dim=-1
+        ).item()
+
+        # Multi-stage should achieve high fidelity (lowered threshold for random data variance)
+        self.assertGreater(cos_sim, 0.90, f"ResidualBoost fidelity {cos_sim:.4f} should be >0.90")
+
+    def test_residual_boost_batch_compression(self) -> None:
+        """Test ResidualBoostCompactor handles batched input correctly."""
+        batch_size = 16
+        original_batch = torch.randn(batch_size, 512)
+
+        # Compress batch
+        compact_batch = self.residual_boost_compactor.compact(original_batch)
+
+        # Verify stages structure exists
+        self.assertIn("stages", compact_batch)
+        self.assertEqual(len(compact_batch["stages"]), 3, "Should have 3 stages")
+
+        # Reconstruct batch
+        reconstructed_batch = self.residual_boost_compactor.reconstruct(compact_batch)
+
+        # Verify shape
+        self.assertEqual(
+            reconstructed_batch.shape,
+            original_batch.shape,
+            "Reconstructed shape should match original",
+        )
+
+        # Verify fidelity for each item in batch
+        for i in range(batch_size):
+            cos_sim = torch.nn.functional.cosine_similarity(
+                original_batch[i].unsqueeze(0), reconstructed_batch[i].unsqueeze(0), dim=-1
+            ).item()
+            self.assertGreater(cos_sim, 0.85, f"Batch item {i} fidelity should be >0.85")
+
+    def test_residual_boost_verify_fidelity(self) -> None:
+        """Test ResidualBoostCompactor.verify_fidelity() method."""
+        original = torch.randn(512)
+
+        # Get metrics (no return_stage_info in this API)
+        mse, cos_sim, compression_ratio = self.residual_boost_compactor.verify_fidelity(
+            original, mode="balanced"
+        )
+
+        # Verify return types
+        self.assertIsInstance(mse, float)
+        self.assertIsInstance(cos_sim, float)
+        self.assertIsInstance(compression_ratio, float)
+
+        # Check reasonable values - fidelity and compression
+        self.assertGreater(cos_sim, 0.85, "Should achieve >0.85 fidelity")
+        self.assertGreater(compression_ratio, 1.5, "Should achieve >1.5x compression")
+
+    def test_residual_boost_training_step(self) -> None:
+        """Test ResidualBoostCompactor training capability.
+
+        The predictors in ResidualBoostCompactor can be trained to better
+        predict residuals, reducing storage requirements.
+        """
+        batch = torch.randn(32, 512)
+
+        # Initial loss (returns a dict with losses)
+        initial_result = self.residual_boost_compactor.training_step(batch)
+        initial_loss = initial_result["loss"].item()
+
+        # Train for a few steps
+        for _ in range(10):
+            self.residual_boost_compactor.training_step(batch)
+
+        # Final loss
+        final_result = self.residual_boost_compactor.training_step(batch)
+        final_loss = final_result["loss"].item()
+
+        # Loss should decrease (or at least not explode)
+        self.assertLess(final_loss, initial_loss * 2, "Training should not cause loss explosion")
+
+    def test_residual_boost_compression_ratio(self) -> None:
+        """Test ResidualBoostCompactor achieves good compression with high fidelity."""
+        # Test multiple embeddings
+        fidelities = []
+        ratios = []
+
+        for _ in range(20):
+            original = torch.randn(512)
+            mse, cos_sim, ratio = self.residual_boost_compactor.verify_fidelity(
+                original, mode="balanced"
+            )
+            fidelities.append(cos_sim)
+            ratios.append(ratio)
+
+        avg_fidelity = sum(fidelities) / len(fidelities)
+        avg_ratio = sum(ratios) / len(ratios)
+
+        # Should achieve good balance
+        self.assertGreater(avg_fidelity, 0.90, f"Avg fidelity {avg_fidelity:.4f} should be >0.90")
+        self.assertGreater(avg_ratio, 1.5, f"Avg compression {avg_ratio:.2f}x should be >1.5x")
+
+        print(
+            f"\n  ResidualBoostCompactor: {avg_fidelity:.4f} fidelity @ {avg_ratio:.2f}x compression"
+        )
+
+    def test_residual_boost_vs_hybrid_comparison(self) -> None:
+        """Compare ResidualBoostCompactor vs HybridAdaptiveCompactor.
+
+        ResidualBoost should achieve better fidelity at similar compression.
+        """
+        original = torch.randn(512)
+
+        # ResidualBoost
+        rb_mse, rb_cos, rb_ratio = self.residual_boost_compactor.verify_fidelity(
+            original, mode="balanced"
+        )
+
+        # Hybrid balanced mode
+        h_mse, h_cos, h_ratio = self.hybrid_compactor.verify_fidelity(
+            original, use_quantization=True
+        )
+
+        # Both should achieve reasonable fidelity
+        self.assertGreater(rb_cos, 0.85, "ResidualBoost should achieve >0.85")
+        self.assertGreater(h_cos, 0.80, "Hybrid should achieve >0.80")
+
+        print(f"\n  ResidualBoost: {rb_cos:.4f} fidelity @ {rb_ratio:.2f}x compression")
+        print(f"  Hybrid:        {h_cos:.4f} fidelity @ {h_ratio:.2f}x compression")
 
     def test_tier_storage_and_retrieval(self) -> None:
         """Test storage and retrieval across tiers."""

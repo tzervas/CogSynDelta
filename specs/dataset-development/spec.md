@@ -14,7 +14,7 @@
 
 ## Problem Statement
 
-CogSynDelta's brain-inspired architecture requires specialized datasets for each submodel (brain region) to achieve domain expertise. **CRITICAL**: Current compression fidelity is **0.67** at 2x compression vs target **≥0.95**.
+CogSynDelta's brain-inspired architecture requires specialized datasets for each submodel (brain region) to achieve domain expertise. **CRITICAL**: Current compression fidelity is **0.06** (catastrophic failure) vs target **≥0.95**.
 
 ### Integration with embeddenator-core Ecosystem
 
@@ -31,7 +31,7 @@ The CogSynDelta memory system builds on these composable primitives.
 
 | Issue | Current | Target | Status |
 |-------|---------|--------|--------|
-| Compression fidelity | **0.67 @ 2x** | ≥0.95 | 🔴 CRITICAL |
+| Compression fidelity | **0.06** | ≥0.95 | 🔴 CRITICAL |
 | Compression ratio | 2x | 10-20x | 🟡 Suboptimal |
 | Dataset inventory | None | Systematic | 🔴 Missing |
 | Cleaning pipeline | None | Automated | 🔴 Missing |
@@ -39,7 +39,7 @@ The CogSynDelta memory system builds on these composable primitives.
 
 ### Root Cause Analysis (from exhaustive research)
 
-The 0.67 cosine similarity indicates **significant quantization loss** (from benchmark results):
+The 0.06 cosine similarity indicates **catastrophic quantization failure**:
 1. **Uncalibrated quantization buckets** - ranges don't match embedding distribution
 2. **Insufficient bit-width** for differential signals
 3. **Cumulative error propagation** without correction mechanisms
@@ -47,7 +47,7 @@ The 0.67 cosine similarity indicates **significant quantization loss** (from ben
 
 ## Goals
 
-1. **PRIORITY 1: Fix compression fidelity** from 0.67 → ≥0.95 (critical path)
+1. **PRIORITY 1: Fix compression fidelity** from 0.06 → ≥0.95 (critical path)
 2. **Implement adjustable compression ratio** system (4x-20x with fidelity guarantees)
 3. **Catalog and acquire** high-quality datasets for each brain region
 4. **Design automated pipelines** for cleaning, enrichment, and quality control
@@ -130,7 +130,7 @@ Based on state-of-the-art research (QINCo2, Matryoshka, BitNet):
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │  Stage 1: CALIBRATION (0.67 → 0.85-0.90)             │  │
+│  │  Stage 1: CALIBRATION (0.06 → 0.85-0.90)             │  │
 │  │  • Compute per-dimension min/max/mean/std on 10K+    │  │
 │  │  • Store calibration ranges per embedding type       │  │
 │  │  • Use calibrated ranges for quantization buckets    │  │
@@ -268,7 +268,7 @@ class DataQualityPipeline:
 def calibrate_quantization_ranges(embeddings: torch.Tensor, n_samples: int = 10000):
     """CRITICAL: Compute calibration statistics before any quantization.
 
-    The 0.67 fidelity (from benchmarks) is caused by uncalibrated quantization.
+    The 0.06 fidelity is caused by uncalibrated quantization.
     This function computes proper ranges per dimension.
     """
     sample = embeddings[:n_samples]
@@ -306,7 +306,7 @@ def calibrate_quantization_ranges(embeddings: torch.Tensor, n_samples: int = 100
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| **Fidelity stays at 0.67** | CRITICAL | Calibration + staged approach |
+| **Fidelity stays at 0.06** | CRITICAL | Calibration + staged approach |
 | License contamination | High | Automated audit + legal review |
 | Data quality drift | Medium | Continuous monitoring |
 | Storage costs | Medium | Tiered storage + compression |
@@ -318,7 +318,7 @@ def calibrate_quantization_ranges(embeddings: torch.Tensor, n_samples: int = 100
 
 | Task | Risk | Expected Fidelity |
 |------|------|-------------------|
-| Implement calibration-based quantization | Low | 0.67 → 0.85-0.90 |
+| Implement calibration-based quantization | Low | 0.06 → 0.85-0.90 |
 | Add fidelity monitoring with threshold alerts | Low | Continuous |
 | Deploy int8 scalar quantization | Low | Baseline |
 | Test with pre-trained Matryoshka model | Low | Validate approach |
