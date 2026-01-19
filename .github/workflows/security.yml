@@ -24,7 +24,9 @@ env:
 
 jobs:
   # CodeQL Static Analysis (SAST)
-  # Requires Code Scanning to be enabled in repo: Settings > Security > Code scanning
+  # NOTE: CodeQL analysis runs successfully but upload requires GitHub Advanced Security (GHAS)
+  # For private repos without GHAS, set ENABLE_CODEQL_UPLOAD='false' to skip upload step
+  # Analysis results are saved as artifacts when upload is disabled
   codeql:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
@@ -57,8 +59,19 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:python"
-          # Upload to GitHub Security tab only (private)
-          upload: true
+          # Only upload if GHAS is enabled (requires paid GHAS for private repos)
+          # Set ENABLE_CODEQL_UPLOAD='true' in repo variables if GHAS is available
+          upload: ${{ vars.ENABLE_CODEQL_UPLOAD == 'true' }}
+          # Save SARIF results as artifact when upload is disabled
+          output: sarif-results
+
+      - name: Upload SARIF as artifact (when GHAS upload disabled)
+        if: ${{ vars.ENABLE_CODEQL_UPLOAD != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif-results
+          path: sarif-results
+          retention-days: 30
 
   # Dependency Review (PR only)
   # Requires GitHub Advanced Security (paid for private repos)
