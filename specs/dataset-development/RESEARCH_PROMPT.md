@@ -4,6 +4,40 @@
 
 ---
 
+## 🔴 CRITICAL: Compression Fidelity Crisis
+
+**PRIORITY 1**: Current compression fidelity is **0.06** (catastrophic failure) vs target **≥0.95**.
+
+### Problem Statement
+The hippocampus memory system's dense differential encoding achieves only 0.06 cosine similarity between original and reconstructed embeddings. This is essentially random noise (orthogonal vectors have ~0 similarity).
+
+### Root Causes Identified
+1. **Uncalibrated quantization** - Fixed ranges don't match embedding distribution
+2. **Insufficient bit-width** for differential signals
+3. **Cumulative error propagation** without correction
+4. **Distribution mismatch** - Assumes Gaussian, actual may be heavy-tailed
+
+### Research Requirements for Fidelity Recovery
+
+We need datasets and techniques for:
+
+1. **Calibration Data**: Representative corpus of ≥10,000 embeddings to compute per-dimension statistics
+2. **Matryoshka Training Data**: AllNLI, MS MARCO for multi-scale contrastive learning
+3. **Codebook Learning Data**: LAION-5B pre-computed embeddings for RVQ training
+4. **Evaluation Benchmarks**: STS Benchmark, MTEB, ANN-Benchmarks with ground truth
+
+### Achievable Fidelity Targets
+
+| Compression | Fidelity | Technique | Status |
+|-------------|----------|-----------|--------|
+| 4x | 0.97-0.99 | Scalar quant / Matryoshka | ✅ Achievable |
+| 8x | 0.95-0.98 | OPQ, Matryoshka MRL | ✅ Achievable |
+| 16x | 0.90-0.95 | QINCo2, RVQ, BitNet | ✅ Achievable |
+| 24x | 0.85-0.92 | PQ with rescoring | ⚠️ Challenging |
+| 100x | <0.70 | Not demonstrated | ❌ Not achievable |
+
+---
+
 ## Context: CogSynDelta Architecture
 
 CogSynDelta is a PCN-VAE-GAN hybrid self-improving AI system with the following core components:
@@ -120,23 +154,50 @@ For each brain region/submodel, identify and design datasets for:
 - How to evaluate reasoning quality?
 - Synthetic planning problem generation?
 
-#### 4. Hippocampus (Memory System)
+#### 4. Hippocampus (Memory System) 🔴 CRITICAL
 **Training Objectives:**
-- Dense embedding compression (10-100x)
+- Dense embedding compression (10-20x with ≥0.95 fidelity)
 - Semantic similarity preservation
 - Temporal context encoding
+- **Adjustable compression ratio** with fidelity guarantees
 
 **Dataset Requirements:**
-- Embedding datasets with similarity labels
+- **AllNLI** (1M+ pairs) - Primary for contrastive training
+- **LAION-5B Embeddings** (5.85B) - Codebook learning at scale
+- **GIST-1M** (960d vectors) - High-dimensional PQ training
+- **STS Benchmark** (8.6K pairs) - Fidelity evaluation with continuous scores
+- **MTEB Suite** (58 datasets) - Multi-task evaluation
 - Sequential data for temporal modeling
 - Reference ↔ delta encoding examples
 - Knowledge graph triples
 
 **Research Questions:**
-- How to train for >0.95 fidelity at high compression?
-- Evaluation metrics for memory quality?
+- **How to achieve ≥0.95 fidelity at 10x compression?** (Matryoshka + RVQ)
+- **What calibration data is needed?** (≥10K representative embeddings per domain)
+- How to implement adjustable compression with fidelity guarantees?
+- Optimal residual quantizer configuration (stages, codebook size)?
+- How to integrate VSA/holographic techniques for brain-inspired memory?
+- Evaluation metrics for memory quality (Spearman ρ, Recall@K)?
 - How to handle catastrophic forgetting?
-- Dataset for differential encoding?
+- Dataset for differential encoding with proper calibration?
+
+**Key Techniques to Research:**
+1. **Matryoshka Representation Learning** (Kusupati et al. NeurIPS 2022)
+   - Multi-scale loss: `Total_Loss = Σ(weight_i × Loss(embedding[:dim_i]))`
+   - Pre-trained: `tomaarsen/mpnet-base-nli-matryoshka`, `nomic-embed-text-v1`
+
+2. **Residual Vector Quantization** (vector-quantize-pytorch)
+   - 4-8 residual stages, 256-1024 codebook size
+   - Stop when target fidelity achieved
+
+3. **BitNet b1.58** (Ma et al. arXiv:2402.17764)
+   - Balanced ternary {-1, 0, +1} achieves 100% fidelity at 16x
+   - Requires quantization-aware training
+
+4. **Vector Symbolic Architectures** (torchhd library)
+   - Modern Hopfield Networks for exponential capacity
+   - VSA binding for temporal context
+   - Dimension ≥10,000 for reliable operations
 
 #### 5. Interconnect Manager (mHC)
 **Training Objectives:**
@@ -348,18 +409,64 @@ Please provide research and recommendations on:
 
 ## Success Metrics
 
-| Metric | Target |
-|--------|--------|
-| Dataset coverage per submodel | ≥ 10M examples |
-| Data quality score | ≥ 0.9 |
-| Deduplication rate | ≤ 5% duplicates |
-| License compliance | 100% |
-| Processing throughput | ≥ 1TB/hour |
-| Compression fidelity | ≥ 0.95 @ 10x |
+| Metric | Target | Priority |
+|--------|--------|----------|
+| **Compression fidelity** | **≥ 0.95 @ 10x** | 🔴 P0 |
+| **Adjustable compression** | 4x-20x | 🔴 P0 |
+| Dataset coverage per submodel | ≥ 10M examples | 🟡 P1 |
+| Data quality score | ≥ 0.9 | 🟡 P1 |
+| Deduplication rate | ≤ 5% duplicates | 🟢 P2 |
+| License compliance | 100% | 🟢 P2 |
+| Processing throughput | ≥ 1TB/hour | 🟢 P2 |
 
 ---
 
 ## Research Prompts for External Models
+
+### Prompt 0: CRITICAL - Compression Fidelity Recovery
+```
+We have a CRITICAL compression fidelity crisis in our brain-inspired memory system:
+
+CURRENT STATE:
+- Cosine similarity fidelity: 0.06 (catastrophic - essentially random noise)
+- Target: ≥0.95 fidelity at 10x compression
+- Architecture: Dense differential encoding with adaptive quantization
+
+ROOT CAUSES IDENTIFIED:
+1. Uncalibrated quantization buckets (fixed ranges don't match distribution)
+2. Insufficient bit-width for differential signals
+3. Cumulative error propagation without correction
+4. Distribution mismatch (assumes Gaussian, may be heavy-tailed)
+
+RESEARCH QUESTIONS:
+1. What is the optimal calibration procedure for embedding quantization?
+   - How many samples needed? (we think ≥10K)
+   - Per-dimension vs global statistics?
+   - Percentile-based ranges vs min/max?
+
+2. For Matryoshka Representation Learning:
+   - What training data achieves best multi-scale fidelity?
+   - Optimal dimension truncation points for 10x compression?
+   - How to combine with existing encoder architecture?
+
+3. For Residual Vector Quantization:
+   - Optimal number of stages for ≥0.95 fidelity?
+   - Codebook size vs fidelity tradeoff?
+   - How to train codebooks on domain-specific data?
+
+4. For adjustable compression with fidelity guarantees:
+   - How to implement early-stopping when target fidelity achieved?
+   - Fallback strategies when lossy compression insufficient?
+   - Real-time fidelity monitoring approaches?
+
+5. For VSA/holographic integration:
+   - Modern Hopfield vs traditional for active memory?
+   - VSA binding operations for temporal context?
+   - torchhd vs custom implementation tradeoffs?
+
+Provide specific implementation recommendations with code examples where applicable.
+Reference state-of-the-art techniques: QINCo2, BitNet b1.58, Matryoshka MRL.
+```
 
 ### Prompt 1: Dataset Discovery
 ```
@@ -406,15 +513,116 @@ Design a curriculum learning strategy for training the Language Cortex that:
 Include data selection criteria for each phase.
 ```
 
-### Prompt 5: Embedding Quality Evaluation
+### Prompt 5: Embedding Quality Evaluation (Updated for Fidelity Crisis)
 ```
-For the Hippocampus memory system targeting >0.95 fidelity at 10x compression:
+For the Hippocampus memory system with CRITICAL fidelity crisis (0.06 current vs 0.95 target):
+
 1. What evaluation metrics best capture semantic preservation?
-2. How to construct evaluation datasets?
-3. What baseline approaches achieve this target?
-4. How to detect and measure catastrophic forgetting?
-5. Recommended training strategies for compression models?
+   - Cosine similarity (current metric showing 0.06)
+   - Spearman correlation on STS Benchmark
+   - Recall@K on ANN-Benchmarks
+   - MTEB multi-task evaluation
+
+2. How to construct calibration datasets?
+   - Minimum samples needed (≥10K recommended)
+   - Per-dimension vs global statistics
+   - Domain-specific calibration sets
+
+3. What techniques achieve ≥0.95 fidelity at 10x compression?
+   - Matryoshka Representation Learning (truncation-based)
+   - Residual Vector Quantization (4-8 stages)
+   - BitNet b1.58 balanced ternary
+   - Calibrated scalar quantization as baseline
+
+4. How to implement adjustable compression with guarantees?
+   - Early stopping when target fidelity achieved
+   - Fallback to lower compression if needed
+   - Real-time fidelity monitoring
+
+5. Training strategies for compression models?
+   - Contrastive training on AllNLI
+   - Codebook learning on LAION embeddings
+   - Multi-scale loss for Matryoshka
 ```
+
+### Prompt 6: VSA and Holographic Memory Integration
+```
+For integrating Vector Symbolic Architectures into brain-inspired memory:
+
+CONTEXT:
+- Active memory tier needs exponential capacity
+- Short-term memory needs temporal context binding
+- Long-term memory needs compressed similarity search
+- Target: brain-inspired Complementary Learning Systems
+
+RESEARCH QUESTIONS:
+1. Modern Hopfield Networks vs traditional Hopfield for active memory?
+   - Capacity bounds (2^(d/2) claimed for modern)
+   - One-step convergence properties
+   - Integration with transformer attention
+
+2. VSA binding operations comparison:
+   - MAP-B (Hadamard product) - 100% reconstruction
+   - FHRR (complex multiplication) - 100% with unit phasors
+   - HRR (circular convolution) - ~95% at d=10,000
+   - Which is best for temporal context?
+
+3. torchhd library capabilities:
+   - GPU acceleration support
+   - Pre-built binding/bundling operations
+   - Integration patterns with PyTorch
+
+4. Hybrid architecture design:
+   - VSA for associative pre-filtering
+   - FAISS for precise similarity search
+   - How to combine for 10-100x search speedup?
+
+5. Dimension requirements:
+   - Minimum d for reliable VSA operations
+   - Memory/compute tradeoffs
+   - Compression from high-d VSA to storage
+
+Provide implementation recommendations for RTX 5080 (16GB GDDR7, CUDA 12.8).
+```
+
+### Prompt 7: Adjustable Compression System Design
+```
+Design an adjustable compression system for embeddings with fidelity guarantees:
+
+REQUIREMENTS:
+- Compression ratios: 4x to 20x (adjustable)
+- Fidelity guarantee: ≥0.95 cosine similarity
+- If target ratio would violate fidelity, auto-reduce compression
+- Real-time fidelity monitoring and alerting
+
+ARCHITECTURE:
+1. Calibration layer (per-dimension statistics)
+2. Matryoshka layer (dimension truncation)
+3. RVQ layer (residual quantization stages)
+4. Fidelity monitor (continuous checking)
+
+QUESTIONS:
+1. API design for adjustable compression?
+2. How to precompute compression curves per embedding type?
+3. Fallback strategies when lossy insufficient?
+4. Batch vs single-embedding optimization?
+5. GPU kernel optimization for RTX 5080?
+
+Provide PyTorch implementation with type hints and Google-style docstrings.
+```
+
+---
+
+## Sister Projects (embeddenator-core ecosystem)
+
+The following libraries form the embeddenator-core ecosystem for high-fidelity embedding compression:
+
+| Library | Purpose | License | URL |
+|---------|---------|---------|-----|
+| **torchhd** | VSA operations (GPU) | MIT | github.com/hyperdimensional-computing/torchhd |
+| **vector-quantize-pytorch** | RVQ, FSQ, LFQ | MIT | github.com/lucidrains/vector-quantize-pytorch |
+| **sentence-transformers** | Matryoshka models | Apache-2.0 | github.com/UKPLab/sentence-transformers |
+| **FAISS** | Similarity search | MIT | github.com/facebookresearch/faiss |
 
 ---
 
@@ -428,4 +636,4 @@ For the Hippocampus memory system targeting >0.95 fidelity at 10x compression:
 ---
 
 *Generated: January 18, 2026*
-*Version: 1.0.0*
+*Version: 1.1.0 - Updated with compression fidelity recovery focus*
