@@ -1,0 +1,52 @@
+#!/bin/bash
+# Pre-push hook: Verify all commits in push range are GPG signed
+#
+# Install: cp .github/hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+
+set -e
+
+# Read stdin for push info
+while read local_ref local_sha remote_ref remote_sha; do
+    # Skip delete operations
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        continue
+    fi
+
+    # Determine range to check
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        # New branch - check all commits
+        range="$local_sha"
+    else
+        # Existing branch - check only new commits
+        range="$remote_sha..$local_sha"
+    fi
+
+    # Check each commit in range
+    unsigned_commits=()
+    for commit in $(git rev-list "$range" 2>/dev/null); do
+        sig_status=$(git log -1 --format="%G?" "$commit")
+        if [ "$sig_status" != "G" ] && [ "$sig_status" != "U" ]; then
+            unsigned_commits+=("$commit")
+        fi
+    done
+
+    if [ ${#unsigned_commits[@]} -gt 0 ]; then
+        echo "❌ ERROR: Found unsigned commits!"
+        echo ""
+        for commit in "${unsigned_commits[@]}"; do
+            echo "  $(git log -1 --format='%h %s' "$commit")"
+        done
+        echo ""
+        echo "To sign commits:"
+        echo "  git rebase -i $remote_sha --exec 'git commit --amend --no-edit -S'"
+        echo ""
+        echo "Or amend the last commit:"
+        echo "  git commit --amend -S"
+        echo ""
+        echo "To bypass (not recommended):"
+        echo "  git push --no-verify"
+        exit 1
+    fi
+done
+
+exit 0
