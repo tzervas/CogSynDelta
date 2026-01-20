@@ -1,6 +1,6 @@
 # Branch Status Tracker
 
-**Last Updated:** January 19, 2026
+**Last Updated:** January 20, 2026
 
 This document tracks the status of all active branches, their merge status, and pending work.
 
@@ -141,9 +141,23 @@ main (production)
 - HighFidelityCompactor (≥0.95 cosine similarity)
 - HybridAdaptiveCompactor (multi-mode compression)
 - ResidualBoostCompactor
-- Benchmark improvements
+- LosslessCompactor (OOM protection for <24GB GPUs)
+- Benchmark improvements:
+  - Fixed PCN_VAE_GAN, InterconnectManager, mHCGate import errors
+  - Added OOM protection for LosslessCompactor
+  - Fixed CompactorAdapter for DenseEmbeddingEncoder encode/decode
+  - **NEW**: Untrained model detection (fidelity < 0.3 flagged)
+  - **NEW**: Detailed statistics report (`--detailed` flag)
+  - **NEW**: Benchmark visualization with sparklines and trends
+- Context-efficient memory techniques:
+  - ChunkedCompactor (memory-efficient chunked processing)
+  - ImportanceContextPruner (ToMe-inspired token pruning)
+  - LatentCache (LRU caching with invalidation)
+- ADRs:
+  - ADR-0015: Context-Efficient Memory Techniques
+  - ADR-0016: Model Training Roadmap
 
-**Status:** Active development
+**Status:** Active development - benchmark infrastructure complete
 
 ---
 

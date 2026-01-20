@@ -96,6 +96,8 @@ class CompactorAdapter:
         self._has_compress = hasattr(compactor, "compress")
         self._has_compact = hasattr(compactor, "compact")
         self._has_encode = hasattr(compactor, "encode")
+        self._has_decode = hasattr(compactor, "decode")
+        self._has_reconstruct = hasattr(compactor, "reconstruct")
 
     def compress(self, embeddings: torch.Tensor) -> torch.Tensor | dict[str, Any]:
         """Compress embeddings using the compactor's native method."""
@@ -104,7 +106,11 @@ class CompactorAdapter:
         if self._has_compact:
             return self._compactor.compact(embeddings)  # type: ignore[union-attr]
         if self._has_encode:
-            return self._compactor.encode(embeddings)  # type: ignore[union-attr]
+            # DenseEmbeddingEncoder returns (dense, residual) tuple - wrap as dict
+            result = self._compactor.encode(embeddings)  # type: ignore[union-attr]
+            if isinstance(result, tuple):
+                return {"dense": result[0], "residual": result[1]}
+            return result
         msg = f"Compactor {type(self._compactor).__name__} has no compress/compact/encode method"
         raise AttributeError(msg)
 
@@ -112,7 +118,13 @@ class CompactorAdapter:
         self, compressed: torch.Tensor | dict[str, Any]
     ) -> torch.Tensor:
         """Reconstruct embeddings from compressed representation."""
-        return self._compactor.reconstruct(compressed)  # type: ignore[union-attr]
+        # Handle DenseEmbeddingEncoder which uses decode() instead of reconstruct()
+        if self._has_decode and isinstance(compressed, dict) and "dense" in compressed:
+            return self._compactor.decode(compressed["dense"], compressed["residual"])  # type: ignore[union-attr]
+        if self._has_reconstruct:
+            return self._compactor.reconstruct(compressed)  # type: ignore[union-attr]
+        msg = f"Compactor {type(self._compactor).__name__} has no reconstruct/decode method"
+        raise AttributeError(msg)
 
     def eval(self) -> "CompactorAdapter":
         """Set compactor to eval mode."""
@@ -165,6 +177,7 @@ class CompressionResult:
     embed_dim: int
     timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     metadata: dict[str, Any] = field(default_factory=dict)
+    notes: str = ""  # Warnings, annotations (e.g., "untrained model")
 
     def to_json(self) -> str:
         """Convert result to JSON string.
@@ -230,15 +243,103 @@ class BenchmarkSuite:
             Markdown-formatted table of results.
         """
         lines = [
-            "| Compactor | Fidelity | Compression | Latency (ms) | Target Met |",
-            "|-----------|----------|-------------|--------------|------------|",
+            "| Compactor | Fidelity | Compression | Latency (ms) | Target Met | Notes |",
+            "|-----------|----------|-------------|--------------|------------|-------|",
         ]
         for r in self.results:
             met = "✓" if r.meets_target() else "✗"
+            notes = r.notes if r.notes else "-"
             lines.append(
                 f"| {r.compactor_name} | {r.fidelity_mean:.4f} ± {r.fidelity_std:.4f} | "
-                f"{r.compression_ratio:.2f}x | {r.total_latency_ms:.2f} | {met} |"
+                f"{r.compression_ratio:.2f}x | {r.total_latency_ms:.2f} | {met} | {notes} |"
             )
+        return "\n".join(lines)
+
+    def detailed_stats(self) -> str:
+        """Generate detailed statistics report.
+
+        Includes data volume processed, operation counts, fidelity distribution,
+        and per-compactor breakdown with percentiles.
+
+        Returns:
+            Multi-line detailed statistics string.
+        """
+        if not self.results:
+            return "No results to report."
+
+        # Aggregate stats
+        first = self.results[0]
+        total_samples = first.num_samples * len(self.results)
+        data_volume_mb = (first.num_samples * first.embed_dim * 4) / (1024 * 1024)
+        total_data_mb = data_volume_mb * len(self.results)
+
+        lines = [
+            "=" * 70,
+            "DETAILED BENCHMARK STATISTICS",
+            "=" * 70,
+            "",
+            "## Run Configuration",
+            f"  Device:           {self.device}",
+            f"  PyTorch Version:  {self.torch_version}",
+            f"  CUDA Available:   {self.cuda_available}",
+            f"  Timestamp:        {self.timestamp}",
+            "",
+            "## Data Volume",
+            f"  Samples per test: {first.num_samples:,}",
+            f"  Embedding dim:    {first.embed_dim}",
+            f"  Bytes per sample: {first.embed_dim * 4} (float32)",
+            f"  Data per test:    {data_volume_mb:.2f} MB",
+            f"  Total processed:  {total_data_mb:.2f} MB ({total_samples:,} samples)",
+            "",
+            "## Operation Counts",
+            f"  Compactors tested:      {len(self.results)}",
+            f"  Warmup iterations:      {first.metadata.get('num_warmup', 'N/A')}",
+            f"  Timed iterations:       {first.metadata.get('num_iterations', 'N/A')}",
+            f"  Total compress ops:     {len(self.results) * first.metadata.get('num_iterations', 1)}",
+            f"  Total decompress ops:   {len(self.results) * first.metadata.get('num_iterations', 1)}",
+            "",
+            "## Fidelity Distribution",
+        ]
+
+        fidelities = [r.fidelity_mean for r in self.results]
+        trained = [f for f in fidelities if f >= 0.3]
+        untrained = [f for f in fidelities if f < 0.3]
+
+        lines.extend([
+            f"  Mean (all):       {statistics.mean(fidelities):.4f}",
+            f"  Std (all):        {statistics.stdev(fidelities):.4f}" if len(fidelities) > 1 else "  Std (all):        N/A",
+            f"  Range:            [{min(fidelities):.4f}, {max(fidelities):.4f}]",
+            f"  Trained models:   {len(trained)}",
+            f"  Untrained models: {len(untrained)}",
+            "",
+            "## Per-Compactor Breakdown",
+        ])
+
+        for r in self.results:
+            status = "🟢" if r.meets_target() else ("🟡" if r.fidelity_mean >= 0.5 else "🔴")
+            lines.extend([
+                "",
+                f"  {status} {r.compactor_name}",
+                f"     Fidelity:    {r.fidelity_mean:.4f} ± {r.fidelity_std:.4f}",
+                f"     Min/Max:     {r.fidelity_min:.4f} / {r.fidelity_percentiles.get('p99', 'N/A')}",
+                f"     Percentiles: p50={r.fidelity_percentiles.get('p50', 0):.4f}, "
+                f"p90={r.fidelity_percentiles.get('p90', 0):.4f}, "
+                f"p95={r.fidelity_percentiles.get('p95', 0):.4f}",
+                f"     Compression: {r.compression_ratio:.2f}x",
+                f"     Latency:     compress={r.compress_latency_ms:.2f}ms, "
+                f"decompress={r.decompress_latency_ms:.2f}ms",
+                f"     Memory:      {r.memory_peak_mb:.1f} MB peak",
+                f"     Notes:       {r.notes or 'none'}",
+            ])
+
+        lines.extend([
+            "",
+            "=" * 70,
+            "LEGEND: 🟢 Meets ADR-0008 targets | 🟡 Partial | 🔴 Below threshold",
+            "        untrained = model needs training before production use",
+            "=" * 70,
+        ])
+
         return "\n".join(lines)
 
 
@@ -529,6 +630,14 @@ class CompressionBenchmark:
         # Compute compression ratio
         compression_ratio = compute_compression_ratio(embeddings, compressed)
 
+        # Detect untrained models: fidelity near 0 or negative indicates random output
+        # A trained encoder should achieve > 0.5 fidelity at minimum
+        notes = ""
+        if fidelity["mean"] < 0.3:
+            notes = "untrained"
+            if fidelity["mean"] < 0.0:
+                notes = "untrained (neg)"
+
         return CompressionResult(
             compactor_name=compactor_name,
             fidelity_mean=fidelity["mean"],
@@ -551,6 +660,7 @@ class CompressionBenchmark:
                 "num_iterations": self.num_iterations,
                 "seed": self.seed,
             },
+            notes=notes,
         )
 
     def run_full_suite(
@@ -601,6 +711,11 @@ class CompressionBenchmark:
         """
         compactors: dict[str, nn.Module] = {}
 
+        # Check available GPU memory for OOM protection
+        gpu_memory_gb = 0.0
+        if self.device.startswith("cuda") and torch.cuda.is_available():
+            gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+
         try:
             from cogsyndelta.memory.active_memory import (
                 HighFidelityCompactor,
@@ -618,9 +733,17 @@ class CompressionBenchmark:
             compactors["ResidualBoostCompactor"] = ResidualBoostCompactor(
                 embed_dim=self.embed_dim
             )
-            compactors["LosslessCompactor"] = LosslessCompactor(
-                embed_dim=self.embed_dim
-            )
+            # LosslessCompactor requires ~32GB GPU memory due to quantization tables
+            # Skip on GPUs with less than 24GB to avoid OOM
+            if gpu_memory_gb >= 24.0 or self.device == "cpu":
+                compactors["LosslessCompactor"] = LosslessCompactor(
+                    embed_dim=self.embed_dim
+                )
+            else:
+                print(
+                    f"Note: Skipping LosslessCompactor - requires 24GB+ GPU memory "
+                    f"(available: {gpu_memory_gb:.1f}GB)"
+                )
         except ImportError as e:
             print(f"Warning: Could not import default compactors: {e}")
 
@@ -737,6 +860,11 @@ def main() -> None:
         action="store_true",
         help="Run quick benchmark with fewer samples",
     )
+    parser.add_argument(
+        "--detailed",
+        action="store_true",
+        help="Print detailed statistics report",
+    )
 
     args = parser.parse_args()
 
@@ -750,6 +878,10 @@ def main() -> None:
         suite = benchmark.run_full_suite()
 
     print("\n" + suite.summary_table() + "\n")
+
+    if args.detailed:
+        print(suite.detailed_stats())
+        print()
 
     benchmark = CompressionBenchmark(device=args.device)
     filepath = benchmark.save_results(args.output, suite)

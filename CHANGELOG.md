@@ -15,10 +15,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - License tracking system for dependency compliance
 - Conventional commits enforcement via pre-commit
 - Google-style docstring standards documentation
+- Benchmark visualization module (`benchmarks/visualization.py`)
+  - Sparkline rendering for terminal output
+  - Trend analysis with regression
+  - Markdown and HTML export
+  - **NEW**: Scale indicators with quality tiers (🟢🟡🟠🔴)
+  - **NEW**: Visual progress bars for metrics (`█████░░░░░`)
+  - **NEW**: `ScaledMetricDisplay` for proper unit/scale formatting
+- Context-efficient memory techniques (`cogsyndelta/memory/context_efficient.py`)
+  - ChunkedCompactor for memory-efficient large batch processing
+  - ImportanceContextPruner (ToMe-inspired token merging)
+  - LatentCache with LRU eviction and hash-based invalidation
+- Enhanced benchmark history format (`benchmarks/history_format.py`)
+  - `MetricUnit` and `MetricScale` enums for proper scientific units
+  - `ScaleIndicator` with visual bars and quality tiers
+  - `MetricEntry` with full tagging, provenance, and metadata
+  - `ModelSizeConfig` defining 5 model size tiers (tiny→xlarge)
+  - `RunMetadata` capturing full environment provenance
+  - `EnhancedBenchmarkRecord` for rich persistent storage
+  - **Eco-Minded Metrics** (power & efficiency):
+    - `PowerMetrics`: GPU/CPU power (watts), energy (joules), temperature, throttling detection
+    - `ComputeUtilizationMetrics`: GPU/memory utilization %, clock speeds, SM occupancy
+    - `EfficiencyMetrics`: samples/watt, GFLOPS/watt, CO₂ estimates, cost/1M samples
+    - `PerformanceTrend`: Delta tracking with regression detection
+  - Extended `MetricUnit` enum with power units (W, kW, J, Wh) and efficiency (samples/W, GFLOP/W)
+  - `TYPICAL_RANGES` extended for power, temperature, utilization, and IPC metrics
+  - **Latent Space Metrics** (CogSynDelta-specific):
+    - `LatentSpaceMetrics`: engrams/sec, engrams/watt, encoding fidelity, latent timing
+    - New units: `ENGRAMS_PER_SEC`, `ENGRAMS_PER_WATT`, `BITS_PER_DIM`
+  - **Normalized Comparison Metrics**:
+    - `NormalizedMetrics`: speedup vs baseline, throughput/param, equivalent tokens/sec
+    - Reference baselines: GPT-2 (small/medium/large), LLaMA-7B, ViT-base, ResNet-50
+  - **Diagnostic Metrics** for bottleneck analysis:
+    - `DiagnosticMetrics`: primary bottleneck detection, severity, recommendations
+    - Explains "compute", "memory", "io", "latency" bottlenecks with tuning guidance
+- **NEW**: Modular metrics package (`benchmarks/metrics/`)
+  - `base.py`: `BaseMetric` protocol, `MetricUnit` enum, `MetricRegistry`
+  - `power.py`: `PowerMetrics`, `EcoMetrics` with NVIDIA pynvml integration
+  - `compute.py`: `ComputeUtilizationMetrics` with throttle detection
+  - `latent.py`: `LatentSpaceMetrics` for engram throughput
+  - `normalized.py`: `NormalizedMetrics` for cross-architecture comparison
+  - `diagnostic.py`: `DiagnosticMetrics` for bottleneck analysis
+  - `display.py`: `MetricFormatter`, `ScaledMetricDisplay` for rich output
+- ADR-0015: Context-Efficient Memory Techniques
+- ADR-0016: Model Training Roadmap (5-phase curriculum)
+- ADR-0017: Benchmark Metrics Architecture
 
 ### Changed
 - Moved legacy documentation to `docs/archive/` with tarball preservation
 - Updated project structure for cleaner root directory
+- **Branch Policy**: Explicit "no direct merges to main" policy documented
+  - All work flows: feature/* → develop → staging → main
+  - Merges to staging/main are automated via CI/CD only
+
+### Security
+- Added `pip-audit` to dev dependencies for CVE scanning
+- No known vulnerabilities found in dependency audit (2026-01-19)
+
+### Backlogged
+- **Model Size Cycling**: Infrastructure ready (`ModelSizeConfig`), implementation deferred
+  - 5 size tiers: tiny (1M), small (10M), base (50M), large (200M), xlarge (1B)
+  - Will implement when baseline training is complete
+
+### Fixed
+- **CRITICAL**: Benchmark import errors fixed
+  - `PCN_VAE_GAN` → `PCNVAEGANHybrid` in model benchmarks
+  - `InterconnectManager` → `IntelligentInterconnectManager`
+  - `mHCGate` → `ModeratedHyperConnection`
+- **OOM Protection**: LosslessCompactor now skipped on GPUs < 24GB
+- **DenseEmbeddingEncoder**: CompactorAdapter now handles encode/decode tuple interface
+- **Untrained Model Detection**: Benchmarks now flag fidelity < 0.3 as "untrained"
+- Added detailed statistics report to compression benchmarks (`--detailed` flag)
 
 ## [0.3.2] - 2026-01-19
 

@@ -518,11 +518,16 @@ def validate_performance_claims() -> tuple[
     print("=" * 70)
 
     try:
-        from cogsyndelta.core.pcn_vae_gan import PCN_VAE_GAN
+        from cogsyndelta.core.pcn_vae_gan import PCNVAEGANHybrid
 
-        # Create model
-        config = {"input_dim": 784, "hidden_dim": 256, "latent_dim": 64}
-        model = PCN_VAE_GAN(config)
+        # Create model - load config from YAML
+        import yaml
+        from pathlib import Path
+
+        config_path = Path(__file__).parent.parent / "config" / "config.yaml"
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+        model = PCNVAEGANHybrid(config)
         test_input = torch.randn(1, 784)
 
         # Benchmark
