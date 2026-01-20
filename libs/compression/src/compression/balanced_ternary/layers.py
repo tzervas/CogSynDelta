@@ -32,11 +32,7 @@ class BalancedTernaryLinear(nn.Module):
     """
 
     def __init__(
-        self,
-        in_features: int,
-        out_features: int,
-        bias: bool = True,
-        threshold_mode: str = "mean"
+        self, in_features: int, out_features: int, bias: bool = True, threshold_mode: str = "mean"
     ):
         """Initialize balanced ternary linear layer.
 
@@ -108,7 +104,7 @@ class BalancedTernaryConv2d(nn.Module):
         stride: int = 1,
         padding: int = 0,
         bias: bool = True,
-        threshold_mode: str = "mean"
+        threshold_mode: str = "mean",
     ):
         """Initialize balanced ternary conv layer.
 
@@ -130,9 +126,7 @@ class BalancedTernaryConv2d(nn.Module):
         self.padding = padding
 
         # Float weights for training
-        self.weight = nn.Parameter(
-            torch.randn(out_channels, in_channels, kernel_size, kernel_size)
-        )
+        self.weight = nn.Parameter(torch.randn(out_channels, in_channels, kernel_size, kernel_size))
         nn.init.kaiming_normal_(self.weight)
 
         if bias:
@@ -156,10 +150,7 @@ class BalancedTernaryConv2d(nn.Module):
         weight_ternary = self.quantizer(self.weight)
 
         # Standard conv2d
-        output = F.conv2d(
-            x, weight_ternary, self.bias,
-            stride=self.stride, padding=self.padding
-        )
+        output = F.conv2d(x, weight_ternary, self.bias, stride=self.stride, padding=self.padding)
 
         return output
 
@@ -190,7 +181,7 @@ class BalancedTernaryEmbedding(nn.Module):
         num_embeddings: int,
         embedding_dim: int,
         padding_idx: Optional[int] = None,
-        threshold_mode: str = "mean"
+        threshold_mode: str = "mean",
     ):
         """Initialize balanced ternary embedding.
 
@@ -287,13 +278,7 @@ class BalancedTernaryMLP(nn.Module):
     All weights in {-1, 0, +1} for 10× memory reduction.
     """
 
-    def __init__(
-        self,
-        input_dim: int,
-        hidden_dim: int,
-        output_dim: int,
-        num_layers: int = 3
-    ):
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, num_layers: int = 3):
         """Initialize balanced ternary MLP.
 
         Args:
@@ -340,14 +325,14 @@ class BalancedTernaryMLP(nn.Module):
         total_params = sum(p.numel() for p in self.parameters())
 
         # FP16: 2 bytes per parameter
-        fp16_mb = total_params * 2 / (1024 ** 2)
+        fp16_mb = total_params * 2 / (1024**2)
 
         # Balanced ternary: ~0.2 bytes per parameter
-        ternary_mb = total_params * 0.2 / (1024 ** 2)
+        ternary_mb = total_params * 0.2 / (1024**2)
 
         return {
             "total_params": total_params,
             "fp16_mb": fp16_mb,
             "balanced_ternary_mb": ternary_mb,
-            "compression_ratio": fp16_mb / ternary_mb
+            "compression_ratio": fp16_mb / ternary_mb,
         }

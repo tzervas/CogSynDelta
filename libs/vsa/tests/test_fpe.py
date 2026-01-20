@@ -89,7 +89,9 @@ class TestFractionalPowerEncoding:
         sim_near = encoder_small.cosine_similarity(t0, t1).item()
         sim_far = encoder_small.cosine_similarity(t0, t5).item()
 
-        assert sim_near > sim_far, f"Near similarity {sim_near} should be > far similarity {sim_far}"
+        assert sim_near > sim_far, (
+            f"Near similarity {sim_near} should be > far similarity {sim_far}"
+        )
 
     def test_encode_temporal_api(self, encoder_small):
         """Test the encode_temporal API from technical spec."""
@@ -129,6 +131,7 @@ class TestFractionalPowerEncoding:
 
         torch.cuda.synchronize()
         import time
+
         start = time.perf_counter()
 
         for _ in range(100):

@@ -15,10 +15,9 @@ Quantization Strategies:
 
 import torch
 import torch.nn as nn
-from typing import Tuple, Optional
+from typing import Tuple
 
 from compression.balanced_ternary.arithmetic import (
-    BalancedTernaryArithmetic,
     BalancedTernaryTensor,
     tryte_encode,
 )
@@ -33,10 +32,7 @@ class BalancedTernaryQuantizer(nn.Module):
     """
 
     def __init__(
-        self,
-        threshold_mode: str = "mean",
-        init_threshold: float = 0.1,
-        trits_per_tryte: int = 9
+        self, threshold_mode: str = "mean", init_threshold: float = 0.1, trits_per_tryte: int = 9
     ):
         """Initialize balanced ternary quantizer.
 
@@ -81,9 +77,7 @@ class BalancedTernaryQuantizer(nn.Module):
         return weights + (ternary - weights).detach()
 
     @staticmethod
-    def _quantize_balanced_ternary(
-        weights: torch.Tensor, threshold: torch.Tensor
-    ) -> torch.Tensor:
+    def _quantize_balanced_ternary(weights: torch.Tensor, threshold: torch.Tensor) -> torch.Tensor:
         """Quantize to balanced ternary {-1, 0, 1}.
 
         Args:
@@ -118,7 +112,7 @@ class BalancedTernaryQuantizer(nn.Module):
 
         # Scale to integer range for tryte encoding
         # For 9 trits: range is -9841 to +9841
-        max_value = (3 ** self.trits_per_tryte) // 2  # 9841 for 9 trits
+        max_value = (3**self.trits_per_tryte) // 2  # 9841 for 9 trits
 
         # Scale weights to [-max_value, +max_value]
         weight_range = weights.abs().max()
@@ -175,9 +169,7 @@ class BalancedTernaryCompressor:
 
         return packed, metadata
 
-    def decompress(
-        self, packed: torch.Tensor, metadata: dict
-    ) -> torch.Tensor:
+    def decompress(self, packed: torch.Tensor, metadata: dict) -> torch.Tensor:
         """Decompress balanced ternary back to float.
 
         Args:
@@ -218,9 +210,7 @@ class BalancedTernaryCompressor:
         num_bytes = (num_trits + 4) // 5
 
         packed = torch.zeros(
-            list(shifted_trits.shape[:-1]) + [num_bytes],
-            dtype=torch.uint8,
-            device=trits.device
+            list(shifted_trits.shape[:-1]) + [num_bytes], dtype=torch.uint8, device=trits.device
         )
 
         for i in range(num_bytes):
@@ -253,11 +243,7 @@ class BalancedTernaryCompressor:
         """
         num_trits = (packed.shape[-1] - 1) * 5 + 5  # Upper bound
 
-        unpacked = torch.zeros(
-            original_shape + [num_trits],
-            dtype=torch.int8,
-            device=packed.device
-        )
+        unpacked = torch.zeros(original_shape + [num_trits], dtype=torch.int8, device=packed.device)
 
         for i in range(packed.shape[-1]):
             byte_value = packed[..., i]

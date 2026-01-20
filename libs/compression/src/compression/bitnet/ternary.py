@@ -23,7 +23,6 @@ References:
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from typing import Optional
 
 
@@ -147,19 +146,23 @@ class BitNetb158(nn.Module):
         self.input_proj = nn.Linear(input_dim, hidden_dim)
 
         # Encoder layers
-        self.layers = nn.ModuleList([
-            nn.ModuleDict({
-                "attn": nn.MultiheadAttention(hidden_dim, num_heads=8, batch_first=True),
-                "norm1": nn.LayerNorm(hidden_dim),
-                "ff": nn.Sequential(
-                    nn.Linear(hidden_dim, hidden_dim * 4),
-                    nn.GELU(),
-                    nn.Linear(hidden_dim * 4, hidden_dim),
-                ),
-                "norm2": nn.LayerNorm(hidden_dim),
-            })
-            for _ in range(num_layers)
-        ])
+        self.layers = nn.ModuleList(
+            [
+                nn.ModuleDict(
+                    {
+                        "attn": nn.MultiheadAttention(hidden_dim, num_heads=8, batch_first=True),
+                        "norm1": nn.LayerNorm(hidden_dim),
+                        "ff": nn.Sequential(
+                            nn.Linear(hidden_dim, hidden_dim * 4),
+                            nn.GELU(),
+                            nn.Linear(hidden_dim * 4, hidden_dim),
+                        ),
+                        "norm2": nn.LayerNorm(hidden_dim),
+                    }
+                )
+                for _ in range(num_layers)
+            ]
+        )
 
         # Output projection
         self.output_proj = nn.Linear(hidden_dim, output_dim)

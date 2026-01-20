@@ -22,7 +22,6 @@ References:
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from typing import Tuple
 
 
@@ -74,8 +73,6 @@ class ImplicitCodebook(nn.Module):
         Returns:
             Tuple of (code_indices, quantized_vectors)
         """
-        batch_size = x.shape[0]
-
         # Generate all code vectors
         all_indices = torch.arange(self.codebook_size, device=x.device)
         all_codes = self.forward(all_indices)  # [codebook_size, embedding_dim]
@@ -152,7 +149,11 @@ class QINCo2Compressor(nn.Module):
     """
 
     def __init__(
-        self, embedding_dim: int, num_stages: int = 4, codebook_size: int = 256, hidden_dim: int = 256
+        self,
+        embedding_dim: int,
+        num_stages: int = 4,
+        codebook_size: int = 256,
+        hidden_dim: int = 256,
     ) -> None:
         """Initialize QINCo2 compressor.
 
@@ -172,10 +173,12 @@ class QINCo2Compressor(nn.Module):
         self.first_codebook = ImplicitCodebook(embedding_dim, codebook_size, hidden_dim)
 
         # Subsequent stages: residual-conditioned
-        self.residual_codebooks = nn.ModuleList([
-            ResidualConditionedCodebook(embedding_dim, codebook_size, hidden_dim)
-            for _ in range(num_stages - 1)
-        ])
+        self.residual_codebooks = nn.ModuleList(
+            [
+                ResidualConditionedCodebook(embedding_dim, codebook_size, hidden_dim)
+                for _ in range(num_stages - 1)
+            ]
+        )
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """Encode vectors to code indices (compression).
@@ -233,8 +236,6 @@ class QINCo2Compressor(nn.Module):
         Returns:
             Reconstructed vectors (shape: [batch, embedding_dim])
         """
-        batch_size = indices.shape[0]
-
         # First stage
         reconstructed = self.first_codebook(indices[:, 0])
 

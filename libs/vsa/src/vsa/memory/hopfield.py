@@ -37,7 +37,11 @@ class ModernHopfieldMemory(nn.Module):
     """
 
     def __init__(
-        self, dimension: int, beta: float = 1.0, max_patterns: int | None = None, device: str = "cuda"
+        self,
+        dimension: int,
+        beta: float = 1.0,
+        max_patterns: int | None = None,
+        device: str = "cuda",
     ) -> None:
         """Initialize Modern Hopfield memory.
 
@@ -172,7 +176,6 @@ class ModernHopfieldMemory(nn.Module):
         Returns:
             Approximate capacity (number of patterns)
         """
-        import math
 
         return int(2 ** (self.dimension / 2))
 

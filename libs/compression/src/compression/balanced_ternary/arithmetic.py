@@ -22,7 +22,6 @@ Examples:
 """
 
 import torch
-from typing import Tuple
 
 
 class BalancedTernaryArithmetic:
@@ -241,9 +240,7 @@ class BalancedTernaryMatMul:
 
     @staticmethod
     def matmul(
-        a_trits: torch.Tensor,
-        b_trits: torch.Tensor,
-        trits_per_value: int = 9
+        a_trits: torch.Tensor, b_trits: torch.Tensor, trits_per_value: int = 9
     ) -> torch.Tensor:
         """Matrix multiplication of balanced ternary matrices.
 
@@ -272,10 +269,7 @@ class BalancedTernaryMatMul:
         return c_trits
 
     @staticmethod
-    def optimized_matmul(
-        a_trits: torch.Tensor,
-        b_trits: torch.Tensor
-    ) -> torch.Tensor:
+    def optimized_matmul(a_trits: torch.Tensor, b_trits: torch.Tensor) -> torch.Tensor:
         """Optimized matmul exploiting {-1, 0, 1} values.
 
         Uses shift-add operations instead of multiplications.
@@ -304,16 +298,14 @@ class BalancedTernaryMatMul:
             # Optimized multiply-accumulate
             # Since trits are {-1, 0, 1}, we can use masking and addition
             for k in range(K):
-                a_k = a_t[:, k:k+1]  # [M, 1]
-                b_k = b_t[k:k+1, :]  # [1, N]
+                a_k = a_t[:, k : k + 1]  # [M, 1]
+                b_k = b_t[k : k + 1, :]  # [1, N]
 
                 # Multiply: -1×-1=1, -1×1=-1, etc.
                 contrib = a_k * b_k * power  # [M, N]
 
                 # Accumulate
-                contrib_trits = BalancedTernaryArithmetic.from_decimal(
-                    contrib.flatten(), trits
-                )
+                contrib_trits = BalancedTernaryArithmetic.from_decimal(contrib.flatten(), trits)
                 result += contrib_trits.reshape(M, N, trits)
 
         return result

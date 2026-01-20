@@ -171,7 +171,10 @@ class ResonatorNetwork(nn.Module):
         return self.candidates[best_idx]
 
     def batch_factorize(
-        self, bounds: torch.Tensor, knowns: torch.Tensor, initial_guesses: torch.Tensor | None = None
+        self,
+        bounds: torch.Tensor,
+        knowns: torch.Tensor,
+        initial_guesses: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Factorize multiple bound hypervectors in parallel.
 

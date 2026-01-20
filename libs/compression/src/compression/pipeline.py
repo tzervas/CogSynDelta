@@ -19,7 +19,6 @@ from typing import Dict, Optional, Tuple
 from compression.mrl.matryoshka import MatryoshkaCompressor
 from compression.qinco.codebook import QINCo2Compressor
 from compression.rvq.quantizer import ResidualVectorQuantizer
-from compression.bitnet.ternary import BitNetb158
 from compression.config import CompressionConfig
 
 
@@ -85,9 +84,7 @@ class StagedCompressionPipeline(nn.Module):
         else:
             self.rvq_compressor = None
 
-    def compress(
-        self, embeddings: torch.Tensor
-    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def compress(self, embeddings: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Compress embeddings through all stages.
 
         Args:

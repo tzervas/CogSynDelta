@@ -104,9 +104,7 @@ class FractionalPowerEncoder(nn.Module):
         # Fractional power encoding: bases^t
         return bases**t_expanded
 
-    def encode_temporal(
-        self, base_vector: torch.Tensor, timestamps: torch.Tensor
-    ) -> torch.Tensor:
+    def encode_temporal(self, base_vector: torch.Tensor, timestamps: torch.Tensor) -> torch.Tensor:
         """Encode temporal information using FPE (API from technical spec).
 
         Args:
