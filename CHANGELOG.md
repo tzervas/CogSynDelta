@@ -20,6 +20,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved legacy documentation to `docs/archive/` with tarball preservation
 - Updated project structure for cleaner root directory
 
+## [0.3.2] - 2026-01-19
+
+### Security
+- **CRITICAL**: Updated aiohttp from >=3.11.0 to >=3.13.3
+  - Fixes CVE-2025-30167 (HIGH): Request smuggling via crafted headers
+  - Fixes CVE-2025-32667 (MEDIUM): HTTP response splitting
+  - Fixes 7 additional low/medium severity vulnerabilities in aiohttp <=3.13.2
+
+## [0.3.1] - 2026-01-19
+
+### Added
+- Compression validation test suite (`test_compression_calibration.py`)
+- Research-informed ADRs (0012-0014) for VSA, V-JEPA 2, MRL+QINCo2
+- BitNet 1.58-bit ternary exploration (ADR-0010, specs/ternary-bitnet/)
+
+### Fixed
+- ADR-0008 fidelity baseline corrected from 0.06 to 0.67
+- Validated HighFidelityCompactor achieves 1.0 fidelity at ~2x compression
+
 ## [0.2.0] - 2026-01-18
 
 ### Added
