@@ -1,0 +1,97 @@
+{
+  "timestamp": "2026-01-20T03:05:10.699027+00:00",
+  "git_sha": "1119a06",
+  "hardware": {
+    "platform": "Linux-6.12.63+deb13-amd64-x86_64-with-glibc2.41",
+    "python_version": "3.14.2",
+    "processor": "",
+    "pytorch_version": "2.9.1+cu128",
+    "cuda_available": true,
+    "cuda_version": "12.8",
+    "gpu_name": "NVIDIA GeForce RTX 5080",
+    "gpu_memory_gb": 15.46807861328125
+  },
+  "components": {
+    "pcn-vae-gan": {
+      "name": "PCN-VAE-GAN",
+      "latency_ms": {
+        "forward_bs1": 0.07623429992236197,
+        "forward_bs8": 0.0737257394939661,
+        "forward_bs32": 0.08260201226221398,
+        "forward_bs64": 0.09008561901282519
+      },
+      "throughput": {
+        "samples_per_sec_bs1": 13308.445188175898,
+        "samples_per_sec_bs8": 111696.40939134004,
+        "samples_per_sec_bs32": 391315.33907756524,
+        "samples_per_sec_bs64": 711073.7265881135
+      },
+      "memory_mb": {
+        "peak_allocated": 12.16259765625,
+        "model_size": 2.490325927734375
+      },
+      "quality": {
+        "reconstruction_mse": 1.2637089490890503,
+        "cosine_similarity": -0.003595970571041107,
+        "kl_divergence": 0.8726736307144165
+      },
+      "normalized": {
+        "param_count": 652824,
+        "throughput_per_billion_params": 599419352.0421511,
+        "bytes_per_param": 19.535752362045514
+      }
+    },
+    "vl-jepa": {
+      "name": "VL-JEPA",
+      "latency_ms": {
+        "vision_encoder_bs1": 1.2383174389833584,
+        "vision_encoder_bs4": 2.0970073717762716,
+        "vision_encoder_bs8": 3.535213129071053,
+        "vision_encoder_bs16": 6.102512239885982,
+        "memory_write": 0.04395156924147159,
+        "memory_read": 0.15760652080643922
+      },
+      "throughput": {
+        "images_per_sec_bs1": 810.2742004141161,
+        "images_per_sec_bs4": 1914.4233724344679,
+        "images_per_sec_bs8": 2227.5187971261225,
+        "images_per_sec_bs16": 2539.8373789636676
+      },
+      "memory_mb": {
+        "peak_allocated": 129.603515625,
+        "model_size": 75.0390625
+      },
+      "quality": {},
+      "normalized": {
+        "param_count": 19671040,
+        "throughput_per_billion_params": 113238.48648196143
+      }
+    },
+    "interconnect": {
+      "name": "Interconnect (mHC)",
+      "latency_ms": {
+        "gate_bs1": 0.08202121825888753,
+        "gate_bs8": 0.07594704889925197,
+        "gate_bs32": 0.08056727092480287
+      },
+      "throughput": {
+        "gate_samples_per_sec_bs1": 13260.239927003768,
+        "gate_samples_per_sec_bs8": 109828.65037742612,
+        "gate_samples_per_sec_bs32": 408680.9656068055
+      },
+      "memory_mb": {},
+      "quality": {
+        "gate_output_mean": 11.932761192321777,
+        "gate_output_std": 0.3662455081939697
+      },
+      "normalized": {}
+    }
+  },
+  "summary": {
+    "total_components": 3,
+    "successful_components": 3,
+    "total_parameters": 20323864,
+    "total_parameters_millions": 20.323864,
+    "aggregate_throughput_samples_per_sec": 223752.5785658923
+  }
+}

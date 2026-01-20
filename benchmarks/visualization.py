@@ -25,7 +25,6 @@ Example:
 from __future__ import annotations
 
 import json
-import math
 import statistics
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -39,6 +38,7 @@ __all__ = [
     "AsciiChart",
     "BenchmarkVisualizer",
     "MetricTrend",
+    "ScaledMetricDisplay",
     "SparklineRenderer",
     "TrendReport",
 ]
@@ -57,6 +57,153 @@ STATUS_STABLE = "➡️"
 STATUS_WARNING = "⚠️"
 STATUS_OK = "✅"
 
+# Quality tier indicators
+TIER_EXCELLENT = "🟢"
+TIER_GOOD = "🟡"
+TIER_FAIR = "🟠"
+TIER_POOR = "🔴"
+TIER_UNKNOWN = "⚪"
+
+
+@dataclass
+class ScaledMetricDisplay:
+    """Metric display with proper scale indicators.
+
+    Provides visual context for metric values including:
+    - Formatted value with appropriate unit/scale
+    - Visual bar showing position in typical range
+    - Quality tier indicator
+    """
+
+    name: str
+    value: float
+    formatted: str
+    unit: str
+    bar: str
+    quality_tier: str
+    typical_range: tuple[float, float] | None = None
+    percentile: float | None = None
+
+    @classmethod
+    def create(
+        cls,
+        name: str,
+        value: float,
+        higher_is_better: bool = True,
+    ) -> ScaledMetricDisplay:
+        """Create a scaled metric display.
+
+        Args:
+            name: Metric name.
+            value: Raw value.
+            higher_is_better: Whether higher is better.
+
+        Returns:
+            ScaledMetricDisplay with formatting.
+        """
+        # Determine unit and typical range based on name
+        unit = ""
+        typical_range: tuple[float, float] | None = None
+
+        if "latency" in name.lower() or "_ms" in name.lower():
+            unit = "ms"
+            typical_range = (0.01, 100.0)
+            higher_is_better = False
+        elif "throughput" in name.lower() or "per_sec" in name.lower():
+            unit = "/s"
+            typical_range = (100, 1_000_000)
+        elif "fidelity" in name.lower() or "similarity" in name.lower():
+            unit = ""
+            typical_range = (0.0, 1.0)
+        elif "memory" in name.lower() or "_mb" in name.lower():
+            unit = "MB"
+            typical_range = (1.0, 16000.0)
+            higher_is_better = False
+        elif "gflops" in name.lower():
+            unit = "GFLOP/s"
+            typical_range = (1.0, 500.0)
+        elif "compression" in name.lower() or "ratio" in name.lower():
+            unit = "x"
+            typical_range = (1.0, 100.0)
+
+        # Format value with scale
+        abs_val = abs(value) if value != 0 else 1
+        if abs_val >= 1e9:
+            formatted = f"{value / 1e9:.2f}G{unit}"
+        elif abs_val >= 1e6:
+            formatted = f"{value / 1e6:.2f}M{unit}"
+        elif abs_val >= 1e3:
+            formatted = f"{value / 1e3:.2f}K{unit}"
+        elif abs_val >= 1:
+            formatted = f"{value:.2f}{unit}"
+        elif abs_val >= 1e-3:
+            formatted = f"{value * 1e3:.2f}m{unit}"
+        else:
+            formatted = f"{value:.2e}{unit}"
+
+        # Calculate percentile and quality tier
+        percentile = None
+        quality_tier = "unknown"
+        bar = "░" * 10
+
+        if typical_range:
+            range_min, range_max = typical_range
+            if range_max > range_min:
+                normalized = (value - range_min) / (range_max - range_min)
+                normalized = max(0.0, min(1.0, normalized))
+                percentile = normalized * 100
+
+                # Quality tier
+                if higher_is_better:
+                    if normalized >= 0.9:
+                        quality_tier = "excellent"
+                    elif normalized >= 0.7:
+                        quality_tier = "good"
+                    elif normalized >= 0.4:
+                        quality_tier = "fair"
+                    else:
+                        quality_tier = "poor"
+                    filled = int(normalized * 10)
+                else:
+                    if normalized <= 0.1:
+                        quality_tier = "excellent"
+                    elif normalized <= 0.3:
+                        quality_tier = "good"
+                    elif normalized <= 0.6:
+                        quality_tier = "fair"
+                    else:
+                        quality_tier = "poor"
+                    filled = int((1 - normalized) * 10)
+
+                bar = "█" * filled + "░" * (10 - filled)
+
+        return cls(
+            name=name,
+            value=value,
+            formatted=formatted,
+            unit=unit,
+            bar=bar,
+            quality_tier=quality_tier,
+            typical_range=typical_range,
+            percentile=percentile,
+        )
+
+    def get_tier_icon(self) -> str:
+        """Get emoji icon for quality tier."""
+        return {
+            "excellent": TIER_EXCELLENT,
+            "good": TIER_GOOD,
+            "fair": TIER_FAIR,
+            "poor": TIER_POOR,
+            "unknown": TIER_UNKNOWN,
+        }.get(self.quality_tier, TIER_UNKNOWN)
+
+    def render(self, name_width: int = 40) -> str:
+        """Render as formatted string."""
+        icon = self.get_tier_icon()
+        short_name = self.name.split(".")[-1] if "." in self.name else self.name
+        return f"{icon} {short_name:<{name_width}} {self.bar} {self.formatted:>12}"
+
 
 @dataclass
 class MetricTrend:
@@ -72,6 +219,7 @@ class MetricTrend:
         sparkline: ASCII sparkline representation.
         is_improving: Whether trend is positive.
         higher_is_better: Whether higher values are better for this metric.
+        scale_display: Scaled metric display for current value.
     """
 
     name: str
@@ -83,6 +231,14 @@ class MetricTrend:
     sparkline: str
     is_improving: bool
     higher_is_better: bool = True
+    scale_display: ScaledMetricDisplay | None = None
+
+    def __post_init__(self) -> None:
+        """Generate scale display if not provided."""
+        if self.scale_display is None:
+            self.scale_display = ScaledMetricDisplay.create(
+                self.name, self.current, self.higher_is_better
+            )
 
 
 @dataclass
@@ -568,8 +724,14 @@ class BenchmarkVisualizer:
                 # Short metric name (remove component prefix)
                 short_name = ".".join(m.name.split(".")[1:])
 
+                # Scale display with quality tier
+                scale_str = ""
+                if m.scale_display:
+                    tier = m.scale_display.get_tier_icon()
+                    scale_str = f" {tier}{m.scale_display.bar}"
+
                 print(
-                    f"│ {status} {short_name:<45} "
+                    f"│ {status} {short_name:<35}{scale_str} "
                     f"{m.sparkline} {m.current:>10.2f} ({m.change_pct:+.1f}%)"
                 )
 
@@ -614,8 +776,8 @@ class BenchmarkVisualizer:
             "",
             "## Summary",
             "",
-            f"| Status | Count |",
-            f"|--------|-------|",
+            "| Status | Count |",
+            "|--------|-------|",
             f"| 📈 Improving | {report.summary.get('improving', 0)} |",
             f"| 📉 Degrading | {report.summary.get('degrading', 0)} |",
             f"| ➡️ Stable | {report.summary.get('stable', 0)} |",
@@ -635,14 +797,24 @@ class BenchmarkVisualizer:
         for component, metrics in by_component.items():
             lines.append(f"### {component}")
             lines.append("")
-            lines.append("| Metric | Trend | Current | Change | Sparkline |")
-            lines.append("|--------|-------|---------|--------|-----------|")
+            lines.append(
+                "| Metric | Trend | Current | Scale | Change | Sparkline |"
+            )
+            lines.append(
+                "|--------|-------|---------|-------|--------|-----------|"
+            )
 
             for m in metrics:
                 short_name = ".".join(m.name.split(".")[1:])
                 status = "📈" if m.is_improving else ("📉" if m.trend != "stable" else "➡️")
+                scale_display = m.scale_display
+                if scale_display:
+                    tier_icon = scale_display.get_tier_icon()
+                    scale_str = f"{tier_icon} `{scale_display.bar}`"
+                else:
+                    scale_str = ""
                 lines.append(
-                    f"| {short_name} | {status} | {m.current:.2f} | "
+                    f"| {short_name} | {status} | {m.current:.2f} | {scale_str} | "
                     f"{m.change_pct:+.1f}% | `{m.sparkline}` |"
                 )
 
@@ -719,7 +891,6 @@ class BenchmarkVisualizer:
                 # Add trend line
                 n = len(values)
                 if n >= 2:
-                    z = [i for i in range(n)]
                     coeffs = [
                         sum((i - (n - 1) / 2) * (v - sum(values) / n) for i, v in enumerate(values))
                         / sum((i - (n - 1) / 2) ** 2 for i in range(n))

@@ -202,9 +202,10 @@ class PCNVAEGANBenchmark:
     def _get_model(self) -> Any:
         """Lazy load model."""
         if self._model is None:
+            from pathlib import Path
+
             import torch
             import yaml
-            from pathlib import Path
 
             from cogsyndelta.core.pcn_vae_gan import PCNVAEGANHybrid
 

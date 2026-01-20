@@ -126,12 +126,12 @@ class CompactorAdapter:
         msg = f"Compactor {type(self._compactor).__name__} has no reconstruct/decode method"
         raise AttributeError(msg)
 
-    def eval(self) -> "CompactorAdapter":
+    def eval(self) -> CompactorAdapter:
         """Set compactor to eval mode."""
         self._compactor.eval()
         return self
 
-    def to(self, device: str | torch.device) -> "CompactorAdapter":
+    def to(self, device: str | torch.device) -> CompactorAdapter:
         """Move compactor to device."""
         self._compactor.to(device)
         return self
@@ -754,6 +754,7 @@ class CompressionBenchmark:
                 embed_dim=self.embed_dim
             )
         except ImportError:
+            # DenseEmbeddingEncoder is an optional dependency; benchmarks can run without it.
             pass
 
         return compactors

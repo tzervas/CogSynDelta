@@ -628,6 +628,7 @@ class ComputeUtilizationMetrics:
             if freq:
                 metrics.cpu_freq_mhz = freq.current
         except ImportError:
+            # psutil not available - skip CPU metrics (graceful degradation)
             pass
 
         return metrics
@@ -1450,6 +1451,8 @@ class RunMetadata:
                 ).strip()
                 git_dirty = len(git_status) > 0
             except (subprocess.CalledProcessError, FileNotFoundError):
+                # If git is not available or the directory is not a git repo,
+                # keep the preinitialized fallback values for Git metadata.
                 pass
 
         # GPU info

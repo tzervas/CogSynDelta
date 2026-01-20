@@ -114,6 +114,8 @@ class PowerMetrics(MetricMixin):
 
                 pynvml.nvmlShutdown()
             except pynvml.NVMLError:
+                # NVML errors are non-fatal: GPU metrics are optional and failures
+                # should not prevent overall metric collection.
                 pass
 
         # CPU temperature (Linux)

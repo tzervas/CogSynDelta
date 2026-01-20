@@ -116,6 +116,7 @@ class ComputeUtilizationMetrics(MetricMixin):
                     gpu_util = rates.gpu
                     gpu_mem_util = rates.memory
                 except pynvml.NVMLError:
+                    # GPU utilization API may not be supported on all GPUs; gracefully skip.
                     pass
 
                 # Memory info
@@ -124,6 +125,7 @@ class ComputeUtilizationMetrics(MetricMixin):
                     gpu_mem_used = mem_info.used / (1024 * 1024)
                     gpu_mem_total = mem_info.total / (1024 * 1024)
                 except pynvml.NVMLError:
+                    # Memory info API may not be available on all GPUs; gracefully skip.
                     pass
 
                 # Clock speeds
@@ -142,10 +144,12 @@ class ComputeUtilizationMetrics(MetricMixin):
                     if gpu_clock and gpu_max_clock:
                         is_throttling = gpu_clock < gpu_max_clock * 0.9
                 except pynvml.NVMLError:
+                    # Clock speed APIs may not be supported on all GPUs; gracefully skip.
                     pass
 
                 pynvml.nvmlShutdown()
             except pynvml.NVMLError:
+                # NVML initialization may fail if driver is missing or misconfigured.
                 pass
 
         # CPU metrics
@@ -158,18 +162,18 @@ class ComputeUtilizationMetrics(MetricMixin):
             with contextlib.suppress(OSError, AttributeError):
                 cpu_util = psutil.cpu_percent(interval=0.1)
 
-            try:
+            with contextlib.suppress(OSError, AttributeError):
                 freq = psutil.cpu_freq()
                 if freq:
                     cpu_freq = freq.current
-            except (OSError, AttributeError):
-                pass
 
             try:
                 mem = psutil.virtual_memory()
                 ram_used = mem.used / (1024 * 1024)
                 ram_total = mem.total / (1024 * 1024)
             except (OSError, AttributeError):
+                # If memory statistics are unavailable (e.g., platform or permission issues),
+                # leave RAM metrics as None; callers already handle missing metrics.
                 pass
 
         return cls(

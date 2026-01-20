@@ -6,12 +6,33 @@ This document tracks the status of all active branches, their merge status, and 
 
 ---
 
+## ⚠️ BRANCH POLICY - CRITICAL
+
+**NO DIRECT MERGES TO `main` BRANCH**
+
+All development work flows through the following hierarchy:
+
+```
+feature/* / fix/* → develop → staging → main
+         ↑                               ↑
+    (work here)                    (release only)
+```
+
+**Rules:**
+1. **Never** merge directly into `main` - releases only via CI/CD pipeline
+2. **Never** merge directly into `staging` - automated after `develop` validation  
+3. **Always** create feature/fix branches from `develop`
+4. **Always** merge PRs into `develop` first
+5. Feature branches may merge between each other if dependencies exist
+
+---
+
 ## Branch Hierarchy
 
 ```
-main (production)
-  └── staging (pre-production)
-        └── develop (integration)
+main (production) ← PROTECTED - NO DIRECT MERGES
+  └── staging (pre-production) ← PROTECTED - AUTOMATED ONLY
+        └── develop (integration) ← ALL PRs TARGET HERE
               ├── feat/algebraic-training
               ├── feat/ternary-implementations
               ├── feat/specs-benchmarks-logging-infrastructure
@@ -77,8 +98,11 @@ main (production)
 
 ### Phase 3: Release
 
-5. **`develop` → `staging`** (after Phase 1 & 2)
-6. **`staging` → `main`** (after testing)
+5. **`develop` → `staging`** (automated after Phase 1 & 2 complete, all tests pass)
+6. **`staging` → `main`** (automated release pipeline only - NO manual merge)
+
+> **Note:** Merges to `staging` and `main` are automated via CI/CD.
+> Do not manually merge into these branches.
 
 ---
 

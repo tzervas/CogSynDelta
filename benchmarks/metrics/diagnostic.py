@@ -103,7 +103,6 @@ class DiagnosticMetrics(MetricMixin):
         """
         # Initialize
         bottleneck = None
-        severity = 0.0
         explanation = ""
         recommendations: list[str] = []
         is_compute = False

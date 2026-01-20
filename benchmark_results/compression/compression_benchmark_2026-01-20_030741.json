@@ -1,0 +1,117 @@
+{
+  "results": [
+    {
+      "compactor_name": "HighFidelityCompactor",
+      "fidelity_mean": 0.9999999701976776,
+      "fidelity_std": 4.829689212683814e-08,
+      "fidelity_min": 0.9999998211860657,
+      "fidelity_percentiles": {
+        "p50": 1.0,
+        "p90": 1.0,
+        "p95": 1.0,
+        "p99": 1.0000000011920929
+      },
+      "compression_ratio": 1.3333333333333333,
+      "compress_latency_ms": 0.08077467403685053,
+      "decompress_latency_ms": 0.03357834066264331,
+      "total_latency_ms": 0.11435301469949384,
+      "memory_peak_mb": 9.845703125,
+      "num_samples": 100,
+      "embed_dim": 512,
+      "timestamp": "2026-01-20T03:07:40.874782+00:00",
+      "metadata": {
+        "device": "cuda",
+        "num_warmup": 1,
+        "num_iterations": 3,
+        "seed": 42
+      },
+      "notes": ""
+    },
+    {
+      "compactor_name": "HybridAdaptiveCompactor",
+      "fidelity_mean": 0.9649938273429871,
+      "fidelity_std": 0.010681648158423613,
+      "fidelity_min": 0.9408235549926758,
+      "fidelity_percentiles": {
+        "p50": 0.9660054445266724,
+        "p90": 0.9779537975788117,
+        "p95": 0.980456605553627,
+        "p99": 0.982902398109436
+      },
+      "compression_ratio": 0.7906236970922961,
+      "compress_latency_ms": 0.5793749975661436,
+      "decompress_latency_ms": 0.15170066035352647,
+      "total_latency_ms": 0.7310756579196701,
+      "memory_peak_mb": 89.61376953125,
+      "num_samples": 100,
+      "embed_dim": 512,
+      "timestamp": "2026-01-20T03:07:40.949413+00:00",
+      "metadata": {
+        "device": "cuda",
+        "num_warmup": 1,
+        "num_iterations": 3,
+        "seed": 42
+      },
+      "notes": ""
+    },
+    {
+      "compactor_name": "ResidualBoostCompactor",
+      "fidelity_mean": 0.5613197293877602,
+      "fidelity_std": 0.04017913227387295,
+      "fidelity_min": 0.47724419832229614,
+      "fidelity_percentiles": {
+        "p50": 0.5622826218605042,
+        "p90": 0.617036533355713,
+        "p95": 0.6285928159952163,
+        "p99": 0.6541725265979766
+      },
+      "compression_ratio": 16.0,
+      "compress_latency_ms": 0.3993819991592318,
+      "decompress_latency_ms": 0.17977499131423733,
+      "total_latency_ms": 0.5791569904734691,
+      "memory_peak_mb": 41.42529296875,
+      "num_samples": 100,
+      "embed_dim": 512,
+      "timestamp": "2026-01-20T03:07:40.976523+00:00",
+      "metadata": {
+        "device": "cuda",
+        "num_warmup": 1,
+        "num_iterations": 3,
+        "seed": 42
+      },
+      "notes": ""
+    },
+    {
+      "compactor_name": "DenseEmbeddingEncoder",
+      "fidelity_mean": 0.003304009074345231,
+      "fidelity_std": 0.04111401018220066,
+      "fidelity_min": -0.08898672461509705,
+      "fidelity_percentiles": {
+        "p50": 0.0010773483663797379,
+        "p90": 0.058729739487171174,
+        "p95": 0.06328268870711326,
+        "p99": 0.09356980979442601
+      },
+      "compression_ratio": 2.6666666666666665,
+      "compress_latency_ms": 0.22237633432572088,
+      "decompress_latency_ms": 0.07695399108342826,
+      "total_latency_ms": 0.29933032540914917,
+      "memory_peak_mb": 18.4833984375,
+      "num_samples": 100,
+      "embed_dim": 512,
+      "timestamp": "2026-01-20T03:07:41.002155+00:00",
+      "metadata": {
+        "device": "cuda",
+        "num_warmup": 1,
+        "num_iterations": 3,
+        "seed": 42
+      },
+      "notes": "untrained"
+    }
+  ],
+  "baseline_fidelity": 1.0,
+  "device": "cuda",
+  "torch_version": "2.9.1+cu128",
+  "cuda_available": true,
+  "timestamp": "2026-01-20T03:07:41.002174+00:00"
+}

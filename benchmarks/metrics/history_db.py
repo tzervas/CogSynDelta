@@ -735,7 +735,6 @@ class ArchiveManager:
         for json_file in sorted(self.history_dir.glob("*.json")):
             # Check if already ingested by run_id
             run_id = json_file.stem  # Use filename as run_id
-            existing = self.db.query_runs(limit=1)
             if any(r.run_id == run_id for r in self.db.query_runs(limit=1000)):
                 continue
 

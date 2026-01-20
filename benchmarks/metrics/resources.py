@@ -112,11 +112,10 @@ class CPUTopology(MetricMixin):
             logical = psutil.cpu_count(logical=True) or 0
 
             # Try to detect architecture
-            arch = "unknown"
             with contextlib.suppress(Exception):
                 import platform
 
-                arch = platform.processor() or platform.machine()
+                arch = platform.processor() or platform.machine() or "unknown"
 
             # Get per-CPU frequencies and utilization
             cores: list[CPUCoreInfo] = []
@@ -287,9 +286,8 @@ class GPUTopology(MetricMixin):
                     (10, 0): 128,  # GB200 approx
                     # Ada Lovelace
                     (8, 9): 128,  # RTX 4090
-                    (8, 6): 84,   # RTX 4080/5080 approx
+                    (8, 6): 84,   # RTX 4080/5080/3090 approx (Ada and Ampere overlap)
                     # Ampere
-                    (8, 6): 84,   # RTX 3090
                     (8, 0): 108,  # A100
                     # Turing
                     (7, 5): 72,   # RTX 2080 Ti

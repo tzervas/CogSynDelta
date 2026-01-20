@@ -518,11 +518,12 @@ def validate_performance_claims() -> tuple[
     print("=" * 70)
 
     try:
-        from cogsyndelta.core.pcn_vae_gan import PCNVAEGANHybrid
+        from pathlib import Path
 
         # Create model - load config from YAML
         import yaml
-        from pathlib import Path
+
+        from cogsyndelta.core.pcn_vae_gan import PCNVAEGANHybrid
 
         config_path = Path(__file__).parent.parent / "config" / "config.yaml"
         with open(config_path) as f:

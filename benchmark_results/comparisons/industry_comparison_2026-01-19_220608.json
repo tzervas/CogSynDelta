@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-01-20T03:06:26.176612+00:00",
+  "cogsyndelta_metrics": {
+    "throughput_samples_per_sec": 5000,
+    "param_count": 50000000,
+    "memory_mb": 200,
+    "compression_ratio": 2,
+    "compression_fidelity": 0.67
+  },
+  "throughput_comparisons": [],
+  "memory_comparisons": []
+}
