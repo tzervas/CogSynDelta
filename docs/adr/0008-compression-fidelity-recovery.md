@@ -6,7 +6,7 @@
 
 ## Context
 
-CogSynDelta's dense differential embedding system currently achieves **0.06 cosine similarity fidelity** when compressing and reconstructing embeddings. This is a **catastrophic failure** (essentially orthogonal to original) vs the target of **≥0.95 fidelity** at 10x compression.
+CogSynDelta's dense differential embedding system currently achieves **0.67 cosine similarity fidelity at 2x compression** when compressing and reconstructing embeddings. While not catastrophic, this represents a **significant gap** from the target of **≥0.95 fidelity** at 10x compression. At higher compression ratios (4x: 0.46, 16x: 0.23), fidelity degrades further.
 
 ### Integration with embeddenator-core
 
@@ -20,12 +20,20 @@ The fidelity crisis resolution strategy aligns with embeddenator-core's architec
 
 ### Root Cause Analysis
 
-The 0.06 fidelity indicates fundamental breakdown, not minor quality loss:
+The 0.67 fidelity at 2x (and worse at higher ratios) indicates room for significant improvement:
 
-1. **Uncalibrated quantization buckets** - Fixed ranges (e.g., [-1, 1]) don't match actual embedding distribution
-2. **Insufficient bit-width for differential signals** - Differential updates have different statistics than absolute embeddings
-3. **Cumulative error propagation** - Each encoding step compounds error without correction
-4. **Distribution mismatch** - Assumes Gaussian when embeddings may be heavy-tailed or multi-modal
+1. **Uncalibrated quantization buckets** - Fixed ranges (e.g., [-1, 1]) may not match actual embedding distribution
+2. **Suboptimal bit allocation** - Differential updates have different statistics than absolute embeddings
+3. **Lack of multi-scale encoding** - No Matryoshka-style importance ordering in dimensions
+4. **Missing residual stages** - Single-pass encoding loses recoverable information
+
+### Measured Baseline (Current Implementation)
+
+| Compression | Measured Fidelity | Target |
+|-------------|-------------------|--------|
+| 2x | 0.670 | >0.95 |
+| 4x | 0.462 | >0.90 |
+| 16x | 0.228 | >0.80 |
 
 ### State of the Art
 
@@ -43,7 +51,7 @@ Research shows achievable fidelity by compression ratio:
 
 Implement a **staged recovery approach** with adjustable compression that guarantees fidelity:
 
-### Stage 1: Emergency Calibration (0.06 → 0.85-0.90)
+### Stage 1: Calibration & Validation (baseline → 0.85-0.90)
 
 ```python
 def calibrate_quantization_ranges(embeddings: torch.Tensor, n_samples: int = 10000):
@@ -194,7 +202,7 @@ class AdaptiveCompressionManager:
 
 ### Positive
 
-- Clear path from 0.06 → ≥0.95 fidelity
+- Clear path from 0.67 (2x) → ≥0.95 fidelity at 10x+
 - **Adjustable compression** with hard fidelity guarantees
 - Brain-inspired architecture alignment (CLS theory)
 - Uses proven techniques (Matryoshka, RVQ, VSA, Hopfield)
@@ -226,7 +234,7 @@ class AdaptiveCompressionManager:
 
 | Phase | Duration | Target Fidelity | Key Deliverables |
 |-------|----------|-----------------|------------------|
-| 1. Calibration | Week 1-2 | 0.06 → 0.85-0.90 | calibration.py, diagnostics.py |
+| 1. Calibration | Week 1-2 | Validate baseline, target 0.85-0.90 | calibration.py, diagnostics.py |
 | 2. Matryoshka | Week 3-4 | 0.90 → 0.93 | matryoshka.py, AllNLI training |
 | 3. RVQ | Week 5-6 | 0.93 → 0.95+ | residual_quantization.py |
 | 4. Adjustable API | Week 7-8 | Guaranteed 0.95+ | AdaptiveCompressionManager |
