@@ -155,9 +155,9 @@ class CPUTopology(MetricMixin):
                                     )
                                 )
             except (OSError, AttributeError):
+                # psutil may not support per-core frequency/usage on all platforms;
+                # in that case, fall back to topology without detailed per-core stats.
                 pass
-
-            # Calculate utilization by core type
             p_utils = [c.utilization_pct for c in cores if c.core_type == "performance" and c.utilization_pct]
             e_utils = [c.utilization_pct for c in cores if c.core_type == "efficiency" and c.utilization_pct]
             all_utils = [c.utilization_pct for c in cores if c.utilization_pct]
@@ -566,6 +566,7 @@ class ProcessResourceTracker:
                     snapshot.process_io_read_mb = io_counters.read_bytes / (1024 * 1024)
                     snapshot.process_io_write_mb = io_counters.write_bytes / (1024 * 1024)
                 except (psutil.AccessDenied, AttributeError):
+                    # IO counters may not be available (permissions, platform).
                     pass
 
                 # Include children
@@ -577,11 +578,14 @@ class ProcessResourceTracker:
                                 snapshot.process_memory_mb = (snapshot.process_memory_mb or 0) + child_mem.rss / (1024 * 1024)
                                 snapshot.process_cpu_pct = (snapshot.process_cpu_pct or 0) + child.cpu_percent()
                             except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                # Child process may have terminated or be inaccessible; skip it.
                                 pass
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        # Parent process terminated or children became inaccessible.
                         pass
 
             except (psutil.NoSuchProcess, psutil.AccessDenied):
+                # Main process terminated or became inaccessible during snapshot.
                 pass
 
         # GPU metrics

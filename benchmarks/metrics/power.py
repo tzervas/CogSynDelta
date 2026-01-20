@@ -128,6 +128,7 @@ class PowerMetrics(MetricMixin):
                 elif "k10temp" in temps:  # AMD
                     cpu_temp = temps["k10temp"][0].current
             except (OSError, KeyError, AttributeError):
+                # Temperature sensors are optional/best-effort; ignore failures and keep cpu_temp as None.
                 pass
 
         return cls(
