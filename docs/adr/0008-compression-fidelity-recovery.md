@@ -35,6 +35,21 @@ The 0.67 fidelity at 2x (and worse at higher ratios) indicates room for signific
 | 4x | 0.462 | >0.90 |
 | 16x | 0.228 | >0.80 |
 
+### Validated Compactor Performance (2026-01-19)
+
+Testing via `tests/test_compression_calibration.py` reveals:
+
+| Compactor | Compression | Mean Fidelity | Status |
+|-----------|-------------|---------------|--------|
+| **HighFidelityCompactor** | ~2x | **1.0000** | ✓ Production Ready |
+| HybridAdaptiveCompactor | ~2-4x | 0.9604 | ✓ Meets targets |
+| ResidualBoostCompactor | ~4x | 0.5908 | Needs RVQ work |
+| DenseDifferentialMemoryStore | 12x | 0.4969 | Needs calibration |
+
+**Key Finding**: HighFidelityCompactor already achieves perfect fidelity at ~2x compression
+using orthonormal basis decomposition with explicit residual storage. This compactor
+should be the default for production use cases prioritizing fidelity over compression ratio.
+
 ### State of the Art
 
 Research shows achievable fidelity by compression ratio:
