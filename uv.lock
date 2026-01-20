@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.14"
 resolution-markers = [
     "platform_machine != 'aarch64' or sys_platform != 'linux'",
@@ -382,7 +382,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiohttp", specifier = ">=3.11.0,<4.0.0" },
+    { name = "aiohttp", specifier = ">=3.13.3,<4.0.0" },
     { name = "anthropic", marker = "extra == 'inference-providers'", specifier = ">=0.76.0,<1.0.0" },
     { name = "cogsyndelta", extras = ["vision", "audio", "gpu-nvidia", "inference-providers"], marker = "extra == 'all'" },
     { name = "faiss-cpu", specifier = ">=1.9.0,<2.0.0" },
