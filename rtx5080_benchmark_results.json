@@ -1,0 +1,113 @@
+{
+  "device": "cuda",
+  "gpu_name": "NVIDIA GeForce RTX 5080",
+  "pytorch_version": "2.9.1+cu128",
+  "cuda_version": "12.8",
+  "timestamp": "2026-01-19T21:38:47.175840",
+  "benchmarks": {
+    "matrix_operations": [
+      {
+        "size": 1024,
+        "time_ms": 0.08,
+        "gflops": 25630.6
+      },
+      {
+        "size": 2048,
+        "time_ms": 0.46,
+        "gflops": 37495.4
+      },
+      {
+        "size": 4096,
+        "time_ms": 3.64,
+        "gflops": 37796.5
+      },
+      {
+        "size": 8192,
+        "time_ms": 28.68,
+        "gflops": 38341.9
+      }
+    ],
+    "cnn_inference": [
+      {
+        "batch_size": 1,
+        "avg_time_ms": 0.06,
+        "std_time_ms": 0.01,
+        "throughput_samples_sec": 17833.5
+      },
+      {
+        "batch_size": 8,
+        "avg_time_ms": 0.1,
+        "std_time_ms": 0.01,
+        "throughput_samples_sec": 77472.3
+      },
+      {
+        "batch_size": 32,
+        "avg_time_ms": 0.18,
+        "std_time_ms": 0.06,
+        "throughput_samples_sec": 179695.7
+      },
+      {
+        "batch_size": 128,
+        "avg_time_ms": 0.3,
+        "std_time_ms": 0.06,
+        "throughput_samples_sec": 433295.7
+      },
+      {
+        "batch_size": 512,
+        "avg_time_ms": 1.39,
+        "std_time_ms": 0.07,
+        "throughput_samples_sec": 367510.2
+      },
+      {
+        "batch_size": 1024,
+        "avg_time_ms": 2.92,
+        "std_time_ms": 0.11,
+        "throughput_samples_sec": 351138.9
+      }
+    ],
+    "resnet_inference": [
+      {
+        "batch_size": 1,
+        "avg_time_ms": 1.07,
+        "std_time_ms": 0.17,
+        "throughput_samples_sec": 936.6
+      },
+      {
+        "batch_size": 4,
+        "avg_time_ms": 1.49,
+        "std_time_ms": 0.13,
+        "throughput_samples_sec": 2680.2
+      },
+      {
+        "batch_size": 8,
+        "avg_time_ms": 2.24,
+        "std_time_ms": 0.09,
+        "throughput_samples_sec": 3574.1
+      },
+      {
+        "batch_size": 16,
+        "avg_time_ms": 3.19,
+        "std_time_ms": 0.11,
+        "throughput_samples_sec": 5009.6
+      },
+      {
+        "batch_size": 32,
+        "avg_time_ms": 6.47,
+        "std_time_ms": 0.25,
+        "throughput_samples_sec": 4949.4
+      },
+      {
+        "batch_size": 64,
+        "avg_time_ms": 15.0,
+        "std_time_ms": 0.39,
+        "throughput_samples_sec": 4266.7
+      }
+    ],
+    "training": {
+      "batch_size": 128,
+      "num_steps": 200,
+      "avg_time_ms": 0.97,
+      "throughput_samples_sec": 132381.3
+    }
+  }
+}

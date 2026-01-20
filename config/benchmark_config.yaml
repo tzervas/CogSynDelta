@@ -1,0 +1,66 @@
+# Benchmark Configuration
+# ======================
+# This file provides project-level defaults for CogSynDelta benchmarks.
+# Runtime overrides via BenchmarkConfig.override() or environment variables.
+#
+# Environment variables:
+#   COGSYNDELTA_BENCHMARK_VERBOSE=1     Enable verbose output
+#   COGSYNDELTA_BENCHMARK_DEBUG=1       Enable debug mode
+#   COGSYNDELTA_BENCHMARK_GPU=0         GPU device index
+#   COGSYNDELTA_BENCHMARK_FULL=1        Use full suite (all features)
+#   COGSYNDELTA_BENCHMARK_MINIMAL=1     Use minimal (fast) configuration
+
+benchmark:
+  # Which metrics to collect
+  metrics:
+    collect_power: true           # Power consumption, energy per operation
+    collect_eco: true             # Eco-efficiency (samples per joule)
+    collect_latent: true          # Latent space metrics (CogSynDelta-specific)
+    collect_normalized: true      # Cross-architecture normalized comparison
+    collect_diagnostic: true      # Bottleneck analysis and recommendations
+    collect_resource_usage: true  # Process-specific CPU/GPU/memory tracking
+    collect_cpu_topology: false   # P-core vs E-core utilization (expensive)
+    collect_gpu_topology: false   # SM occupancy, tensor core util (expensive)
+
+  # Process-specific resource tracking
+  resources:
+    enabled: true
+    sample_interval_sec: 0.5      # Seconds between samples
+    include_children: true        # Include child process resources
+    track_io: true                # Track disk read/write
+    max_samples: 1000             # Memory limit (~8 min at 0.5s)
+    gpu_index: 0                  # Which GPU to track
+
+  # History and archival management
+  history:
+    enabled: true
+    history_dir: benchmark_results/history
+    archive_dir: benchmark_results/archive
+    database_path: benchmark_results/history.db
+    max_recent_runs: 50           # Keep last N runs as individual JSON files
+    auto_archive: true            # Automatically archive old runs on benchmark
+    archive_after_days: 7         # Archive runs older than this
+    compress_archive: true        # Use GZIP compression in database
+    retention_days: 365           # Delete runs older than this (0 = keep forever)
+
+  # Display and output formatting
+  display:
+    show_sparklines: true         # Show trend indicators
+    show_power: true              # Show power metrics in output
+    show_eco: true                # Show eco-efficiency metrics
+    show_topology: false          # Show CPU/GPU topology (verbose)
+    show_recommendations: true    # Show optimization recommendations
+    max_recommendations: 3        # Limit recommendations shown
+    color_output: true            # Use ANSI colors in terminal
+
+  # Cross-architecture comparison
+  comparison:
+    baseline_model: gpt2_small    # Default comparison baseline
+    engram_to_token_ratio: 10.0   # 1 CogSynDelta engram ≈ 10 tokens info
+    include_industry_baselines: true
+    baselines_file: benchmarks/data/industry_baselines.json
+
+  # Global settings
+  verbose: false
+  debug: false
+  gpu_index: 0

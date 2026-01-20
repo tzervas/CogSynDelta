@@ -1,6 +1,6 @@
 # CogSynDelta Roadmap
 
-**Last Updated:** January 18, 2026
+**Last Updated:** January 20, 2026
 
 ## Current Status
 
@@ -107,11 +107,43 @@
 
 ## Future Releases
 
-### v0.3.0 - Performance & Optimization
-- [ ] Benchmark suite expansion
-- [ ] Memory optimization for large models
+### v0.3.0 - Performance & Optimization (In Progress)
+- [x] Benchmark suite expansion
+  - Fixed import errors (PCN_VAE_GAN, InterconnectManager, mHCGate)
+  - Added OOM protection for LosslessCompactor
+  - Added untrained model detection
+  - Added detailed statistics report
+  - Added visualization module with sparklines and trends
+- [x] Memory optimization for large models
+  - Context-efficient techniques (ADR-0015)
+  - ChunkedCompactor, ImportanceContextPruner, LatentCache
+- [x] Training roadmap (ADR-0016)
+- [x] Enhanced benchmark history format with scale indicators
 - [ ] Distributed training support
 - [ ] ONNX export for deployment
+
+### 📋 Model Size Cycling (Backlogged)
+
+**Status:** Backlogged - infrastructure ready
+
+**Purpose:** Enable benchmarks to cycle through various model sizes (tiny/small/base/large/xlarge) for comprehensive performance profiling across scales.
+
+**What's Ready:**
+- `ModelSizeConfig` class in `benchmarks/history_format.py` defines 5 size tiers:
+  - `tiny`: 1M params, 128d embedding
+  - `small`: 10M params, 256d embedding
+  - `base`: 50M params, 512d embedding
+  - `large`: 200M params, 768d embedding  
+  - `xlarge`: 1B params, 1024d embedding
+- `EnhancedBenchmarkRecord` includes `model_size` field for tracking
+
+**What's Pending:**
+- [ ] Model factory to instantiate different sizes
+- [ ] Benchmark runner integration for size cycling
+- [ ] Results aggregation across sizes
+- [ ] Size-aware performance regression detection
+
+**Trigger:** Will implement when baseline training is complete and we need cross-scale comparisons.
 
 ### v0.4.0 - Extended Backends
 - [ ] Neuromorphic processor support
@@ -148,6 +180,8 @@ Track feature requests at: https://github.com/tzervas/CogSynDelta/issues
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| v0.3.2 | 2026-01-19 | Security updates (aiohttp CVEs) |
+| v0.3.1 | 2026-01-19 | Compression validation, research ADRs (0012-0014) |
 | v0.2.0 | 2026-01-18 | GitHub Actions updates, comprehensive test coverage, module exports |
 | v0.1.0 | 2026-01-18 | Initial release with UV, Python 3.14, full core features |
 
