@@ -70,9 +70,7 @@ class ResidualVectorQuantizer(nn.Module):
         quantizers: List of vector quantizers
     """
 
-    def __init__(
-        self, embedding_dim: int, num_stages: int = 4, codebook_size: int = 256
-    ) -> None:
+    def __init__(self, embedding_dim: int, num_stages: int = 4, codebook_size: int = 256) -> None:
         """Initialize RVQ.
 
         Args:
@@ -87,9 +85,9 @@ class ResidualVectorQuantizer(nn.Module):
         self.codebook_size = codebook_size
 
         # Create quantizers for each stage
-        self.quantizers = nn.ModuleList([
-            VectorQuantizer(embedding_dim, codebook_size) for _ in range(num_stages)
-        ])
+        self.quantizers = nn.ModuleList(
+            [VectorQuantizer(embedding_dim, codebook_size) for _ in range(num_stages)]
+        )
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Quantize with residual stages.

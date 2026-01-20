@@ -72,12 +72,14 @@ class MatryoshkaEncoder(nn.Module):
         prev_dim = input_dim
 
         for h_dim in hidden_dims:
-            layers.extend([
-                nn.Linear(prev_dim, h_dim),
-                nn.LayerNorm(h_dim),
-                nn.GELU(),
-                nn.Dropout(0.1),
-            ])
+            layers.extend(
+                [
+                    nn.Linear(prev_dim, h_dim),
+                    nn.LayerNorm(h_dim),
+                    nn.GELU(),
+                    nn.Dropout(0.1),
+                ]
+            )
             prev_dim = h_dim
 
         # Final projection to output_dim

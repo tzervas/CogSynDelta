@@ -54,10 +54,10 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from cogsyndelta.core.interconnect_manager import IntelligentInterconnectManager
 
@@ -66,17 +66,19 @@ logger = logging.getLogger(__name__)
 
 class LoadingState(Enum):
     """Lifecycle state of a submodel."""
-    UNLOADED = "unloaded"      # Weights on disk
-    STAGING = "staging"        # Loading to CPU
-    STAGED = "staged"          # Weights in CPU RAM
-    LOADING = "loading"        # Transferring to GPU
-    ACTIVE = "active"          # On GPU, ready for inference
-    EVICTING = "evicting"      # Being unloaded from GPU
+
+    UNLOADED = "unloaded"  # Weights on disk
+    STAGING = "staging"  # Loading to CPU
+    STAGED = "staged"  # Weights in CPU RAM
+    LOADING = "loading"  # Transferring to GPU
+    ACTIVE = "active"  # On GPU, ready for inference
+    EVICTING = "evicting"  # Being unloaded from GPU
 
 
 @dataclass
 class SubmodelInfo:
     """Information about a registered submodel."""
+
     name: str
     module: nn.Module
     parameter_count: int
@@ -89,14 +91,14 @@ class SubmodelInfo:
     avg_compute_time: float = 0.0
 
     # Context affinity (from interconnect routing)
-    context_tags: Set[str] = field(default_factory=set)
-    co_activation_freq: Dict[str, int] = field(default_factory=dict)
+    context_tags: set[str] = field(default_factory=set)
+    co_activation_freq: dict[str, int] = field(default_factory=dict)
 
     # Configuration
-    load_priority: int = 5         # 0-10, higher = load first
-    pin_memory: bool = False       # Never unload
+    load_priority: int = 5  # 0-10, higher = load first
+    pin_memory: bool = False  # Never unload
     allow_cpu_fallback: bool = True
-    checkpoint_path: Optional[Path] = None
+    checkpoint_path: Path | None = None
 
 
 @dataclass
@@ -104,19 +106,19 @@ class LoadingConfig:
     """Configuration for progressive loading system."""
 
     # Memory budgets (MB)
-    gpu_budget_mb: float = 10000.0      # 10GB for submodels
-    cpu_staging_mb: float = 32000.0     # 32GB CPU staging
-    disk_cache_mb: float = 100000.0     # 100GB disk cache
+    gpu_budget_mb: float = 10000.0  # 10GB for submodels
+    cpu_staging_mb: float = 32000.0  # 32GB CPU staging
+    disk_cache_mb: float = 100000.0  # 100GB disk cache
 
     # Loading thresholds
-    eager_load_threshold: float = 0.7   # Load if >70% routing probability
+    eager_load_threshold: float = 0.7  # Load if >70% routing probability
     lazy_unload_threshold: float = 0.2  # Unload if <20% probability
-    prefetch_depth: int = 3             # Prefetch co-activated (depth 3)
+    prefetch_depth: int = 3  # Prefetch co-activated (depth 3)
 
     # Performance
-    async_loading: bool = True          # Async GPU transfers
-    background_prefetch: bool = True    # Prefetch in background
-    max_concurrent_loads: int = 2       # Parallel loads
+    async_loading: bool = True  # Async GPU transfers
+    background_prefetch: bool = True  # Prefetch in background
+    max_concurrent_loads: int = 2  # Parallel loads
 
     # Checkpointing
     enable_activation_checkpointing: bool = True
@@ -132,24 +134,24 @@ class ProgressiveLoaderManager:
 
     def __init__(
         self,
-        config: Optional[LoadingConfig] = None,
-        interconnect: Optional[IntelligentInterconnectManager] = None,
-        device: str = "cuda"
+        config: LoadingConfig | None = None,
+        interconnect: IntelligentInterconnectManager | None = None,
+        device: str = "cuda",
     ):
         self.config = config or LoadingConfig()
         self.device = torch.device(device)
         self.interconnect = interconnect
 
         # Submodel registry
-        self.submodels: Dict[str, SubmodelInfo] = {}
-        self.active_names: Set[str] = set()
+        self.submodels: dict[str, SubmodelInfo] = {}
+        self.active_names: set[str] = set()
 
         # Memory tracking
         self.gpu_memory_used = 0.0
         self.cpu_memory_used = 0.0
 
         # State dicts (CPU storage)
-        self.state_dicts: Dict[str, Dict[str, torch.Tensor]] = {}
+        self.state_dicts: dict[str, dict[str, torch.Tensor]] = {}
 
         # Loading queue
         self.load_queue: asyncio.Queue = asyncio.Queue()
@@ -165,10 +167,10 @@ class ProgressiveLoaderManager:
         self,
         name: str,
         module: nn.Module,
-        context_tags: Optional[Set[str]] = None,
+        context_tags: set[str] | None = None,
         load_priority: int = 5,
         pin_memory: bool = False,
-        checkpoint_path: Optional[Path] = None
+        checkpoint_path: Path | None = None,
     ) -> None:
         """Register a submodel for progressive loading.
 
@@ -181,7 +183,7 @@ class ProgressiveLoaderManager:
             checkpoint_path: Path to saved weights (if separate from module)
         """
         param_count = sum(p.numel() for p in module.parameters())
-        memory_mb = param_count * 4 / (1024 ** 2)  # float32 assumption
+        memory_mb = param_count * 4 / (1024**2)  # float32 assumption
 
         info = SubmodelInfo(
             name=name,
@@ -191,7 +193,7 @@ class ProgressiveLoaderManager:
             context_tags=context_tags or set(),
             load_priority=load_priority,
             pin_memory=pin_memory,
-            checkpoint_path=checkpoint_path
+            checkpoint_path=checkpoint_path,
         )
 
         self.submodels[name] = info
@@ -271,9 +273,7 @@ class ProgressiveLoaderManager:
         return self._unload_from_gpu(name)
 
     def update_from_routing(
-        self,
-        routing_decisions: Dict[Tuple[str, str], float],
-        section_to_submodel: Dict[str, str]
+        self, routing_decisions: dict[tuple[str, str], float], section_to_submodel: dict[str, str]
     ) -> None:
         """Update loading based on interconnect routing decisions.
 
@@ -282,7 +282,7 @@ class ProgressiveLoaderManager:
             section_to_submodel: Mapping from section ID to submodel name
         """
         # Track which submodels are being routed to
-        routed_submodels: Dict[str, float] = {}
+        routed_submodels: dict[str, float] = {}
 
         for (source, target), importance in routing_decisions.items():
             # Get submodels for source and target
@@ -306,9 +306,7 @@ class ProgressiveLoaderManager:
                 # Eager loading for high-importance routes
                 if importance >= self.config.eager_load_threshold:
                     if info.state != LoadingState.ACTIVE:
-                        logger.info(
-                            f"Eager loading '{name}' (importance={importance:.2f})"
-                        )
+                        logger.info(f"Eager loading '{name}' (importance={importance:.2f})")
                         self.activate(name, blocking=False)
 
                 # Update access stats
@@ -369,9 +367,9 @@ class ProgressiveLoaderManager:
 
             load_time = time.time() - start_time
             logger.info(
-                f"Loaded '{name}' in {load_time*1000:.1f}ms. "
+                f"Loaded '{name}' in {load_time * 1000:.1f}ms. "
                 f"GPU: {self.gpu_memory_used:.1f}/{self.config.gpu_budget_mb:.1f}MB "
-                f"({self.gpu_memory_used/self.config.gpu_budget_mb*100:.1f}%)"
+                f"({self.gpu_memory_used / self.config.gpu_budget_mb * 100:.1f}%)"
             )
 
             return True
@@ -401,9 +399,7 @@ class ProgressiveLoaderManager:
 
         try:
             # Save state dict to CPU
-            self.state_dicts[name] = {
-                k: v.cpu() for k, v in info.module.state_dict().items()
-            }
+            self.state_dicts[name] = {k: v.cpu() for k, v in info.module.state_dict().items()}
 
             # Move module to CPU
             info.module.to("cpu")
@@ -477,20 +473,18 @@ class ProgressiveLoaderManager:
                 evicted.append(name)
 
         if evicted:
-            logger.info(
-                f"Evicted {len(evicted)} submodels ({freed:.1f}MB freed): {evicted}"
-            )
+            logger.info(f"Evicted {len(evicted)} submodels ({freed:.1f}MB freed): {evicted}")
 
         return freed >= needed
 
-    def _prefetch_co_activated(self, active_names: List[str]) -> None:
+    def _prefetch_co_activated(self, active_names: list[str]) -> None:
         """Prefetch frequently co-activated submodels.
 
         Args:
             active_names: Currently active submodel names
         """
         # Collect co-activation frequencies
-        prefetch_scores: Dict[str, float] = {}
+        prefetch_scores: dict[str, float] = {}
 
         for name in active_names:
             info = self.submodels[name]
@@ -503,21 +497,18 @@ class ProgressiveLoaderManager:
                         prefetch_scores[other_name] = freq
 
         # Sort by score and prefetch top N
-        top_prefetch = sorted(
-            prefetch_scores.items(), key=lambda x: x[1], reverse=True
-        )[: self.config.prefetch_depth]
+        top_prefetch = sorted(prefetch_scores.items(), key=lambda x: x[1], reverse=True)[
+            : self.config.prefetch_depth
+        ]
 
         for name, score in top_prefetch:
             logger.debug(f"Prefetching '{name}' (co-activation score={score})")
             self.prefetch_queue.put_nowait(name)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get comprehensive loading statistics."""
-        active_modules = [n for n in self.active_names]
-        staged_modules = [
-            n for n, i in self.submodels.items()
-            if i.state == LoadingState.STAGED
-        ]
+        active_modules = list(self.active_names)
+        staged_modules = [n for n, i in self.submodels.items() if i.state == LoadingState.STAGED]
 
         return {
             "gpu_memory_mb": self.gpu_memory_used,
@@ -528,7 +519,7 @@ class ProgressiveLoaderManager:
             "active_submodels": len(active_modules),
             "staged_submodels": len(staged_modules),
             "active_names": active_modules,
-            "pinned_modules": [n for n, i in self.submodels.items() if i.pin_memory]
+            "pinned_modules": [n for n, i in self.submodels.items() if i.pin_memory],
         }
 
 
@@ -543,7 +534,7 @@ class ModelScaleConfig:
             gpu_budget_mb=10000.0,
             cpu_staging_mb=16000.0,
             eager_load_threshold=0.7,
-            prefetch_depth=2
+            prefetch_depth=2,
         )
 
     @staticmethod
@@ -554,7 +545,7 @@ class ModelScaleConfig:
             cpu_staging_mb=32000.0,
             eager_load_threshold=0.6,
             prefetch_depth=3,
-            max_concurrent_loads=3
+            max_concurrent_loads=3,
         )
 
     @staticmethod
@@ -566,7 +557,7 @@ class ModelScaleConfig:
             eager_load_threshold=0.5,
             prefetch_depth=4,
             max_concurrent_loads=4,
-            background_prefetch=True
+            background_prefetch=True,
         )
 
     @staticmethod
@@ -579,5 +570,5 @@ class ModelScaleConfig:
             prefetch_depth=5,
             max_concurrent_loads=6,
             background_prefetch=True,
-            enable_activation_checkpointing=True
+            enable_activation_checkpointing=True,
         )
