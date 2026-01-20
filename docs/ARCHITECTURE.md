@@ -8,33 +8,33 @@ CogSynDelta implements a brain-inspired architecture with specialized sections c
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│              Integrated Self-Improving AI System             │
+│              Integrated Self-Improving AI System            │
 ├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │         Intelligent Interconnect Manager             │  │
-│  │    (Specialized submodel for communication)          │  │
-│  │  • Attention-based routing                           │  │
-│  │  • Context propagation                               │  │
-│  │  • Bandwidth allocation                              │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                          ↕                                   │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │  Visual      │  │  Language    │  │  Prefrontal  │     │
-│  │  Cortex      │  │  Cortex      │  │  Cortex      │     │
-│  │  (VL-JEPA)   │  │  (Multi-    │  │  (Planning)  │     │
-│  │              │  │   Lang)      │  │              │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │         Intelligent Interconnect Manager             │   │
+│  │    (Specialized submodel for communication)          │   │
+│  │  • Attention-based routing                           │   │
+│  │  • Context propagation                               │   │
+│  │  • Bandwidth allocation                              │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                          ↕                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │  Visual      │  │  Language    │  │  Prefrontal  │       │
+│  │  Cortex      │  │  Cortex      │  │  Cortex      │       │
+│  │  (VL-JEPA)   │  │  (Multi-     │  │  (Planning)  │       │
+│  │              │  │   Lang)      │  │              │       │
+│  └──────────────┘  └──────────────┘  └──────────────┘       │
 │         │                  │                  │             │
 │         └──────────────────┴──────────────────┘             │
-│                          ↕                                   │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │         Persistent Memory Bank (Hippocampus)         │  │
-│  │  • Dense differential embeddings                     │  │
-│  │  • 10-100x compression with >0.95 fidelity          │  │
-│  │  • Hierarchical storage                             │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                                                              │
+│                          ↕                                  │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │         Persistent Memory Bank (Hippocampus)         │   │
+│  │  • Dense differential embeddings                     │   │
+│  │  • 10-100x compression with >0.95 fidelity           │   │
+│  │  • Hierarchical storage                              │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 

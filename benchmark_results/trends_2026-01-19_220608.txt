@@ -1,0 +1,70 @@
+Bytecode compiled 12960 files in 144ms
+<frozen runpy>:128: RuntimeWarning: 'benchmarks.visualization' found in sys.modules after import of package 'benchmarks', but prior to execution of 'benchmarks.visualization'; this may result in unpredictable behaviour
+================================================================================
+BENCHMARK TREND REPORT
+================================================================================
+Generated: 2026-01-20T03:06:35.364360+00:00
+History: 8 benchmark runs
+
+
+┌─ INTERCONNECT ───────────────────────────────────────────────────────────────
+│ ➡️ latency_ms.gate_bs1                           ▄▄█▁       0.07 (-7.4%)
+│ 📈 latency_ms.gate_bs32                          █▄▄▁       0.08 (-12.0%)
+│ 📈 latency_ms.gate_bs8                           ▆█▇▁       0.07 (-6.3%)
+│ ➡️ quality.gate_output_mean                      ▇▁█▄      11.91 (-0.2%)
+│ 📈 quality.gate_output_std                       ▁▂▁█       0.40 (+10.1%)
+│ ➡️ throughput.gate_samples_per_sec_bs1           ▁▂▁█   13967.80 (+5.8%)
+│ 📈 throughput.gate_samples_per_sec_bs32          ▁▃▄█  422831.63 (+6.9%)
+│ ➡️ throughput.gate_samples_per_sec_bs8           ▁▂▁█  114345.94 (+4.6%)
+└──────────────────────────────────────────────────────────────────────────────
+
+┌─ PCN-VAE-GAN ────────────────────────────────────────────────────────────────
+│ ➡️ latency_ms.forward_bs1                        ▁█▁▂       0.08 (+1.7%)
+│ 📈 latency_ms.forward_bs32                       ▃█▁▁       0.08 (-5.8%)
+│ 📈 latency_ms.forward_bs64                       ▃█▁▁       0.09 (-8.0%)
+│ 📈 latency_ms.forward_bs8                        ▃█▂▁       0.07 (-4.4%)
+│ ➡️ memory_mb.model_size                          ▅▅▅▅       2.49 (+0.0%)
+│ ➡️ memory_mb.peak_allocated                      ▅▅▅▅      12.16 (+0.0%)
+│ ➡️ normalized.bytes_per_param                    ▅▅▅▅      19.54 (+0.0%)
+│ ➡️ normalized.param_count                        ▅▅▅▅  652824.00 (+0.0%)
+│ ➡️ normalized.throughput_per_billion_params      ▂▁▇█ 602481587.98 (+5.0%)
+│ 📈 quality.cosine_similarity                     █▁▆▆      -0.00 (-274.9%)
+│ 📈 quality.kl_divergence                         ▁▂▅█       0.91 (+12.7%)
+│ ➡️ quality.reconstruction_mse                    ▂█▄▁       1.25 (-0.5%)
+│ ➡️ throughput.samples_per_sec_bs1                ▅▁▅█   13496.84 (+1.8%)
+│ ➡️ throughput.samples_per_sec_bs32               ▂▁▇█  393314.44 (+5.0%)
+│ ➡️ throughput.samples_per_sec_bs64               ▄▁▇█  714834.01 (+2.6%)
+│ ➡️ throughput.samples_per_sec_bs8                ▃▁▇█  112428.82 (+3.9%)
+└──────────────────────────────────────────────────────────────────────────────
+
+┌─ VL-JEPA ────────────────────────────────────────────────────────────────────
+│ ➡️ latency_ms.memory_read                        ▁▂▂▂▂█▆▁       0.15 (+0.4%)
+│ ➡️ latency_ms.memory_write                       ▂█▁▂▃▂▅▁       0.04 (-2.9%)
+│ ➡️ latency_ms.vision_encoder_bs1                 ▁▁▁▂▁█▁▁       1.23 (+1.2%)
+│ ➡️ latency_ms.vision_encoder_bs16                ▁▃▃▇▅▄█▂       5.84 (+1.5%)
+│ ➡️ latency_ms.vision_encoder_bs4                 ▁▂▆█▆▄▅▄       2.09 (+1.0%)
+│ ➡️ latency_ms.vision_encoder_bs8                 ▁█▂▅▃▆▆▂       3.40 (+1.4%)
+│ ➡️ memory_mb.model_size                          ▅▅▅▅▅▅▅▅      75.04 (+0.0%)
+│ ➡️ memory_mb.peak_allocated                      ▁▁▁▃████     129.60 (+2.2%)
+│ ➡️ normalized.param_count                        ▅▅▅▅▅▅▅▅ 19671040.00 (+0.0%)
+│ ➡️ normalized.throughput_per_billion_params      █▂▄▃▄▁▁▆  119323.26 (-1.6%)
+│ ➡️ throughput.images_per_sec_bs1                 █▇▇▅▆▁▆▇     814.34 (-0.9%)
+│ ➡️ throughput.images_per_sec_bs16                █▄▅▃▄▅▁▆    2736.81 (-1.6%)
+│ ➡️ throughput.images_per_sec_bs4                 █▇▃▁▁▃▃▄    1918.36 (-0.8%)
+│ ➡️ throughput.images_per_sec_bs8                 █▂▄▃▄▁▁▆    2347.21 (-1.6%)
+└──────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────
+SUMMARY
+────────────────────────────────────────────────────────────────────────────────
+  Total metrics tracked: 38
+  📈 Improving: 22
+  📉 Degrading: 0
+  ➡️ Stable: 29
+
+────────────────────────────────────────────────────────────────────────────────
+RECOMMENDATIONS
+────────────────────────────────────────────────────────────────────────────────
+  • ✅ Overall positive trend: 22 metrics improving
+  • ➡️ System is stable - good time to establish new baselines
+
