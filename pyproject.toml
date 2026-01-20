@@ -117,6 +117,7 @@ dev = [
     "mypy>=1.19.0,<2.0.0",
     "pre-commit>=4.5.0,<5.0.0",
     "types-PyYAML>=6.0.0,<7.0.0",
+    "pip-audit>=2.10.0,<3.0.0",
 ]
 docs = [
     "sphinx>=9.0.0,<10.0.0",
@@ -264,6 +265,7 @@ ignore = [
 "tests/**/*.py" = ["S101", "PLR2004"]  # Allow asserts and magic values in tests
 "scripts/**/*.py" = ["S603", "S607"]   # Allow subprocess in scripts
 "benchmarks/**/*.py" = ["F841"]        # Allow unused variables in benchmarks (timing loops)
+"benchmarks/metrics/history_db.py" = ["S608"]  # SQL is safe - all user values parameterized
 "examples/**/*.py" = ["F841"]          # Allow unused variables in examples (demos)
 
 [tool.ruff.lint.isort]
@@ -293,6 +295,7 @@ exclude = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

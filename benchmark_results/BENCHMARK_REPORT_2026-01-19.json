@@ -1,0 +1,227 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-19T22:08:05-05:00",
+    "python_version": "3.13.5",
+    "pytorch_version": "2.6.0+debian",
+    "cuda_available": false,
+    "gpu_name": "N/A",
+    "gpu_memory": "N/A",
+    "cuda_version": "N/A"
+  },
+  "compression": {
+    "results": [
+      {
+        "compactor_name": "HighFidelityCompactor",
+        "fidelity_mean": 0.9999999701976776,
+        "fidelity_std": 4.829689212683814e-08,
+        "fidelity_min": 0.9999998211860657,
+        "fidelity_percentiles": {
+          "p50": 1.0,
+          "p90": 1.0,
+          "p95": 1.0,
+          "p99": 1.0000000011920929
+        },
+        "compression_ratio": 1.3333333333333333,
+        "compress_latency_ms": 0.08077467403685053,
+        "decompress_latency_ms": 0.03357834066264331,
+        "total_latency_ms": 0.11435301469949384,
+        "memory_peak_mb": 9.845703125,
+        "num_samples": 100,
+        "embed_dim": 512,
+        "timestamp": "2026-01-20T03:07:40.874782+00:00",
+        "metadata": {
+          "device": "cuda",
+          "num_warmup": 1,
+          "num_iterations": 3,
+          "seed": 42
+        },
+        "notes": ""
+      },
+      {
+        "compactor_name": "HybridAdaptiveCompactor",
+        "fidelity_mean": 0.9649938273429871,
+        "fidelity_std": 0.010681648158423613,
+        "fidelity_min": 0.9408235549926758,
+        "fidelity_percentiles": {
+          "p50": 0.9660054445266724,
+          "p90": 0.9779537975788117,
+          "p95": 0.980456605553627,
+          "p99": 0.982902398109436
+        },
+        "compression_ratio": 0.7906236970922961,
+        "compress_latency_ms": 0.5793749975661436,
+        "decompress_latency_ms": 0.15170066035352647,
+        "total_latency_ms": 0.7310756579196701,
+        "memory_peak_mb": 89.61376953125,
+        "num_samples": 100,
+        "embed_dim": 512,
+        "timestamp": "2026-01-20T03:07:40.949413+00:00",
+        "metadata": {
+          "device": "cuda",
+          "num_warmup": 1,
+          "num_iterations": 3,
+          "seed": 42
+        },
+        "notes": ""
+      },
+      {
+        "compactor_name": "ResidualBoostCompactor",
+        "fidelity_mean": 0.5613197293877602,
+        "fidelity_std": 0.04017913227387295,
+        "fidelity_min": 0.47724419832229614,
+        "fidelity_percentiles": {
+          "p50": 0.5622826218605042,
+          "p90": 0.617036533355713,
+          "p95": 0.6285928159952163,
+          "p99": 0.6541725265979766
+        },
+        "compression_ratio": 16.0,
+        "compress_latency_ms": 0.3993819991592318,
+        "decompress_latency_ms": 0.17977499131423733,
+        "total_latency_ms": 0.5791569904734691,
+        "memory_peak_mb": 41.42529296875,
+        "num_samples": 100,
+        "embed_dim": 512,
+        "timestamp": "2026-01-20T03:07:40.976523+00:00",
+        "metadata": {
+          "device": "cuda",
+          "num_warmup": 1,
+          "num_iterations": 3,
+          "seed": 42
+        },
+        "notes": ""
+      },
+      {
+        "compactor_name": "DenseEmbeddingEncoder",
+        "fidelity_mean": 0.003304009074345231,
+        "fidelity_std": 0.04111401018220066,
+        "fidelity_min": -0.08898672461509705,
+        "fidelity_percentiles": {
+          "p50": 0.0010773483663797379,
+          "p90": 0.058729739487171174,
+          "p95": 0.06328268870711326,
+          "p99": 0.09356980979442601
+        },
+        "compression_ratio": 2.6666666666666665,
+        "compress_latency_ms": 0.22237633432572088,
+        "decompress_latency_ms": 0.07695399108342826,
+        "total_latency_ms": 0.29933032540914917,
+        "memory_peak_mb": 18.4833984375,
+        "num_samples": 100,
+        "embed_dim": 512,
+        "timestamp": "2026-01-20T03:07:41.002155+00:00",
+        "metadata": {
+          "device": "cuda",
+          "num_warmup": 1,
+          "num_iterations": 3,
+          "seed": 42
+        },
+        "notes": "untrained"
+      }
+    ],
+    "baseline_fidelity": 1.0,
+    "device": "cuda",
+    "torch_version": "2.9.1+cu128",
+    "cuda_available": true,
+    "timestamp": "2026-01-20T03:07:41.002174+00:00"
+  },
+  "models": {
+    "timestamp": "2026-01-20T03:07:42.146009+00:00",
+    "git_sha": "1119a06",
+    "hardware": {
+      "platform": "Linux-6.12.63+deb13-amd64-x86_64-with-glibc2.41",
+      "python_version": "3.14.2",
+      "processor": "",
+      "pytorch_version": "2.9.1+cu128",
+      "cuda_available": true,
+      "cuda_version": "12.8",
+      "gpu_name": "NVIDIA GeForce RTX 5080",
+      "gpu_memory_gb": 15.46807861328125
+    },
+    "components": {
+      "pcn-vae-gan": {
+        "name": "PCN-VAE-GAN",
+        "latency_ms": {
+          "forward_bs1": 0.07957194873597473,
+          "forward_bs8": 0.07173068937845528,
+          "forward_bs32": 0.08120358019368723,
+          "forward_bs64": 0.08894584869267419
+        },
+        "throughput": {
+          "samples_per_sec_bs1": 11622.290932114247,
+          "samples_per_sec_bs8": 111706.3331009954,
+          "samples_per_sec_bs32": 385150.5736912398,
+          "samples_per_sec_bs64": 715317.6161278065
+        },
+        "memory_mb": {
+          "peak_allocated": 12.16259765625,
+          "model_size": 2.490325927734375
+        },
+        "quality": {
+          "reconstruction_mse": 1.2508944272994995,
+          "cosine_similarity": -5.196942947804928e-05,
+          "kl_divergence": 0.7580691576004028
+        },
+        "normalized": {
+          "param_count": 652824,
+          "throughput_per_billion_params": 589976124.7920417,
+          "bytes_per_param": 19.535752362045514
+        }
+      },
+      "vl-jepa": {
+        "name": "VL-JEPA",
+        "latency_ms": {
+          "vision_encoder_bs1": 1.2368275990593247,
+          "vision_encoder_bs4": 2.0925233204616234,
+          "vision_encoder_bs8": 3.394178010057658,
+          "vision_encoder_bs16": 5.84686575923115,
+          "memory_write": 0.040775861125439405,
+          "memory_read": 0.14958993095206097
+        },
+        "throughput": {
+          "images_per_sec_bs1": 812.3481094652883,
+          "images_per_sec_bs4": 1918.121705269493,
+          "images_per_sec_bs8": 2339.270194731314,
+          "images_per_sec_bs16": 2735.2641396251956
+        },
+        "memory_mb": {
+          "peak_allocated": 129.603515625,
+          "model_size": 75.0390625
+        },
+        "quality": {},
+        "normalized": {
+          "param_count": 19671040,
+          "throughput_per_billion_params": 118919.49763364387
+        }
+      },
+      "interconnect": {
+        "name": "Interconnect (mHC)",
+        "latency_ms": {
+          "gate_bs1": 0.07258753146743402,
+          "gate_bs8": 0.0709231523796916,
+          "gate_bs32": 0.08280354843009263
+        },
+        "throughput": {
+          "gate_samples_per_sec_bs1": 13808.57516838773,
+          "gate_samples_per_sec_bs8": 113728.46310593253,
+          "gate_samples_per_sec_bs32": 408061.28659236385
+        },
+        "memory_mb": {},
+        "quality": {
+          "gate_output_mean": 11.91886043548584,
+          "gate_output_std": 0.36099711060523987
+        },
+        "normalized": {}
+      }
+    },
+    "summary": {
+      "total_components": 3,
+      "successful_components": 3,
+      "total_parameters": 20323864,
+      "total_parameters_millions": 20.323864,
+      "aggregate_throughput_samples_per_sec": 227774.06640165925
+    }
+  },
+  "trends": {},
+  "tests_passed": true
+}

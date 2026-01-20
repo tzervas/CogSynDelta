@@ -202,15 +202,18 @@ class PCNVAEGANBenchmark:
     def _get_model(self) -> Any:
         """Lazy load model."""
         if self._model is None:
+            from pathlib import Path
+
             import torch
+            import yaml
 
-            from cogsyndelta.core.pcn_vae_gan import PCNVAEGAN
+            from cogsyndelta.core.pcn_vae_gan import PCNVAEGANHybrid
 
-            self._model = PCNVAEGAN(
-                input_dim=512,
-                hidden_dim=256,
-                latent_dim=64,
-            )
+            # Load config from YAML
+            config_path = Path(__file__).parent.parent / "config" / "config.yaml"
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            self._model = PCNVAEGANHybrid(config)
             actual_device = self.device if torch.cuda.is_available() else "cpu"
             self._model = self._model.to(actual_device)
             self._model.eval()
@@ -246,12 +249,15 @@ class PCNVAEGANBenchmark:
 
         metrics = ComponentMetrics(name="PCN-VAE-GAN")
 
+        # PCNVAEGANHybrid uses input_dim=784 (MNIST 28x28 flattened)
+        input_dim = 784
+
         # Test at multiple batch sizes
         batch_sizes = [1, 8, 32, 64]
 
         for batch_size in batch_sizes:
             print(f"  Batch size {batch_size}...")
-            x = torch.randn(batch_size, 512, device=actual_device)
+            x = torch.randn(batch_size, input_dim, device=actual_device)
 
             # Latency
             with torch.no_grad():
@@ -275,7 +281,7 @@ class PCNVAEGANBenchmark:
                     metrics.quality["kl_divergence"] = quality.kl_divergence
 
         # Memory
-        x = torch.randn(32, 512, device=actual_device)
+        x = torch.randn(32, input_dim, device=actual_device)
         with torch.no_grad():
             memory = measure_memory(lambda: model(x), model=model)
         metrics.memory_mb["peak_allocated"] = memory.peak_allocated_mb
@@ -451,17 +457,17 @@ class InterconnectBenchmark:
         if self._gate is None:
             import torch
 
-            from cogsyndelta.core.interconnect_manager import InterconnectManager
-            from cogsyndelta.core.vl_jepa_extension import mHCGate
+            from cogsyndelta.core.interconnect_manager import IntelligentInterconnectManager
+            from cogsyndelta.core.vl_jepa_extension import ModeratedHyperConnection
 
             actual_device = self.device if torch.cuda.is_available() else "cpu"
 
-            self._gate = mHCGate(dim=512).to(actual_device)
+            self._gate = ModeratedHyperConnection(embed_dim=512).to(actual_device)
             self._gate.eval()
 
-            self._manager = InterconnectManager(
+            self._manager = IntelligentInterconnectManager(
                 embed_dim=512,
-                num_regions=4,
+                num_sections=4,
             ).to(actual_device)
 
         return self._gate, self._manager
