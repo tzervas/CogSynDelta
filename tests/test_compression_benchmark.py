@@ -407,9 +407,7 @@ class TestCompressionBenchmark:
             num_warmup=1,
             num_iterations=1,
         )
-        suite = benchmark.run_full_suite(
-            compactors={"Test": PerfectCompactor()}
-        )
+        suite = benchmark.run_full_suite(compactors={"Test": PerfectCompactor()})
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = benchmark.save_results(tmpdir, suite, prefix="test")

@@ -158,8 +158,16 @@ class CPUTopology(MetricMixin):
                 # psutil may not support per-core frequency/usage on all platforms;
                 # in that case, fall back to topology without detailed per-core stats.
                 pass
-            p_utils = [c.utilization_pct for c in cores if c.core_type == "performance" and c.utilization_pct]
-            e_utils = [c.utilization_pct for c in cores if c.core_type == "efficiency" and c.utilization_pct]
+            p_utils = [
+                c.utilization_pct
+                for c in cores
+                if c.core_type == "performance" and c.utilization_pct
+            ]
+            e_utils = [
+                c.utilization_pct
+                for c in cores
+                if c.core_type == "efficiency" and c.utilization_pct
+            ]
             all_utils = [c.utilization_pct for c in cores if c.utilization_pct]
 
             return cls(
@@ -286,13 +294,13 @@ class GPUTopology(MetricMixin):
                     (10, 0): 128,  # GB200 approx
                     # Ada Lovelace
                     (8, 9): 128,  # RTX 4090
-                    (8, 6): 84,   # RTX 4080/5080/3090 approx (Ada and Ampere overlap)
+                    (8, 6): 84,  # RTX 4080/5080/3090 approx (Ada and Ampere overlap)
                     # Ampere
                     (8, 0): 108,  # A100
                     # Turing
-                    (7, 5): 72,   # RTX 2080 Ti
+                    (7, 5): 72,  # RTX 2080 Ti
                     # Volta
-                    (7, 0): 80,   # V100
+                    (7, 0): 80,  # V100
                 }
                 total_sms = sm_lookup.get(compute_cap, 0)
 
@@ -410,7 +418,9 @@ class ResourceTimeSeries(MetricMixin):
 
         cpu_vals = [s.process_cpu_pct for s in self.snapshots if s.process_cpu_pct is not None]
         mem_vals = [s.process_memory_mb for s in self.snapshots if s.process_memory_mb is not None]
-        gpu_mem_vals = [s.gpu_memory_used_mb for s in self.snapshots if s.gpu_memory_used_mb is not None]
+        gpu_mem_vals = [
+            s.gpu_memory_used_mb for s in self.snapshots if s.gpu_memory_used_mb is not None
+        ]
 
         if cpu_vals:
             self.peak_cpu_pct = max(cpu_vals)
@@ -575,8 +585,12 @@ class ProcessResourceTracker:
                         for child in self._process.children(recursive=True):
                             try:
                                 child_mem = child.memory_info()
-                                snapshot.process_memory_mb = (snapshot.process_memory_mb or 0) + child_mem.rss / (1024 * 1024)
-                                snapshot.process_cpu_pct = (snapshot.process_cpu_pct or 0) + child.cpu_percent()
+                                snapshot.process_memory_mb = (
+                                    snapshot.process_memory_mb or 0
+                                ) + child_mem.rss / (1024 * 1024)
+                                snapshot.process_cpu_pct = (
+                                    snapshot.process_cpu_pct or 0
+                                ) + child.cpu_percent()
                             except (psutil.NoSuchProcess, psutil.AccessDenied):
                                 # Child process may have terminated or be inaccessible; skip it.
                                 pass
@@ -684,7 +698,9 @@ class BenchmarkResourceUsage(MetricMixin):
         ts.compute_statistics()
 
         # Get GPU utilization stats
-        gpu_utils = [s.gpu_utilization_pct for s in ts.snapshots if s.gpu_utilization_pct is not None]
+        gpu_utils = [
+            s.gpu_utilization_pct for s in ts.snapshots if s.gpu_utilization_pct is not None
+        ]
 
         # Get topologies from first snapshot that has them
         cpu_topo = next((s.cpu_topology for s in ts.snapshots if s.cpu_topology), None)

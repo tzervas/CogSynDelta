@@ -260,7 +260,9 @@ class BenchmarkHistoryDB:
         model_name = data.get("model_name") or data.get("model", {}).get("name")
         gpu_name = data.get("gpu_name") or data.get("system", {}).get("gpu_name")
         cuda_version = data.get("cuda_version") or data.get("system", {}).get("cuda_version")
-        pytorch_version = data.get("pytorch_version") or data.get("system", {}).get("pytorch_version")
+        pytorch_version = data.get("pytorch_version") or data.get("system", {}).get(
+            "pytorch_version"
+        )
 
         # Extract key metrics
         throughput = data.get("throughput") or data.get("samples_per_sec")
@@ -271,53 +273,77 @@ class BenchmarkHistoryDB:
 
         with self._connection() as conn:
             # Insert summary
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO benchmark_runs
                 (run_id, timestamp, duration_sec, model_name, gpu_name, cuda_version,
                  pytorch_version, throughput, latency_ms, memory_mb, power_watts,
                  temperature_c, compressed)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                run_id, timestamp, duration, model_name, gpu_name, cuda_version,
-                pytorch_version, throughput, latency, memory, power,
-                temperature, 1 if compress else 0
-            ))
+            """,
+                (
+                    run_id,
+                    timestamp,
+                    duration,
+                    model_name,
+                    gpu_name,
+                    cuda_version,
+                    pytorch_version,
+                    throughput,
+                    latency,
+                    memory,
+                    power,
+                    temperature,
+                    1 if compress else 0,
+                ),
+            )
 
             # Insert full data
             json_str = json.dumps(data, default=str)
             if compress:
                 compressed = gzip.compress(json_str.encode("utf-8"))
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT OR REPLACE INTO benchmark_data (run_id, data_compressed)
                     VALUES (?, ?)
-                """, (run_id, compressed))
+                """,
+                    (run_id, compressed),
+                )
             else:
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT OR REPLACE INTO benchmark_data (run_id, data_json)
                     VALUES (?, ?)
-                """, (run_id, json_str))
+                """,
+                    (run_id, json_str),
+                )
 
             # Insert resource snapshots if present
-            snapshots = data.get("resource_snapshots") or data.get("time_series", {}).get("snapshots", [])
+            snapshots = data.get("resource_snapshots") or data.get("time_series", {}).get(
+                "snapshots", []
+            )
             if snapshots:
-                conn.executemany("""
+                conn.executemany(
+                    """
                     INSERT INTO resource_snapshots
                     (run_id, timestamp_offset_ms, cpu_pct, memory_mb, gpu_util_pct, gpu_memory_mb,
                      disk_read_mb, disk_write_mb)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, [
-                    (
-                        run_id,
-                        s.get("timestamp_offset_ms", 0),
-                        s.get("cpu_pct") or s.get("process_cpu_percent"),
-                        s.get("memory_mb") or s.get("process_memory_mb"),
-                        s.get("gpu_util_pct") or s.get("gpu_utilization"),
-                        s.get("gpu_memory_mb") or s.get("gpu_memory_used_mb"),
-                        s.get("disk_read_mb"),
-                        s.get("disk_write_mb"),
-                    )
-                    for s in snapshots
-                ])
+                """,
+                    [
+                        (
+                            run_id,
+                            s.get("timestamp_offset_ms", 0),
+                            s.get("cpu_pct") or s.get("process_cpu_percent"),
+                            s.get("memory_mb") or s.get("process_memory_mb"),
+                            s.get("gpu_util_pct") or s.get("gpu_utilization"),
+                            s.get("gpu_memory_mb") or s.get("gpu_memory_used_mb"),
+                            s.get("disk_read_mb"),
+                            s.get("disk_write_mb"),
+                        )
+                        for s in snapshots
+                    ],
+                )
 
             # Insert aggregated metrics
             self._extract_aggregates(conn, run_id, data)
@@ -377,11 +403,14 @@ class BenchmarkHistoryDB:
                     aggregates.append((run_id, "resource", key, float(value), None))
 
         if aggregates:
-            conn.executemany("""
+            conn.executemany(
+                """
                 INSERT OR REPLACE INTO metric_aggregates
                 (run_id, category, metric_name, value, unit)
                 VALUES (?, ?, ?, ?, ?)
-            """, aggregates)
+            """,
+                aggregates,
+            )
 
     def query_runs(
         self,
@@ -435,14 +464,17 @@ class BenchmarkHistoryDB:
         with self._connection() as conn:
             # Note: where_clause only contains hardcoded column names from above,
             # all user values are parameterized - no SQL injection risk
-            cur = conn.execute(f"""
+            cur = conn.execute(
+                f"""
                 SELECT run_id, timestamp, duration_sec, model_name, gpu_name,
                        throughput, latency_ms, memory_mb, compressed
                 FROM benchmark_runs
                 WHERE {where_clause}
                 ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
-            """, params)  # noqa: S608 - where_clause is safe (hardcoded column names only)
+            """,
+                params,
+            )
 
             return [
                 BenchmarkSummary(
@@ -469,11 +501,14 @@ class BenchmarkHistoryDB:
             Full benchmark data dict, or None if not found.
         """
         with self._connection() as conn:
-            cur = conn.execute("""
+            cur = conn.execute(
+                """
                 SELECT data_json, data_compressed
                 FROM benchmark_data
                 WHERE run_id = ?
-            """, (run_id,))
+            """,
+                (run_id,),
+            )
             row = cur.fetchone()
 
             if not row:
@@ -499,13 +534,16 @@ class BenchmarkHistoryDB:
             List of snapshot dictionaries.
         """
         with self._connection() as conn:
-            cur = conn.execute("""
+            cur = conn.execute(
+                """
                 SELECT timestamp_offset_ms, cpu_pct, memory_mb, gpu_util_pct,
                        gpu_memory_mb, disk_read_mb, disk_write_mb
                 FROM resource_snapshots
                 WHERE run_id = ?
                 ORDER BY timestamp_offset_ms
-            """, (run_id,))
+            """,
+                (run_id,),
+            )
 
             return [dict(row) for row in cur.fetchall()]
 
@@ -536,7 +574,8 @@ class BenchmarkHistoryDB:
 
         with self._connection() as conn:
             # Note: model_filter is either empty or hardcoded "AND r.model_name = ?"
-            cur = conn.execute(f"""
+            cur = conn.execute(
+                f"""
                 SELECT r.timestamp, m.value
                 FROM metric_aggregates m
                 JOIN benchmark_runs r ON m.run_id = r.run_id
@@ -544,11 +583,12 @@ class BenchmarkHistoryDB:
                 {model_filter}
                 ORDER BY r.timestamp DESC
                 LIMIT ?
-            """, params)  # noqa: S608 - model_filter is safe (hardcoded or empty)
+            """,
+                params,
+            )
 
             return [
-                (datetime.fromisoformat(row["timestamp"]), row["value"])
-                for row in cur.fetchall()
+                (datetime.fromisoformat(row["timestamp"]), row["value"]) for row in cur.fetchall()
             ]
 
     def archive_old_runs(self, days: int = 7) -> int:
@@ -562,11 +602,14 @@ class BenchmarkHistoryDB:
         """
         cutoff = datetime.now() - timedelta(days=days)
         with self._connection() as conn:
-            cur = conn.execute("""
+            cur = conn.execute(
+                """
                 UPDATE benchmark_runs
                 SET archived = 1
                 WHERE timestamp < ? AND archived = 0
-            """, (cutoff.isoformat(),))
+            """,
+                (cutoff.isoformat(),),
+            )
             conn.commit()
             return cur.rowcount
 
@@ -582,10 +625,13 @@ class BenchmarkHistoryDB:
         cutoff = datetime.now() - timedelta(days=days)
         with self._connection() as conn:
             # Get run IDs to delete
-            cur = conn.execute("""
+            cur = conn.execute(
+                """
                 SELECT run_id FROM benchmark_runs
                 WHERE timestamp < ?
-            """, (cutoff.isoformat(),))
+            """,
+                (cutoff.isoformat(),),
+            )
             run_ids = [row["run_id"] for row in cur.fetchall()]
 
             if not run_ids:
@@ -595,20 +641,20 @@ class BenchmarkHistoryDB:
             # Note: placeholders is safe - just "?,?,?" repeated for number of run_ids
             placeholders = ",".join("?" * len(run_ids))
             conn.execute(
-                f"DELETE FROM resource_snapshots WHERE run_id IN ({placeholders})",  # noqa: S608
-                run_ids
+                f"DELETE FROM resource_snapshots WHERE run_id IN ({placeholders})",
+                run_ids,
             )
             conn.execute(
-                f"DELETE FROM metric_aggregates WHERE run_id IN ({placeholders})",  # noqa: S608
-                run_ids
+                f"DELETE FROM metric_aggregates WHERE run_id IN ({placeholders})",
+                run_ids,
             )
             conn.execute(
-                f"DELETE FROM benchmark_data WHERE run_id IN ({placeholders})",  # noqa: S608
-                run_ids
+                f"DELETE FROM benchmark_data WHERE run_id IN ({placeholders})",
+                run_ids,
             )
             conn.execute(
-                f"DELETE FROM benchmark_runs WHERE run_id IN ({placeholders})",  # noqa: S608
-                run_ids
+                f"DELETE FROM benchmark_runs WHERE run_id IN ({placeholders})",
+                run_ids,
             )
             conn.commit()
 
@@ -647,10 +693,14 @@ class BenchmarkHistoryDB:
             stats["total_snapshots"] = cur.fetchone()["count"]
 
             # Database file size
-            stats["database_size_mb"] = self.db_path.stat().st_size / (1024 * 1024) if self.db_path.exists() else 0
+            stats["database_size_mb"] = (
+                self.db_path.stat().st_size / (1024 * 1024) if self.db_path.exists() else 0
+            )
 
             # Date range
-            cur = conn.execute("SELECT MIN(timestamp) as oldest, MAX(timestamp) as newest FROM benchmark_runs")
+            cur = conn.execute(
+                "SELECT MIN(timestamp) as oldest, MAX(timestamp) as newest FROM benchmark_runs"
+            )
             row = cur.fetchone()
             stats["oldest_run"] = row["oldest"]
             stats["newest_run"] = row["newest"]
@@ -759,7 +809,7 @@ class ArchiveManager:
         )
 
         removed = 0
-        for old_file in json_files[self.max_recent_files:]:
+        for old_file in json_files[self.max_recent_files :]:
             try:
                 old_file.unlink()
                 removed += 1

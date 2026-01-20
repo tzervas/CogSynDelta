@@ -124,11 +124,13 @@ class DiagnosticMetrics(MetricMixin):
                 f"({mem_util:.1f}%). Workload is compute-bound."
             )
             is_compute = True
-            recommendations.extend([
-                "Consider using mixed precision (fp16/bf16) to increase throughput",
-                "Try torch.compile() for kernel fusion",
-                "Explore quantization (INT8/INT4) for inference",
-            ])
+            recommendations.extend(
+                [
+                    "Consider using mixed precision (fp16/bf16) to increase throughput",
+                    "Try torch.compile() for kernel fusion",
+                    "Explore quantization (INT8/INT4) for inference",
+                ]
+            )
 
         # Memory-bound: high memory util, lower GPU util
         elif mem_util > 85:
@@ -139,12 +141,14 @@ class DiagnosticMetrics(MetricMixin):
                 f"memory bandwidth or capacity is limiting performance."
             )
             is_memory = True
-            recommendations.extend([
-                "Reduce batch size to decrease memory pressure",
-                "Enable gradient checkpointing for training",
-                "Use memory-efficient attention (Flash Attention)",
-                "Consider model sharding across multiple GPUs",
-            ])
+            recommendations.extend(
+                [
+                    "Reduce batch size to decrease memory pressure",
+                    "Enable gradient checkpointing for training",
+                    "Use memory-efficient attention (Flash Attention)",
+                    "Consider model sharding across multiple GPUs",
+                ]
+            )
 
         # IO-bound: low GPU util, high IO wait
         elif gpu_util < 50 and (io_wait > 20 or cpu_util > 80):
@@ -155,12 +159,14 @@ class DiagnosticMetrics(MetricMixin):
                 f"Data loading or preprocessing may be the bottleneck."
             )
             is_io = True
-            recommendations.extend([
-                "Increase DataLoader num_workers",
-                "Use pinned memory (pin_memory=True)",
-                "Prefetch data to GPU",
-                "Consider NVMe storage or RAM disk for dataset",
-            ])
+            recommendations.extend(
+                [
+                    "Increase DataLoader num_workers",
+                    "Use pinned memory (pin_memory=True)",
+                    "Prefetch data to GPU",
+                    "Consider NVMe storage or RAM disk for dataset",
+                ]
+            )
 
         # Latency-bound: everything is low
         elif gpu_util < 30 and mem_util < 30:
@@ -170,11 +176,13 @@ class DiagnosticMetrics(MetricMixin):
                 f"Both GPU ({gpu_util:.1f}%) and memory ({mem_util:.1f}%) are "
                 f"underutilized. Kernel launch overhead or synchronization may dominate."
             )
-            recommendations.extend([
-                "Increase batch size to amortize kernel launch overhead",
-                "Use CUDA graphs for fixed-size workloads",
-                "Reduce CPU-GPU synchronization points",
-            ])
+            recommendations.extend(
+                [
+                    "Increase batch size to amortize kernel launch overhead",
+                    "Use CUDA graphs for fixed-size workloads",
+                    "Reduce CPU-GPU synchronization points",
+                ]
+            )
 
         else:
             bottleneck = "balanced"

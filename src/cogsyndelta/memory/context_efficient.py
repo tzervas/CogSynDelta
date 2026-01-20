@@ -537,14 +537,15 @@ class LatentCache:
             return total
         return 0.0
 
-    def _to_cache_device(self, data: dict[str, Any] | torch.Tensor) -> dict[str, Any] | torch.Tensor:
+    def _to_cache_device(
+        self, data: dict[str, Any] | torch.Tensor
+    ) -> dict[str, Any] | torch.Tensor:
         """Move data to cache device."""
         if isinstance(data, torch.Tensor):
             return data.to(self.device)
         if isinstance(data, dict):
             return {
-                k: v.to(self.device) if isinstance(v, torch.Tensor) else v
-                for k, v in data.items()
+                k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in data.items()
             }
         return data
 
@@ -555,10 +556,7 @@ class LatentCache:
         if isinstance(data, torch.Tensor):
             return data.to(device)
         if isinstance(data, dict):
-            return {
-                k: v.to(device) if isinstance(v, torch.Tensor) else v
-                for k, v in data.items()
-            }
+            return {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in data.items()}
         return data
 
     def get(self, embeddings: torch.Tensor) -> dict[str, Any] | torch.Tensor | None:
@@ -701,9 +699,7 @@ class CachedChunkedCompactor(nn.Module):
         """Alias for compress()."""
         return self.compress(embeddings)
 
-    def reconstruct(
-        self, compressed_chunks: list[dict[str, Any] | torch.Tensor]
-    ) -> torch.Tensor:
+    def reconstruct(self, compressed_chunks: list[dict[str, Any] | torch.Tensor]) -> torch.Tensor:
         """Reconstruct from compressed chunks."""
         return self.chunked.reconstruct(compressed_chunks)
 

@@ -68,9 +68,7 @@ class CompactorProtocol(Protocol):
         """Compress embeddings to a compact representation."""
         ...
 
-    def reconstruct(
-        self, compressed: torch.Tensor | dict[str, Any]
-    ) -> torch.Tensor:
+    def reconstruct(self, compressed: torch.Tensor | dict[str, Any]) -> torch.Tensor:
         """Reconstruct embeddings from compressed representation."""
         ...
 
@@ -114,9 +112,7 @@ class CompactorAdapter:
         msg = f"Compactor {type(self._compactor).__name__} has no compress/compact/encode method"
         raise AttributeError(msg)
 
-    def reconstruct(
-        self, compressed: torch.Tensor | dict[str, Any]
-    ) -> torch.Tensor:
+    def reconstruct(self, compressed: torch.Tensor | dict[str, Any]) -> torch.Tensor:
         """Reconstruct embeddings from compressed representation."""
         # Handle DenseEmbeddingEncoder which uses decode() instead of reconstruct()
         if self._has_decode and isinstance(compressed, dict) and "dense" in compressed:
@@ -305,40 +301,48 @@ class BenchmarkSuite:
         trained = [f for f in fidelities if f >= 0.3]
         untrained = [f for f in fidelities if f < 0.3]
 
-        lines.extend([
-            f"  Mean (all):       {statistics.mean(fidelities):.4f}",
-            f"  Std (all):        {statistics.stdev(fidelities):.4f}" if len(fidelities) > 1 else "  Std (all):        N/A",
-            f"  Range:            [{min(fidelities):.4f}, {max(fidelities):.4f}]",
-            f"  Trained models:   {len(trained)}",
-            f"  Untrained models: {len(untrained)}",
-            "",
-            "## Per-Compactor Breakdown",
-        ])
+        lines.extend(
+            [
+                f"  Mean (all):       {statistics.mean(fidelities):.4f}",
+                f"  Std (all):        {statistics.stdev(fidelities):.4f}"
+                if len(fidelities) > 1
+                else "  Std (all):        N/A",
+                f"  Range:            [{min(fidelities):.4f}, {max(fidelities):.4f}]",
+                f"  Trained models:   {len(trained)}",
+                f"  Untrained models: {len(untrained)}",
+                "",
+                "## Per-Compactor Breakdown",
+            ]
+        )
 
         for r in self.results:
             status = "🟢" if r.meets_target() else ("🟡" if r.fidelity_mean >= 0.5 else "🔴")
-            lines.extend([
-                "",
-                f"  {status} {r.compactor_name}",
-                f"     Fidelity:    {r.fidelity_mean:.4f} ± {r.fidelity_std:.4f}",
-                f"     Min/Max:     {r.fidelity_min:.4f} / {r.fidelity_percentiles.get('p99', 'N/A')}",
-                f"     Percentiles: p50={r.fidelity_percentiles.get('p50', 0):.4f}, "
-                f"p90={r.fidelity_percentiles.get('p90', 0):.4f}, "
-                f"p95={r.fidelity_percentiles.get('p95', 0):.4f}",
-                f"     Compression: {r.compression_ratio:.2f}x",
-                f"     Latency:     compress={r.compress_latency_ms:.2f}ms, "
-                f"decompress={r.decompress_latency_ms:.2f}ms",
-                f"     Memory:      {r.memory_peak_mb:.1f} MB peak",
-                f"     Notes:       {r.notes or 'none'}",
-            ])
+            lines.extend(
+                [
+                    "",
+                    f"  {status} {r.compactor_name}",
+                    f"     Fidelity:    {r.fidelity_mean:.4f} ± {r.fidelity_std:.4f}",
+                    f"     Min/Max:     {r.fidelity_min:.4f} / {r.fidelity_percentiles.get('p99', 'N/A')}",
+                    f"     Percentiles: p50={r.fidelity_percentiles.get('p50', 0):.4f}, "
+                    f"p90={r.fidelity_percentiles.get('p90', 0):.4f}, "
+                    f"p95={r.fidelity_percentiles.get('p95', 0):.4f}",
+                    f"     Compression: {r.compression_ratio:.2f}x",
+                    f"     Latency:     compress={r.compress_latency_ms:.2f}ms, "
+                    f"decompress={r.decompress_latency_ms:.2f}ms",
+                    f"     Memory:      {r.memory_peak_mb:.1f} MB peak",
+                    f"     Notes:       {r.notes or 'none'}",
+                ]
+            )
 
-        lines.extend([
-            "",
-            "=" * 70,
-            "LEGEND: 🟢 Meets ADR-0008 targets | 🟡 Partial | 🔴 Below threshold",
-            "        untrained = model needs training before production use",
-            "=" * 70,
-        ])
+        lines.extend(
+            [
+                "",
+                "=" * 70,
+                "LEGEND: 🟢 Meets ADR-0008 targets | 🟡 Partial | 🔴 Below threshold",
+                "        untrained = model needs training before production use",
+                "=" * 70,
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -647,9 +651,7 @@ class CompressionBenchmark:
             compression_ratio=compression_ratio,
             compress_latency_ms=statistics.mean(compress_times) * 1000,
             decompress_latency_ms=statistics.mean(decompress_times) * 1000,
-            total_latency_ms=(
-                statistics.mean(compress_times) + statistics.mean(decompress_times)
-            )
+            total_latency_ms=(statistics.mean(compress_times) + statistics.mean(decompress_times))
             * 1000,
             memory_peak_mb=memory_peak,
             num_samples=self.num_samples,
@@ -724,21 +726,15 @@ class CompressionBenchmark:
                 ResidualBoostCompactor,
             )
 
-            compactors["HighFidelityCompactor"] = HighFidelityCompactor(
-                embed_dim=self.embed_dim
-            )
+            compactors["HighFidelityCompactor"] = HighFidelityCompactor(embed_dim=self.embed_dim)
             compactors["HybridAdaptiveCompactor"] = HybridAdaptiveCompactor(
                 embed_dim=self.embed_dim
             )
-            compactors["ResidualBoostCompactor"] = ResidualBoostCompactor(
-                embed_dim=self.embed_dim
-            )
+            compactors["ResidualBoostCompactor"] = ResidualBoostCompactor(embed_dim=self.embed_dim)
             # LosslessCompactor requires ~32GB GPU memory due to quantization tables
             # Skip on GPUs with less than 24GB to avoid OOM
             if gpu_memory_gb >= 24.0 or self.device == "cpu":
-                compactors["LosslessCompactor"] = LosslessCompactor(
-                    embed_dim=self.embed_dim
-                )
+                compactors["LosslessCompactor"] = LosslessCompactor(embed_dim=self.embed_dim)
             else:
                 print(
                     f"Note: Skipping LosslessCompactor - requires 24GB+ GPU memory "
@@ -750,9 +746,7 @@ class CompressionBenchmark:
         try:
             from cogsyndelta.memory.dense_embeddings import DenseEmbeddingEncoder
 
-            compactors["DenseEmbeddingEncoder"] = DenseEmbeddingEncoder(
-                embed_dim=self.embed_dim
-            )
+            compactors["DenseEmbeddingEncoder"] = DenseEmbeddingEncoder(embed_dim=self.embed_dim)
         except ImportError:
             # DenseEmbeddingEncoder is an optional dependency; benchmarks can run without it.
             pass

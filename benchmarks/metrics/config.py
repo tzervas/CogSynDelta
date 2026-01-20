@@ -140,7 +140,9 @@ class ComparisonConfig:
     baseline_model: str = "gpt2_small"
     engram_to_token_ratio: float = 10.0  # 1 engram ≈ 10 tokens info
     include_industry_baselines: bool = True
-    baselines_file: Path = field(default_factory=lambda: Path("benchmarks/data/industry_baselines.json"))
+    baselines_file: Path = field(
+        default_factory=lambda: Path("benchmarks/data/industry_baselines.json")
+    )
 
 
 @dataclass

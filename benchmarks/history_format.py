@@ -142,14 +142,14 @@ class MetricUnit(str, Enum):
 class MetricScale(str, Enum):
     """Scale prefixes for metric values."""
 
-    NANO = "n"      # 10^-9
-    MICRO = "μ"     # 10^-6
-    MILLI = "m"     # 10^-3
-    UNIT = ""       # 10^0
-    KILO = "K"      # 10^3
-    MEGA = "M"      # 10^6
-    GIGA = "G"      # 10^9
-    TERA = "T"      # 10^12
+    NANO = "n"  # 10^-9
+    MICRO = "μ"  # 10^-6
+    MILLI = "m"  # 10^-3
+    UNIT = ""  # 10^0
+    KILO = "K"  # 10^3
+    MEGA = "M"  # 10^6
+    GIGA = "G"  # 10^9
+    TERA = "T"  # 10^12
 
 
 @dataclass
@@ -463,9 +463,7 @@ class PowerMetrics:
     def __post_init__(self) -> None:
         """Compute derived metrics."""
         if self.gpu_power_watts and self.gpu_power_limit_watts:
-            self.power_efficiency_ratio = (
-                self.gpu_power_watts / self.gpu_power_limit_watts * 100
-            )
+            self.power_efficiency_ratio = self.gpu_power_watts / self.gpu_power_limit_watts * 100
 
     @classmethod
     def capture(cls, duration_seconds: float | None = None) -> PowerMetrics:
@@ -485,6 +483,7 @@ class PowerMetrics:
 
         try:
             import pynvml
+
             pynvml.nvmlInit()
             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
 
@@ -591,6 +590,7 @@ class ComputeUtilizationMetrics:
         # GPU metrics via pynvml
         try:
             import pynvml
+
             pynvml.nvmlInit()
             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
 
@@ -602,9 +602,7 @@ class ComputeUtilizationMetrics:
 
             # Clock speeds
             with contextlib.suppress(pynvml.NVMLError):
-                metrics.gpu_clock_mhz = pynvml.nvmlDeviceGetClockInfo(
-                    handle, pynvml.NVML_CLOCK_SM
-                )
+                metrics.gpu_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_SM)
                 metrics.gpu_max_clock_mhz = pynvml.nvmlDeviceGetMaxClockInfo(
                     handle, pynvml.NVML_CLOCK_SM
                 )
@@ -623,6 +621,7 @@ class ComputeUtilizationMetrics:
         # CPU metrics via psutil
         try:
             import psutil
+
             metrics.cpu_utilization_pct = psutil.cpu_percent(interval=0.1)
             freq = psutil.cpu_freq()
             if freq:
@@ -1181,15 +1180,21 @@ class DiagnosticMetrics:
                 "Performance scales with faster GPU or lower precision."
             )
             if compute_util and compute_util < 80:
-                recommendations.append("Consider using larger batch sizes to improve SM utilization")
+                recommendations.append(
+                    "Consider using larger batch sizes to improve SM utilization"
+                )
             if metrics.compute_efficiency_pct and metrics.compute_efficiency_pct < 50:
-                recommendations.append("Consider using tensor cores (fp16/bf16) for better efficiency")
+                recommendations.append(
+                    "Consider using tensor cores (fp16/bf16) for better efficiency"
+                )
         elif primary == "memory":
             metrics.bottleneck_explanation = (
                 f"Memory-bound: Memory bandwidth is {memory_util:.1f}% utilized. "
                 "Performance scales with HBM bandwidth or better data locality."
             )
-            recommendations.append("Consider using memory-efficient attention or gradient checkpointing")
+            recommendations.append(
+                "Consider using memory-efficient attention or gradient checkpointing"
+            )
             recommendations.append("Review data layout for coalesced memory access")
         elif primary == "io":
             metrics.bottleneck_explanation = (
@@ -1325,13 +1330,35 @@ class ModelSizeConfig:
     description: str = ""
 
     # Standard sizes for CogSynDelta architecture
-    SIZES: dict[str, dict[str, Any]] = field(default_factory=lambda: {
-        "tiny": {"parameters": 1_000_000, "embed_dim": 128, "num_layers": 2, "hidden_dim": 256},
-        "small": {"parameters": 10_000_000, "embed_dim": 256, "num_layers": 4, "hidden_dim": 512},
-        "base": {"parameters": 50_000_000, "embed_dim": 512, "num_layers": 8, "hidden_dim": 1024},
-        "large": {"parameters": 200_000_000, "embed_dim": 768, "num_layers": 12, "hidden_dim": 2048},
-        "xlarge": {"parameters": 1_000_000_000, "embed_dim": 1024, "num_layers": 24, "hidden_dim": 4096},
-    })
+    SIZES: dict[str, dict[str, Any]] = field(
+        default_factory=lambda: {
+            "tiny": {"parameters": 1_000_000, "embed_dim": 128, "num_layers": 2, "hidden_dim": 256},
+            "small": {
+                "parameters": 10_000_000,
+                "embed_dim": 256,
+                "num_layers": 4,
+                "hidden_dim": 512,
+            },
+            "base": {
+                "parameters": 50_000_000,
+                "embed_dim": 512,
+                "num_layers": 8,
+                "hidden_dim": 1024,
+            },
+            "large": {
+                "parameters": 200_000_000,
+                "embed_dim": 768,
+                "num_layers": 12,
+                "hidden_dim": 2048,
+            },
+            "xlarge": {
+                "parameters": 1_000_000_000,
+                "embed_dim": 1024,
+                "num_layers": 24,
+                "hidden_dim": 4096,
+            },
+        }
+    )
 
     @classmethod
     def get_config(cls, size: str) -> ModelSizeConfig:
@@ -1470,6 +1497,7 @@ class RunMetadata:
         # RAM
         try:
             import psutil
+
             ram_gb = psutil.virtual_memory().total / (1024**3)
         except ImportError:
             ram_gb = 0.0
@@ -1771,9 +1799,13 @@ class EnhancedBenchmarkRecord:
             if efficiency_metrics.samples_per_watt:
                 summary["samples_per_watt"] = efficiency_metrics.samples_per_watt
             if efficiency_metrics.estimated_cost_per_1m_samples:
-                summary["cost_per_1m_samples_usd"] = efficiency_metrics.estimated_cost_per_1m_samples
+                summary["cost_per_1m_samples_usd"] = (
+                    efficiency_metrics.estimated_cost_per_1m_samples
+                )
             if efficiency_metrics.estimated_co2_kg_per_1m_samples:
-                summary["co2_kg_per_1m_samples"] = efficiency_metrics.estimated_co2_kg_per_1m_samples
+                summary["co2_kg_per_1m_samples"] = (
+                    efficiency_metrics.estimated_co2_kg_per_1m_samples
+                )
 
         # Add latent space summary if available
         if latent_metrics:
@@ -1833,16 +1865,23 @@ class EnhancedBenchmarkRecord:
         return {
             "metadata": self.metadata.to_dict(),
             "components": {
-                name: [e.to_dict() for e in entries]
-                for name, entries in self.components.items()
+                name: [e.to_dict() for e in entries] for name, entries in self.components.items()
             },
             "summary": self.summary,
             "power_metrics": self.power_metrics.to_dict() if self.power_metrics else None,
-            "efficiency_metrics": self.efficiency_metrics.to_dict() if self.efficiency_metrics else None,
-            "utilization_metrics": self.utilization_metrics.to_dict() if self.utilization_metrics else None,
+            "efficiency_metrics": self.efficiency_metrics.to_dict()
+            if self.efficiency_metrics
+            else None,
+            "utilization_metrics": self.utilization_metrics.to_dict()
+            if self.utilization_metrics
+            else None,
             "latent_metrics": self.latent_metrics.to_dict() if self.latent_metrics else None,
-            "normalized_metrics": self.normalized_metrics.to_dict() if self.normalized_metrics else None,
-            "diagnostic_metrics": self.diagnostic_metrics.to_dict() if self.diagnostic_metrics else None,
+            "normalized_metrics": self.normalized_metrics.to_dict()
+            if self.normalized_metrics
+            else None,
+            "diagnostic_metrics": self.diagnostic_metrics.to_dict()
+            if self.diagnostic_metrics
+            else None,
             "trends": [t.to_dict() for t in self.trends],
             "industry_context": self.industry_context,
             "raw_results": self.raw_results,
@@ -1876,9 +1915,7 @@ class EnhancedBenchmarkRecord:
                     }.get(si.quality_tier, "⚪")
 
                     short_name = entry.name.split(".")[-1]
-                    print(
-                        f"│ {tier_icon} {short_name:<40} {si.bar} {si.formatted:>15}"
-                    )
+                    print(f"│ {tier_icon} {short_name:<40} {si.bar} {si.formatted:>15}")
 
             print(f"└{'─' * 78}")
             print()
@@ -2102,10 +2139,7 @@ class EnhancedBenchmarkRecord:
             print("┌─ ⚠️  PERFORMANCE REGRESSIONS " + "─" * 48)
             for t in regressions:
                 short_name = t.metric_name.split(".")[-1]
-                print(
-                    f"│ 📉 {short_name:<40} "
-                    f"{t.delta_pct_from_previous:>+7.1f}%"
-                )
+                print(f"│ 📉 {short_name:<40} {t.delta_pct_from_previous:>+7.1f}%")
             print(f"└{'─' * 78}")
             print()
 
@@ -2113,10 +2147,7 @@ class EnhancedBenchmarkRecord:
             print("┌─ 📈 IMPROVEMENTS " + "─" * 60)
             for t in improvements[:5]:  # Top 5
                 short_name = t.metric_name.split(".")[-1]
-                print(
-                    f"│ 📈 {short_name:<40} "
-                    f"{t.delta_pct_from_previous:>+7.1f}%"
-                )
+                print(f"│ 📈 {short_name:<40} {t.delta_pct_from_previous:>+7.1f}%")
             if len(improvements) > 5:
                 print(f"│    ... and {len(improvements) - 5} more")
             print(f"└{'─' * 78}")

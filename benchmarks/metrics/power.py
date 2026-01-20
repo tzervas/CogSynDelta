@@ -104,9 +104,7 @@ class PowerMetrics(MetricMixin):
 
                 # Temperature
                 with contextlib.suppress(pynvml.NVMLError):
-                    gpu_temp = pynvml.nvmlDeviceGetTemperature(
-                        handle, pynvml.NVML_TEMPERATURE_GPU
-                    )
+                    gpu_temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
 
                 # Fan
                 with contextlib.suppress(pynvml.NVMLError):

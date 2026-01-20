@@ -206,7 +206,9 @@ class NormalizedMetrics(MetricMixin):
         speed_strictly_better = self.speedup_vs_baseline > other.speedup_vs_baseline
         quality_strictly_better = self.normalized_quality > other.normalized_quality
 
-        return speed_better and quality_better and (speed_strictly_better or quality_strictly_better)
+        return (
+            speed_better and quality_better and (speed_strictly_better or quality_strictly_better)
+        )
 
     def comparison_summary(self) -> str:
         """Generate human-readable comparison summary.

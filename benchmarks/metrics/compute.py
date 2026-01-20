@@ -130,15 +130,11 @@ class ComputeUtilizationMetrics(MetricMixin):
 
                 # Clock speeds
                 try:
-                    gpu_clock = pynvml.nvmlDeviceGetClockInfo(
-                        handle, pynvml.NVML_CLOCK_GRAPHICS
-                    )
+                    gpu_clock = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
                     gpu_max_clock = pynvml.nvmlDeviceGetMaxClockInfo(
                         handle, pynvml.NVML_CLOCK_GRAPHICS
                     )
-                    gpu_mem_clock = pynvml.nvmlDeviceGetClockInfo(
-                        handle, pynvml.NVML_CLOCK_MEM
-                    )
+                    gpu_mem_clock = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM)
 
                     # Detect throttling: current clock < 90% of max
                     if gpu_clock and gpu_max_clock:

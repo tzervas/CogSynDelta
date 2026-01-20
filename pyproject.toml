@@ -265,6 +265,7 @@ ignore = [
 "tests/**/*.py" = ["S101", "PLR2004"]  # Allow asserts and magic values in tests
 "scripts/**/*.py" = ["S603", "S607"]   # Allow subprocess in scripts
 "benchmarks/**/*.py" = ["F841"]        # Allow unused variables in benchmarks (timing loops)
+"benchmarks/metrics/history_db.py" = ["S608"]  # SQL is safe - all user values parameterized
 "examples/**/*.py" = ["F841"]          # Allow unused variables in examples (demos)
 
 [tool.ruff.lint.isort]

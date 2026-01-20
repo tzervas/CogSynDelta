@@ -630,8 +630,7 @@ class BenchmarkVisualizer:
         # Determine higher_is_better based on metric name
         for path in all_metric_paths:
             higher_is_better = not any(
-                pattern in path.lower()
-                for pattern in ["latency", "error", "loss", "mse"]
+                pattern in path.lower() for pattern in ["latency", "error", "loss", "mse"]
             )
 
             trend = self.analyze_trend(path, higher_is_better)
@@ -659,7 +658,9 @@ class BenchmarkVisualizer:
         recommendations: list[str] = []
 
         if degrading > 0:
-            degrading_metrics = [m.name for m in metrics if not m.is_improving and m.trend != "stable"]
+            degrading_metrics = [
+                m.name for m in metrics if not m.is_improving and m.trend != "stable"
+            ]
             recommendations.append(
                 f"⚠️ {degrading} metric(s) showing regression: investigate {', '.join(degrading_metrics[:3])}"
             )
@@ -670,14 +671,10 @@ class BenchmarkVisualizer:
             )
 
         if improving > degrading:
-            recommendations.append(
-                f"✅ Overall positive trend: {improving} metrics improving"
-            )
+            recommendations.append(f"✅ Overall positive trend: {improving} metrics improving")
 
         if stable > len(metrics) // 2:
-            recommendations.append(
-                "➡️ System is stable - good time to establish new baselines"
-            )
+            recommendations.append("➡️ System is stable - good time to establish new baselines")
 
         return TrendReport(
             timestamp=datetime.now(UTC).isoformat(),
@@ -797,12 +794,8 @@ class BenchmarkVisualizer:
         for component, metrics in by_component.items():
             lines.append(f"### {component}")
             lines.append("")
-            lines.append(
-                "| Metric | Trend | Current | Scale | Change | Sparkline |"
-            )
-            lines.append(
-                "|--------|-------|---------|-------|--------|-----------|"
-            )
+            lines.append("| Metric | Trend | Current | Scale | Change | Sparkline |")
+            lines.append("|--------|-------|---------|-------|--------|-----------|")
 
             for m in metrics:
                 short_name = ".".join(m.name.split(".")[1:])
@@ -849,6 +842,7 @@ class BenchmarkVisualizer:
             import io
 
             import matplotlib
+
             matplotlib.use("Agg")  # Non-interactive backend
             import matplotlib.pyplot as plt
         except ImportError:
@@ -875,9 +869,7 @@ class BenchmarkVisualizer:
 
             # Create a figure with subplots for each metric
             n_metrics = min(len(metrics), 6)  # Limit to 6 per component
-            fig, axes = plt.subplots(
-                n_metrics, 1, figsize=(10, 2 * n_metrics), squeeze=False
-            )
+            fig, axes = plt.subplots(n_metrics, 1, figsize=(10, 2 * n_metrics), squeeze=False)
 
             for idx, m in enumerate(metrics[:n_metrics]):
                 ax = axes[idx, 0]
@@ -910,7 +902,9 @@ class BenchmarkVisualizer:
             plt.close(fig)
             buf.seek(0)
             img_base64 = base64.b64encode(buf.read()).decode("utf-8")
-            charts.append(f'<img src="data:image/png;base64,{img_base64}" alt="{component} metrics">')
+            charts.append(
+                f'<img src="data:image/png;base64,{img_base64}" alt="{component} metrics">'
+            )
 
         # Build HTML
         html_content = f"""<!DOCTYPE html>
@@ -937,21 +931,21 @@ class BenchmarkVisualizer:
 <body>
     <h1>📊 Benchmark Trend Report</h1>
     <p><strong>Generated:</strong> {report.timestamp}</p>
-    <p><strong>History Depth:</strong> {report.summary.get('history_depth', 0)} benchmark runs</p>
+    <p><strong>History Depth:</strong> {report.summary.get("history_depth", 0)} benchmark runs</p>
 
     <div class="summary">
         <h2>Summary</h2>
-        <p>📈 <strong>Improving:</strong> {report.summary.get('improving', 0)} metrics</p>
-        <p>📉 <strong>Degrading:</strong> {report.summary.get('degrading', 0)} metrics</p>
-        <p>➡️ <strong>Stable:</strong> {report.summary.get('stable', 0)} metrics</p>
+        <p>📈 <strong>Improving:</strong> {report.summary.get("improving", 0)} metrics</p>
+        <p>📉 <strong>Degrading:</strong> {report.summary.get("degrading", 0)} metrics</p>
+        <p>➡️ <strong>Stable:</strong> {report.summary.get("stable", 0)} metrics</p>
     </div>
 
-    {''.join(f'<div class="chart">{chart}</div>' for chart in charts)}
+    {"".join(f'<div class="chart">{chart}</div>' for chart in charts)}
 
     <div class="recommendations">
         <h2>Recommendations</h2>
         <ul>
-            {''.join(f'<li>{rec}</li>' for rec in report.recommendations)}
+            {"".join(f"<li>{rec}</li>" for rec in report.recommendations)}
         </ul>
     </div>
 
@@ -967,18 +961,20 @@ class BenchmarkVisualizer:
             </tr>
         </thead>
         <tbody>
-            {''.join(
+            {
+            "".join(
                 f'''<tr>
                     <td>{m.name}</td>
-                    <td class="{'improving' if m.is_improving else 'degrading' if m.trend != 'stable' else 'stable'}">
-                        {'📈' if m.is_improving else '📉' if m.trend != 'stable' else '➡️'} {m.trend}
+                    <td class="{"improving" if m.is_improving else "degrading" if m.trend != "stable" else "stable"}">
+                        {"📈" if m.is_improving else "📉" if m.trend != "stable" else "➡️"} {m.trend}
                     </td>
                     <td>{m.current:.4f}</td>
                     <td>{m.baseline:.4f}</td>
                     <td>{m.change_pct:+.2f}%</td>
                 </tr>'''
                 for m in report.metrics
-            )}
+            )
+        }
         </tbody>
     </table>
 </body>
