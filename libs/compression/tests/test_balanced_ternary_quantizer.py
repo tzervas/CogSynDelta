@@ -1,13 +1,16 @@
 """Tests for Balanced Ternary Quantizer and Compression."""
 
-import pytest
-import torch
-
+from compression.balanced_ternary.arithmetic import (
+    BalancedTernaryTensor,
+    BalancedTernaryTryte,
+)
 from compression.balanced_ternary.quantizer import (
     BalancedTernaryCompressor,
     BalancedTernaryQuantizer,
 )
-from compression.balanced_ternary.arithmetic import BalancedTernaryTensor
+
+import pytest
+import torch
 
 
 class TestBalancedTernaryQuantizer:
@@ -288,7 +291,7 @@ class TestCompressionPipeline:
 
     def test_full_layer_compression(self):
         """Test compressing full layer weights."""
-        import torch.nn as nn
+        from torch import nn
 
         layer = nn.Linear(512, 256)
 
@@ -312,7 +315,7 @@ class TestCompressionPipeline:
 
     def test_multiple_layers_compression(self):
         """Test compressing multiple layers."""
-        import torch.nn as nn
+        from torch import nn
 
         class SimpleNet(nn.Module):
             def __init__(self):

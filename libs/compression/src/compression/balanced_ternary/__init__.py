@@ -24,6 +24,7 @@ References:
 from compression.balanced_ternary.arithmetic import (
     BalancedTernaryArithmetic,
     BalancedTernaryTensor,
+    BalancedTernaryTryte,
     tryte_encode,
     tryte_decode,
 )
@@ -40,6 +41,7 @@ from compression.balanced_ternary.quantizer import (
 __all__ = [
     "BalancedTernaryArithmetic",
     "BalancedTernaryTensor",
+    "BalancedTernaryTryte",
     "tryte_encode",
     "tryte_decode",
     "BalancedTernaryLinear",

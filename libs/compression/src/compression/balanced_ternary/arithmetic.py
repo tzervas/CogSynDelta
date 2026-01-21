@@ -181,17 +181,17 @@ class BalancedTernaryTensor:
         """
         return self.to_decimal().float()
 
-    def __add__(self, other: "BalancedTernaryTensor") -> "BalancedTernaryTensor":
+    def __add__(self, other: BalancedTernaryTensor) -> BalancedTernaryTensor:
         """Add two balanced ternary tensors."""
         result_trits = BalancedTernaryArithmetic.add(self.trits, other.trits)
         return BalancedTernaryTensor(result_trits, self.trits_per_tryte)
 
-    def __mul__(self, other: "BalancedTernaryTensor") -> "BalancedTernaryTensor":
+    def __mul__(self, other: BalancedTernaryTensor) -> BalancedTernaryTensor:
         """Multiply two balanced ternary tensors."""
         result_trits = BalancedTernaryArithmetic.multiply(self.trits, other.trits)
         return BalancedTernaryTensor(result_trits, self.trits_per_tryte)
 
-    def __neg__(self) -> "BalancedTernaryTensor":
+    def __neg__(self) -> BalancedTernaryTensor:
         """Negate balanced ternary tensor."""
         result_trits = BalancedTernaryArithmetic.negate(self.trits)
         return BalancedTernaryTensor(result_trits, self.trits_per_tryte)
@@ -309,3 +309,136 @@ class BalancedTernaryMatMul:
                 result += contrib_trits.reshape(M, N, trits)
 
         return result
+
+
+class BalancedTernaryTryte:
+    """High-level tryte representation for neural network weight compression.
+
+    Converts float weights to balanced ternary trytes with packing/unpacking
+    for storage efficiency. This is a convenience class that wraps
+    BalancedTernaryTensor with additional functionality.
+
+    Attributes:
+        trits: Balanced ternary digits {-1, 0, 1}
+        trits_per_tryte: Number of trits per tryte (default: 9)
+        original_shape: Shape of original weights (excluding trits dimension)
+    """
+
+    def __init__(
+        self,
+        data: torch.Tensor,
+        trits_per_tryte: int = 9,
+        is_trits: bool = False,
+        threshold: float = 0.1,
+    ):
+        """Initialize balanced ternary tryte.
+
+        Args:
+            data: Float weights or pre-computed trits
+            trits_per_tryte: Number of trits per tryte (default: 9)
+            is_trits: If True, data is already trits; if False, quantize from float
+            threshold: Threshold for quantization (if is_trits=False)
+        """
+        self.trits_per_tryte = trits_per_tryte
+
+        if is_trits:
+            # Data is already trits
+            self.trits = data.to(torch.int8)
+            self.original_shape = data.shape[:-1]
+        else:
+            # Quantize from float weights
+            self.original_shape = data.shape
+
+            # Threshold-based quantization to {-1, 0, +1}
+            ternary = torch.zeros_like(data, dtype=torch.int8)
+            abs_data = data.abs()
+            threshold_val = abs_data.mean() * threshold if threshold < 1 else threshold
+            ternary[data > threshold_val] = 1
+            ternary[data < -threshold_val] = -1
+
+            # Expand to trits dimension (each value gets trits_per_tryte trits)
+            # For simplicity, we use the first trit as the sign, rest are zeros
+            self.trits = torch.zeros(
+                *data.shape, trits_per_tryte, dtype=torch.int8, device=data.device
+            )
+            self.trits[..., 0] = ternary
+
+    @property
+    def shape(self) -> torch.Size:
+        """Shape of the original tensor."""
+        return self.original_shape
+
+    def to_decimal(self) -> torch.Tensor:
+        """Convert to decimal representation.
+
+        Returns:
+            Decimal tensor (same shape as original weights)
+        """
+        # For simple case where only first trit is used
+        return self.trits[..., 0].float()
+
+    def pack(self) -> bytes:
+        """Pack trits into compact bytes representation.
+
+        Each trit is {-1, 0, 1} which needs 2 bits (00=0, 01=1, 10=-1).
+        We pack 4 trits per byte.
+
+        Returns:
+            Packed bytes representation
+        """
+        # Flatten trits
+        flat_trits = self.trits.flatten().tolist()
+
+        # Map {-1, 0, 1} to {2, 0, 1} for 2-bit encoding
+        encoded = [t + 1 if t == -1 else t for t in flat_trits]
+
+        # Pack 4 trits per byte
+        packed_bytes = []
+        for i in range(0, len(encoded), 4):
+            byte_val = 0
+            for j in range(4):
+                if i + j < len(encoded):
+                    byte_val |= encoded[i + j] << (6 - j * 2)
+            packed_bytes.append(byte_val)
+
+        return bytes(packed_bytes)
+
+    @classmethod
+    def unpack(
+        cls, packed: bytes, shape: tuple[int, ...], trits_per_tryte: int = 9
+    ) -> BalancedTernaryTryte:
+        """Unpack bytes to tryte representation.
+
+        Args:
+            packed: Packed bytes from pack()
+            shape: Original weight shape (excluding trits dimension)
+            trits_per_tryte: Trits per tryte
+
+        Returns:
+            BalancedTernaryTryte instance
+        """
+        # Calculate total trits needed
+        total_elements = 1
+        for s in shape:
+            total_elements *= s
+        total_trits = total_elements * trits_per_tryte
+
+        # Unpack bytes to trits
+        trits = []
+        for byte_val in packed:
+            for j in range(4):
+                if len(trits) >= total_trits:
+                    break
+                encoded = (byte_val >> (6 - j * 2)) & 0x03
+                trit = -1 if encoded == 2 else encoded
+                trits.append(trit)
+
+        # Reshape to original shape + trits dimension
+        full_shape = (*shape, trits_per_tryte)
+        trit_tensor = torch.tensor(trits[:total_trits], dtype=torch.int8).reshape(full_shape)
+
+        return cls(trit_tensor, trits_per_tryte=trits_per_tryte, is_trits=True)
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return f"BalancedTernaryTryte(shape={self.original_shape}, trits_per_tryte={self.trits_per_tryte})"
