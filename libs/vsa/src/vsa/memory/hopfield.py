@@ -36,6 +36,10 @@ class ModernHopfieldMemory(nn.Module):
         patterns: Stored memory patterns (shape: [num_patterns, dimension])
     """
 
+    # Explicit type annotations for registered buffers
+    patterns: torch.Tensor
+    pattern_count: torch.Tensor
+
     def __init__(
         self,
         dimension: int,

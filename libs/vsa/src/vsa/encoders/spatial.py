@@ -20,6 +20,11 @@ class SpatialEncoder(nn.Module):
         y_position_vectors: Separate y-dimension encodings (2D)
     """
 
+    # Explicit type annotations for registered buffers
+    position_vectors: torch.Tensor
+    x_position_vectors: torch.Tensor
+    y_position_vectors: torch.Tensor
+
     def __init__(self, config: VSAConfig, num_positions: int) -> None:
         """Initialize spatial encoder.
 
