@@ -1,7 +1,7 @@
 # Ternary BitNet Research Notes
 
-**Context**: Extracted from ADR-0009 research responses  
-**Date**: 2026-01-19  
+**Context**: Extracted from ADR-0009 research responses
+**Date**: 2026-01-19
 **Purpose**: Preserve ternary-specific research for isolated exploration
 
 ---
@@ -77,7 +77,7 @@ Despite theoretical issues (gradient of step function is zero), STE works well i
 
 **Question**: How does ternary constraint affect weight matrix spectrum?
 
-**Hypothesis**: 
+**Hypothesis**:
 - Ternary weights have limited expressiveness in singular value space
 - May preserve principal components but lose fine-grained structure
 - Could align with algebraic training's spectral predictions

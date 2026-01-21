@@ -52,15 +52,15 @@ import torch.nn.functional as F
 
 class EnergyBasedPlanner(nn.Module):
     """Energy-based planning using L1 distance in latent space.
-    
+
     Following V-JEPA 2-AC: The energy function is the L1 distance
     between current state embedding and goal embedding. Planning
     involves finding action sequences that minimize this energy.
-    
+
     Why L1 over L2: V-JEPA 2 found L1 more robust to outliers
     in high-dimensional embedding spaces.
     """
-    
+
     def __init__(
         self,
         embed_dim: int = 512,
@@ -70,14 +70,14 @@ class EnergyBasedPlanner(nn.Module):
         super().__init__()
         self.embed_dim = embed_dim
         self.planning_horizon = planning_horizon
-        
+
         # Action encoder (maps action tokens to embeddings)
         self.action_encoder = nn.Sequential(
             nn.Linear(action_dim, embed_dim // 2),
             nn.GELU(),
             nn.Linear(embed_dim // 2, embed_dim),
         )
-        
+
         # Predictor: given (state, action) -> next_state
         self.predictor = nn.Sequential(
             nn.Linear(embed_dim * 2, embed_dim),
@@ -85,41 +85,41 @@ class EnergyBasedPlanner(nn.Module):
             nn.GELU(),
             nn.Linear(embed_dim, embed_dim),
         )
-    
+
     def compute_energy(
         self,
         state_embedding: torch.Tensor,
         goal_embedding: torch.Tensor,
     ) -> torch.Tensor:
         """Compute planning energy as L1 distance to goal.
-        
+
         Args:
             state_embedding: Current state [batch, embed_dim]
             goal_embedding: Goal state [batch, embed_dim]
-            
+
         Returns:
             Energy scalar [batch] - lower is closer to goal
         """
         return F.l1_loss(state_embedding, goal_embedding, reduction='none').sum(dim=-1)
-    
+
     def predict_next_state(
         self,
         state: torch.Tensor,
         action: torch.Tensor,
     ) -> torch.Tensor:
         """Predict next state given current state and action.
-        
+
         Args:
             state: Current state embedding [batch, embed_dim]
             action: Action embedding [batch, action_dim]
-            
+
         Returns:
             Predicted next state [batch, embed_dim]
         """
         action_embed = self.action_encoder(action)
         combined = torch.cat([state, action_embed], dim=-1)
         return self.predictor(combined)
-    
+
     def plan(
         self,
         current_state: torch.Tensor,
@@ -128,24 +128,24 @@ class EnergyBasedPlanner(nn.Module):
         num_rollouts: int = 100,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Plan action sequence to reach goal via energy minimization.
-        
+
         Uses CEM (Cross-Entropy Method) for action optimization.
-        
+
         Args:
             current_state: Starting state [embed_dim]
             goal_state: Target state [embed_dim]
             action_candidates: Candidate actions [num_actions, action_dim]
             num_rollouts: Number of random rollouts to evaluate
-            
+
         Returns:
             (best_action_sequence, trajectory_energies)
         """
         # Initialize random action sequences
         batch_states = current_state.unsqueeze(0).expand(num_rollouts, -1)
-        
+
         best_energy = float('inf')
         best_actions = None
-        
+
         # Simple planning: greedy single-step for now
         # TODO: Implement full CEM planning
         for action in action_candidates:
@@ -153,11 +153,11 @@ class EnergyBasedPlanner(nn.Module):
             next_states = self.predict_next_state(batch_states, action_batch)
             energies = self.compute_energy(next_states, goal_state.unsqueeze(0))
             mean_energy = energies.mean().item()
-            
+
             if mean_energy < best_energy:
                 best_energy = mean_energy
                 best_actions = action
-        
+
         return best_actions, torch.tensor([best_energy])
 ```
 
@@ -168,14 +168,14 @@ class EnergyBasedPlanner(nn.Module):
 
 class VLJEPAWithPlanning(nn.Module):
     """VL-JEPA extended with energy-based planning.
-    
+
     Combines:
     - Vision encoding (existing)
     - Language embedding (existing)
     - Joint embedding space (existing)
     - Energy-based goal-conditioned planning (new)
     """
-    
+
     def __init__(self, base_model: VLJEPAExtension, action_dim: int = 64):
         super().__init__()
         self.base = base_model
@@ -183,7 +183,7 @@ class VLJEPAWithPlanning(nn.Module):
             embed_dim=base_model.embed_dim,
             action_dim=action_dim,
         )
-    
+
     def plan_to_goal(
         self,
         current_image: torch.Tensor,
@@ -191,21 +191,21 @@ class VLJEPAWithPlanning(nn.Module):
         action_space: torch.Tensor,
     ) -> torch.Tensor:
         """Plan actions to achieve goal described in language.
-        
+
         This is the key V-JEPA 2 capability: zero-shot planning
         using the joint embedding space as the planning manifold.
         """
         # Encode current state
         current_embed = self.base.vision_encoder(current_image)
-        
+
         # Encode goal (from language)
         goal_embed = self.base.encode_text_goal(goal_description)
-        
+
         # Plan in embedding space
         best_action, _ = self.planner.plan(
             current_embed, goal_embed, action_space
         )
-        
+
         return best_action
 ```
 
