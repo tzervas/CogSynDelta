@@ -14,6 +14,8 @@ You are assisting with the CogSynDelta project - a PCN-VAE-GAN hybrid self-impro
 - **Testing**: pytest with pytest-asyncio
 - **Type Checking**: mypy (strict mode)
 - **Linting**: ruff
+- **License**: Proprietary
+- **Copyright**: © 2026 Tyler Zervas (tzervas) and Average Joe's Labs (AJL)
 
 ## Key Files
 
@@ -22,6 +24,15 @@ You are assisting with the CogSynDelta project - a PCN-VAE-GAN hybrid self-impro
 - `docs/adr/` - Architecture Decision Records
 - `ROADMAP.md` - Current project status
 - `CHANGELOG.md` - Version history
+- `LICENSES/LICENSE_TRACKER.md` - Third-party license compliance
+
+## Project Libraries
+
+The project includes specialized libraries in `libs/`:
+
+- **libs/vsa/**: Vector Symbolic Architecture (FHRR, Hopfield, Resonator)
+- **libs/compression/**: Compression pipeline (Balanced Ternary, BitNet, QINCo2, RVQ, MRL)
+- **libs/algebraic-training/**: Algebraic training utilities
 
 ## Coding Standards
 
@@ -125,6 +136,8 @@ src/cogsyndelta/
 2. **Memory "skip silently"** - Intentional graceful degradation in `_ensure_temporal_continuity()`
 3. **No unsubstantiated claims** - Performance claims require benchmark validation
 4. **Conventional commits** - Use `type(scope): description` format
+5. **Dual attribution required** - Always attribute to Tyler Zervas (tzervas) AND Average Joe's Labs (AJL)
+6. **Device auto-detection** - Use `torch.cuda.is_available()` pattern, never default to "cuda"
 
 ## Before Submitting Code
 
@@ -135,3 +148,4 @@ src/cogsyndelta/
 - [ ] `uv run mypy src/` passes
 - [ ] No trailing whitespace
 - [ ] Conventional commit message
+- [ ] Performance claims backed by benchmarks in `benchmark_results/`
