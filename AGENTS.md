@@ -160,20 +160,25 @@ This project follows Spec-Driven Development (SDD). For new features:
 
 ## License Compliance
 
+**Project License**: Proprietary  
+**Copyright**: © 2026 Tyler Zervas (tzervas) and Average Joe's Labs (AJL)
+
 Before adding dependencies:
 
 1. Check `LICENSES/LICENSE_TRACKER.md` for approved licenses
 2. MIT, Apache-2.0, BSD-2/3-Clause, PSF-2.0 are pre-approved
 3. GPL/LGPL require explicit approval
 4. Update tracker when adding new dependencies
+5. Always attribute to both Tyler Zervas (tzervas) AND Average Joe's Labs (AJL)
 
 ---
 
 ## Contact & Governance
 
 - **Code Owner**: @tzervas
+- **Copyright Holders**: Tyler Zervas (tzervas), Average Joe's Labs (AJL)
 - **Organization**: Average Joe's Labs (AJL)
 - **Constitution**: `memory/constitution.md`
 - **Standards**: `docs/DEVELOPMENT_STANDARDS.md`
 
-*Last Updated: January 18, 2026*
+*Last Updated: January 19, 2026*

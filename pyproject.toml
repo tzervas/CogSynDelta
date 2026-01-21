@@ -8,9 +8,10 @@ version = "0.2.0"
 description = "PCN-VAE-GAN hybrid self-improving AI with VL-JEPA, mHC, quantum compute, and production-ready memory management"
 readme = "README.md"
 requires-python = ">=3.14"
-license = {text = "MIT"}
+license = {text = "Proprietary"}
 authors = [
-    {name = "tzervas", email = "111450100+tzervas@users.noreply.github.com"}
+    {name = "Tyler Zervas (tzervas)", email = "111450100+tzervas@users.noreply.github.com"},
+    {name = "Average Joe's Labs (AJL)"}
 ]
 keywords = [
     "machine-learning",
