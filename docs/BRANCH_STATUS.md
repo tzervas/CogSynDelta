@@ -20,7 +20,7 @@ feature/* / fix/* → develop → staging → main
 
 **Rules:**
 1. **Never** merge directly into `main` - releases only via CI/CD pipeline
-2. **Never** merge directly into `staging` - automated after `develop` validation  
+2. **Never** merge directly into `staging` - automated after `develop` validation
 3. **Always** create feature/fix branches from `develop`
 4. **Always** merge PRs into `develop` first
 5. Feature branches may merge between each other if dependencies exist

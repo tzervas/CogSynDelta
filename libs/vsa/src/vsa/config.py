@@ -8,6 +8,7 @@ def _default_device() -> str:
     """Auto-detect available compute device."""
     try:
         import torch
+
         return "cuda" if torch.cuda.is_available() else "cpu"
     except ImportError:
         return "cpu"

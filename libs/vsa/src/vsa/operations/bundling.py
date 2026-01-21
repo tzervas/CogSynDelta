@@ -76,4 +76,3 @@ def weighted_bundle(
             return weighted_sum / norm
 
     return weighted_sum
-

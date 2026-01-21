@@ -49,7 +49,9 @@ class ResonatorNetwork(nn.Module):
         self.dimension = dimension
         self.max_iterations = max_iterations
         self.convergence_threshold = convergence_threshold
-        self.device = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = (
+            device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
+        )
 
         # Optional: set of candidate vectors for discrete search
         self.register_buffer("candidates", None)

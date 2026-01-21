@@ -152,11 +152,13 @@ class TestPermutation:
         """Test sequence encoding preserves order."""
         torch.manual_seed(42)
         # Create three distinct "word" vectors
-        words = torch.stack([
-            torch.randn(500, dtype=torch.cfloat),
-            torch.randn(500, dtype=torch.cfloat),
-            torch.randn(500, dtype=torch.cfloat),
-        ])
+        words = torch.stack(
+            [
+                torch.randn(500, dtype=torch.cfloat),
+                torch.randn(500, dtype=torch.cfloat),
+                torch.randn(500, dtype=torch.cfloat),
+            ]
+        )
 
         # Encode sequences "abc" and "cba"
         seq_abc = create_sequence_encoding(words)

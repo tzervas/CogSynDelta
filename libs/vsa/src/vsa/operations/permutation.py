@@ -83,7 +83,9 @@ def create_sequence_encoding(vectors: torch.Tensor) -> torch.Tensor:
     generator.manual_seed(42)  # Fixed seed for reproducible position base
 
     if vectors.dtype in [torch.cfloat, torch.complex64, torch.complex128]:
-        position_base = torch.randn(dim, dtype=torch.cfloat, device=vectors.device, generator=generator)
+        position_base = torch.randn(
+            dim, dtype=torch.cfloat, device=vectors.device, generator=generator
+        )
         position_base = position_base / torch.abs(position_base).clamp(min=1e-8)
     else:
         position_base = torch.randn(dim, device=vectors.device, generator=generator)
