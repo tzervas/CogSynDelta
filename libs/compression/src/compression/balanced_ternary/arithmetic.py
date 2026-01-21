@@ -424,7 +424,7 @@ class BalancedTernaryTryte:
         total_trits = total_elements * trits_per_tryte
 
         # Unpack bytes to trits
-        trits = []
+        trits: list[int] = []
         for byte_val in packed:
             for j in range(4):
                 if len(trits) >= total_trits:
