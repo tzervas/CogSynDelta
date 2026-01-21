@@ -68,4 +68,3 @@ RECOMMENDATIONS
   • ⚠️ 1 metric(s) showing regression: investigate pcn-vae-gan.throughput.samples_per_sec_bs1
   • ✅ Overall positive trend: 21 metrics improving
   • ➡️ System is stable - good time to establish new baselines
-
