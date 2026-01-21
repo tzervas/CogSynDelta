@@ -1,13 +1,13 @@
 """Tests for Balanced Ternary Neural Network Layers."""
 
-import pytest
-import torch
-import torch.nn as nn
-
 from compression.balanced_ternary.layers import (
     BalancedTernaryConv2d,
     BalancedTernaryLinear,
 )
+
+import pytest
+import torch
+from torch import nn
 
 
 class TestBalancedTernaryLinear:
@@ -16,16 +16,12 @@ class TestBalancedTernaryLinear:
     @pytest.fixture
     def layer(self):
         """Create balanced ternary linear layer."""
-        return BalancedTernaryLinear(
-            in_features=128, out_features=64, trits_per_tryte=9
-        )
+        return BalancedTernaryLinear(in_features=128, out_features=64, trits_per_tryte=9)
 
     @pytest.fixture
     def layer_small(self):
         """Create small layer for fast tests."""
-        return BalancedTernaryLinear(
-            in_features=32, out_features=16, trits_per_tryte=9
-        )
+        return BalancedTernaryLinear(in_features=32, out_features=16, trits_per_tryte=9)
 
     def test_initialization(self, layer):
         """Test layer initialization."""
@@ -97,9 +93,7 @@ class TestBalancedTernaryLinear:
 
     def test_bias_optional(self):
         """Test layer without bias."""
-        layer_no_bias = BalancedTernaryLinear(
-            in_features=32, out_features=16, bias=False
-        )
+        layer_no_bias = BalancedTernaryLinear(in_features=32, out_features=16, bias=False)
 
         assert layer_no_bias.bias is None
 
@@ -159,9 +153,7 @@ class TestBalancedTernaryConv2d:
     @pytest.fixture
     def conv_small(self):
         """Create small conv for fast tests."""
-        return BalancedTernaryConv2d(
-            in_channels=8, out_channels=16, kernel_size=3, padding=1
-        )
+        return BalancedTernaryConv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1)
 
     def test_initialization(self, conv):
         """Test conv layer initialization."""
@@ -243,12 +235,8 @@ class TestBalancedTernaryConv2d:
 
     def test_comparison_with_standard_conv(self):
         """Compare with standard nn.Conv2d."""
-        bt_conv = BalancedTernaryConv2d(
-            in_channels=3, out_channels=16, kernel_size=3, padding=1
-        )
-        std_conv = nn.Conv2d(
-            in_channels=3, out_channels=16, kernel_size=3, padding=1
-        )
+        bt_conv = BalancedTernaryConv2d(in_channels=3, out_channels=16, kernel_size=3, padding=1)
+        std_conv = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, padding=1)
 
         x = torch.randn(4, 3, 32, 32)
 

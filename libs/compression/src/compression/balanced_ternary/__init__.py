@@ -25,28 +25,28 @@ from compression.balanced_ternary.arithmetic import (
     BalancedTernaryArithmetic,
     BalancedTernaryTensor,
     BalancedTernaryTryte,
-    tryte_encode,
     tryte_decode,
+    tryte_encode,
 )
 from compression.balanced_ternary.layers import (
-    BalancedTernaryLinear,
     BalancedTernaryConv2d,
     BalancedTernaryEmbedding,
+    BalancedTernaryLinear,
 )
 from compression.balanced_ternary.quantizer import (
-    BalancedTernaryQuantizer,
     BalancedTernaryCompressor,
+    BalancedTernaryQuantizer,
 )
 
 __all__ = [
     "BalancedTernaryArithmetic",
-    "BalancedTernaryTensor",
-    "BalancedTernaryTryte",
-    "tryte_encode",
-    "tryte_decode",
-    "BalancedTernaryLinear",
+    "BalancedTernaryCompressor",
     "BalancedTernaryConv2d",
     "BalancedTernaryEmbedding",
+    "BalancedTernaryLinear",
     "BalancedTernaryQuantizer",
-    "BalancedTernaryCompressor",
+    "BalancedTernaryTensor",
+    "BalancedTernaryTryte",
+    "tryte_decode",
+    "tryte_encode",
 ]

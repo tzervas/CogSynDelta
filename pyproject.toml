@@ -180,8 +180,8 @@ cogsyndelta = ["config/*.yaml", "config/*.json"]
 line-length = 100
 target-version = "py314"
 
-# Include src and tests directories
-include = ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py", "benchmarks/**/*.py"]
+# Include src, tests, libs, and scripts directories
+include = ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py", "benchmarks/**/*.py", "libs/**/*.py"]
 exclude = [
     ".git",
     ".venv",

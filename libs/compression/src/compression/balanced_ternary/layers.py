@@ -13,12 +13,11 @@ Memory efficiency:
 - Compression: ~10×
 """
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from typing import Optional
-
 from compression.balanced_ternary.quantizer import BalancedTernaryQuantizer
+
+import torch
+import torch.nn.functional as F
+from torch import nn
 
 
 class BalancedTernaryLinear(nn.Module):
@@ -164,7 +163,9 @@ class BalancedTernaryConv2d(nn.Module):
 
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = (kernel_size, kernel_size) if isinstance(kernel_size, int) else kernel_size
+        self.kernel_size = (
+            (kernel_size, kernel_size) if isinstance(kernel_size, int) else kernel_size
+        )
         self.stride = stride
         self.padding = padding
         self.trits_per_tryte = trits_per_tryte
@@ -255,7 +256,7 @@ class BalancedTernaryEmbedding(nn.Module):
         self,
         num_embeddings: int,
         embedding_dim: int,
-        padding_idx: Optional[int] = None,
+        padding_idx: int | None = None,
         threshold_mode: str = "mean",
     ):
         """Initialize balanced ternary embedding.

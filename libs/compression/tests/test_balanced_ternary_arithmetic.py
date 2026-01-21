@@ -1,9 +1,9 @@
 """Tests for Balanced Ternary Arithmetic."""
 
+from compression.balanced_ternary.arithmetic import BalancedTernaryArithmetic
+
 import pytest
 import torch
-
-from compression.balanced_ternary.arithmetic import BalancedTernaryArithmetic
 
 
 class TestBalancedTernaryArithmetic:
@@ -150,9 +150,7 @@ class TestBalancedTernaryArithmetic:
         """Test that negating twice gives original."""
         trits = BalancedTernaryArithmetic.from_decimal(torch.tensor([13]), num_trits=9)
 
-        double_negated = BalancedTernaryArithmetic.negate(
-            BalancedTernaryArithmetic.negate(trits)
-        )
+        double_negated = BalancedTernaryArithmetic.negate(BalancedTernaryArithmetic.negate(trits))
 
         assert torch.equal(trits, double_negated)
 
@@ -184,12 +182,8 @@ class TestBalancedTernaryArithmetic:
         max_val = 9841
         min_val = -9841
 
-        trits_max = BalancedTernaryArithmetic.from_decimal(
-            torch.tensor([max_val]), num_trits=9
-        )
-        trits_min = BalancedTernaryArithmetic.from_decimal(
-            torch.tensor([min_val]), num_trits=9
-        )
+        trits_max = BalancedTernaryArithmetic.from_decimal(torch.tensor([max_val]), num_trits=9)
+        trits_min = BalancedTernaryArithmetic.from_decimal(torch.tensor([min_val]), num_trits=9)
 
         recovered_max = BalancedTernaryArithmetic.to_decimal(trits_max)
         recovered_min = BalancedTernaryArithmetic.to_decimal(trits_min)

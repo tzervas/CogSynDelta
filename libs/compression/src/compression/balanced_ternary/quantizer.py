@@ -13,14 +13,13 @@ Quantization Strategies:
 3. Learned thresholds: Optimize thresholds during training
 """
 
-import torch
-import torch.nn as nn
-from typing import Tuple
-
 from compression.balanced_ternary.arithmetic import (
     BalancedTernaryTensor,
     tryte_encode,
 )
+
+import torch
+from torch import nn
 
 
 class BalancedTernaryQuantizer(nn.Module):
@@ -122,7 +121,6 @@ class BalancedTernaryQuantizer(nn.Module):
         """
         return self.forward(weights)
 
-
     def quantize_to_trytes(self, weights: torch.Tensor) -> BalancedTernaryTensor:
         """Quantize weights to balanced ternary trytes.
 
@@ -167,7 +165,7 @@ class BalancedTernaryCompressor:
         """
         self.trits_per_tryte = trits_per_tryte
 
-    def compress(self, weights: torch.Tensor) -> Tuple[torch.Tensor, dict]:
+    def compress(self, weights: torch.Tensor) -> tuple[torch.Tensor, dict]:
         """Compress FP16/FP32 weights to balanced ternary.
 
         Args:
