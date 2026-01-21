@@ -99,19 +99,13 @@ class TestMatryoshkaCompressor:
     @pytest.fixture
     def compressor(self):
         """Create MRL compressor."""
-        encoder = MatryoshkaEncoder(
-            input_dim=512, output_dim=2048, target_dims=[512, 1024, 2048]
-        )
-        return MatryoshkaCompressor(
-            encoder=encoder, compression_dim=512, full_dim=2048
-        )
+        encoder = MatryoshkaEncoder(input_dim=512, output_dim=2048, target_dims=[512, 1024, 2048])
+        return MatryoshkaCompressor(encoder=encoder, compression_dim=512, full_dim=2048)
 
     @pytest.fixture
     def compressor_small(self):
         """Create small compressor for fast tests."""
-        encoder = MatryoshkaEncoder(
-            input_dim=64, output_dim=256, target_dims=[64, 128, 256]
-        )
+        encoder = MatryoshkaEncoder(input_dim=64, output_dim=256, target_dims=[64, 128, 256])
         return MatryoshkaCompressor(encoder=encoder, compression_dim=64, full_dim=256)
 
     def test_initialization(self, compressor):
@@ -154,14 +148,12 @@ class TestMatryoshkaCompressor:
 
         # First compression_dim should have high similarity
         orig_prefix = torch.nn.functional.normalize(original[:, :64], p=2, dim=1)
-        decomp_prefix = torch.nn.functional.normalize(
-            decompressed[:, :64], p=2, dim=1
-        )
+        decomp_prefix = torch.nn.functional.normalize(decompressed[:, :64], p=2, dim=1)
 
         similarity = (orig_prefix * decomp_prefix).sum(dim=1).mean()
-        assert (
-            similarity > 0.9
-        ), f"Roundtrip similarity {similarity} < 0.9 (some info loss expected)"
+        assert similarity > 0.9, (
+            f"Roundtrip similarity {similarity} < 0.9 (some info loss expected)"
+        )
 
     def test_compression_ratio(self, compressor_small):
         """Test compression ratio calculation."""

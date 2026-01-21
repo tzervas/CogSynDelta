@@ -197,9 +197,7 @@ class TestBitNetb158:
     def test_2x_hidden_size_recommendation(self):
         """Test that model follows 2× hidden size recommendation."""
         # For 10B target, should use 20B hidden (this is a small model, but concept applies)
-        model = BitNetb158(
-            input_dim=512, hidden_dim=2048, output_dim=1000, num_layers=6
-        )
+        model = BitNetb158(input_dim=512, hidden_dim=2048, output_dim=1000, num_layers=6)
 
         # Hidden should be 2× of typical size
         # Typical would be 1024, this uses 2048 ✓

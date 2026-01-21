@@ -25,9 +25,7 @@ class TestStagedCompressionPipeline:
     def pipeline_small(self):
         """Create small pipeline for testing."""
         # Create components
-        mrl_encoder = MatryoshkaEncoder(
-            input_dim=128, output_dim=256, target_dims=[64, 128, 256]
-        )
+        mrl_encoder = MatryoshkaEncoder(input_dim=128, output_dim=256, target_dims=[64, 128, 256])
 
         config = CompressionConfig(
             mrl_dims=[256, 128, 64],
@@ -132,9 +130,7 @@ class TestPipelineWithRVQ:
     @pytest.fixture
     def pipeline_rvq(self):
         """Create pipeline with RVQ."""
-        mrl_encoder = MatryoshkaEncoder(
-            input_dim=64, output_dim=128, target_dims=[32, 64, 128]
-        )
+        mrl_encoder = MatryoshkaEncoder(input_dim=64, output_dim=128, target_dims=[32, 64, 128])
 
         config = CompressionConfig(
             mrl_dims=[128, 64, 32],
@@ -166,9 +162,7 @@ class TestPipelineWithQINCo:
     @pytest.fixture
     def pipeline_qinco(self):
         """Create pipeline with QINCo."""
-        mrl_encoder = MatryoshkaEncoder(
-            input_dim=64, output_dim=128, target_dims=[32, 64, 128]
-        )
+        mrl_encoder = MatryoshkaEncoder(input_dim=64, output_dim=128, target_dims=[32, 64, 128])
 
         config = CompressionConfig(
             mrl_dims=[128, 64],
