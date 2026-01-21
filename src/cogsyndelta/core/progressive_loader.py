@@ -130,9 +130,6 @@ class ProgressiveLoadingConfig:
     # Active limit
     max_active_submodels: int = 10  # Maximum submodels on GPU
 
-    # Submodel limits
-    max_active_submodels: int = 8  # Max submodels active simultaneously
-
     # Loading thresholds
     eager_load_threshold: float = 0.7  # Load if >70% routing probability
     lazy_unload_threshold: float = 0.2  # Unload if <20% probability
@@ -148,17 +145,58 @@ class ProgressiveLoadingConfig:
     checkpoint_segments: int = 4
 
     def __post_init__(self) -> None:
-        """Validate configuration after initialization."""
+        """Validate configuration invariants."""
         if self.eager_load_threshold <= self.lazy_unload_threshold:
-            msg = (
-                f"eager_load_threshold ({self.eager_load_threshold}) must be "
-                f"greater than lazy_unload_threshold ({self.lazy_unload_threshold})"
+            raise AssertionError(
+                f"eager_load_threshold ({self.eager_load_threshold}) must be greater than "
+                f"lazy_unload_threshold ({self.lazy_unload_threshold}) to prevent thrashing"
             )
-            raise AssertionError(msg)
+
+    @classmethod
+    def from_yaml(cls, yaml_path: str | Path, profile: str = "base") -> ProgressiveLoadingConfig:
+        """Load configuration from YAML file.
+
+        Args:
+            yaml_path: Path to YAML configuration file
+            profile: Configuration profile name (base, medium_25b, large_50b, xlarge_100b)
+
+        Returns:
+            ProgressiveLoadingConfig instance
+        """
+        import yaml
+
+        with open(yaml_path) as f:
+            config_data = yaml.safe_load(f)
+
+        profile_data = config_data.get("profiles", {}).get(profile, {})
+
+        return cls(
+            gpu_budget_mb=profile_data.get("gpu_budget_mb", 10000.0),
+            cpu_staging_size_mb=profile_data.get("cpu_staging_size_mb", 32000.0),
+            disk_cache_size_mb=profile_data.get("disk_cache_size_mb", 100000.0),
+            max_active_submodels=profile_data.get("max_active_submodels", 10),
+            eager_load_threshold=profile_data.get("eager_load_threshold", 0.7),
+            lazy_unload_threshold=profile_data.get("lazy_unload_threshold", 0.2),
+            prefetch_depth=profile_data.get("prefetch_depth", 3),
+            async_loading=profile_data.get("async_loading", True),
+            background_prefetch=profile_data.get("background_prefetch", True),
+            max_concurrent_loads=profile_data.get("max_concurrent_loads", 2),
+        )
+
+    # Backward compatibility aliases
+    @property
+    def cpu_staging_mb(self) -> float:
+        """Alias for cpu_staging_size_mb."""
+        return self.cpu_staging_size_mb
+
+    @property
+    def disk_cache_mb(self) -> float:
+        """Alias for disk_cache_size_mb."""
+        return self.disk_cache_size_mb
 
 
-# Backwards compatibility alias
-ProgressiveLoadingConfig = LoadingConfig
+# Alias for backward compatibility
+LoadingConfig = ProgressiveLoadingConfig
 
 
 class ProgressiveLoaderManager:
@@ -433,19 +471,6 @@ class ProgressiveLoaderManager:
             return False
 
         return self._unload_from_gpu(name)
-
-    def is_loaded(self, name: str) -> bool:
-        """Check if a submodel is currently loaded on the device.
-
-        Args:
-            name: Submodel name to check.
-
-        Returns:
-            True if the submodel is in ACTIVE state, False otherwise.
-        """
-        if name not in self.submodels:
-            return False
-        return self.submodels[name].state == LoadingState.ACTIVE
 
     def update_from_routing(
         self, routing_decisions: dict[tuple[str, str], float], section_to_submodel: dict[str, str]
