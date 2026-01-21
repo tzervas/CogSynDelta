@@ -140,7 +140,7 @@ class TestMatryoshkaCompressor:
 
         assert decompressed.shape == (4, 256)
         # First 64 dims should match compressed (normalized)
-        compressed_norm = torch.nn.functional.normalize(compressed, p=2, dim=1)
+        torch.nn.functional.normalize(compressed, p=2, dim=1)
         # Note: decompress pads with zeros, so first k dims won't exactly match
         # This is a reconstruction, not exact inverse
         assert decompressed[:, :64].abs().sum() > 0  # Non-zero in first 64 dims

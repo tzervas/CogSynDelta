@@ -47,7 +47,7 @@ class TestVectorQuantizer:
 
         # Each quantized vector should exactly match its codebook entry
         for i in range(2):
-            expected = quantizer_small.codebook[indices[i]]
+            quantizer_small.codebook[indices[i]]
             # Note: STE adds residual, so we need to account for that
             # Actually, the quantized output is x + (codebook[idx] - x).detach()
             # So quantized ≠ codebook[idx] in forward pass (for gradients)

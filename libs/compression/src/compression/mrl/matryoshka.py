@@ -125,6 +125,9 @@ class MatryoshkaLoss(nn.Module):
     Computes weighted sum of losses at each target dimension.
     """
 
+    # Explicit type annotation for registered buffer
+    loss_weights: torch.Tensor
+
     def __init__(
         self,
         target_dims: List[int],
@@ -201,8 +204,9 @@ class MatryoshkaLoss(nn.Module):
         Returns:
             Tuple of (total_loss, loss_dict) where loss_dict maps dim -> loss value
         """
-        total_loss = 0.0
-        loss_dict = {}
+        device = labels.device
+        total_loss: torch.Tensor = torch.tensor(0.0, device=device)
+        loss_dict: Dict[int, float] = {}
 
         for i, dim in enumerate(self.target_dims):
             embeddings = nested_embeddings[dim]

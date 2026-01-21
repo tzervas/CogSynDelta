@@ -178,7 +178,7 @@ class TestBitNetb158:
         layer = model_small.input_proj
 
         # Before quantization, weights are not ternary
-        original_unique = len(layer.weight.unique())
+        len(layer.weight.unique())
 
         # Quantize
         model_small.quantize_layer_weights(layer)

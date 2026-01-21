@@ -103,7 +103,7 @@ class ResidualVectorQuantizer(nn.Module):
 
         residual = x
         quantized_sum = torch.zeros_like(x)
-        total_commitment_loss = 0.0
+        total_commitment_loss: torch.Tensor = torch.tensor(0.0, device=x.device)
 
         for stage, quantizer in enumerate(self.quantizers):
             # Quantize residual
@@ -147,8 +147,9 @@ class ResidualVectorQuantizer(nn.Module):
         batch_size = indices.shape[0]
         reconstructed = torch.zeros(batch_size, self.embedding_dim, device=indices.device)
 
-        for stage, quantizer in enumerate(self.quantizers):
-            # Get code vectors for this stage
+        for stage in range(self.num_stages):
+            # Get code vectors for this stage (cast to VectorQuantizer for type safety)
+            quantizer: VectorQuantizer = self.quantizers[stage]  # type: ignore[assignment]
             codes = quantizer.codebook[indices[:, stage]]
             reconstructed = reconstructed + codes
 
