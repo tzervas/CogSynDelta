@@ -81,11 +81,11 @@ mkdir -p "$OUTPUT_DIR"/{compression,history,comparisons}
 # Detect environment
 detect_environment() {
     log_section "Environment Detection"
-    
+
     # Python/PyTorch
     PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
     TORCH_VERSION=$(python3 -c "import torch; print(torch.__version__)" 2>/dev/null || echo "N/A")
-    
+
     # CUDA/GPU
     if python3 -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
         CUDA_AVAILABLE=true
@@ -98,7 +98,7 @@ detect_environment() {
         GPU_MEMORY="N/A"
         CUDA_VERSION="N/A"
     fi
-    
+
     log_metric "Python" "$PYTHON_VERSION"
     log_metric "PyTorch" "$TORCH_VERSION"
     log_metric "CUDA Available" "$CUDA_AVAILABLE"
@@ -111,15 +111,15 @@ detect_environment() {
 # Run compression benchmarks
 run_compression_benchmarks() {
     log_section "Compression Benchmarks"
-    
+
     local args="--output $OUTPUT_DIR/compression --detailed"
     if $QUICK_MODE; then
         args="$args --quick"
     fi
-    
+
     log_info "Running compression benchmark..."
     cd "$PROJECT_ROOT"
-    
+
     if uv run python benchmarks/compression_benchmark.py $args 2>&1 | tee "$OUTPUT_DIR/compression_${DATETIME}.log"; then
         log_success "Compression benchmarks complete"
     else
@@ -130,10 +130,10 @@ run_compression_benchmarks() {
 # Run model benchmarks
 run_model_benchmarks() {
     log_section "Model Component Benchmarks"
-    
+
     log_info "Running model benchmarks (PCN-VAE-GAN, VL-JEPA, mHC)..."
     cd "$PROJECT_ROOT"
-    
+
     if uv run python benchmarks/model_benchmarks.py 2>&1 | tee "$OUTPUT_DIR/model_${DATETIME}.log"; then
         log_success "Model benchmarks complete"
     else
@@ -147,18 +147,18 @@ run_gpu_benchmarks() {
         log_warning "CUDA not available, skipping GPU benchmarks"
         return
     fi
-    
+
     log_section "GPU Performance Benchmarks"
-    
+
     log_info "Running GPU benchmarks..."
     cd "$PROJECT_ROOT"
-    
+
     if uv run python benchmarks/gpu_benchmark.py 2>&1 | tee "$OUTPUT_DIR/gpu_${DATETIME}.log"; then
         log_success "GPU benchmarks complete"
     else
         log_warning "GPU benchmarks had issues (check log)"
     fi
-    
+
     # RTX 5080 specific benchmarks if applicable
     if [[ "$GPU_NAME" == *"5080"* ]] || [[ "$GPU_NAME" == *"5090"* ]]; then
         log_info "Running RTX 50-series optimized benchmarks..."
@@ -171,16 +171,16 @@ run_gpu_benchmarks() {
 # Run industry comparisons
 run_industry_comparisons() {
     log_section "Industry Model Comparisons"
-    
+
     log_info "Running industry benchmark comparisons..."
     cd "$PROJECT_ROOT"
-    
+
     if uv run python benchmarks/industry_benchmarks.py 2>&1 | tee "$OUTPUT_DIR/industry_${DATETIME}.log"; then
         log_success "Industry comparisons complete"
     else
         log_warning "Industry comparisons had issues (check log)"
     fi
-    
+
     if uv run python -m benchmarks.model_comparisons --format json -o "$OUTPUT_DIR/comparisons/industry_comparison_${DATETIME}.json" 2>&1; then
         log_success "Industry comparison data exported"
     fi
@@ -191,12 +191,12 @@ run_tests() {
     if $GPU_ONLY; then
         return
     fi
-    
+
     log_section "Test Suite"
-    
+
     log_info "Running pytest test suite..."
     cd "$PROJECT_ROOT"
-    
+
     if uv run pytest tests/ -v --tb=short 2>&1 | tee "$OUTPUT_DIR/tests_${DATETIME}.log"; then
         log_success "All tests passed"
         TESTS_PASSED=true
@@ -209,18 +209,18 @@ run_tests() {
 # Generate visualization and trends
 generate_visualization() {
     log_section "Visualization & Trend Analysis"
-    
+
     log_info "Generating benchmark trends..."
     cd "$PROJECT_ROOT"
-    
+
     # Terminal report
     uv run python -m benchmarks.visualization 2>&1 | tee "$OUTPUT_DIR/trends_${DATETIME}.txt" || true
-    
+
     # Markdown report
     if uv run python -m benchmarks.visualization --format markdown -o "$OUTPUT_DIR/BENCHMARK_TRENDS_${TIMESTAMP}.md" 2>&1; then
         log_success "Markdown trends report generated"
     fi
-    
+
     # HTML report (if matplotlib available)
     if uv run python -m benchmarks.visualization --format html -o "$OUTPUT_DIR/BENCHMARK_TRENDS_${TIMESTAMP}.html" 2>&1; then
         log_success "HTML trends report generated"
@@ -230,9 +230,9 @@ generate_visualization() {
 # Generate consolidated report
 generate_consolidated_report() {
     log_section "Generating Consolidated Report"
-    
+
     local REPORT_FILE="$OUTPUT_DIR/BENCHMARK_REPORT_${TIMESTAMP}.md"
-    
+
     cat > "$REPORT_FILE" << EOF
 # CogSynDelta Benchmark Report
 
@@ -266,7 +266,7 @@ EOF
     if [[ -f "$OUTPUT_DIR/history/benchmark_"*.json ]]; then
         echo "## Model Component Benchmarks" >> "$REPORT_FILE"
         echo "" >> "$REPORT_FILE"
-        
+
         local latest_model=$(ls -t "$OUTPUT_DIR/history/benchmark_"*.json 2>/dev/null | head -1)
         if [[ -n "$latest_model" ]]; then
             echo '```json' >> "$REPORT_FILE"
@@ -288,7 +288,7 @@ EOF
     if $COMPARE; then
         echo "## Industry Comparisons" >> "$REPORT_FILE"
         echo "" >> "$REPORT_FILE"
-        
+
         local latest_comparison=$(ls -t "$OUTPUT_DIR/comparisons/industry_comparison_"*.json 2>/dev/null | head -1)
         if [[ -n "$latest_comparison" ]]; then
             # Parse and format comparison data
@@ -299,17 +299,17 @@ from pathlib import Path
 try:
     with open('$latest_comparison') as f:
         data = json.load(f)
-    
+
     throughput = data.get('throughput_comparisons', [])
     memory = data.get('memory_comparisons', [])
     cog_metrics = data.get('cogsyndelta_metrics', {})
-    
+
     if throughput or memory:
         print("### Throughput Comparison (higher is better)")
         print("")
         print("| Model | CogSynDelta | Baseline | Delta | Status |")
         print("|-------|-------------|----------|-------|--------|")
-        
+
         for comp in throughput:
             model = comp.get('baseline', 'Unknown')
             cog = comp.get('cogsyndelta', 0)
@@ -318,13 +318,13 @@ try:
             better = comp.get('better', False)
             indicator = "🟢" if better else "🔴"
             print(f"| {model} | {cog:,.0f} | {base:,.0f} | {delta:+.1f}% | {indicator} |")
-        
+
         print("")
         print("### Memory Efficiency")
         print("")
         print("| Model | CogSynDelta | Baseline | Delta | Status |")
         print("|-------|-------------|----------|-------|--------|")
-        
+
         for comp in memory:
             model = comp.get('baseline', 'Unknown')
             cog = comp.get('cogsyndelta', 0)
@@ -404,10 +404,10 @@ Per CogSynDelta constitution: "All performance claims must be backed by evidence
 EOF
 
     log_success "Consolidated report: $REPORT_FILE"
-    
+
     # Create symlink to latest
     ln -sf "BENCHMARK_REPORT_${TIMESTAMP}.md" "$OUTPUT_DIR/latest_report.md"
-    
+
     # Generate JSON summary
     generate_json_summary
 }
@@ -415,7 +415,7 @@ EOF
 # Generate JSON summary
 generate_json_summary() {
     local JSON_FILE="$OUTPUT_DIR/BENCHMARK_REPORT_${TIMESTAMP}.json"
-    
+
     python3 << EOF > "$JSON_FILE"
 import json
 import glob
@@ -462,47 +462,47 @@ EOF
 # Main execution
 main() {
     log_header "CogSynDelta Unified Benchmark Suite"
-    
+
     echo -e "\n${BOLD}Configuration:${NC}"
     echo "  Mode: $( $QUICK_MODE && echo "Quick" || echo "Full" )"
     echo "  GPU Only: $GPU_ONLY"
     echo "  Report Only: $REPORT_ONLY"
     echo "  Include Comparisons: $COMPARE"
     echo "  Output: $OUTPUT_DIR"
-    
+
     cd "$PROJECT_ROOT"
-    
+
     # Always detect environment
     detect_environment
-    
+
     if ! $REPORT_ONLY; then
         # Run all benchmarks
         run_compression_benchmarks
         run_model_benchmarks
-        
+
         if $CUDA_AVAILABLE; then
             run_gpu_benchmarks
         fi
-        
+
         if $COMPARE; then
             run_industry_comparisons
         fi
-        
+
         run_tests
     fi
-    
+
     # Generate reports
     generate_visualization
     generate_consolidated_report
-    
+
     log_header "Benchmark Suite Complete"
-    
+
     echo -e "\n${BOLD}Output Files:${NC}"
     echo "  Report:  $OUTPUT_DIR/BENCHMARK_REPORT_${TIMESTAMP}.md"
     echo "  JSON:    $OUTPUT_DIR/BENCHMARK_REPORT_${TIMESTAMP}.json"
     echo "  Trends:  $OUTPUT_DIR/BENCHMARK_TRENDS_${TIMESTAMP}.md"
     echo "  Latest:  $OUTPUT_DIR/latest_report.md (symlink)"
-    
+
     echo -e "\n${GREEN}${BOLD}✓ All benchmarks complete!${NC}"
     echo -e "View report: ${CYAN}cat $OUTPUT_DIR/latest_report.md${NC}"
 }

@@ -59,7 +59,9 @@ class ModernHopfieldMemory(nn.Module):
         self.dimension = dimension
         self.beta = beta
         self.max_patterns = max_patterns
-        self.device = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = (
+            device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
+        )
 
         # Initialize empty pattern storage
         self.register_buffer("patterns", torch.empty(0, dimension, device=device))

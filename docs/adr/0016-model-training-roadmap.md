@@ -88,7 +88,7 @@ Implement a phased training strategy with clear dependencies:
    - Simplest architecture
    - Self-supervised reconstruction loss
    - Target: 0.90 fidelity at 8x compression
-   
+
 2. **ResidualBoostCompactor** (week 2)
    - Depends on residual learning
    - Supervised with embedding pairs
@@ -159,13 +159,13 @@ COMPACTOR_TRAINING_CONFIG = {
 ```python
 class PCNVAEGANTrainer:
     """Phased trainer for PCN-VAE-GAN.
-    
+
     Why curriculum:
         Training all components simultaneously leads to instability.
         VAE provides stable latent space for GAN, PCN adds prediction
         capability on top of stable representations.
     """
-    
+
     def train_vae_phase(self, epochs: int = 50):
         """Phase 1: VAE reconstruction."""
         for epoch in range(epochs):
@@ -173,7 +173,7 @@ class PCNVAEGANTrainer:
                 recon, mu, logvar = self.model.vae_forward(batch)
                 loss = self.vae_loss(batch, recon, mu, logvar)
                 self.optimize(loss)
-    
+
     def train_gan_phase(self, epochs: int = 30):
         """Phase 2: Add adversarial training."""
         for epoch in range(epochs):
@@ -182,11 +182,11 @@ class PCNVAEGANTrainer:
                 recon, mu, logvar = self.model.vae_forward(batch)
                 g_loss = self.generator_loss(batch, recon, mu, logvar)
                 self.optimize_generator(g_loss)
-                
+
                 # Discriminator step
                 d_loss = self.discriminator_loss(batch, recon)
                 self.optimize_discriminator(d_loss)
-    
+
     def train_pcn_phase(self, epochs: int = 20):
         """Phase 3: Predictive coding integration."""
         for epoch in range(epochs):
@@ -234,22 +234,22 @@ class PCNVAEGANTrainer:
 ```python
 class InterconnectTrainer:
     """Train interconnect on end-to-end tasks.
-    
+
     Why meta-learning:
         mHC gates need to learn WHEN to pass information, not WHAT.
         This requires seeing the effect of gating decisions on
         downstream task performance.
     """
-    
+
     def __init__(self, sections: list[nn.Module], interconnect: nn.Module):
         # Freeze section weights
         for section in sections:
             for param in section.parameters():
                 param.requires_grad = False
-        
+
         # Only train interconnect
         self.trainable_params = interconnect.parameters()
-    
+
     def train_step(self, batch):
         # Forward through sections with interconnect
         x = batch
@@ -258,7 +258,7 @@ class InterconnectTrainer:
             if i < len(self.sections) - 1:
                 # Apply mHC gating between sections
                 x = self.interconnect.gate(x, section_id=i)
-        
+
         # Task loss (e.g., classification, reconstruction)
         loss = self.task_loss(x, batch)
         return loss
@@ -412,5 +412,5 @@ Each phase should have:
 
 ---
 
-*Follows constitution: "All performance claims must be backed by evidence" - 
+*Follows constitution: "All performance claims must be backed by evidence" -
 each phase has measurable acceptance criteria*

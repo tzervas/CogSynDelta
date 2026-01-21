@@ -89,16 +89,12 @@ class TestResidualVectorQuantizer:
     @pytest.fixture
     def rvq(self):
         """Create RVQ."""
-        return ResidualVectorQuantizer(
-            embedding_dim=128, num_stages=4, codebook_size=256
-        )
+        return ResidualVectorQuantizer(embedding_dim=128, num_stages=4, codebook_size=256)
 
     @pytest.fixture
     def rvq_small(self):
         """Create small RVQ for fast tests."""
-        return ResidualVectorQuantizer(
-            embedding_dim=32, num_stages=3, codebook_size=16
-        )
+        return ResidualVectorQuantizer(embedding_dim=32, num_stages=3, codebook_size=16)
 
     def test_initialization(self, rvq):
         """Test RVQ initialization."""
@@ -136,9 +132,9 @@ class TestResidualVectorQuantizer:
 
         # Residual should decrease with each stage
         for i in range(len(residual_norms) - 1):
-            assert (
-                residual_norms[i + 1] <= residual_norms[i]
-            ), f"Stage {i+1} residual not <= stage {i}"
+            assert residual_norms[i + 1] <= residual_norms[i], (
+                f"Stage {i + 1} residual not <= stage {i}"
+            )
 
     def test_encode_decode(self, rvq_small):
         """Test encode-decode roundtrip."""
@@ -164,12 +160,8 @@ class TestResidualVectorQuantizer:
         """Test that more stages improve reconstruction."""
         x = torch.randn(8, 64)
 
-        rvq_2stages = ResidualVectorQuantizer(
-            embedding_dim=64, num_stages=2, codebook_size=32
-        )
-        rvq_4stages = ResidualVectorQuantizer(
-            embedding_dim=64, num_stages=4, codebook_size=32
-        )
+        rvq_2stages = ResidualVectorQuantizer(embedding_dim=64, num_stages=2, codebook_size=32)
+        rvq_4stages = ResidualVectorQuantizer(embedding_dim=64, num_stages=4, codebook_size=32)
 
         # Encode/decode with different stage counts
         indices_2 = rvq_2stages.encode(x)
@@ -182,9 +174,7 @@ class TestResidualVectorQuantizer:
         mse_4 = torch.nn.functional.mse_loss(x, reconstructed_4)
 
         # More stages should have lower MSE (or similar)
-        assert (
-            mse_4 <= mse_2 * 1.5
-        ), f"4-stage MSE {mse_4} not better than 2-stage {mse_2}"
+        assert mse_4 <= mse_2 * 1.5, f"4-stage MSE {mse_4} not better than 2-stage {mse_2}"
 
     def test_batch_processing(self, rvq_small):
         """Test batch processing."""
