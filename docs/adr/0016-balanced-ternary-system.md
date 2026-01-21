@@ -203,13 +203,12 @@ Architecture:
 
 **Balanced Ternary Branch** (`claude/balanced-ternary-5wbyn`):
 
-- `libs/compression/src/compression/balanced_ternary/arithmetic.py` - Core ternary arithmetic (312 lines)
-- `libs/compression/src/compression/balanced_ternary/layers.py` - Neural network layers (287 lines)
-- `libs/compression/src/compression/balanced_ternary/quantizer.py` - Quantization/compression (263 lines)
-- `libs/compression/src/compression/balanced_ternary/tryte.py` - Tryte encoding (161 lines)
-- `libs/compression/tests/test_balanced_ternary.py` - Test suite (294 lines)
+- `libs/compression/src/compression/balanced_ternary/arithmetic.py` - Core ternary arithmetic and BalancedTernaryTensor
+- `libs/compression/src/compression/balanced_ternary/layers.py` - Neural network layers (Linear, Conv2d, Embedding)
+- `libs/compression/src/compression/balanced_ternary/quantizer.py` - Quantization, STE, and compression
+- `libs/compression/tests/test_balanced_ternary_*.py` - Test suites
 
-Total: **1,317 lines** of balanced ternary implementation
+Total: **~1,000 lines** of balanced ternary implementation
 
 ### API Example
 
@@ -218,38 +217,42 @@ from compression.balanced_ternary import BalancedTernaryLinear, BalancedTernaryQ
 
 # Replace standard PyTorch layer
 # layer = nn.Linear(512, 256)
-layer = BalancedTernaryLinear(512, 256, trits_per_tryte=9)
+layer = BalancedTernaryLinear(512, 256)  # trits_per_tryte defaults to 9
 
-# Forward pass (weights auto-quantized during training)
+# Forward pass (weights auto-quantized during training via STE)
 output = layer(input)  # Ternary {-1, 0, +1} computation
 
+# For deployment: permanently quantize weights
+layer.eval()
+layer.quantize_weights_explicit()
+
 # Compress trained model
-quantizer = BalancedTernaryQuantizer(trits_per_tryte=9)
-compressed, metadata = quantizer.compress(layer.weight)
+from compression.balanced_ternary import BalancedTernaryCompressor
+compressor = BalancedTernaryCompressor(trits_per_tryte=9)
+compressed, metadata = compressor.compress(layer.weight)
 
 # Compressed size
 original_size = layer.weight.element_size() * layer.weight.numel()  # FP16
-compressed_size = len(compressed)
+compressed_size = metadata["original_shape"][0] * metadata["original_shape"][1]  # packed bytes
 compression_ratio = original_size / compressed_size  # ~10×
 ```
 
-### Tryte Encoding Example
+### Tensor Encoding Example
 
 ```python
-from compression.balanced_ternary import BalancedTernaryTryte
+from compression.balanced_ternary import BalancedTernaryTensor, tryte_encode
+import torch
 
-# Encode weights as trytes
-bt_tryte = BalancedTernaryTryte(torch.tensor([[1.5, -0.3, 0.1, -2.1]]), trits_per_tryte=9)
+# Encode values as balanced ternary tensor
+values = torch.tensor([5, -3, 0, 13])
+bt_tensor = tryte_encode(values, trits_per_tryte=9)
 
 # Access ternary representation
-print(bt_tryte.trits)  # Shape: [1, 4, 9] (batch, weights, trits)
-# Example: [[[ 1, 0, -1, 0, 0, 0, 0, 0, 0],  # 1.5 → 1
-#            [-1, 0,  0, 0, 0, 0, 0, 0, 0],  # -0.3 → 0
-#            [ 0, 0,  0, 0, 0, 0, 0, 0, 0],  # 0.1 → 0
-#            [-1, 0,  1, 0, 0, 0, 0, 0, 0]]] # -2.1 → -1
+print(bt_tensor.trits.shape)  # Shape: [4, 9] (values, trits per value)
+# Decimal 5 in balanced ternary: 1*3² - 1*3¹ - 1*3⁰ = 9 - 3 - 1 = 5
 
 # Decode back to decimal
-decoded = bt_tryte.to_decimal()  # [1, 0, 0, -1] (quantized)
+decoded = bt_tensor.to_decimal()  # tensor([5, -3, 0, 13])
 ```
 
 ### Testing Strategy

@@ -29,10 +29,17 @@ class BalancedTernaryLinear(nn.Module):
         out_features: Output dimension
         weight: Balanced ternary weights {-1, 0, 1}
         bias: Optional bias (kept in FP16 for stability)
+        trits_per_tryte: Number of trits per tryte for encoding
+        quantize_weights: Whether to quantize weights during forward pass
     """
 
     def __init__(
-        self, in_features: int, out_features: int, bias: bool = True, threshold_mode: str = "mean"
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        threshold_mode: str = "mean",
+        trits_per_tryte: int = 9,
     ):
         """Initialize balanced ternary linear layer.
 
@@ -41,11 +48,14 @@ class BalancedTernaryLinear(nn.Module):
             out_features: Output dimension
             bias: Whether to use bias
             threshold_mode: Quantization threshold mode
+            trits_per_tryte: Number of trits per tryte (default: 9)
         """
         super().__init__()
 
         self.in_features = in_features
         self.out_features = out_features
+        self.trits_per_tryte = trits_per_tryte
+        self.quantize_weights = True  # Enable quantization by default
 
         # Float weights for training (quantized during forward)
         self.weight = nn.Parameter(torch.randn(out_features, in_features))
@@ -57,7 +67,9 @@ class BalancedTernaryLinear(nn.Module):
             self.register_parameter("bias", None)
 
         # Quantizer
-        self.quantizer = BalancedTernaryQuantizer(threshold_mode=threshold_mode)
+        self.quantizer = BalancedTernaryQuantizer(
+            threshold_mode=threshold_mode, trits_per_tryte=trits_per_tryte
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with balanced ternary weights.
@@ -76,12 +88,39 @@ class BalancedTernaryLinear(nn.Module):
 
         return output
 
+    def quantize_weights_explicit(self) -> None:
+        """Explicitly quantize weights in-place to {-1, 0, +1}.
+
+        After calling this method, weights are permanently quantized.
+        Use for inference/deployment when training is complete.
+        """
+        with torch.no_grad():
+            quantized = self.quantizer(self.weight)
+            self.weight.copy_(quantized)
+
+    def get_weight_distribution(self) -> dict[str, int]:
+        """Get distribution of quantized weight values.
+
+        Returns:
+            Dictionary with counts of {-1, 0, +1} values.
+        """
+        # Get quantized weights
+        with torch.no_grad():
+            quantized = self.quantizer(self.weight)
+
+        neg_one = (quantized == -1).sum().item()
+        zero = (quantized == 0).sum().item()
+        pos_one = (quantized == 1).sum().item()
+
+        return {"neg_one": int(neg_one), "zero": int(zero), "pos_one": int(pos_one)}
+
     def extra_repr(self) -> str:
         """Extra representation for printing."""
         return (
             f"in_features={self.in_features}, "
             f"out_features={self.out_features}, "
             f"bias={self.bias is not None}, "
+            f"trits_per_tryte={self.trits_per_tryte}, "
             f"quantization=balanced_ternary"
         )
 
@@ -94,6 +133,8 @@ class BalancedTernaryConv2d(nn.Module):
         out_channels: Output channels
         kernel_size: Convolution kernel size
         weight: Balanced ternary convolutional kernels
+        trits_per_tryte: Number of trits per tryte for encoding
+        quantize_weights: Whether to quantize weights during forward pass
     """
 
     def __init__(
@@ -105,6 +146,7 @@ class BalancedTernaryConv2d(nn.Module):
         padding: int = 0,
         bias: bool = True,
         threshold_mode: str = "mean",
+        trits_per_tryte: int = 9,
     ):
         """Initialize balanced ternary conv layer.
 
@@ -116,17 +158,21 @@ class BalancedTernaryConv2d(nn.Module):
             padding: Padding
             bias: Whether to use bias
             threshold_mode: Quantization threshold mode
+            trits_per_tryte: Number of trits per tryte (default: 9)
         """
         super().__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = kernel_size
+        self.kernel_size = (kernel_size, kernel_size) if isinstance(kernel_size, int) else kernel_size
         self.stride = stride
         self.padding = padding
+        self.trits_per_tryte = trits_per_tryte
+        self.quantize_weights = True  # Enable quantization by default
 
         # Float weights for training
-        self.weight = nn.Parameter(torch.randn(out_channels, in_channels, kernel_size, kernel_size))
+        k = kernel_size if isinstance(kernel_size, int) else kernel_size[0]
+        self.weight = nn.Parameter(torch.randn(out_channels, in_channels, k, k))
         nn.init.kaiming_normal_(self.weight)
 
         if bias:
@@ -135,7 +181,9 @@ class BalancedTernaryConv2d(nn.Module):
             self.register_parameter("bias", None)
 
         # Quantizer
-        self.quantizer = BalancedTernaryQuantizer(threshold_mode=threshold_mode)
+        self.quantizer = BalancedTernaryQuantizer(
+            threshold_mode=threshold_mode, trits_per_tryte=trits_per_tryte
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with balanced ternary kernels.
@@ -154,6 +202,32 @@ class BalancedTernaryConv2d(nn.Module):
 
         return output
 
+    def quantize_weights_explicit(self) -> None:
+        """Explicitly quantize weights in-place to {-1, 0, +1}.
+
+        After calling this method, weights are permanently quantized.
+        Use for inference/deployment when training is complete.
+        """
+        with torch.no_grad():
+            quantized = self.quantizer(self.weight)
+            self.weight.copy_(quantized)
+
+    def get_weight_distribution(self) -> dict[str, int]:
+        """Get distribution of quantized weight values.
+
+        Returns:
+            Dictionary with counts of {-1, 0, +1} values.
+        """
+        # Get quantized weights
+        with torch.no_grad():
+            quantized = self.quantizer(self.weight)
+
+        neg_one = (quantized == -1).sum().item()
+        zero = (quantized == 0).sum().item()
+        pos_one = (quantized == 1).sum().item()
+
+        return {"neg_one": int(neg_one), "zero": int(zero), "pos_one": int(pos_one)}
+
     def extra_repr(self) -> str:
         """Extra representation."""
         return (
@@ -163,6 +237,7 @@ class BalancedTernaryConv2d(nn.Module):
             f"stride={self.stride}, "
             f"padding={self.padding}, "
             f"bias={self.bias is not None}, "
+            f"trits_per_tryte={self.trits_per_tryte}, "
             f"quantization=balanced_ternary"
         )
 

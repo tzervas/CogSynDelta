@@ -149,10 +149,9 @@ For full layer (N weights):
 ```
 balanced_ternary/
 ├── __init__.py           # Public API exports
-├── arithmetic.py         # Core ternary operations (312 lines)
-├── layers.py             # Neural network layers (287 lines)
-├── quantizer.py          # Quantization & compression (263 lines)
-└── tryte.py              # Tryte encoding (161 lines)
+├── arithmetic.py         # Core ternary operations and BalancedTernaryTensor
+├── layers.py             # Neural network layers (Linear, Conv2d, Embedding)
+└── quantizer.py          # Quantization, STE, and compression
 ```
 
 ## API Specification
@@ -300,8 +299,8 @@ class BalancedTernaryLinear(nn.Module):
             Gradients flow through via straight-through estimator.
         """
 
-    def quantize_weights(self) -> None:
-        """Quantize weights in-place (for inference)."""
+    def quantize_weights_explicit(self) -> None:
+        """Quantize weights in-place (for inference/deployment)."""
 
     def get_weight_distribution(self) -> Dict[str, int]:
         """Get counts of {-1, 0, +1} weights (for analysis)."""
@@ -453,55 +452,64 @@ class BalancedTernaryCompressor:
         """
 ```
 
-### Tryte Encoding (`tryte.py`)
+### Tensor Encoding (`arithmetic.py`)
 
-#### BalancedTernaryTryte
+#### BalancedTernaryTensor
 
-Container for tryte-encoded tensors.
+Container for tryte-encoded tensors (defined in `arithmetic.py`).
 
 ```python
-class BalancedTernaryTryte:
+class BalancedTernaryTensor:
     """
-    Balanced ternary tryte (9 trits) tensor representation.
+    Wrapper for balanced ternary tensors with tryte organization.
 
-    Stores tensors as balanced ternary trits for computation and compression.
+    A tryte is 9 trits (balanced ternary digits).
+    Range: -9841 to +9841 (3^9 = 19683, symmetric around 0)
 
-    Args:
-        tensor: FP tensor to encode, or pre-encoded trits
-        trits_per_tryte: Number of trits (default: 9)
-        is_trits: If True, tensor is already in trit form (default: False)
+    Attributes:
+        trits: The underlying trit tensor {-1, 0, 1}
+        trits_per_tryte: Number of trits per logical value (default: 9)
+        num_trytes: Number of tryte values
 
     Example:
-        >>> weights = torch.randn(128, 64)
-        >>> tryte = BalancedTernaryTryte(weights, trits_per_tryte=9)
-        >>> tryte.trits.shape
-        torch.Size([128, 64, 9])  # Each weight → 9 trits
-        >>> decoded = tryte.to_decimal()
-        >>> decoded.shape
-        torch.Size([128, 64])  # Back to weight tensor
+        >>> trits = torch.tensor([[1, -1, 0, 0, 0, 0, 0, 0, 0]])  # decimal 6
+        >>> tensor = BalancedTernaryTensor(trits, trits_per_tryte=9)
+        >>> tensor.to_decimal()
+        tensor([6])
     """
 
     def __init__(
         self,
-        tensor: torch.Tensor,
+        trits: torch.Tensor,
         trits_per_tryte: int = 9,
-        is_trits: bool = False,
     ):
-        """Initialize tryte representation."""
+        """Initialize balanced ternary tensor."""
 
     @property
-    def trits(self) -> torch.Tensor:
-        """Get underlying trit tensor."""
+    def shape(self) -> torch.Size:
+        """Shape of the tensor (excluding trits dimension)."""
 
     def to_decimal(self) -> torch.Tensor:
-        """Convert trits back to decimal tensor."""
+        """Convert trits to decimal representation."""
 
-    def pack(self) -> bytes:
-        """Pack trits into byte representation (5 trits/byte)."""
+    def to_float(self) -> torch.Tensor:
+        """Convert to floating point for neural network operations."""
+```
 
-    @classmethod
-    def unpack(cls, packed: bytes, shape: Tuple[int, ...], trits_per_tryte: int = 9):
-        """Unpack bytes back to tryte tensor."""
+Helper function for encoding:
+
+```python
+def tryte_encode(values: torch.Tensor, trits_per_tryte: int = 9) -> BalancedTernaryTensor:
+    """
+    Encode decimal/float values as balanced ternary trytes.
+
+    Args:
+        values: Decimal values to encode (shape: [...])
+        trits_per_tryte: Trits per tryte (default: 9)
+
+    Returns:
+        Balanced ternary tensor
+    """
 ```
 
 ## Usage Examples
@@ -533,7 +541,7 @@ for batch in dataloader:
 
 # Inference (quantize weights permanently)
 layer.eval()
-layer.quantize_weights()
+layer.quantize_weights_explicit()  # In-place permanent quantization
 output = layer(x)  # Pure ternary computation
 ```
 

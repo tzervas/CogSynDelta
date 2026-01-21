@@ -7,7 +7,7 @@ from compression.balanced_ternary.quantizer import (
     BalancedTernaryCompressor,
     BalancedTernaryQuantizer,
 )
-from compression.balanced_ternary.tryte import BalancedTernaryTryte
+from compression.balanced_ternary.arithmetic import BalancedTernaryTensor
 
 
 class TestBalancedTernaryQuantizer:
@@ -39,7 +39,7 @@ class TestBalancedTernaryQuantizer:
 
         trytes = quantizer.quantize_to_trytes(weights)
 
-        assert isinstance(trytes, BalancedTernaryTryte)
+        assert isinstance(trytes, BalancedTernaryTensor)
         # Trits shape should be (4, 4, 9)
         assert trytes.trits.shape == (4, 4, 9)
 

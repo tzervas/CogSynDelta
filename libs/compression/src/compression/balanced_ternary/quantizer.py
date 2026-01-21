@@ -98,6 +98,31 @@ class BalancedTernaryQuantizer(nn.Module):
 
         return ternary
 
+    def quantize(self, weights: torch.Tensor) -> torch.Tensor:
+        """Quantize weights to balanced ternary (alias for forward without STE).
+
+        Args:
+            weights: Float weights (any shape)
+
+        Returns:
+            Quantized weights {-1, 0, 1} (same shape)
+        """
+        return self.forward(weights)
+
+    def quantize_with_ste(self, weights: torch.Tensor) -> torch.Tensor:
+        """Quantize weights with straight-through estimator.
+
+        This is the same as forward() but explicitly named for clarity.
+
+        Args:
+            weights: Float weights (any shape)
+
+        Returns:
+            Quantized weights {-1, 0, 1} with STE gradients
+        """
+        return self.forward(weights)
+
+
     def quantize_to_trytes(self, weights: torch.Tensor) -> BalancedTernaryTensor:
         """Quantize weights to balanced ternary trytes.
 
