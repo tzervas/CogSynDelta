@@ -7,11 +7,14 @@ Advanced compression technique for memory storage optimization:
 3. Semantic residuals - high-fidelity detail preservation
 4. Adaptive quantization - dynamic precision based on importance
 
-Key advantages:
-- 10-100x compression ratio with minimal quality loss
+Key advantages (theoretical - actual performance depends on training):
+- Compression ratio varies by training (see benchmark_results/)
 - Preserves fine-grained semantic details
 - Efficient reconstruction via residual addition
 - Scalable to large memory banks
+
+NOTE: Current implementation requires training for optimal compression.
+See benchmark_results/latest_report.md for measured performance.
 """
 
 import time

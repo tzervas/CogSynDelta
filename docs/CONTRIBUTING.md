@@ -250,15 +250,16 @@ Examples:
 ```
 feat(memory): add dense differential compression
 
-Implements 10-50x compression with >0.95 fidelity.
-Measured on test data with statistical validation.
+Implements compression with configurable fidelity targets.
+See benchmark_results/ for measured performance.
 
 Closes #123
 ```
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree that your contributions will be licensed under the project's Proprietary License.
+Copyright © 2026 Tyler Zervas (tzervas) and Average Joe's Labs (AJL).
 
 ## Questions?
 
