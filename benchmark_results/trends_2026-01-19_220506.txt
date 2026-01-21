@@ -68,4 +68,3 @@ RECOMMENDATIONS
   • ⚠️ 2 metric(s) showing regression: investigate interconnect.latency_ms.gate_bs1, pcn-vae-gan.quality.cosine_similarity
   • ✅ Overall positive trend: 17 metrics improving
   • ➡️ System is stable - good time to establish new baselines
-
