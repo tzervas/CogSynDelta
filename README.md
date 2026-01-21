@@ -14,7 +14,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.9+-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![CUDA](https://img.shields.io/badge/CUDA-12.8-76B900?logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-toolkit)
 [![uv](https://img.shields.io/badge/uv-0.7+-blueviolet?logo=astral&logoColor=white)](https://docs.astral.sh/uv/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
 
 <!-- Branch-specific badges (develop) -->
 <details>
@@ -36,7 +36,7 @@ CogSynDelta is a cutting-edge self-improving AI architecture designed for real-w
 - **mHC**: Moderated Hyper Connections for controlled information flow
 - **Intelligent Interconnect**: Specialized submodel for managing communication between brain regions
 - **Self-Improving Agents**: Multi-language code generation (SWE/AIE/SWD/AID)
-- **Memory Persistence**: Dense differential embeddings with 10-100x compression
+- **Memory Persistence**: Dense differential embeddings (compression varies by training)
 - **Quantum Computing**: Extensible backend for quantum/classical hybrid processing *(backlogged - awaiting Python 3.14 ecosystem support)*
 - **Google ADK Compliance**: Standard agent interface with A2A protocol support
 - **Safeguards**: Loop detection, ethical constraints, resource limits
@@ -92,12 +92,19 @@ The system is organized as specialized sections (brain regions) communicating vi
 
 ### Measured Performance (Benchmarked)
 
-All claims are validated with concrete measurements:
+All claims are validated with concrete measurements (see [benchmark_results/latest_report.md](benchmark_results/latest_report.md)):
 
-- **Compression**: 10-50x ratio with >0.95 fidelity (measured on test data)
+- **Compression**: Multiple strategies ranging from 1.33x (0.99+ fidelity) to 16x (training required)
 - **Memory**: Hierarchical storage with automatic archiving
 - **Inference**: Measured latency and throughput (see benchmarks)
 - **Safety**: Loop detection, circuit breakers, ethical constraints
+
+**Current Compression Fidelity**:
+| Strategy | Fidelity | Compression | Status |
+|----------|----------|-------------|--------|
+| HighFidelity | ~0.99 | 1.33x | ✅ Production |
+| Hybrid | ~0.96 | 1.25x | ✅ Production |
+| ResidualBoost | ~0.56 | 16x | ⚠️ Needs training |
 
 ### Google ADK Compliance
 
