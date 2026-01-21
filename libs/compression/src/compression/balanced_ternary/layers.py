@@ -289,7 +289,7 @@ class BalancedTernaryMLP(nn.Module):
         """
         super().__init__()
 
-        layers = []
+        layers: list[nn.Module] = []
 
         # Input layer
         layers.append(BalancedTernaryLinear(input_dim, hidden_dim))

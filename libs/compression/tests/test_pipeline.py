@@ -6,8 +6,6 @@ import torch
 from compression.config import CompressionConfig
 from compression.mrl.matryoshka import MatryoshkaEncoder
 from compression.pipeline import StagedCompressionPipeline
-from compression.qinco.codebook import QINCo2Compressor
-from compression.rvq.quantizer import ResidualVectorQuantizer
 
 
 class TestStagedCompressionPipeline:

@@ -26,7 +26,9 @@ import torch.nn as nn
 from typing import Optional
 
 
-def ternary_quantize(weights: torch.Tensor, threshold: Optional[float] = None) -> torch.Tensor:
+def ternary_quantize(
+    weights: torch.Tensor, threshold: Optional[float | torch.Tensor] = None
+) -> torch.Tensor:
     """Quantize weights to {-1, 0, +1}.
 
     Args:
@@ -198,7 +200,8 @@ class BitNetb158(nn.Module):
             self.quantize_layer_weights(self.input_proj)
 
         # Encoder layers
-        for layer in self.layers:
+        for layer_module in self.layers:
+            layer: nn.ModuleDict = layer_module  # type: ignore[assignment]
             # Self-attention
             residual = x
             x = layer["norm1"](x)
