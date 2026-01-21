@@ -2,26 +2,33 @@
 Progressive Dynamic Selective Loading for CogSynDelta
 
 Extends the Interconnect Manager with memory-efficient submodel loading/unloading
-for scaling beyond 10B parameters on consumer GPUs (RTX 5080, 16GB VRAM).
+for consumer GPUs (RTX 5080, 16GB VRAM). Designed for pseudo-generalized highly
+specialized models with selective and progressive loading.
 
 Key Features:
 - Progressive loading: Load submodels on-demand based on interconnect routing
 - Dynamic unloading: Evict unused submodels to free VRAM
 - Selective activation: Only keep active submodels in GPU memory
 - Context-aware prefetching: Predict and preload likely-needed submodels
-- Scaling support: Enable 50B+ parameter models via selective activation
+- Specialized model composition: Combine domain-specific submodels dynamically
+
+Design Philosophy:
+    This system targets a practical configuration of 10-20 specialized submodels
+    with 4-8 active simultaneously. Rather than scaling to massive monolithic
+    models, the approach favors highly specialized, smaller models that can be
+    composed dynamically based on task requirements.
 
 Memory Budget Strategy (RTX 5080 16GB):
     ├── Core framework: ~2GB (always loaded)
-    ├── Active submodels: ~10GB (dynamic, 5-10 submodels)
+    ├── Active submodels: ~8GB (dynamic, 4-8 submodels)
     ├── KV Cache: ~2GB
-    ├── Activations: ~1-2GB (checkpointed)
-    └── Overhead: ~1GB
+    ├── Activations: ~2GB (checkpointed)
+    └── Overhead: ~2GB
     TOTAL: ~16GB ✅
 
-Example: 50B Parameter Model
-    - Total submodels: 50 specialized modules (1B params each)
-    - Simultaneously active: 8-10 submodels (~10GB)
+Typical Configuration:
+    - Total submodels: 10-20 specialized modules
+    - Simultaneously active: 4-8 submodels (~8GB)
     - Load/unload latency: ~100ms per submodel
     - Prefetch accuracy: >80% (reduces effective latency)
 
@@ -123,17 +130,17 @@ class ProgressiveLoadingConfig:
     """Configuration for progressive loading system."""
 
     # Memory budgets (MB)
-    gpu_budget_mb: float = 10000.0  # 10GB for submodels
-    cpu_staging_size_mb: float = 32000.0  # 32GB CPU staging
-    disk_cache_size_mb: float = 100000.0  # 100GB disk cache
+    gpu_budget_mb: float = 8000.0  # 8GB for submodels (conservative for 16GB GPU)
+    cpu_staging_size_mb: float = 16000.0  # 16GB CPU staging
+    disk_cache_size_mb: float = 50000.0  # 50GB disk cache
 
-    # Active limit
-    max_active_submodels: int = 10  # Maximum submodels on GPU
+    # Active limit - designed for 10-20 total submodels
+    max_active_submodels: int = 8  # Maximum submodels on GPU simultaneously
 
     # Loading thresholds
     eager_load_threshold: float = 0.7  # Load if >70% routing probability
     lazy_unload_threshold: float = 0.2  # Unload if <20% probability
-    prefetch_depth: int = 3  # Prefetch co-activated (depth 3)
+    prefetch_depth: int = 2  # Prefetch co-activated (depth 2 for smaller pools)
 
     # Performance
     async_loading: bool = True  # Async GPU transfers
@@ -158,7 +165,7 @@ class ProgressiveLoadingConfig:
 
         Args:
             yaml_path: Path to YAML configuration file
-            profile: Configuration profile name (base, medium_25b, large_50b, xlarge_100b)
+            profile: Configuration profile name (base, focused, balanced, expansive)
 
         Returns:
             ProgressiveLoadingConfig instance
@@ -171,13 +178,13 @@ class ProgressiveLoadingConfig:
         profile_data = config_data.get("profiles", {}).get(profile, {})
 
         return cls(
-            gpu_budget_mb=profile_data.get("gpu_budget_mb", 10000.0),
-            cpu_staging_size_mb=profile_data.get("cpu_staging_size_mb", 32000.0),
-            disk_cache_size_mb=profile_data.get("disk_cache_size_mb", 100000.0),
-            max_active_submodels=profile_data.get("max_active_submodels", 10),
+            gpu_budget_mb=profile_data.get("gpu_budget_mb", 8000.0),
+            cpu_staging_size_mb=profile_data.get("cpu_staging_size_mb", 16000.0),
+            disk_cache_size_mb=profile_data.get("disk_cache_size_mb", 50000.0),
+            max_active_submodels=profile_data.get("max_active_submodels", 8),
             eager_load_threshold=profile_data.get("eager_load_threshold", 0.7),
             lazy_unload_threshold=profile_data.get("lazy_unload_threshold", 0.2),
-            prefetch_depth=profile_data.get("prefetch_depth", 3),
+            prefetch_depth=profile_data.get("prefetch_depth", 2),
             async_loading=profile_data.get("async_loading", True),
             background_prefetch=profile_data.get("background_prefetch", True),
             max_concurrent_loads=profile_data.get("max_concurrent_loads", 2),
@@ -729,60 +736,88 @@ class ProgressiveLoaderManager:
         }
 
 
-# Example usage and configuration for different model scales
+# Example usage and configuration for different submodel pool sizes
 class ModelScaleConfig:
-    """Predefined configurations for different model scales."""
+    """Predefined configurations for different submodel compositions.
+
+    These configs represent different strategies for composing specialized submodels:
+    - focused: 4-6 active from ~10 total (task-specific composition)
+    - balanced: 6-8 active from ~15 total (general-purpose)
+    - expansive: 8-10 active from ~20 total (maximum specialization)
+    """
 
     @staticmethod
-    def small_10b() -> ProgressiveLoadingConfig:
-        """Configuration for 10B parameter model (base case)."""
+    def focused() -> ProgressiveLoadingConfig:
+        """Configuration for focused task composition (4-6 active from ~10 submodels).
+
+        Best for: Single-domain tasks with clear specialization requirements.
+        Target: RTX 3090/4090 (24GB), RTX 5080 (16GB)
+        """
         return ProgressiveLoadingConfig(
-            gpu_budget_mb=10000.0,
-            cpu_staging_size_mb=16000.0,
-            max_active_submodels=8,
+            gpu_budget_mb=6000.0,
+            cpu_staging_size_mb=12000.0,
+            max_active_submodels=6,
             eager_load_threshold=0.7,
             lazy_unload_threshold=0.2,
             prefetch_depth=2,
         )
 
     @staticmethod
-    def medium_25b() -> ProgressiveLoadingConfig:
-        """Configuration for 25B parameter model."""
+    def balanced() -> ProgressiveLoadingConfig:
+        """Configuration for balanced composition (6-8 active from ~15 submodels).
+
+        Best for: Multi-task workloads with moderate specialization.
+        Target: RTX 5080 (16GB) primary, RTX 4090 (24GB)
+        """
+        return ProgressiveLoadingConfig(
+            gpu_budget_mb=8000.0,
+            cpu_staging_size_mb=16000.0,
+            max_active_submodels=8,
+            eager_load_threshold=0.65,
+            lazy_unload_threshold=0.2,
+            prefetch_depth=2,
+            max_concurrent_loads=2,
+        )
+
+    @staticmethod
+    def expansive() -> ProgressiveLoadingConfig:
+        """Configuration for expansive composition (8-10 active from ~20 submodels).
+
+        Best for: Complex tasks requiring broad domain coverage.
+        Target: High-VRAM setups (24GB+), multi-GPU
+        """
         return ProgressiveLoadingConfig(
             gpu_budget_mb=10000.0,
-            cpu_staging_size_mb=32000.0,
+            cpu_staging_size_mb=24000.0,
             max_active_submodels=10,
             eager_load_threshold=0.6,
-            lazy_unload_threshold=0.2,
+            lazy_unload_threshold=0.25,
             prefetch_depth=3,
             max_concurrent_loads=3,
+            background_prefetch=True,
         )
+
+    # Legacy aliases for backward compatibility (deprecated)
+    @staticmethod
+    def small_10b() -> ProgressiveLoadingConfig:
+        """DEPRECATED: Use focused() instead."""
+        return ModelScaleConfig.focused()
+
+    @staticmethod
+    def medium_25b() -> ProgressiveLoadingConfig:
+        """DEPRECATED: Use balanced() instead."""
+        return ModelScaleConfig.balanced()
 
     @staticmethod
     def large_50b() -> ProgressiveLoadingConfig:
-        """Configuration for 50B parameter model."""
-        return ProgressiveLoadingConfig(
-            gpu_budget_mb=10000.0,
-            cpu_staging_size_mb=64000.0,
-            max_active_submodels=10,
-            eager_load_threshold=0.5,
-            lazy_unload_threshold=0.2,
-            prefetch_depth=4,
-            max_concurrent_loads=4,
-            background_prefetch=True,
-        )
+        """DEPRECATED: Use expansive() instead."""
+        return ModelScaleConfig.expansive()
 
     @staticmethod
     def xlarge_100b() -> ProgressiveLoadingConfig:
-        """Configuration for 100B parameter model."""
-        return ProgressiveLoadingConfig(
-            gpu_budget_mb=10000.0,
-            cpu_staging_size_mb=128000.0,
-            max_active_submodels=10,
-            eager_load_threshold=0.5,  # Fixed: was 0.4 < lazy_unload_threshold 0.5
-            lazy_unload_threshold=0.4,
-            prefetch_depth=5,
-            max_concurrent_loads=6,
-            background_prefetch=True,
-            enable_activation_checkpointing=True,
-        )
+        """DEPRECATED: Use expansive() instead.
+
+        Note: CogSynDelta focuses on composing specialized submodels,
+        not scaling to massive monolithic models.
+        """
+        return ModelScaleConfig.expansive()

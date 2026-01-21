@@ -54,9 +54,9 @@ class TestProgressiveLoadingConfig:
         """Test default configuration values."""
         config = ProgressiveLoadingConfig()
 
-        # Default is 10 on this branch
-        assert config.max_active_submodels == 10
-        assert config.gpu_budget_mb == 10000.0
+        # Defaults: 8 active submodels, 8GB budget (conservative for 16GB GPU)
+        assert config.max_active_submodels == 8
+        assert config.gpu_budget_mb == 8000.0
         assert config.eager_load_threshold == 0.7
         assert config.lazy_unload_threshold == 0.2
 
