@@ -98,7 +98,7 @@ y_estimated, iters = resonator.factorize(z, x)  # Recover y
 
 | Feature | Dimension | Capacity | GPU Throughput |
 |---------|-----------|----------|----------------|
-| FPE Encoding | 10,000 | N/A | >100K vecs/sec |
+| FPE Encoding | 10,000 | N/A | Hardware-dependent (benchmark locally) |
 | Hopfield Storage | 10,000 | ~2^5000 | <1ms retrieval |
 | Resonator Factorization | 10,000 | Polynomial | 100 iters typical |
 

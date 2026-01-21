@@ -64,14 +64,16 @@ def weighted_bundle(
     weighted_sum = (vectors * weights_expanded).sum(dim=0)
 
     if normalize:
-        # Normalize to unit magnitude
+        # Normalize: complex vectors get element-wise unit magnitude; real vectors get L2-normalized
         if weighted_sum.dtype in [torch.cfloat, torch.complex64, torch.complex128]:
-            # Complex: normalize magnitude
+            # Complex: element-wise magnitude normalization (unit phasors, phase preserved)
+            # This maintains the phase information while normalizing magnitudes to 1
             norm = torch.abs(weighted_sum).clamp(min=1e-8)
             return weighted_sum / norm
         else:
-            # Real: L2 normalization
+            # Real: L2 normalization of the whole vector
             norm = torch.norm(weighted_sum, p=2).clamp(min=1e-8)
             return weighted_sum / norm
 
     return weighted_sum
+

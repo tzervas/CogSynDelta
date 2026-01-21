@@ -41,7 +41,7 @@ class ModernHopfieldMemory(nn.Module):
         dimension: int,
         beta: float = 1.0,
         max_patterns: int | None = None,
-        device: str = "cuda",
+        device: str | None = None,
     ) -> None:
         """Initialize Modern Hopfield memory.
 
@@ -49,13 +49,13 @@ class ModernHopfieldMemory(nn.Module):
             dimension: Dimension of hypervectors
             beta: Inverse temperature for sharpness (default: 1.0)
             max_patterns: Maximum patterns to store (default: None = unlimited)
-            device: Compute device ("cuda" or "cpu")
+            device: Compute device ("cuda" or "cpu", default: auto-detected)
         """
         super().__init__()
         self.dimension = dimension
         self.beta = beta
         self.max_patterns = max_patterns
-        self.device = device
+        self.device = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
 
         # Initialize empty pattern storage
         self.register_buffer("patterns", torch.empty(0, dimension, device=device))

@@ -56,6 +56,10 @@ def inverse_permute(x: torch.Tensor, shifts: int = 1) -> torch.Tensor:
 def create_sequence_encoding(vectors: torch.Tensor) -> torch.Tensor:
     """Encode a sequence of hypervectors with position information.
 
+    Uses a shared positional base hypervector that is permuted by position index,
+    then bound with each content vector. This ensures position and content are
+    properly separable and that permutation order is preserved.
+
     Args:
         vectors: Sequence of hypervectors (shape: [seq_len, dim])
 
@@ -71,9 +75,22 @@ def create_sequence_encoding(vectors: torch.Tensor) -> torch.Tensor:
     from vsa.operations.bundling import bundle
 
     seq_len = vectors.shape[0]
+    dim = vectors.shape[1]
 
-    # Bind each vector with its position
-    positioned = [bind(permute(vectors[i], shifts=i), vectors[i]) for i in range(seq_len)]
+    # Shared base hypervector for positional encoding
+    # Using a deterministic seed based on dimension for reproducibility
+    generator = torch.Generator(device=vectors.device)
+    generator.manual_seed(42)  # Fixed seed for reproducible position base
+
+    if vectors.dtype in [torch.cfloat, torch.complex64, torch.complex128]:
+        position_base = torch.randn(dim, dtype=torch.cfloat, device=vectors.device, generator=generator)
+        position_base = position_base / torch.abs(position_base).clamp(min=1e-8)
+    else:
+        position_base = torch.randn(dim, device=vectors.device, generator=generator)
+        position_base = position_base / torch.norm(position_base).clamp(min=1e-8)
+
+    # Bind each vector with its (shared) positional hypervector
+    positioned = [bind(permute(position_base, shifts=i), vectors[i]) for i in range(seq_len)]
 
     # Bundle all positioned vectors
     return bundle(torch.stack(positioned))

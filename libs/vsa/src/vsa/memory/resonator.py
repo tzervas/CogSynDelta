@@ -35,7 +35,7 @@ class ResonatorNetwork(nn.Module):
         dimension: int,
         max_iterations: int = 100,
         convergence_threshold: float = 1e-4,
-        device: str = "cuda",
+        device: str | None = None,
     ) -> None:
         """Initialize resonator network.
 
@@ -43,13 +43,13 @@ class ResonatorNetwork(nn.Module):
             dimension: Dimension of hypervectors
             max_iterations: Maximum iterations for resonance
             convergence_threshold: Convergence threshold
-            device: Compute device
+            device: Compute device ("cuda" or "cpu", default: auto-detected)
         """
         super().__init__()
         self.dimension = dimension
         self.max_iterations = max_iterations
         self.convergence_threshold = convergence_threshold
-        self.device = device
+        self.device = device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
 
         # Optional: set of candidate vectors for discrete search
         self.register_buffer("candidates", None)
@@ -108,15 +108,27 @@ class ResonatorNetwork(nn.Module):
             estimate = initial_guess.to(self.device)
 
         # Resonance iterations
+        # For iterative refinement, we alternate between:
+        # 1. Unbinding: refine estimate using bound and known
+        # 2. Projection: snap to nearest candidate (if discrete search)
+        # 3. Normalization: maintain unit magnitude
         for iteration in range(self.max_iterations):
             prev_estimate = estimate.clone()
 
-            # Unbind: estimate_new = unbind(bound, known)
-            estimate = unbind(bound, known)
+            # Core resonance update: unbind to get new estimate
+            # For continuous case: estimate = unbind(bound, known)
+            # For discrete/candidate case: this gets refined by projection
+            new_estimate = unbind(bound, known)
 
             # If candidates provided, project onto nearest candidate
+            # This is where iterative refinement happens - projection improves estimate
             if self.candidates is not None:
-                estimate = self._project_to_candidates(estimate)
+                # Combine direct unbind with current estimate for better convergence
+                # (weighted average helps with noisy unbinding)
+                combined = 0.5 * new_estimate + 0.5 * estimate
+                estimate = self._project_to_candidates(combined)
+            else:
+                estimate = new_estimate
 
             # Normalize
             if estimate.dtype in [torch.cfloat, torch.complex64, torch.complex128]:
