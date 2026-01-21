@@ -2,12 +2,12 @@
 
 import pytest
 import torch
-import torch.nn as nn
+from torch import nn
 
 from cogsyndelta.core.progressive_loader import (
     LoadingState,
-    ProgressiveLoadingConfig,
     ProgressiveLoaderManager,
+    ProgressiveLoadingConfig,
     SubmodelInfo,
 )
 
