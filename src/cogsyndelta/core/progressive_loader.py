@@ -110,6 +110,9 @@ class LoadingConfig:
     cpu_staging_mb: float = 32000.0  # 32GB CPU staging
     disk_cache_mb: float = 100000.0  # 100GB disk cache
 
+    # Submodel limits
+    max_active_submodels: int = 8  # Max submodels active simultaneously
+
     # Loading thresholds
     eager_load_threshold: float = 0.7  # Load if >70% routing probability
     lazy_unload_threshold: float = 0.2  # Unload if <20% probability
@@ -123,6 +126,19 @@ class LoadingConfig:
     # Checkpointing
     enable_activation_checkpointing: bool = True
     checkpoint_segments: int = 4
+
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        if self.eager_load_threshold <= self.lazy_unload_threshold:
+            msg = (
+                f"eager_load_threshold ({self.eager_load_threshold}) must be "
+                f"greater than lazy_unload_threshold ({self.lazy_unload_threshold})"
+            )
+            raise AssertionError(msg)
+
+
+# Backwards compatibility alias
+ProgressiveLoadingConfig = LoadingConfig
 
 
 class ProgressiveLoaderManager:
@@ -271,6 +287,19 @@ class ProgressiveLoaderManager:
             return False
 
         return self._unload_from_gpu(name)
+
+    def is_loaded(self, name: str) -> bool:
+        """Check if a submodel is currently loaded on the device.
+
+        Args:
+            name: Submodel name to check.
+
+        Returns:
+            True if the submodel is in ACTIVE state, False otherwise.
+        """
+        if name not in self.submodels:
+            return False
+        return self.submodels[name].state == LoadingState.ACTIVE
 
     def update_from_routing(
         self, routing_decisions: dict[tuple[str, str], float], section_to_submodel: dict[str, str]
