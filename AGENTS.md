@@ -160,7 +160,7 @@ This project follows Spec-Driven Development (SDD). For new features:
 
 ## License Compliance
 
-**Project License**: Proprietary  
+**Project License**: Proprietary
 **Copyright**: © 2026 Tyler Zervas (tzervas) and Average Joe's Labs (AJL)
 
 Before adding dependencies:

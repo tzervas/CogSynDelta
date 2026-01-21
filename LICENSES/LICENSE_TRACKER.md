@@ -2,7 +2,7 @@
 
 This document tracks all third-party dependencies, their licenses, and compliance requirements for CogSynDelta.
 
-**CogSynDelta License**: Proprietary  
+**CogSynDelta License**: Proprietary
 **Copyright**: © 2026 Tyler Zervas (tzervas) and Average Joe's Labs (AJL)
 
 ## License Compatibility Matrix
