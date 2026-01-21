@@ -48,18 +48,18 @@ Process embeddings in memory-bounded chunks with streaming reconstruction:
 ```python
 class ChunkedCompactor(nn.Module):
     """Memory-efficient compactor using chunked processing.
-    
+
     Why chunking:
         Video diffusion models process frames in temporal chunks to
         avoid loading entire videos into VRAM. We apply the same
         principle to embedding batches.
-    
+
     Memory formula:
         peak_vram = chunk_size × embed_dim × dtype_bytes + overhead
         With 1000 samples, 512-dim, fp16: 1000 × 512 × 2 = 1MB per chunk
         vs 100000 × 512 × 2 = 100MB full batch
     """
-    
+
     def __init__(
         self,
         base_compactor: nn.Module,
@@ -70,25 +70,25 @@ class ChunkedCompactor(nn.Module):
         self.base = base_compactor
         self.chunk_size = chunk_size
         self.overlap = overlap
-    
+
     @torch.no_grad()
     def compress(self, embeddings: torch.Tensor) -> list[dict[str, torch.Tensor]]:
         """Compress in chunks, yielding results progressively."""
         results = []
         n = embeddings.size(0)
-        
+
         for start in range(0, n, self.chunk_size - self.overlap):
             end = min(start + self.chunk_size, n)
             chunk = embeddings[start:end]
-            
+
             # Process chunk
             compressed = self.base.compact(chunk)
             results.append(compressed)
-            
+
             # Explicitly free intermediate tensors
             del chunk
             torch.cuda.empty_cache()
-        
+
         return results
 ```
 
@@ -99,18 +99,18 @@ Adapt token merging from vision transformers for memory entries:
 ```python
 class ImportanceContextPruner(nn.Module):
     """Prune low-importance context entries to fit VRAM budget.
-    
+
     Inspired by ToMe (Token Merging) and EViT (Token Eviction):
     - Compute importance scores for each memory entry
     - Keep top-k most important, merge or drop rest
     - Maintains semantic coverage with reduced memory
-    
+
     Why this works:
         Memory entries have varying relevance. Recent entries and
         semantically central entries carry most information. We can
         aggressively prune periphery without significant fidelity loss.
     """
-    
+
     def __init__(
         self,
         max_context: int = 1000,
@@ -119,14 +119,14 @@ class ImportanceContextPruner(nn.Module):
         super().__init__()
         self.max_context = max_context
         self.importance_fn = importance_fn
-        
+
         # Lightweight importance scorer
         self.scorer = nn.Sequential(
             nn.Linear(512, 128),
             nn.ReLU(),
             nn.Linear(128, 1),
         )
-    
+
     def compute_importance(
         self,
         embeddings: torch.Tensor,
@@ -135,20 +135,20 @@ class ImportanceContextPruner(nn.Module):
         """Score each embedding's importance."""
         # Base importance from content
         content_scores = self.scorer(embeddings).squeeze(-1)
-        
+
         # Recency bonus (exponential decay)
         if timestamps is not None:
             max_time = timestamps.max()
             recency = torch.exp(-0.1 * (max_time - timestamps))
             content_scores = content_scores + 0.5 * recency
-        
+
         # Centrality: similarity to mean embedding
         mean_emb = embeddings.mean(dim=0, keepdim=True)
         centrality = F.cosine_similarity(embeddings, mean_emb)
         content_scores = content_scores + 0.3 * centrality
-        
+
         return content_scores
-    
+
     def prune(
         self,
         embeddings: torch.Tensor,
@@ -157,10 +157,10 @@ class ImportanceContextPruner(nn.Module):
         """Prune to max_context entries, return (pruned_embeddings, indices)."""
         if embeddings.size(0) <= self.max_context:
             return embeddings, torch.arange(embeddings.size(0))
-        
+
         scores = self.compute_importance(embeddings, timestamps)
         _, top_indices = scores.topk(self.max_context)
-        
+
         return embeddings[top_indices], top_indices
 ```
 
@@ -171,18 +171,18 @@ Cache compressed representations to avoid recomputation:
 ```python
 class LatentCache:
     """LRU cache for compressed representations.
-    
+
     Why caching:
         Stable Diffusion caches VAE latents to avoid re-encoding.
         We cache compressed memory states since compression is
         computationally expensive but deterministic.
-    
+
     Invalidation strategy:
         - Hash embedding content for cache keys
         - Invalidate on model weight updates
         - LRU eviction when cache exceeds budget
     """
-    
+
     def __init__(
         self,
         max_size_mb: float = 100.0,
@@ -193,11 +193,11 @@ class LatentCache:
         self.cache: OrderedDict[str, torch.Tensor] = OrderedDict()
         self.current_size_mb = 0.0
         self._version = 0  # Increment on model changes
-    
+
     def _hash_tensor(self, tensor: torch.Tensor) -> str:
         """Compute cache key from tensor content."""
         return hashlib.md5(tensor.cpu().numpy().tobytes()).hexdigest()
-    
+
     def get(self, embeddings: torch.Tensor) -> torch.Tensor | None:
         """Retrieve cached compression if available."""
         key = f"v{self._version}_{self._hash_tensor(embeddings)}"
@@ -205,23 +205,23 @@ class LatentCache:
             self.cache.move_to_end(key)  # LRU update
             return self.cache[key].to(embeddings.device)
         return None
-    
+
     def put(self, embeddings: torch.Tensor, compressed: torch.Tensor) -> None:
         """Cache compressed representation."""
         key = f"v{self._version}_{self._hash_tensor(embeddings)}"
-        
+
         # Move to cache device
         cached = compressed.to(self.device)
         size_mb = cached.numel() * cached.element_size() / (1024 * 1024)
-        
+
         # Evict if needed
         while self.current_size_mb + size_mb > self.max_size_mb and self.cache:
             _, old = self.cache.popitem(last=False)
             self.current_size_mb -= old.numel() * old.element_size() / (1024 * 1024)
-        
+
         self.cache[key] = cached
         self.current_size_mb += size_mb
-    
+
     def invalidate(self) -> None:
         """Invalidate all cached entries (call on model update)."""
         self._version += 1
@@ -234,15 +234,15 @@ class LatentCache:
 ```python
 def enable_memory_efficient_training(model: nn.Module) -> None:
     """Enable gradient checkpointing for memory-efficient training.
-    
+
     Per PyTorch docs, this trades compute for memory by
     recomputing activations during backward pass instead of storing them.
-    
+
     Typical reduction: 60-70% activation memory
     Typical slowdown: 20-30%
     """
     from torch.utils.checkpoint import checkpoint_sequential
-    
+
     # Enable for transformer layers
     if hasattr(model, 'encoder') and hasattr(model.encoder, 'layers'):
         model.encoder.layers = checkpoint_sequential(

@@ -56,9 +56,7 @@ class TestProgressiveLoadingConfig:
         """Test that invalid thresholds raise errors."""
         # Eager threshold must be > lazy threshold
         with pytest.raises(AssertionError):
-            ProgressiveLoadingConfig(
-                eager_load_threshold=0.2, lazy_unload_threshold=0.8
-            )
+            ProgressiveLoadingConfig(eager_load_threshold=0.2, lazy_unload_threshold=0.8)
 
 
 class TestSubmodelInfo:
@@ -276,9 +274,7 @@ class TestProgressiveLoaderManager:
         vision_module = DummySubmodel(size_mb=100)
         language_module = DummySubmodel(size_mb=100)
 
-        loader.register_submodel(
-            "vision_0", vision_module, size_mb=100, submodel_type="vision"
-        )
+        loader.register_submodel("vision_0", vision_module, size_mb=100, submodel_type="vision")
         loader.register_submodel(
             "language_0", language_module, size_mb=100, submodel_type="language"
         )

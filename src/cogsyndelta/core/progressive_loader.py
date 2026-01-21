@@ -234,6 +234,7 @@ class ProgressiveLoaderManager:
 
         # Loading queues - use queue.Queue for thread-safety (not asyncio.Queue)
         import queue
+
         self._load_queue: queue.Queue[str] = queue.Queue()
         self._prefetch_queue: queue.Queue[str] = queue.Queue()
 
@@ -714,7 +715,8 @@ class ProgressiveLoaderManager:
             "gpu_memory_mb": self.gpu_memory_used,
             "gpu_budget_mb": self.config.gpu_budget_mb,
             "gpu_utilization": self.gpu_memory_used / self.config.gpu_budget_mb
-                if self.config.gpu_budget_mb > 0 else 0.0,
+            if self.config.gpu_budget_mb > 0
+            else 0.0,
             "cpu_memory_mb": self.cpu_memory_used,
             "total_submodels": len(self.submodels),
             # Multiple names for compatibility

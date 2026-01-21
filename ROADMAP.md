@@ -133,7 +133,7 @@
   - `tiny`: 1M params, 128d embedding
   - `small`: 10M params, 256d embedding
   - `base`: 50M params, 512d embedding
-  - `large`: 200M params, 768d embedding  
+  - `large`: 200M params, 768d embedding
   - `xlarge`: 1B params, 1024d embedding
 - `EnhancedBenchmarkRecord` includes `model_size` field for tracking
 

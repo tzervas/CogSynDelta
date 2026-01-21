@@ -56,13 +56,13 @@ from torchhd import random_hv, bind, bundle, unbind
 
 class VSAMemory:
     """Vector Symbolic Architecture memory operations.
-    
+
     Provides algebraic binding for multi-modal composition:
     - bind(): Create associations (image ⊗ text ⊗ context)
     - bundle(): Create superpositions (memory = Σ item_i)
     - unbind(): Recover components from bound vectors
     """
-    
+
     def __init__(self, dim: int = 10000, algebra: str = "MAP"):
         """
         Args:
@@ -71,29 +71,29 @@ class VSAMemory:
         """
         self.dim = dim
         self.algebra = algebra
-    
+
     def create_hypervector(self, name: str) -> torch.Tensor:
         """Create named atomic hypervector."""
         return random_hv(1, self.dim, dtype=torch.float32)
-    
+
     def bind_multimodal(
-        self, 
+        self,
         image_hv: torch.Tensor,
         text_hv: torch.Tensor,
         context_hv: torch.Tensor | None = None
     ) -> torch.Tensor:
         """Bind multi-modal representations into joint concept.
-        
+
         Result is quasi-orthogonal to all inputs but recoverable via unbind.
         """
         bound = bind(image_hv, text_hv)
         if context_hv is not None:
             bound = bind(bound, context_hv)
         return bound
-    
+
     def bundle_memories(self, memories: list[torch.Tensor]) -> torch.Tensor:
         """Bundle multiple memories into superposition vector.
-        
+
         Capacity follows: n ≥ k/(1-S²) × log(M)
         At dim=10000, S=0.95: ~50 items reliable
         """
@@ -109,16 +109,16 @@ from hflayers import Hopfield, HopfieldPooling
 
 class HopfieldActiveMemory:
     """Active memory tier using Modern Hopfield Networks.
-    
+
     Provides:
     - Exponential storage capacity: 2^(d/2) patterns
     - One-step associative retrieval
     - Energy-based pattern completion
-    
+
     Why Hopfield for active memory: The transformer-attention equivalence
     means we get theoretically-grounded associative memory with GPU efficiency.
     """
-    
+
     def __init__(self, embed_dim: int = 512, num_heads: int = 8):
         self.hopfield = Hopfield(
             input_size=embed_dim,
@@ -127,11 +127,11 @@ class HopfieldActiveMemory:
             scaling=1.0 / (embed_dim ** 0.5)  # β = 1/√d
         )
         self.stored_patterns = []
-        
+
     def store(self, pattern: torch.Tensor) -> None:
         """Store pattern in associative memory."""
         self.stored_patterns.append(pattern)
-        
+
     def retrieve(self, query: torch.Tensor) -> torch.Tensor:
         """Retrieve nearest stored pattern via energy minimization."""
         if not self.stored_patterns:
@@ -209,7 +209,7 @@ def test_vsa_capacity_bound():
     # At S=0.95, k=50 should be reliable
     memories = [vsa.create_hypervector(f"mem_{i}") for i in range(50)]
     bundled = vsa.bundle_memories(memories)
-    
+
     # Should retrieve with >0.90 fidelity
     for mem in memories:
         similarity = F.cosine_similarity(mem, bundled, dim=-1)
@@ -221,7 +221,7 @@ def test_hopfield_exponential_capacity():
     patterns = [torch.randn(512) for _ in range(100)]
     for p in patterns:
         hopfield.store(F.normalize(p, dim=-1))
-    
+
     # Should retrieve stored patterns accurately
     for p in patterns[:10]:  # Sample test
         retrieved = hopfield.retrieve(p + 0.1 * torch.randn(512))  # Noisy query
