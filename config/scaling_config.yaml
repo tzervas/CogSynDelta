@@ -116,8 +116,9 @@ xlarge_100b:
 
   # Minimal simultaneous activation
   max_active_submodels: 10
-  eager_load_threshold: 0.4
-  lazy_unload_threshold: 0.5
+  # Fixed: eager_load_threshold must be > lazy_unload_threshold to prevent thrashing
+  eager_load_threshold: 0.5
+  lazy_unload_threshold: 0.4
   prefetch_depth: 5
 
   # Submodel architecture

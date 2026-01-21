@@ -65,14 +65,19 @@ logger = logging.getLogger(__name__)
 
 
 class LoadingState(Enum):
-    """Lifecycle state of a submodel."""
+    """Lifecycle state of a submodel.
 
-    UNLOADED = "unloaded"  # Weights on disk
-    STAGING = "staging"  # Loading to CPU
-    STAGED = "staged"  # Weights in CPU RAM
-    LOADING = "loading"  # Transferring to GPU
-    ACTIVE = "active"  # On GPU, ready for inference
-    EVICTING = "evicting"  # Being unloaded from GPU
+    State machine:
+        DISK -> LOADING -> LOADED
+        LOADED -> STAGED (moved to CPU staging)
+        STAGED -> LOADING -> LOADED
+        LOADED -> DISK (evicted)
+    """
+
+    DISK = "disk"  # Weights on disk only
+    LOADING = "loading"  # Currently loading (disk->GPU or CPU->GPU)
+    LOADED = "loaded"  # On GPU, ready for inference
+    STAGED = "staged"  # Weights in CPU RAM (fast reload)
 
 
 @dataclass
@@ -82,8 +87,10 @@ class SubmodelInfo:
     name: str
     module: nn.Module
     parameter_count: int
-    memory_mb: float
-    state: LoadingState = LoadingState.UNLOADED
+    size_mb: float  # Memory size in MB (aliased from memory_mb for test compat)
+    state: LoadingState = LoadingState.DISK
+    submodel_type: str = "default"  # Type for categorization
+    pinned: bool = False  # Never unload (alias for pin_memory)
 
     # Usage tracking
     access_count: int = 0
@@ -96,19 +103,31 @@ class SubmodelInfo:
 
     # Configuration
     load_priority: int = 5  # 0-10, higher = load first
-    pin_memory: bool = False  # Never unload
     allow_cpu_fallback: bool = True
     checkpoint_path: Path | None = None
 
+    @property
+    def memory_mb(self) -> float:
+        """Alias for size_mb for backward compatibility."""
+        return self.size_mb
+
+    @property
+    def pin_memory(self) -> bool:
+        """Alias for pinned for backward compatibility."""
+        return self.pinned
+
 
 @dataclass
-class LoadingConfig:
+class ProgressiveLoadingConfig:
     """Configuration for progressive loading system."""
 
     # Memory budgets (MB)
     gpu_budget_mb: float = 10000.0  # 10GB for submodels
-    cpu_staging_mb: float = 32000.0  # 32GB CPU staging
-    disk_cache_mb: float = 100000.0  # 100GB disk cache
+    cpu_staging_size_mb: float = 32000.0  # 32GB CPU staging
+    disk_cache_size_mb: float = 100000.0  # 100GB disk cache
+
+    # Active limit
+    max_active_submodels: int = 10  # Maximum submodels on GPU
 
     # Loading thresholds
     eager_load_threshold: float = 0.7  # Load if >70% routing probability
@@ -124,6 +143,60 @@ class LoadingConfig:
     enable_activation_checkpointing: bool = True
     checkpoint_segments: int = 4
 
+    def __post_init__(self) -> None:
+        """Validate configuration invariants."""
+        if self.eager_load_threshold <= self.lazy_unload_threshold:
+            raise AssertionError(
+                f"eager_load_threshold ({self.eager_load_threshold}) must be greater than "
+                f"lazy_unload_threshold ({self.lazy_unload_threshold}) to prevent thrashing"
+            )
+
+    @classmethod
+    def from_yaml(cls, yaml_path: str | Path, profile: str = "base") -> "ProgressiveLoadingConfig":
+        """Load configuration from YAML file.
+
+        Args:
+            yaml_path: Path to YAML configuration file
+            profile: Configuration profile name (base, medium_25b, large_50b, xlarge_100b)
+
+        Returns:
+            ProgressiveLoadingConfig instance
+        """
+        import yaml
+
+        with open(yaml_path) as f:
+            config_data = yaml.safe_load(f)
+
+        profile_data = config_data.get("profiles", {}).get(profile, {})
+
+        return cls(
+            gpu_budget_mb=profile_data.get("gpu_budget_mb", 10000.0),
+            cpu_staging_size_mb=profile_data.get("cpu_staging_size_mb", 32000.0),
+            disk_cache_size_mb=profile_data.get("disk_cache_size_mb", 100000.0),
+            max_active_submodels=profile_data.get("max_active_submodels", 10),
+            eager_load_threshold=profile_data.get("eager_load_threshold", 0.7),
+            lazy_unload_threshold=profile_data.get("lazy_unload_threshold", 0.2),
+            prefetch_depth=profile_data.get("prefetch_depth", 3),
+            async_loading=profile_data.get("async_loading", True),
+            background_prefetch=profile_data.get("background_prefetch", True),
+            max_concurrent_loads=profile_data.get("max_concurrent_loads", 2),
+        )
+
+    # Backward compatibility aliases
+    @property
+    def cpu_staging_mb(self) -> float:
+        """Alias for cpu_staging_size_mb."""
+        return self.cpu_staging_size_mb
+
+    @property
+    def disk_cache_mb(self) -> float:
+        """Alias for disk_cache_size_mb."""
+        return self.disk_cache_size_mb
+
+
+# Alias for backward compatibility
+LoadingConfig = ProgressiveLoadingConfig
+
 
 class ProgressiveLoaderManager:
     """Manages progressive loading/unloading of submodels for memory efficiency.
@@ -134,13 +207,18 @@ class ProgressiveLoaderManager:
 
     def __init__(
         self,
-        config: LoadingConfig | None = None,
+        config: ProgressiveLoadingConfig | None = None,
         interconnect: IntelligentInterconnectManager | None = None,
         device: str = "cuda",
+        max_active_submodels: int | None = None,
     ):
-        self.config = config or LoadingConfig()
+        self.config = config or ProgressiveLoadingConfig()
         self.device = torch.device(device)
         self.interconnect = interconnect
+
+        # Override max_active if provided
+        if max_active_submodels is not None:
+            self.config.max_active_submodels = max_active_submodels
 
         # Submodel registry
         self.submodels: dict[str, SubmodelInfo] = {}
@@ -153,15 +231,27 @@ class ProgressiveLoaderManager:
         # State dicts (CPU storage)
         self.state_dicts: dict[str, dict[str, torch.Tensor]] = {}
 
-        # Loading queue
-        self.load_queue: asyncio.Queue = asyncio.Queue()
-        self.prefetch_queue: asyncio.Queue = asyncio.Queue()
+        # Loading queues - use queue.Queue for thread-safety (not asyncio.Queue)
+        import queue
+        self._load_queue: queue.Queue[str] = queue.Queue()
+        self._prefetch_queue: queue.Queue[str] = queue.Queue()
 
         logger.info(
             f"ProgressiveLoaderManager initialized: "
             f"GPU budget={self.config.gpu_budget_mb:.1f}MB, "
+            f"max_active={self.config.max_active_submodels}, "
             f"CPU staging={self.config.cpu_staging_mb:.1f}MB"
         )
+
+    @property
+    def load_queue(self) -> "queue.Queue[str]":
+        """Get load queue (property for backward compatibility)."""
+        return self._load_queue
+
+    @property
+    def prefetch_queue(self) -> "queue.Queue[str]":
+        """Get prefetch queue (property for backward compatibility)."""
+        return self._prefetch_queue
 
     def register_submodel(
         self,
@@ -171,6 +261,8 @@ class ProgressiveLoaderManager:
         load_priority: int = 5,
         pin_memory: bool = False,
         checkpoint_path: Path | None = None,
+        size_mb: float | None = None,
+        submodel_type: str = "default",
     ) -> None:
         """Register a submodel for progressive loading.
 
@@ -181,18 +273,23 @@ class ProgressiveLoaderManager:
             load_priority: Loading priority (0-10, higher first)
             pin_memory: Keep on GPU permanently (for core modules)
             checkpoint_path: Path to saved weights (if separate from module)
+            size_mb: Override calculated memory size (MB)
+            submodel_type: Type of submodel for categorization
         """
         param_count = sum(p.numel() for p in module.parameters())
-        memory_mb = param_count * 4 / (1024**2)  # float32 assumption
+        calc_memory_mb = param_count * 4 / (1024**2)  # float32 assumption
+        actual_size_mb = size_mb if size_mb is not None else calc_memory_mb
 
         info = SubmodelInfo(
             name=name,
             module=module,
             parameter_count=param_count,
-            memory_mb=memory_mb,
+            size_mb=actual_size_mb,
+            state=LoadingState.STAGED,
+            submodel_type=submodel_type,
+            pinned=pin_memory,
             context_tags=context_tags or set(),
             load_priority=load_priority,
-            pin_memory=pin_memory,
             checkpoint_path=checkpoint_path,
         )
 
@@ -200,8 +297,7 @@ class ProgressiveLoaderManager:
 
         # Save state dict to CPU
         self.state_dicts[name] = {k: v.cpu() for k, v in module.state_dict().items()}
-        info.state = LoadingState.STAGED
-        self.cpu_memory_used += memory_mb
+        self.cpu_memory_used += actual_size_mb
 
         # Move module to CPU initially (unless pinned)
         if not pin_memory:
@@ -212,9 +308,78 @@ class ProgressiveLoaderManager:
 
         logger.info(
             f"Registered submodel '{name}': {param_count:,} params, "
-            f"{memory_mb:.1f}MB, priority={load_priority}, pinned={pin_memory}, "
-            f"tags={context_tags}"
+            f"{actual_size_mb:.1f}MB, priority={load_priority}, pinned={pin_memory}, "
+            f"type={submodel_type}, tags={context_tags}"
         )
+
+    def is_loaded(self, name: str) -> bool:
+        """Check if a submodel is currently loaded on GPU.
+
+        Args:
+            name: Submodel name
+
+        Returns:
+            True if loaded on GPU
+        """
+        if name not in self.submodels:
+            return False
+        return self.submodels[name].state == LoadingState.LOADED
+
+    def is_loading(self, name: str) -> bool:
+        """Check if a submodel is currently being loaded.
+
+        Args:
+            name: Submodel name
+
+        Returns:
+            True if currently loading
+        """
+        if name not in self.submodels:
+            return False
+        return self.submodels[name].state == LoadingState.LOADING
+
+    def get_loaded(self, name: str) -> nn.Module | None:
+        """Get a loaded submodel's module.
+
+        Args:
+            name: Submodel name
+
+        Returns:
+            The nn.Module if loaded, None otherwise
+        """
+        if name not in self.submodels:
+            return None
+        info = self.submodels[name]
+        if info.state == LoadingState.LOADED:
+            return info.module
+        return None
+
+    def pin_submodel(self, name: str) -> bool:
+        """Pin a submodel to GPU (prevent eviction).
+
+        Args:
+            name: Submodel name
+
+        Returns:
+            True if successfully pinned
+        """
+        if name not in self.submodels:
+            return False
+
+        info = self.submodels[name]
+        info.pinned = True
+
+        # Load to GPU if not already loaded
+        if info.state != LoadingState.LOADED:
+            self.activate(name)
+
+        return True
+
+    def clear(self) -> None:
+        """Deactivate all submodels and clear state."""
+        for name in list(self.active_names):
+            self.deactivate(name)
+        self.gpu_memory_used = 0.0
 
     def activate(self, name: str, blocking: bool = True) -> bool:
         """Activate a submodel (load to GPU if needed).
@@ -228,17 +393,27 @@ class ProgressiveLoaderManager:
         """
         info = self.submodels[name]
 
-        # Already active
-        if info.state == LoadingState.ACTIVE:
+        # Already loaded
+        if info.state == LoadingState.LOADED:
             return True
 
+        # Check max_active_submodels limit
+        if len(self.active_names) >= self.config.max_active_submodels:
+            # Need to evict an existing submodel
+            if not self._evict_least_used():
+                logger.warning(
+                    f"Cannot activate '{name}': max_active_submodels limit reached "
+                    f"({self.config.max_active_submodels})"
+                )
+                return False
+
         # Check memory budget
-        if not self._can_load(info.memory_mb):
+        if not self._can_load(info.size_mb):
             # Try to make room
-            if not self._evict_for_space(info.memory_mb):
+            if not self._evict_for_space(info.size_mb):
                 logger.warning(
                     f"Cannot activate '{name}': insufficient memory "
-                    f"({info.memory_mb:.1f}MB needed, {self._available_gpu_mb():.1f}MB available)"
+                    f"({info.size_mb:.1f}MB needed, {self._available_gpu_mb():.1f}MB available)"
                 )
                 return False
 
@@ -247,10 +422,33 @@ class ProgressiveLoaderManager:
             success = self._load_to_gpu(name)
         else:
             # Async load
-            self.load_queue.put_nowait(name)
+            self._load_queue.put_nowait(name)
             success = True
 
         return success
+
+    def _evict_least_used(self) -> bool:
+        """Evict the least recently used non-pinned submodel.
+
+        Returns:
+            True if a submodel was evicted
+        """
+        # Find least recently used non-pinned active submodel
+        candidates = [
+            (name, self.submodels[name])
+            for name in self.active_names
+            if not self.submodels[name].pinned
+        ]
+
+        if not candidates:
+            return False
+
+        # Sort by last_accessed (oldest first)
+        candidates.sort(key=lambda x: x[1].last_accessed)
+
+        # Evict oldest
+        name, _ = candidates[0]
+        return self._unload_from_gpu(name)
 
     def deactivate(self, name: str) -> bool:
         """Deactivate a submodel (unload from GPU).
@@ -263,10 +461,10 @@ class ProgressiveLoaderManager:
         """
         info = self.submodels[name]
 
-        if info.state != LoadingState.ACTIVE:
+        if info.state != LoadingState.LOADED:
             return False
 
-        if info.pin_memory:
+        if info.pinned:
             logger.warning(f"Cannot deactivate pinned submodel '{name}'")
             return False
 
@@ -305,7 +503,7 @@ class ProgressiveLoaderManager:
 
                 # Eager loading for high-importance routes
                 if importance >= self.config.eager_load_threshold:
-                    if info.state != LoadingState.ACTIVE:
+                    if info.state != LoadingState.LOADED:
                         logger.info(f"Eager loading '{name}' (importance={importance:.2f})")
                         self.activate(name, blocking=False)
 
@@ -344,7 +542,7 @@ class ProgressiveLoaderManager:
         """
         info = self.submodels[name]
 
-        if info.state == LoadingState.ACTIVE:
+        if info.state == LoadingState.LOADED:
             return True
 
         logger.info(f"Loading '{name}' to GPU ({info.memory_mb:.1f}MB)...")
@@ -362,7 +560,7 @@ class ProgressiveLoaderManager:
 
             # Update tracking
             self.gpu_memory_used += info.memory_mb
-            info.state = LoadingState.ACTIVE
+            info.state = LoadingState.LOADED
             self.active_names.add(name)
 
             load_time = time.time() - start_time
@@ -390,7 +588,7 @@ class ProgressiveLoaderManager:
         """
         info = self.submodels[name]
 
-        if info.state != LoadingState.ACTIVE:
+        if info.state != LoadingState.LOADED:
             return False
 
         logger.info(f"Unloading '{name}' from GPU ({info.memory_mb:.1f}MB freed)...")
@@ -418,7 +616,7 @@ class ProgressiveLoaderManager:
 
         except Exception as e:
             logger.error(f"Failed to unload '{name}': {e}")
-            info.state = LoadingState.ACTIVE
+            info.state = LoadingState.LOADED
             return False
 
     def _can_load(self, memory_mb: float) -> bool:
@@ -451,7 +649,7 @@ class ProgressiveLoaderManager:
         current_time = time.time()
 
         for name, info in self.submodels.items():
-            if info.state == LoadingState.ACTIVE and not info.pin_memory:
+            if info.state == LoadingState.LOADED and not info.pin_memory:
                 # Score: higher = better candidate for eviction
                 recency = current_time - info.last_accessed
                 access_freq = 1.0 / (1 + info.access_count)
@@ -503,23 +701,28 @@ class ProgressiveLoaderManager:
 
         for name, score in top_prefetch:
             logger.debug(f"Prefetching '{name}' (co-activation score={score})")
-            self.prefetch_queue.put_nowait(name)
+            self._prefetch_queue.put_nowait(name)
 
     def get_stats(self) -> dict[str, Any]:
         """Get comprehensive loading statistics."""
         active_modules = list(self.active_names)
         staged_modules = [n for n, i in self.submodels.items() if i.state == LoadingState.STAGED]
+        loaded_count = len(active_modules)
 
         return {
             "gpu_memory_mb": self.gpu_memory_used,
             "gpu_budget_mb": self.config.gpu_budget_mb,
-            "gpu_utilization": self.gpu_memory_used / self.config.gpu_budget_mb,
+            "gpu_utilization": self.gpu_memory_used / self.config.gpu_budget_mb
+                if self.config.gpu_budget_mb > 0 else 0.0,
             "cpu_memory_mb": self.cpu_memory_used,
             "total_submodels": len(self.submodels),
-            "active_submodels": len(active_modules),
+            # Multiple names for compatibility
+            "active_submodels": loaded_count,
+            "num_loaded": loaded_count,  # Test-expected key
+            "max_active": self.config.max_active_submodels,  # Test-expected key
             "staged_submodels": len(staged_modules),
             "active_names": active_modules,
-            "pinned_modules": [n for n, i in self.submodels.items() if i.pin_memory],
+            "pinned_modules": [n for n, i in self.submodels.items() if i.pinned],
         }
 
 
@@ -528,45 +731,53 @@ class ModelScaleConfig:
     """Predefined configurations for different model scales."""
 
     @staticmethod
-    def small_10b() -> LoadingConfig:
+    def small_10b() -> ProgressiveLoadingConfig:
         """Configuration for 10B parameter model (base case)."""
-        return LoadingConfig(
+        return ProgressiveLoadingConfig(
             gpu_budget_mb=10000.0,
-            cpu_staging_mb=16000.0,
+            cpu_staging_size_mb=16000.0,
+            max_active_submodels=8,
             eager_load_threshold=0.7,
+            lazy_unload_threshold=0.2,
             prefetch_depth=2,
         )
 
     @staticmethod
-    def medium_25b() -> LoadingConfig:
+    def medium_25b() -> ProgressiveLoadingConfig:
         """Configuration for 25B parameter model."""
-        return LoadingConfig(
+        return ProgressiveLoadingConfig(
             gpu_budget_mb=10000.0,
-            cpu_staging_mb=32000.0,
+            cpu_staging_size_mb=32000.0,
+            max_active_submodels=10,
             eager_load_threshold=0.6,
+            lazy_unload_threshold=0.2,
             prefetch_depth=3,
             max_concurrent_loads=3,
         )
 
     @staticmethod
-    def large_50b() -> LoadingConfig:
+    def large_50b() -> ProgressiveLoadingConfig:
         """Configuration for 50B parameter model."""
-        return LoadingConfig(
+        return ProgressiveLoadingConfig(
             gpu_budget_mb=10000.0,
-            cpu_staging_mb=64000.0,
+            cpu_staging_size_mb=64000.0,
+            max_active_submodels=10,
             eager_load_threshold=0.5,
+            lazy_unload_threshold=0.2,
             prefetch_depth=4,
             max_concurrent_loads=4,
             background_prefetch=True,
         )
 
     @staticmethod
-    def xlarge_100b() -> LoadingConfig:
+    def xlarge_100b() -> ProgressiveLoadingConfig:
         """Configuration for 100B parameter model."""
-        return LoadingConfig(
+        return ProgressiveLoadingConfig(
             gpu_budget_mb=10000.0,
-            cpu_staging_mb=128000.0,
-            eager_load_threshold=0.4,
+            cpu_staging_size_mb=128000.0,
+            max_active_submodels=10,
+            eager_load_threshold=0.5,  # Fixed: was 0.4 < lazy_unload_threshold 0.5
+            lazy_unload_threshold=0.4,
             prefetch_depth=5,
             max_concurrent_loads=6,
             background_prefetch=True,
