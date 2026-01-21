@@ -48,8 +48,8 @@ Architecture:
     └──────────────────────────────────────┘
 """
 
-import asyncio
 import logging
+import queue
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -78,6 +78,7 @@ class LoadingState(Enum):
     LOADING = "loading"  # Currently loading (disk->GPU or CPU->GPU)
     LOADED = "loaded"  # On GPU, ready for inference
     STAGED = "staged"  # Weights in CPU RAM (fast reload)
+    EVICTING = "evicting"  # Currently being evicted from GPU
 
 
 @dataclass
@@ -152,7 +153,7 @@ class ProgressiveLoadingConfig:
             )
 
     @classmethod
-    def from_yaml(cls, yaml_path: str | Path, profile: str = "base") -> "ProgressiveLoadingConfig":
+    def from_yaml(cls, yaml_path: str | Path, profile: str = "base") -> ProgressiveLoadingConfig:
         """Load configuration from YAML file.
 
         Args:
@@ -244,12 +245,12 @@ class ProgressiveLoaderManager:
         )
 
     @property
-    def load_queue(self) -> "queue.Queue[str]":
+    def load_queue(self) -> queue.Queue[str]:
         """Get load queue (property for backward compatibility)."""
         return self._load_queue
 
     @property
-    def prefetch_queue(self) -> "queue.Queue[str]":
+    def prefetch_queue(self) -> queue.Queue[str]:
         """Get prefetch queue (property for backward compatibility)."""
         return self._prefetch_queue
 
