@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel>=0.42.0,<1.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cogsyndelta-vsa"
+version = "0.1.0"
+description = "Vector Symbolic Architecture (VSA) implementation with torchhd for CogSynDelta"
+readme = "README.md"
+requires-python = ">=3.14"
+license = {text = "MIT"}
+authors = [
+    {name = "tzervas", email = "111450100+tzervas@users.noreply.github.com"}
+]
+keywords = [
+    "vector-symbolic-architectures",
+    "hyperdimensional-computing",
+    "torchhd",
+    "fractional-power-encoding",
+    "hopfield-networks",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "torch>=2.9.0,<3.0.0",
+    "numpy>=2.4.0,<3.0.0",
+    "torchhd>=3.5.0,<4.0.0",
+    "hopfield-layers>=0.5.0,<1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.0,<10.0.0",
+    "pytest-cov>=7.0.0,<8.0.0",
+    "ruff>=0.14.13,<0.15.0",
+]
+
+[tool.setuptools]
+packages = ["vsa"]
+package-dir = {"" = "src"}
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"

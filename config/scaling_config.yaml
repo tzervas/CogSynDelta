@@ -1,0 +1,228 @@
+# CogSynDelta Scaling Configuration
+# Supports models from 10B to 100B+ parameters via progressive loading
+
+# Base configuration (10B parameters - RTX 5080 baseline)
+base:
+  model_size: "10B"
+  total_parameters: 10_000_000_000
+
+  # Memory budgets (MB)
+  gpu_budget: 10000  # 10GB for submodels
+  gpu_reserved_core: 2000  # 2GB for framework core
+  cpu_staging: 16000  # 16GB CPU staging area
+  disk_cache: 100000  # 100GB disk cache
+
+  # Progressive loading
+  max_active_submodels: 8
+  eager_load_threshold: 0.7
+  lazy_unload_threshold: 0.2
+  prefetch_depth: 2
+
+  # Performance
+  async_loading: true
+  background_prefetch: true
+  activation_checkpointing: true
+  checkpoint_segments: 4
+
+# Medium scale (25B parameters)
+medium_25b:
+  model_size: "25B"
+  total_parameters: 25_000_000_000
+
+  # More aggressive memory management
+  gpu_budget: 10000
+  gpu_reserved_core: 2000
+  cpu_staging: 32000  # 32GB CPU
+  disk_cache: 200000  # 200GB disk
+
+  # More selective loading
+  max_active_submodels: 10
+  eager_load_threshold: 0.6
+  lazy_unload_threshold: 0.3
+  prefetch_depth: 3
+
+  # Submodel configuration
+  submodel_size: "1B"  # Each submodel ~1B parameters
+  total_submodels: 25
+  core_submodels:  # Always loaded (pinned)
+    - "core_attention"
+    - "core_ffn"
+    - "core_embedding"
+
+  # Performance optimizations
+  async_loading: true
+  background_prefetch: true
+  activation_checkpointing: true
+  checkpoint_segments: 6
+  max_concurrent_loads: 3
+
+# Large scale (50B parameters)
+large_50b:
+  model_size: "50B"
+  total_parameters: 50_000_000_000
+
+  # Even more aggressive management
+  gpu_budget: 10000
+  gpu_reserved_core: 2000
+  cpu_staging: 64000  # 64GB CPU
+  disk_cache: 500000  # 500GB disk
+
+  # Very selective loading
+  max_active_submodels: 10
+  eager_load_threshold: 0.5
+  lazy_unload_threshold: 0.4
+  prefetch_depth: 4
+
+  # Submodel architecture
+  submodel_size: "1B"
+  total_submodels: 50
+  submodel_types:
+    vision: 5       # 5 vision submodules
+    language: 10    # 10 language submodules
+    reasoning: 10   # 10 reasoning submodules
+    memory: 5       # 5 memory submodules
+    control: 5      # 5 control submodules
+    multimodal: 10  # 10 cross-modal submodules
+    specialist: 5   # 5 specialist submodules
+
+  core_submodels:
+    - "core_attention"
+    - "core_ffn"
+    - "core_embedding"
+    - "core_router"  # Interconnect routing
+
+  # Aggressive optimizations
+  async_loading: true
+  background_prefetch: true
+  activation_checkpointing: true
+  checkpoint_segments: 8
+  max_concurrent_loads: 4
+
+  # Advanced features
+  use_flash_attention: true
+  use_ring_attention: false  # For even longer contexts
+  quantization: "bitnet_b1.58"
+
+# Extra large scale (100B parameters)
+xlarge_100b:
+  model_size: "100B"
+  total_parameters: 100_000_000_000
+
+  # Maximum memory efficiency
+  gpu_budget: 10000
+  gpu_reserved_core: 2000
+  cpu_staging: 128000  # 128GB CPU
+  disk_cache: 1000000  # 1TB disk
+
+  # Minimal simultaneous activation
+  max_active_submodels: 10
+  eager_load_threshold: 0.4
+  lazy_unload_threshold: 0.5
+  prefetch_depth: 5
+
+  # Submodel architecture
+  submodel_size: "1B"
+  total_submodels: 100
+  submodel_types:
+    vision: 10
+    language: 20
+    reasoning: 20
+    memory: 10
+    control: 10
+    multimodal: 20
+    specialist: 10
+
+  core_submodels:
+    - "core_attention"
+    - "core_ffn"
+    - "core_embedding"
+    - "core_router"
+    - "core_memory_manager"
+
+  # Maximum optimizations
+  async_loading: true
+  background_prefetch: true
+  activation_checkpointing: true
+  checkpoint_segments: 16
+  max_concurrent_loads: 6
+
+  # Advanced features
+  use_flash_attention: true
+  use_ring_attention: true
+  quantization: "bitnet_b1.58"
+  use_pipelined_execution: true
+
+  # Interconnect configuration
+  interconnect:
+    total_bandwidth: 50000  # Higher bandwidth for more submodels
+    max_active_paths: 20
+    routing_temperature: 0.8
+    enable_multi_hop: true
+    context_compression: "qinco2"
+
+# Compression strategies per scale
+compression:
+  base_10b:
+    pipeline: "mrl_only"  # Just Matryoshka
+    target_fidelity: 0.95
+    target_compression: 2
+
+  medium_25b:
+    pipeline: "mrl_qinco"  # Matryoshka + QINCo2
+    target_fidelity: 0.95
+    target_compression: 4
+
+  large_50b:
+    pipeline: "mrl_qinco_bitnet"  # Full pipeline
+    target_fidelity: 0.95
+    target_compression: 8
+
+  xlarge_100b:
+    pipeline: "mrl_qinco_bitnet_vsa"  # Full pipeline + VSA
+    target_fidelity: 0.95
+    target_compression: 10
+
+# Hardware configurations
+hardware:
+  rtx_5080:
+    vram: 16384  # 16GB
+    memory_bandwidth: 960  # GB/s
+    cuda_cores: 10752
+    tensor_cores: 336
+    fp16_tflops: 112.6
+    recommended_max: "50B"  # With progressive loading
+
+  rtx_5090:
+    vram: 32768  # 32GB
+    memory_bandwidth: 1792  # GB/s
+    cuda_cores: 21760
+    tensor_cores: 680
+    fp16_tflops: 318.7
+    recommended_max: "100B"  # With progressive loading
+
+  dual_rtx_5080:
+    vram: 32768  # 2×16GB
+    memory_bandwidth: 1920  # 2×960 GB/s
+    recommended_max: "100B"
+    requires_model_parallelism: true
+
+# Balanced ternary / tryte configuration (experimental)
+balanced_ternary:
+  enabled: false  # Enable in separate feature branch
+  encoding: "balanced_tryte"
+  trits_per_tryte: 9  # Balanced ternary digit
+  trytes_per_weight: 2  # Precision control
+
+  # Memory efficiency
+  bits_per_trit: 1.58  # Same as BitNet
+  compression_vs_fp16: 10  # 10× compression
+  compression_vs_binary: 1  # Similar to binary
+
+  # Operations
+  arithmetic: "balanced"  # Balanced ternary arithmetic
+  activations: "ternary_tanh"  # Ternary activation functions
+  gradients: "ste"  # Straight-through estimator
+
+# Usage examples:
+# cogsyndelta-server --config scaling_config.yaml --scale medium_25b
+# cogsyndelta-server --config scaling_config.yaml --scale large_50b --gpu rtx_5080
