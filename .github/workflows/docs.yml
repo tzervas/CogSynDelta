@@ -3,13 +3,8 @@
 
 name: Documentation
 
+# Manual only — no push/pull_request CI triggers
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'docs/**'
-      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 permissions:

@@ -14,14 +14,8 @@
 
 name: Security
 
+# Manual only — no push/pull_request CI triggers
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
-  schedule:
-    # Run weekly security scans
-    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 # Restrict permissions for security
