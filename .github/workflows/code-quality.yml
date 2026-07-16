@@ -14,7 +14,7 @@ jobs:
   # CodeClimate integration (requires CC_TEST_REPORTER_ID secret)
   codeclimate:
     name: CodeClimate Analysis
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     # Only run if CodeClimate is configured
     if: ${{ vars.ENABLE_CODECLIMATE == 'true' }}
 
@@ -56,7 +56,7 @@ jobs:
   # SonarCloud integration (requires SONAR_TOKEN secret)
   sonarcloud:
     name: SonarCloud Analysis
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     # Only run if SonarCloud is configured
     if: ${{ vars.ENABLE_SONARCLOUD == 'true' }}
 
@@ -102,7 +102,7 @@ jobs:
   # Internal quality metrics (always runs)
   quality-metrics:
     name: Quality Metrics
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
 
     steps:
       - name: Checkout repository

@@ -26,7 +26,7 @@ jobs:
   # Check if release is needed (skip for docs-only changes)
   check-release:
     name: Check if Release Needed
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
     steps:
@@ -65,7 +65,7 @@ jobs:
 
   release:
     name: Create Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     needs: check-release
     if: needs.check-release.outputs.should_release == 'true'
     permissions:
@@ -157,7 +157,7 @@ jobs:
   # Optional: Upload to private registry (GitHub Packages)
   publish-to-github-packages:
     name: Publish to GitHub Packages
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     needs: release
     if: ${{ github.event.inputs.dry_run != 'true' }}
     permissions:
