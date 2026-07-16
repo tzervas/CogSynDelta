@@ -16,6 +16,16 @@ name: Security
 
 # Manual only — no push/pull_request CI triggers
 on:
+  push:
+    branches:
+      - main
+      - dev
+      - develop
+  pull_request:
+    branches:
+      - main
+      - dev
+      - develop
   workflow_dispatch:
 
 # Restrict permissions for security
@@ -34,7 +44,7 @@ jobs:
   # Analysis results are saved as artifacts when upload is disabled
   codeql:
     name: CodeQL Analysis
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 30
     # Only run if code scanning is enabled (set ENABLE_CODEQL=true in repo variables)
     if: ${{ vars.ENABLE_CODEQL == 'true' }}
@@ -83,7 +93,7 @@ jobs:
   # Enable at: Settings > Security > Code security and analysis > Dependency graph
   dependency-review:
     name: Dependency Review
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     # Only run on PRs AND when GHAS is enabled (set ENABLE_DEPENDENCY_REVIEW=true)
     if: github.event_name == 'pull_request' && vars.ENABLE_DEPENDENCY_REVIEW == 'true'
 
@@ -102,7 +112,7 @@ jobs:
   # Snyk Security Scan (requires SNYK_TOKEN secret)
   snyk:
     name: Snyk Security Scan
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     # Only run if SNYK_TOKEN is configured
     if: ${{ vars.ENABLE_SNYK == 'true' }}
 
@@ -140,7 +150,7 @@ jobs:
   # Python-specific security checks (always runs)
   python-security:
     name: Python Security Checks
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
 
     steps:
       - name: Checkout repository
