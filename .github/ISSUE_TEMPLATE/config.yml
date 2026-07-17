@@ -1,11 +1,2 @@
-blank_issues_enabled: false
-contact_links:
-  - name: 📖 Documentation
-    url: https://github.com/tzervas/CogSynDelta/tree/main/docs
-    about: Check the documentation for answers to common questions
-  - name: 📋 Roadmap
-    url: https://github.com/tzervas/CogSynDelta/blob/main/ROADMAP.md
-    about: See what's planned and what's backlogged
-  - name: 💬 Discussions
-    url: https://github.com/tzervas/CogSynDelta/discussions
-    about: Ask questions and discuss ideas with the community
+blank_issues_enabled: true
+contact_links: []

@@ -1,5 +1,10 @@
 # CogSynDelta: Self-Improving AI System
 
+<!-- FLEET-BADGES:BEGIN -->
+[![CI](https://github.com/tzervas/CogSynDelta/actions/workflows/fleet-ci.yml/badge.svg?branch=main)](https://github.com/tzervas/CogSynDelta/actions/workflows/fleet-ci.yml?query=branch%3Amain)
+[![Security](https://github.com/tzervas/CogSynDelta/actions/workflows/fleet-security.yml/badge.svg?branch=main)](https://github.com/tzervas/CogSynDelta/actions/workflows/fleet-security.yml?query=branch%3Amain)
+<!-- FLEET-BADGES:END -->
+
 <!-- Dynamic Status Badges (main branch) -->
 [![CI/CD](https://github.com/tzervas/CogSynDelta/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tzervas/CogSynDelta/actions/workflows/ci.yml)
 [![Security](https://github.com/tzervas/CogSynDelta/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/tzervas/CogSynDelta/actions/workflows/security.yml)
