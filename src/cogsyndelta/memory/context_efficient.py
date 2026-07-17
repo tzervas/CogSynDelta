@@ -336,21 +336,21 @@ class ChunkedCompactor(nn.Module):
 
         result_parts: list[torch.Tensor] = []
         # First chunk's non-overlapping part
-        result_parts.append(chunks[0][:-self.overlap])
+        result_parts.append(chunks[0][: -self.overlap])
 
         for i in range(len(chunks) - 1):
             # Blend the overlap region between chunk i and chunk i+1
-            overlap_i = chunks[i][-self.overlap:]
-            overlap_ip1 = chunks[i+1][:self.overlap]
+            overlap_i = chunks[i][-self.overlap :]
+            overlap_ip1 = chunks[i + 1][: self.overlap]
             blended = (1 - w) * overlap_i + w * overlap_ip1
             result_parts.append(blended)
 
             # Add the non-overlapping middle part of chunk i+1 if there are more chunks,
             # or the remaining part if it is the last chunk.
             if i < len(chunks) - 2:
-                result_parts.append(chunks[i+1][self.overlap:-self.overlap])
+                result_parts.append(chunks[i + 1][self.overlap : -self.overlap])
             else:
-                result_parts.append(chunks[i+1][self.overlap:])
+                result_parts.append(chunks[i + 1][self.overlap :])
 
         return torch.cat(result_parts, dim=0)
 
