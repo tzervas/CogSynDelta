@@ -316,18 +316,41 @@ class ChunkedCompactor(nn.Module):
         Returns:
             Blended tensor.
         """
+        if self.overlap <= 0:
+            return torch.cat(chunks, dim=0)
+
         if len(chunks) == 1:
             return chunks[0]
 
-        # Simple concatenation with overlap trimming
-        # TODO: Implement proper blending weights
-        result_parts = [chunks[0][: -self.overlap] if self.overlap > 0 else chunks[0]]
-        for i in range(1, len(chunks) - 1):
-            start = self.overlap // 2
-            end = -self.overlap + self.overlap // 2 if self.overlap > 0 else None
-            result_parts.append(chunks[i][start:end])
-        if len(chunks) > 1:
-            result_parts.append(chunks[-1][self.overlap // 2 :] if self.overlap > 0 else chunks[-1])
+        # Construct blending weights
+        device = chunks[0].device
+        dtype = chunks[0].dtype
+
+        if self.overlap == 1:
+            w = torch.tensor([0.5], device=device, dtype=dtype)
+        else:
+            w = torch.linspace(0.0, 1.0, self.overlap, device=device, dtype=dtype)
+
+        # Reshape to match other dimensions of the chunks
+        w = w.view(-1, *([1] * (chunks[0].dim() - 1)))
+
+        result_parts: list[torch.Tensor] = []
+        # First chunk's non-overlapping part
+        result_parts.append(chunks[0][:-self.overlap])
+
+        for i in range(len(chunks) - 1):
+            # Blend the overlap region between chunk i and chunk i+1
+            overlap_i = chunks[i][-self.overlap:]
+            overlap_ip1 = chunks[i+1][:self.overlap]
+            blended = (1 - w) * overlap_i + w * overlap_ip1
+            result_parts.append(blended)
+
+            # Add the non-overlapping middle part of chunk i+1 if there are more chunks,
+            # or the remaining part if it is the last chunk.
+            if i < len(chunks) - 2:
+                result_parts.append(chunks[i+1][self.overlap:-self.overlap])
+            else:
+                result_parts.append(chunks[i+1][self.overlap:])
 
         return torch.cat(result_parts, dim=0)
 
