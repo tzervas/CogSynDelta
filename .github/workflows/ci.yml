@@ -26,11 +26,18 @@ jobs:
     - name: Free Disk Space
       run: |
         echo "=== Freeing up disk space on the runner ==="
+        df -h
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /usr/local/lib/android
         sudo rm -rf /opt/ghc
-        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf /usr/share/swift
+        sudo rm -rf /usr/local/julia*
+        sudo rm -rf /usr/local/share/powershell
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo docker system prune -a -f --volumes
         sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
         df -h
 
     - name: Install uv
