@@ -27,6 +27,13 @@ jobs:
       run: |
         echo "=== Freeing up disk space on the runner ==="
         df -h
+        # Stop and remove Docker services to free up massive storage
+        sudo systemctl stop docker.service || true
+        sudo systemctl stop containerd.service || true
+        sudo rm -rf /var/lib/docker
+        sudo rm -rf /etc/docker
+        sudo rm -rf /var/lib/containerd
+        # Remove unused environments
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /usr/local/lib/android
         sudo rm -rf /opt/ghc
@@ -34,8 +41,13 @@ jobs:
         sudo rm -rf /usr/share/swift
         sudo rm -rf /usr/local/julia*
         sudo rm -rf /usr/local/share/powershell
+        # Clean unused hosted tool caches
         sudo rm -rf /opt/hostedtoolcache/CodeQL
-        sudo docker system prune -a -f --volumes
+        sudo rm -rf /opt/hostedtoolcache/go
+        sudo rm -rf /opt/hostedtoolcache/Ruby
+        sudo rm -rf /opt/hostedtoolcache/PyPy
+        sudo rm -rf /opt/hostedtoolcache/Java*
+        # Package clean
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
         df -h
@@ -44,7 +56,7 @@ jobs:
       uses: astral-sh/setup-uv@v7
       with:
         version: ${{ env.UV_VERSION }}
-        enable-cache: true
+        enable-cache: false
 
     - name: Set up Python 3.14
       run: uv python install 3.14
@@ -125,7 +137,8 @@ jobs:
       run: |
         # Use --no-sources to bypass pyproject.toml torch source (cu128)
         # Use --index-strategy unsafe-best-match to allow packages from all indexes
-        uv sync --group dev --no-sources \
+        # Use --no-cache to avoid writing duplicate package files to disk cache
+        uv sync --no-cache --group dev --no-sources \
           --extra-index-url https://download.pytorch.org/whl/cpu \
           --index-strategy unsafe-best-match
 
