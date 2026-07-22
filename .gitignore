@@ -239,3 +239,6 @@ results/
 
 # Project-specific
 scripts/reorganize.sh
+
+# Quality report
+quality_report.json
