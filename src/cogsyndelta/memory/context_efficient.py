@@ -348,7 +348,9 @@ class ChunkedCompactor(nn.Module):
                 # Left ramp up
                 ramp_len = min(self.overlap, chunk.size(0))
                 if ramp_len > 1:
-                    w[:ramp_len, 0] = torch.linspace(0.0, 1.0, steps=ramp_len, dtype=dtype, device=device)
+                    w[:ramp_len, 0] = torch.linspace(
+                        0.0, 1.0, steps=ramp_len, dtype=dtype, device=device
+                    )
                 else:
                     w[:ramp_len, 0] = 0.5
 
@@ -356,7 +358,9 @@ class ChunkedCompactor(nn.Module):
                 # Right ramp down
                 ramp_len = min(self.overlap, chunk.size(0))
                 if ramp_len > 1:
-                    w[-ramp_len:, 0] = torch.linspace(1.0, 0.0, steps=ramp_len, dtype=dtype, device=device)
+                    w[-ramp_len:, 0] = torch.linspace(
+                        1.0, 0.0, steps=ramp_len, dtype=dtype, device=device
+                    )
                 else:
                     w[-ramp_len:, 0] = 0.5
 
