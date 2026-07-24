@@ -308,7 +308,7 @@ class ChunkedCompactor(nn.Module):
         return self._blend_chunks(reconstructed_chunks)
 
     def _blend_chunks(self, chunks: list[torch.Tensor]) -> torch.Tensor:
-        """Blend overlapping chunks using weighted average.
+        """Blend overlapping chunks using trapezoidal linear-ramp blending weights.
 
         Args:
             chunks: List of reconstructed chunks.
@@ -316,20 +316,57 @@ class ChunkedCompactor(nn.Module):
         Returns:
             Blended tensor.
         """
+        if not chunks:
+            raise ValueError("Chunks list cannot be empty")
         if len(chunks) == 1:
             return chunks[0]
 
-        # Simple concatenation with overlap trimming
-        # TODO: Implement proper blending weights
-        result_parts = [chunks[0][: -self.overlap] if self.overlap > 0 else chunks[0]]
-        for i in range(1, len(chunks) - 1):
-            start = self.overlap // 2
-            end = -self.overlap + self.overlap // 2 if self.overlap > 0 else None
-            result_parts.append(chunks[i][start:end])
-        if len(chunks) > 1:
-            result_parts.append(chunks[-1][self.overlap // 2 :] if self.overlap > 0 else chunks[-1])
+        device = chunks[0].device
+        dtype = chunks[0].dtype
+        num_chunks = len(chunks)
+        chunk_len = chunks[0].size(0)
+        embed_dim = chunks[0].size(1)
 
-        return torch.cat(result_parts, dim=0)
+        if self.overlap <= 0:
+            return torch.cat(chunks, dim=0)
+
+        # Total length of the blended tensor
+        step = chunk_len - self.overlap
+        total_len = (num_chunks - 1) * step + chunks[-1].size(0)
+
+        accumulated = torch.zeros(total_len, embed_dim, dtype=dtype, device=device)
+        weight_sums = torch.zeros(total_len, 1, dtype=dtype, device=device)
+
+        for i, chunk in enumerate(chunks):
+            start_idx = i * step
+            end_idx = start_idx + chunk.size(0)
+
+            # Compute trapezoidal linear-ramp blending weights for this chunk
+            w = torch.ones(chunk.size(0), 1, dtype=dtype, device=device)
+
+            if i > 0 and self.overlap > 0:
+                # Left ramp up
+                ramp_len = min(self.overlap, chunk.size(0))
+                if ramp_len > 1:
+                    w[:ramp_len, 0] = torch.linspace(0.0, 1.0, steps=ramp_len, dtype=dtype, device=device)
+                else:
+                    w[:ramp_len, 0] = 0.5
+
+            if i < num_chunks - 1 and self.overlap > 0:
+                # Right ramp down
+                ramp_len = min(self.overlap, chunk.size(0))
+                if ramp_len > 1:
+                    w[-ramp_len:, 0] = torch.linspace(1.0, 0.0, steps=ramp_len, dtype=dtype, device=device)
+                else:
+                    w[-ramp_len:, 0] = 0.5
+
+            # Accumulate weighted chunk and weights
+            accumulated[start_idx:end_idx] += chunk * w
+            weight_sums[start_idx:end_idx] += w
+
+        # Avoid division by zero
+        weight_sums = torch.clamp(weight_sums, min=1e-8)
+        return accumulated / weight_sums
 
 
 class ImportanceContextPruner(nn.Module):
