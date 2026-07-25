@@ -1997,9 +1997,7 @@ class UnifiedAlgebraicTrainer:
             section_states = self.interconnect.section_states
 
         if section_states:
-            return self.pathway_predictor.predict_all_pathway_strengths(
-                section_states
-            )
+            return self.pathway_predictor.predict_all_pathway_strengths(section_states)
         return None
 
     def quick_optimize(
