@@ -126,13 +126,42 @@ jobs:
         fail_ci_if_error: false
       continue-on-error: true
 
+  test-gpu:
+    name: Test on Python 3.14 (GPU)
+    runs-on: [self-hosted, linux, x64, gpu]
+    needs: [lint]
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        version: ${{ env.UV_VERSION }}
+        enable-cache: true
+
+    - name: Set up Python 3.14
+      run: uv python install 3.14
+
+    - name: Install dependencies with GPU PyTorch
+      run: |
+        # Use --no-sources to bypass pyproject.toml torch source (cu128)
+        # Use --index-strategy unsafe-best-match to allow packages from all indexes
+        uv sync --group dev --no-sources \
+          --extra-index-url https://download.pytorch.org/whl/cu128 \
+          --index-strategy unsafe-best-match
+
+    - name: Run tests with pytest
+      run: |
+        uv run pytest tests/ -v
+
   # CodeQL removed - requires Code Scanning to be enabled in repo settings
   # Enable at: Settings > Security > Code scanning > Set up code scanning
 
   build:
     name: Build distribution
     runs-on: ubuntu-latest
-    needs: [test, quality]
+    needs: [test, test-gpu, quality]
 
     steps:
     - uses: actions/checkout@v6
