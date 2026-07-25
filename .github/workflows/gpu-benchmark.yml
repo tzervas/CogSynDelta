@@ -94,24 +94,21 @@ jobs:
             git push
           fi
 
-  # Job to run if self-hosted runner is available (future)
-  # Uncomment when akula-prime is configured as a runner
-  # self-hosted-benchmark:
-  #   name: Run GPU Benchmarks (Self-Hosted)
-  #   runs-on: [self-hosted, gpu, akula-prime]
-  #   if: false  # Disabled until self-hosted runner is configured
-  #
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v6
-  #
-  #     - name: Run GPU benchmarks
-  #       run: |
-  #         ./scripts/capture_gpu_benchmarks.sh
-  #
-  #     - name: Upload benchmark artifacts
-  #       uses: actions/upload-artifact@v6
-  #       with:
-  #         name: gpu-benchmark-${{ github.run_id }}
-  #         path: benchmark_results/
-  #         retention-days: 365
+  self-hosted-benchmark:
+    name: Run GPU Benchmarks (Self-Hosted)
+    runs-on: [self-hosted, linux, x64, gpu]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Run GPU benchmarks
+        run: |
+          ./scripts/capture_gpu_benchmarks.sh
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: gpu-benchmark-${{ github.run_id }}
+          path: benchmark_results/
+          retention-days: 365
