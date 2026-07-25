@@ -94,24 +94,31 @@ jobs:
             git push
           fi
 
-  # Job to run if self-hosted runner is available (future)
-  # Uncomment when akula-prime is configured as a runner
-  # self-hosted-benchmark:
-  #   name: Run GPU Benchmarks (Self-Hosted)
-  #   runs-on: [self-hosted, gpu, akula-prime]
-  #   if: false  # Disabled until self-hosted runner is configured
-  #
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v6
-  #
-  #     - name: Run GPU benchmarks
-  #       run: |
-  #         ./scripts/capture_gpu_benchmarks.sh
-  #
-  #     - name: Upload benchmark artifacts
-  #       uses: actions/upload-artifact@v6
-  #       with:
-  #         name: gpu-benchmark-${{ github.run_id }}
-  #         path: benchmark_results/
-  #         retention-days: 365
+  # Job to run if self-hosted runner is available
+  self-hosted-benchmark:
+    name: Run GPU Benchmarks (Self-Hosted)
+    runs-on: [self-hosted, gpu, rtx5080]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.7.17"
+          enable-cache: true
+
+      - name: Set up Python 3.14
+        run: uv python install 3.14
+
+      - name: Run GPU benchmarks
+        run: |
+          ./scripts/capture_gpu_benchmarks.sh
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: gpu-benchmark-${{ github.run_id }}
+          path: benchmark_results/
+          retention-days: 365
