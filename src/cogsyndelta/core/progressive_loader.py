@@ -164,11 +164,15 @@ class ProgressiveLoadingConfig:
         """Load configuration from YAML file.
 
         Args:
+            cls: The class itself.
             yaml_path: Path to YAML configuration file
             profile: Configuration profile name (base, focused, balanced, expansive)
 
         Returns:
             ProgressiveLoadingConfig instance
+
+        Why:
+            Enables loading specific configuration profiles dynamically from a file.
         """
         import yaml
 
@@ -219,7 +223,19 @@ class ProgressiveLoaderManager:
         interconnect: IntelligentInterconnectManager | None = None,
         device: str = "cuda",
         max_active_submodels: int | None = None,
-    ):
+    ) -> None:
+        """Initialize the ProgressiveLoaderManager.
+
+        Args:
+            config: Optional configuration for progressive loading.
+            interconnect: Optional IntelligentInterconnectManager.
+            device: Target device name (e.g. 'cuda' or 'cpu').
+            max_active_submodels: Optional limit on simultaneously active submodels.
+
+        Why:
+            Constructs the manager to coordinate model staging and activation
+            on resource-constrained systems.
+        """
         self.config = config or ProgressiveLoadingConfig()
         self.device = torch.device(device)
         self.interconnect = interconnect
