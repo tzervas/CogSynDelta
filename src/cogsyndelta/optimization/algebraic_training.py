@@ -1907,9 +1907,7 @@ class UnifiedAlgebraicTrainer:
             section_states = self.interconnect.section_states
 
         if section_states:
-            pathway_strengths = self.pathway_predictor.predict_all_pathway_strengths(
-                section_states
-            )
+            pathway_strengths = self.pathway_predictor.predict_all_pathway_strengths(section_states)
             results["optimal_pathway_strengths"] = pathway_strengths
 
     def train_algebraically(
