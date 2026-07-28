@@ -315,21 +315,64 @@ class ChunkedCompactor(nn.Module):
 
         Returns:
             Blended tensor.
+
+        Why:
+            Computes smooth linear-ramp/trapezoidal weight windows across chunks and
+            accumulates their weighted contributions, eliminating sharp boundaries
+            and reconstruction artifacts in overlapping regions.
         """
         if len(chunks) == 1:
             return chunks[0]
 
-        # Simple concatenation with overlap trimming
-        # TODO: Implement proper blending weights
-        result_parts = [chunks[0][: -self.overlap] if self.overlap > 0 else chunks[0]]
-        for i in range(1, len(chunks) - 1):
-            start = self.overlap // 2
-            end = -self.overlap + self.overlap // 2 if self.overlap > 0 else None
-            result_parts.append(chunks[i][start:end])
-        if len(chunks) > 1:
-            result_parts.append(chunks[-1][self.overlap // 2 :] if self.overlap > 0 else chunks[-1])
+        chunk_size = chunks[0].size(0)
+        step = chunk_size - self.overlap
+        n = (len(chunks) - 1) * step + chunks[-1].size(0)
+        embed_dim = chunks[0].size(1)
+        dtype = chunks[0].dtype
+        device = chunks[0].device
 
-        return torch.cat(result_parts, dim=0)
+        out_tensor = torch.zeros((n, embed_dim), dtype=dtype, device=device)
+        weight_tensor = torch.zeros((n, 1), dtype=dtype, device=device)
+
+        for i, chunk in enumerate(chunks):
+            L = chunk.size(0)
+            start_idx = i * step
+            end_idx = start_idx + L
+
+            # Create trapezoidal window
+            window = torch.ones(L, dtype=dtype, device=device)
+
+            if i > 0 and self.overlap > 0:
+                left_len = min(self.overlap, L)
+                ramp = torch.linspace(
+                    0.5 / left_len,
+                    1.0 - 0.5 / left_len,
+                    left_len,
+                    dtype=dtype,
+                    device=device,
+                )
+                window[:left_len] = ramp
+
+            if i < len(chunks) - 1 and self.overlap > 0:
+                right_len = min(self.overlap, L)
+                ramp = torch.linspace(
+                    1.0 - 0.5 / right_len,
+                    0.5 / right_len,
+                    right_len,
+                    dtype=dtype,
+                    device=device,
+                )
+                window[-right_len:] = ramp
+
+            # Expand window to match embedding dim
+            window_expanded = window.unsqueeze(1)  # [L, 1]
+
+            out_tensor[start_idx:end_idx] += chunk * window_expanded
+            weight_tensor[start_idx:end_idx] += window_expanded
+
+        # Avoid division by zero
+        weight_tensor = torch.clamp(weight_tensor, min=1e-5)
+        return out_tensor / weight_tensor
 
 
 class ImportanceContextPruner(nn.Module):
