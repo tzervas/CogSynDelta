@@ -1,0 +1,28 @@
+{
+  "overall_score": 100,
+  "status": "excellent",
+  "quality_report": {
+    "stats": {
+      "files_analyzed": 32,
+      "total_lines": 16961,
+      "total_functions": 478,
+      "total_classes": 142,
+      "issues_found": 0
+    },
+    "issues": {
+      "by_severity": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      },
+      "by_category": {},
+      "total": 0
+    },
+    "quality_score": 100
+  },
+  "intention_report": {
+    "total_mismatches": 0,
+    "mismatches": []
+  },
+  "passed": true
+}
