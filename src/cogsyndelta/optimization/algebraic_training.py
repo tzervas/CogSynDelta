@@ -507,6 +507,14 @@ class FisherInformationPredictor(nn.Module):
 
         # Compute Fisher diagonal
         def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
+            """Generate batches of training data for Fisher matrix computation.
+
+            Yields:
+                tuple[Tensor, Tensor]: Inputs and targets for the current batch.
+
+            Why:
+                Enables memory-efficient iterative batch feeding without holding all intermediates.
+            """
             for i in range(0, len(train_x), 32):
                 yield train_x[i : i + 32], train_y[i : i + 32]
 
@@ -575,6 +583,14 @@ class FisherInformationPredictor(nn.Module):
         if not self._fisher_cache:
 
             def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
+                """Generate batches of training data for Fisher matrix computation.
+
+                Yields:
+                    tuple[Tensor, Tensor]: Inputs and targets for the current batch.
+
+                Why:
+                    Enables memory-efficient iterative batch feeding without holding all intermediates.
+                """
                 for i in range(0, len(train_x), 32):
                     yield train_x[i : i + 32], train_y[i : i + 32]
 
@@ -1861,67 +1877,23 @@ class UnifiedAlgebraicTrainer:
         self.mhc_modules = mhc_modules or {}
         self.mhc_optimizer = MHCAlgebraicOptimizer() if mhc_modules else None
 
-    def train_algebraically(
+    def _optimize_auxiliary_components(
         self,
         train_x: Tensor,
-        train_y: Tensor,
-        target_epochs: int = 100,
-        learning_rate: float = 0.01,
-        apply_weights: bool = True,
-    ) -> dict[str, Any]:
-        """
-        Perform full algebraic training.
-
-        This predicts what the model would learn after target_epochs of
-        gradient descent, without actually running gradient descent!
+        results: dict[str, Any],
+    ) -> None:
+        """Helper to optimize auxiliary components such as mHC modules and pathways.
 
         Args:
-            train_x: Training inputs
-            train_y: Training targets
-            target_epochs: Equivalent number of training epochs
-            learning_rate: Equivalent learning rate
-            apply_weights: Whether to apply predicted weights to model
+            train_x: Training inputs.
+            results: Dictionary to append results to.
 
         Returns:
-            Comprehensive training results
+            None.
+
+        Why:
+            Deconstructs train_algebraically to keep cyclomatic complexity low.
         """
-        results: dict[str, Any] = {}
-
-        # 1. Predict training dynamics (NTK)
-        print("  [1/5] Predicting training dynamics via NTK...")
-        try:
-            ntk_results = self.ntk_predictor.predict_training_dynamics(
-                train_x,
-                train_y,
-                train_x,
-                learning_rate=learning_rate,
-                training_time=float(target_epochs),
-            )
-            results["ntk_dynamics"] = ntk_results
-            results["predicted_outputs"] = ntk_results["predicted_train_outputs"]
-            results["predicted_mse"] = ntk_results["predicted_mse"]
-        except Exception as e:
-            print(f"    NTK prediction failed: {e}")
-            results["ntk_error"] = str(e)
-
-        # 2. Predict weight distributions
-        print("  [2/5] Predicting weight distributions...")
-        weight_stats = self.weight_predictor.predict_weight_statistics(train_x, train_y)
-        results["weight_statistics"] = weight_stats
-
-        # 3. Generate predicted weights (spectral method)
-        print("  [3/5] Computing optimal weights via spectral analysis...")
-        optimal_weights = self.spectral_predictor.predict_network_weights(train_x, train_y)
-        results["optimal_weights"] = optimal_weights
-
-        # 4. Predict convergence time
-        print("  [4/5] Analyzing convergence properties...")
-        convergence = self.weight_predictor.predict_convergence_time(train_x, learning_rate)
-        results["convergence_analysis"] = convergence
-
-        # 5. Optimize auxiliary components
-        print("  [5/5] Optimizing auxiliary components...")
-
         # mHC optimization
         if self.mhc_optimizer and self.mhc_modules:
             mhc_results: dict[str, Any] = {}
@@ -1959,6 +1931,71 @@ class UnifiedAlgebraicTrainer:
                     section_states
                 )
                 results["optimal_pathway_strengths"] = pathway_strengths
+
+    def train_algebraically(
+        self,
+        train_x: Tensor,
+        train_y: Tensor,
+        target_epochs: int = 100,
+        learning_rate: float = 0.01,
+        apply_weights: bool = True,
+    ) -> dict[str, Any]:
+        """Perform full algebraic training.
+
+        This predicts what the model would learn after target_epochs of
+        gradient descent, without actually running gradient descent!
+
+        Args:
+            train_x: Training inputs.
+            train_y: Training targets.
+            target_epochs: Equivalent number of training epochs.
+            learning_rate: Equivalent learning rate.
+            apply_weights: Whether to apply predicted weights to model.
+
+        Returns:
+            Comprehensive training results.
+
+        Why:
+            Consolidates and executes all individual analytical and algebraic
+            predictors to simulate complete model training in closed form.
+        """
+        results: dict[str, Any] = {}
+
+        # 1. Predict training dynamics (NTK)
+        print("  [1/5] Predicting training dynamics via NTK...")
+        try:
+            ntk_results = self.ntk_predictor.predict_training_dynamics(
+                train_x,
+                train_y,
+                train_x,
+                learning_rate=learning_rate,
+                training_time=float(target_epochs),
+            )
+            results["ntk_dynamics"] = ntk_results
+            results["predicted_outputs"] = ntk_results["predicted_train_outputs"]
+            results["predicted_mse"] = ntk_results["predicted_mse"]
+        except Exception as e:
+            print(f"    NTK prediction failed: {e}")
+            results["ntk_error"] = str(e)
+
+        # 2. Predict weight distributions
+        print("  [2/5] Predicting weight distributions...")
+        weight_stats = self.weight_predictor.predict_weight_statistics(train_x, train_y)
+        results["weight_statistics"] = weight_stats
+
+        # 3. Generate predicted weights (spectral method)
+        print("  [3/5] Computing optimal weights via spectral analysis...")
+        optimal_weights = self.spectral_predictor.predict_network_weights(train_x, train_y)
+        results["optimal_weights"] = optimal_weights
+
+        # 4. Predict convergence time
+        print("  [4/5] Analyzing convergence properties...")
+        convergence = self.weight_predictor.predict_convergence_time(train_x, learning_rate)
+        results["convergence_analysis"] = convergence
+
+        # 5. Optimize auxiliary components
+        print("  [5/5] Optimizing auxiliary components...")
+        self._optimize_auxiliary_components(train_x, results)
 
         # Apply weights if requested
         if apply_weights and optimal_weights:
