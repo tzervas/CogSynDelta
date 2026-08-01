@@ -579,6 +579,7 @@ Examples:
     # Save report
     with open(args.output, "w") as f:
         json.dump(result, f, indent=2, default=str)
+        f.write("\n")
 
     print(f"\n✓ Quality report saved to: {args.output}")
 
