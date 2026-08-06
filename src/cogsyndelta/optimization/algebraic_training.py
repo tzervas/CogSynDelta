@@ -1990,7 +1990,7 @@ class UnifiedAlgebraicTrainer:
                 mhc_results[name] = {"error": str(e)}
         return mhc_results
 
-    def _optimize_pathways(self) -> dict[str, Any] | None:
+    def _optimize_pathways(self) -> dict[tuple[str, str], float] | None:
         """Optimize and predict pathway strengths for the interconnect.
 
         Returns:
@@ -2010,9 +2010,7 @@ class UnifiedAlgebraicTrainer:
             section_states = self.interconnect.section_states
 
         if section_states:
-            return self.pathway_predictor.predict_all_pathway_strengths(
-                section_states
-            )
+            return self.pathway_predictor.predict_all_pathway_strengths(section_states)
         return None
 
     def quick_optimize(
