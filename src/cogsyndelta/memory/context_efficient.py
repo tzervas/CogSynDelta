@@ -319,17 +319,55 @@ class ChunkedCompactor(nn.Module):
         if len(chunks) == 1:
             return chunks[0]
 
-        # Simple concatenation with overlap trimming
-        # TODO: Implement proper blending weights
-        result_parts = [chunks[0][: -self.overlap] if self.overlap > 0 else chunks[0]]
-        for i in range(1, len(chunks) - 1):
-            start = self.overlap // 2
-            end = -self.overlap + self.overlap // 2 if self.overlap > 0 else None
-            result_parts.append(chunks[i][start:end])
-        if len(chunks) > 1:
-            result_parts.append(chunks[-1][self.overlap // 2 :] if self.overlap > 0 else chunks[-1])
+        if self.overlap <= 0:
+            return torch.cat(chunks, dim=0)
 
-        return torch.cat(result_parts, dim=0)
+        # Allocate output tensor and weight tensor
+        device = chunks[0].device
+        dtype = chunks[0].dtype
+
+        # Step size between chunk starts
+        chunk_size = self.chunk_size
+        step = chunk_size - self.overlap
+
+        # Total length of reconstructed tensor
+        total_len = (len(chunks) - 1) * step + chunks[-1].size(0)
+
+        # Output accumulation tensors
+        output_shape = (total_len,) + chunks[0].shape[1:]
+        out = torch.zeros(output_shape, device=device, dtype=dtype)
+        weight_sum = torch.zeros(total_len, device=device, dtype=dtype)
+
+        for i, chunk in enumerate(chunks):
+            L = chunk.size(0)
+            start_idx = i * step
+            end_idx = start_idx + L
+
+            # Construct trapezoidal weights for this chunk
+            w = torch.ones(L, device=device, dtype=dtype)
+
+            # Left ramp (ramp-up from 0.0 to 1.0)
+            if i > 0 and self.overlap > 0:
+                ramp_len = min(self.overlap, L)
+                w[:ramp_len] = torch.linspace(0.0, 1.0, ramp_len, device=device, dtype=dtype)
+
+            # Right ramp (ramp-down from 1.0 to 0.0)
+            if i < len(chunks) - 1 and self.overlap > 0:
+                ramp_len = min(self.overlap, L)
+                # Compute ramp down on the last ramp_len elements
+                w[-ramp_len:] = torch.linspace(1.0, 0.0, ramp_len, device=device, dtype=dtype)
+
+            # Add to accumulation
+            # Expand weight tensor to match chunk shape for broadcasting
+            w_expanded = w.view((L,) + (1,) * (chunk.dim() - 1))
+            out[start_idx:end_idx] += chunk * w_expanded
+            weight_sum[start_idx:end_idx] += w
+
+        # Avoid division by zero
+        weight_sum = torch.clamp(weight_sum, min=1e-6)
+        weight_sum_expanded = weight_sum.view((total_len,) + (1,) * (out.dim() - 1))
+
+        return out / weight_sum_expanded
 
 
 class ImportanceContextPruner(nn.Module):
