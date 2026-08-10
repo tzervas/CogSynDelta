@@ -506,11 +506,11 @@ class FisherInformationPredictor(nn.Module):
         """
 
         # Compute Fisher diagonal
-        def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
+        def _data_gen() -> Iterator[tuple[Tensor, Tensor]]:
             for i in range(0, len(train_x), 32):
                 yield train_x[i : i + 32], train_y[i : i + 32]
 
-        fisher = self.compute_fisher_matrix(data_gen(), num_batches=len(train_x) // 32)
+        fisher = self.compute_fisher_matrix(_data_gen(), num_batches=len(train_x) // 32)
 
         # Compute natural gradient update
         self.model.zero_grad()
@@ -574,11 +574,11 @@ class FisherInformationPredictor(nn.Module):
         # Compute Fisher (or use cached)
         if not self._fisher_cache:
 
-            def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
+            def _data_gen() -> Iterator[tuple[Tensor, Tensor]]:
                 for i in range(0, len(train_x), 32):
                     yield train_x[i : i + 32], train_y[i : i + 32]
 
-            self.compute_fisher_matrix(data_gen())
+            self.compute_fisher_matrix(_data_gen())
 
         # Compute gradient
         self.model.zero_grad()
@@ -1861,6 +1861,60 @@ class UnifiedAlgebraicTrainer:
         self.mhc_modules = mhc_modules or {}
         self.mhc_optimizer = MHCAlgebraicOptimizer() if mhc_modules else None
 
+    def _optimize_mhc_modules(self, train_x: Tensor) -> dict[str, Any]:
+        """Optimize mHC modules.
+
+        Args:
+            train_x: Training inputs.
+
+        Returns:
+            mHC optimization results.
+        """
+        mhc_results: dict[str, Any] = {}
+        if not (self.mhc_optimizer and self.mhc_modules):
+            return mhc_results
+
+        for name, mhc in self.mhc_modules.items():
+            try:
+                # Forward pass to populate internal states (output not used)
+                with torch.no_grad():
+                    _ = self.model(train_x[:32])
+                # Use output as proxy for mHC states
+                gate_module = mhc.gate if hasattr(mhc, "gate") else mhc
+                if isinstance(gate_module, nn.Module):
+                    gate_analysis = self.mhc_optimizer.analyze_gate_dynamics(
+                        gate_module,
+                        train_x[:100],
+                        train_x[:100],
+                    )
+                    mhc_results[name] = gate_analysis
+                else:
+                    mhc_results[name] = {"skipped": "gate is not an nn.Module"}
+            except Exception as e:
+                mhc_results[name] = {"error": str(e)}
+        return mhc_results
+
+    def _optimize_pathway_strengths(self) -> dict[tuple[str, str], float]:
+        """Optimize pathway strengths.
+
+        Returns:
+            Optimal pathway strengths.
+        """
+        pathway_strengths: dict[tuple[str, str], float] = {}
+        if not (self.pathway_predictor and self.interconnect):
+            return pathway_strengths
+
+        # Get section states from interconnect
+        section_states = {}
+        if hasattr(self.interconnect, "get_section_states"):
+            section_states = self.interconnect.get_section_states()
+        elif hasattr(self.interconnect, "section_states"):
+            section_states = self.interconnect.section_states
+
+        if section_states:
+            pathway_strengths = self.pathway_predictor.predict_all_pathway_strengths(section_states)
+        return pathway_strengths
+
     def train_algebraically(
         self,
         train_x: Tensor,
@@ -1869,8 +1923,7 @@ class UnifiedAlgebraicTrainer:
         learning_rate: float = 0.01,
         apply_weights: bool = True,
     ) -> dict[str, Any]:
-        """
-        Perform full algebraic training.
+        """Perform full algebraic training.
 
         This predicts what the model would learn after target_epochs of
         gradient descent, without actually running gradient descent!
@@ -1923,42 +1976,14 @@ class UnifiedAlgebraicTrainer:
         print("  [5/5] Optimizing auxiliary components...")
 
         # mHC optimization
-        if self.mhc_optimizer and self.mhc_modules:
-            mhc_results: dict[str, Any] = {}
-            for name, mhc in self.mhc_modules.items():
-                try:
-                    # Forward pass to populate internal states (output not used)
-                    with torch.no_grad():
-                        _ = self.model(train_x[:32])
-                    # Use output as proxy for mHC states
-                    gate_module = mhc.gate if hasattr(mhc, "gate") else mhc
-                    if isinstance(gate_module, nn.Module):
-                        gate_analysis = self.mhc_optimizer.analyze_gate_dynamics(
-                            gate_module,
-                            train_x[:100],
-                            train_x[:100],
-                        )
-                        mhc_results[name] = gate_analysis
-                    else:
-                        mhc_results[name] = {"skipped": "gate is not an nn.Module"}
-                except Exception as e:
-                    mhc_results[name] = {"error": str(e)}
-            results["mhc_analysis"] = mhc_results
+        mhc_res = self._optimize_mhc_modules(train_x)
+        if mhc_res:
+            results["mhc_analysis"] = mhc_res
 
         # Pathway optimization
-        if self.pathway_predictor and self.interconnect:
-            # Get section states from interconnect
-            section_states = {}
-            if hasattr(self.interconnect, "get_section_states"):
-                section_states = self.interconnect.get_section_states()
-            elif hasattr(self.interconnect, "section_states"):
-                section_states = self.interconnect.section_states
-
-            if section_states:
-                pathway_strengths = self.pathway_predictor.predict_all_pathway_strengths(
-                    section_states
-                )
-                results["optimal_pathway_strengths"] = pathway_strengths
+        pathway_res = self._optimize_pathway_strengths()
+        if pathway_res:
+            results["optimal_pathway_strengths"] = pathway_res
 
         # Apply weights if requested
         if apply_weights and optimal_weights:
