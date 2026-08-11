@@ -164,6 +164,7 @@ class ProgressiveLoadingConfig:
         """Load configuration from YAML file.
 
         Args:
+            cls: The class itself.
             yaml_path: Path to YAML configuration file
             profile: Configuration profile name (base, focused, balanced, expansive)
 
@@ -219,7 +220,19 @@ class ProgressiveLoaderManager:
         interconnect: IntelligentInterconnectManager | None = None,
         device: str = "cuda",
         max_active_submodels: int | None = None,
-    ):
+    ) -> None:
+        """Initialize the ProgressiveLoaderManager.
+
+        Args:
+            config: Optional configuration instance. If not provided, a default config will be used.
+            interconnect: Optional IntelligentInterconnectManager instance for prediction.
+            device: The target device to load submodels onto, e.g., 'cuda'.
+            max_active_submodels: Optional override for the maximum active submodels.
+
+        Why:
+            Thread-safe queues are used for loading and prefetching to prevent multi-threaded
+            concurrency issues when integrated with background processes or web socket servers.
+        """
         self.config = config or ProgressiveLoadingConfig()
         self.device = torch.device(device)
         self.interconnect = interconnect
