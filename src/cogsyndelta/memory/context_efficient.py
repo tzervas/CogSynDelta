@@ -308,7 +308,7 @@ class ChunkedCompactor(nn.Module):
         return self._blend_chunks(reconstructed_chunks)
 
     def _blend_chunks(self, chunks: list[torch.Tensor]) -> torch.Tensor:
-        """Blend overlapping chunks using weighted average.
+        """Blend overlapping chunks using trapezoidal linear-ramp weighted average.
 
         Args:
             chunks: List of reconstructed chunks.
@@ -319,17 +319,43 @@ class ChunkedCompactor(nn.Module):
         if len(chunks) == 1:
             return chunks[0]
 
-        # Simple concatenation with overlap trimming
-        # TODO: Implement proper blending weights
-        result_parts = [chunks[0][: -self.overlap] if self.overlap > 0 else chunks[0]]
-        for i in range(1, len(chunks) - 1):
-            start = self.overlap // 2
-            end = -self.overlap + self.overlap // 2 if self.overlap > 0 else None
-            result_parts.append(chunks[i][start:end])
-        if len(chunks) > 1:
-            result_parts.append(chunks[-1][self.overlap // 2 :] if self.overlap > 0 else chunks[-1])
+        overlap = self.overlap
+        if overlap == 0:
+            return torch.cat(chunks, dim=0)
 
-        return torch.cat(result_parts, dim=0)
+        device = chunks[0].device
+        dtype = chunks[0].dtype
+
+        total_len = sum(c.size(0) for c in chunks) - overlap * (len(chunks) - 1)
+        feat_dim = chunks[0].size(1)
+
+        output = torch.zeros((total_len, feat_dim), device=device, dtype=dtype)
+        weights_sum = torch.zeros((total_len, 1), device=device, dtype=dtype)
+
+        curr_pos = 0
+        for i, chunk in enumerate(chunks):
+            chunk_len = chunk.size(0)
+            w = torch.ones((chunk_len, 1), device=device, dtype=dtype)
+
+            if i > 0 and overlap > 0:
+                ramp_up = torch.linspace(0.0, 1.0, overlap + 2, device=device, dtype=dtype)[
+                    1:-1
+                ].unsqueeze(1)
+                ramp_up_len = min(overlap, chunk_len)
+                w[:ramp_up_len] = ramp_up[:ramp_up_len]
+
+            if i < len(chunks) - 1 and overlap > 0:
+                ramp_down = torch.linspace(1.0, 0.0, overlap + 2, device=device, dtype=dtype)[
+                    1:-1
+                ].unsqueeze(1)
+                ramp_down_len = min(overlap, chunk_len)
+                w[-ramp_down_len:] = ramp_down[-ramp_down_len:]
+
+            output[curr_pos : curr_pos + chunk_len] += chunk * w
+            weights_sum[curr_pos : curr_pos + chunk_len] += w
+            curr_pos += chunk_len - overlap
+
+        return output / weights_sum.clamp(min=1e-8)
 
 
 class ImportanceContextPruner(nn.Module):
