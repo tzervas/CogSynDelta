@@ -342,12 +342,16 @@ class ChunkedCompactor(nn.Module):
 
             if i > 0 and overlap_len > 0:
                 # Ramp up at the start of overlapping region
-                ramp_up = torch.linspace(0.0, 1.0, overlap_len + 2, device=device, dtype=dtype)[1:-1].unsqueeze(1)
+                ramp_up = torch.linspace(0.0, 1.0, overlap_len + 2, device=device, dtype=dtype)[
+                    1:-1
+                ].unsqueeze(1)
                 w[:overlap_len] = ramp_up
 
             if i < len(chunks) - 1 and overlap_len > 0:
                 # Ramp down at the end of overlapping region
-                ramp_down = torch.linspace(1.0, 0.0, overlap_len + 2, device=device, dtype=dtype)[1:-1].unsqueeze(1)
+                ramp_down = torch.linspace(1.0, 0.0, overlap_len + 2, device=device, dtype=dtype)[
+                    1:-1
+                ].unsqueeze(1)
                 w[-overlap_len:] = torch.minimum(w[-overlap_len:], ramp_down)
 
             output[start_idx:end_idx] += chunk * w
