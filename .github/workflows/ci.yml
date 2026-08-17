@@ -104,6 +104,19 @@ jobs:
     - name: Set up Python 3.14
       run: uv python install 3.14
 
+    - name: Free Disk Space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo rm -rf /usr/local/share/powershell
+        sudo rm -rf /usr/local/share/chromium
+        sudo rm -rf /usr/local/lib/node_modules
+        sudo apt-get clean
+        docker image prune -af || true
+        df -h
+
     - name: Install dependencies with CPU-only PyTorch
       run: |
         # Use --no-sources to bypass pyproject.toml torch source (cu128)
