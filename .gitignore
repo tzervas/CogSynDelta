@@ -227,6 +227,7 @@ model_sections/
 logs/
 outputs/
 results/
+quality_report.json
 
 # IDE
 .vscode/

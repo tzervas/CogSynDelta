@@ -507,6 +507,11 @@ class FisherInformationPredictor(nn.Module):
 
         # Compute Fisher diagonal
         def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
+            """Generate batches of training data for Fisher matrix computation.
+
+            Yields:
+                Tuples of (batch_x, batch_y) tensors of size 32.
+            """
             for i in range(0, len(train_x), 32):
                 yield train_x[i : i + 32], train_y[i : i + 32]
 
@@ -575,6 +580,11 @@ class FisherInformationPredictor(nn.Module):
         if not self._fisher_cache:
 
             def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
+                """Generate batches of training data for Fisher matrix computation.
+
+                Yields:
+                    Tuples of (batch_x, batch_y) tensors of size 32.
+                """
                 for i in range(0, len(train_x), 32):
                     yield train_x[i : i + 32], train_y[i : i + 32]
 
@@ -1921,7 +1931,25 @@ class UnifiedAlgebraicTrainer:
 
         # 5. Optimize auxiliary components
         print("  [5/5] Optimizing auxiliary components...")
+        self._optimize_auxiliary_components(train_x, optimal_weights, apply_weights, results)
 
+        return results
+
+    def _optimize_auxiliary_components(
+        self,
+        train_x: Tensor,
+        optimal_weights: dict[str, Tensor],
+        apply_weights: bool,
+        results: dict[str, Any],
+    ) -> None:
+        """Helper method to optimize mHC gates, pathway strengths, and apply weights.
+
+        Args:
+            train_x: Training inputs tensor.
+            optimal_weights: Dictionary of computed optimal weights.
+            apply_weights: Flag indicating whether to apply predicted weights to model.
+            results: Results dictionary to mutate with auxiliary analysis.
+        """
         # mHC optimization
         if self.mhc_optimizer and self.mhc_modules:
             mhc_results: dict[str, Any] = {}
@@ -1968,8 +1996,6 @@ class UnifiedAlgebraicTrainer:
                     if name in optimal_weights:
                         param.copy_(optimal_weights[name])
             results["weights_applied"] = True
-
-        return results
 
     def quick_optimize(
         self,
