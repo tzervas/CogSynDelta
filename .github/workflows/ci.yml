@@ -20,7 +20,6 @@ env:
   MYPY_VERSION: "1.19.1"
   UV_VERSION: "0.7.17"
   # Pre-download dependencies before any firewall/network restrictions
-  UV_LINK_MODE: copy
   UV_COMPILE_BYTECODE: "0"
 
 concurrency:
@@ -40,26 +39,23 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python 3.12
-      run: uv python install 3.12
-
-    - name: Install linting tools
-      run: |
-        uv tool install ruff@${{ env.RUFF_VERSION }}
-        uv tool install mypy@${{ env.MYPY_VERSION }} --with types-PyYAML
-
-    # Individual tool runs for fine-grained fail-fast debugging
+    # uvx: no project Python / torch. Same pins as local scripts/ci_local.sh.
     - name: Ruff lint check
-      run: uv tool run ruff check src/ tests/ benchmarks/ scripts/ examples/
+      run: uvx ruff@${{ env.RUFF_VERSION }} check src/ tests/ benchmarks/ scripts/ examples/
 
     - name: Ruff format check
-      run: uv tool run ruff format --check src/ tests/ benchmarks/ scripts/ examples/
+      run: uvx ruff@${{ env.RUFF_VERSION }} format --check src/ tests/ benchmarks/ scripts/ examples/
 
     - name: Type check with mypy
-      run: uv tool run mypy src/
+      run: >
+        uvx --from mypy==${{ env.MYPY_VERSION }} --with types-PyYAML
+        mypy src/
 
   pre-commit:
     name: Pre-commit Checks
+    # Not a required merge check. The mypy hook pulls torch and starves the
+    # homelab queue; ruff+mypy jobs already cover the same surface on PRs.
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, linux, x64, podman]
     steps:
     - uses: actions/checkout@v6
@@ -70,14 +66,8 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python 3.12
-      run: uv python install 3.12
-
-    - name: Install pre-commit
-      run: uv tool install pre-commit
-
     - name: Run pre-commit on all files
-      run: uv tool run pre-commit run --all-files
+      run: uvx pre-commit run --all-files
 
   quality:
     name: Quality Score Check
@@ -85,23 +75,13 @@ jobs:
     steps:
     - uses: actions/checkout@v6
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        version: ${{ env.UV_VERSION }}
-        enable-cache: true
-
-    - name: Set up Python 3.12
-      run: uv python install 3.12
-
     - name: Run quality checks (90+ required)
-      # Quality script uses only stdlib, no dependencies needed
-      run: uv run --no-project python scripts/quality_control.py src/ --fail-under 90
+      # Stdlib only. Runner image already has python3.
+      run: python3 scripts/quality_control.py src/ --fail-under 90
 
   test:
     name: Test on Python 3.12
     runs-on: [self-hosted, linux, x64, podman]
-    needs: [lint]
     timeout-minutes: 25
 
     steps:
@@ -126,7 +106,7 @@ jobs:
 
     - name: Run tests with pytest
       run: |
-        uv run --no-sync pytest tests/ -v --cov=cogsyndelta --cov-report=xml --cov-report=term
+        uv run --no-sync pytest tests/ -q --tb=short --cov=cogsyndelta --cov-report=xml --cov-report=term
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v5
@@ -143,8 +123,9 @@ jobs:
 
   build:
     name: Build distribution
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: [self-hosted, linux, x64, podman]
-    needs: [test, quality]
+    needs: [test]
 
     steps:
     - uses: actions/checkout@v6

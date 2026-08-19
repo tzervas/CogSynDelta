@@ -51,7 +51,8 @@ jobs:
   python:
     name: python lint/test
     needs: detect
-    if: needs.detect.outputs.python == 'true'
+    # PRs to main already run poc-ci + CI Test. Don't take a second torch sync.
+    if: needs.detect.outputs.python == 'true' && github.event_name != 'pull_request'
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 25
     env:

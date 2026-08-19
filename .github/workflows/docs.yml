@@ -3,18 +3,17 @@
 
 name: Documentation
 
-# Manual only — no push/pull_request CI triggers
 on:
   push:
-    branches:
-      - main
-      - dev
-      - develop
-  pull_request:
-    branches:
-      - main
-      - dev
-      - develop
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "src/cogsyndelta/**"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "ROADMAP.md"
+      - "AGENTS.md"
+      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
@@ -23,8 +22,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: docs-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   UV_VERSION: "0.7.17"
@@ -154,6 +153,7 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

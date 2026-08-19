@@ -47,7 +47,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 30
     # Only run if code scanning is enabled (set ENABLE_CODEQL=true in repo variables)
-    if: ${{ vars.ENABLE_CODEQL == 'true' }}
+    if: ${{ vars.ENABLE_CODEQL == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
     steps:
       - name: Checkout repository
@@ -160,9 +160,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
-
-      - name: Set up Python
-        run: uv python install 3.12
+          enable-cache: true
 
       - name: Install security tools
         run: |
