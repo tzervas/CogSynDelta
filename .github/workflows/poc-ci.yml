@@ -2,8 +2,8 @@
 # cancel-in-progress: false — a prior run was killed after 13m of real work
 # when a later push landed. Self-hosted capacity is limited; finish started jobs.
 #
-# TEMPORARY: runs-on ubuntu-latest while self-hosted runners are offline / not
-# consuming. Restore to [self-hosted, linux, x64, podman] when home-lab is up.
+# Runs on fleet self-hosted runners (labels match gha-runner-ctl / ap-fleet-work-images
+# gha-work image: Ubuntu 24.04, uv, gitleaks, gh, Rust, UID 1001).
 name: poc-ci
 
 on:
@@ -23,8 +23,7 @@ permissions:
 jobs:
   poc:
     name: PoC contracts + train + compress
-    runs-on: ubuntu-latest
-    # restore when home-lab online: runs-on: [self-hosted, linux, x64, podman]
+    runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
