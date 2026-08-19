@@ -1,8 +1,7 @@
 # Documentation Generation Workflow
 # Auto-generates API documentation using pdoc and deploys to GitHub Pages
 #
-# Expects fleet gha-work image (uv, gitleaks, Ubuntu 24.04, UID 1001)
-# from ap-fleet-work-images via runner-ctl GHA_IMAGE / image-map.
+# Runs on fleet self-hosted (gha-work image: Ubuntu 24.04, uv, UID 1001).
 
 name: Documentation
 
