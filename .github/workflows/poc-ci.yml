@@ -3,6 +3,9 @@
 # when a later push landed. Self-hosted capacity is limited; finish started jobs.
 #
 # Runs on fleet gha-work image via [self-hosted, linux, x64, podman] labels.
+# After CPU `uv sync --no-sources`, later `uv run` steps must use `--no-sync`
+# so `[tool.uv.sources]` pytorch-cu128 does not re-resolve CUDA wheels.
+# uv.lock pins CUDA torch; do not pass `--frozen` (it would install CUDA).
 name: poc-ci
 
 on:
@@ -23,12 +26,14 @@ jobs:
   poc:
     name: PoC contracts + train + compress
     runs-on: [self-hosted, linux, x64, podman]
-    timeout-minutes: 15
+    timeout-minutes: 25
+    env:
+      UV_COMPILE_BYTECODE: "0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true
@@ -43,15 +48,15 @@ jobs:
 
       - name: Ruff (poc surface only)
         run: |
-          uv run ruff check src/cogsyndelta/contracts src/cogsyndelta/poc \
+          uv run --no-sync ruff check src/cogsyndelta/contracts src/cogsyndelta/poc \
             tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py
 
       - name: Pytest PoC
         run: |
-          uv run pytest tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py -q --tb=short
+          uv run --no-sync pytest tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py -q --tb=short
 
       - name: CLI smoke
         run: |
           set -euo pipefail
-          uv run python -m cogsyndelta.poc.cli train --device cpu --steps 10 --checkpoint /tmp/poc_vae.pt
-          uv run python -m cogsyndelta.poc.cli compress --device cpu --batch 4
+          uv run --no-sync python -m cogsyndelta.poc.cli train --device cpu --steps 10 --checkpoint /tmp/poc_vae.pt
+          uv run --no-sync python -m cogsyndelta.poc.cli compress --device cpu --batch 4
