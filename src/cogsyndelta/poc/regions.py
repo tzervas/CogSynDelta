@@ -17,6 +17,13 @@ class ResidualMLPRegion(nn.Module):
         hidden_dim: int = 128,
         name: str = "residual_mlp",
     ) -> None:
+        """Build a residual MLP with the given stream width.
+
+        Args:
+            dim: Stream dimension (in and out).
+            hidden_dim: Hidden width of the two-layer MLP.
+            name: Registry name for this region.
+        """
         super().__init__()
         self.name = name
         self.dim = dim

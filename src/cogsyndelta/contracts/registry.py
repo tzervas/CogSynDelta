@@ -17,6 +17,7 @@ class RegionRegistry:
     """Ordered name → region map. Duplicate names are rejected."""
 
     def __init__(self) -> None:
+        """Create an empty name → region map."""
         self._regions: dict[str, CognitiveRegion] = {}
 
     def register(self, region: CognitiveRegion) -> None:
@@ -48,9 +49,11 @@ class RegionRegistry:
         return tuple(self._regions.values())
 
     def __len__(self) -> int:
+        """Number of registered regions."""
         return len(self._regions)
 
     def __iter__(self) -> Iterator[CognitiveRegion]:
+        """Iterate regions in registration order."""
         return iter(self._regions.values())
 
     def to(self, device: torch.device) -> RegionRegistry:

@@ -30,6 +30,7 @@ class LatentVAE(nn.Module):
             hidden_dim: Hidden width.
             latent_dim: Bottleneck size.
             sigma_scale: Multiplier on the reparameterized std.
+            name: Registry name for this region.
         """
         super().__init__()
         self.name = name

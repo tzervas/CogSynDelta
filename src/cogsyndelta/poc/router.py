@@ -33,6 +33,16 @@ class SoftmaxRouter(nn.Module):
     """Token-wise softmax top-k gate over registered regions."""
 
     def __init__(self, dim: int, n_regions: int, top_k: int = 1) -> None:
+        """Linear gate over ``n_regions`` with softmax top-k mixing.
+
+        Args:
+            dim: Stream width.
+            n_regions: Number of experts/regions.
+            top_k: How many regions receive each token.
+
+        Raises:
+            ValueError: If ``n_regions`` or ``top_k`` is < 1.
+        """
         super().__init__()
         if n_regions < 1:
             raise ValueError("n_regions must be >= 1")
