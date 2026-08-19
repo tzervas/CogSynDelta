@@ -1,10 +1,9 @@
 # Third-party code quality analysis for CogSynDelta (Private Repository)
 # Integrates with CodeClimate and SonarCloud for external validation
-#
-# Runs on fleet self-hosted (gha-work image: Ubuntu 24.04, uv, UID 1001).
 
 name: Code Quality
 
+# Manual only — no push/pull_request CI triggers
 on:
   workflow_dispatch:
 
@@ -12,9 +11,11 @@ env:
   UV_VERSION: "0.7.17"
 
 jobs:
+  # CodeClimate integration (requires CC_TEST_REPORTER_ID secret)
   codeclimate:
     name: CodeClimate Analysis
     runs-on: [self-hosted, linux, x64, podman]
+    # Only run if CodeClimate is configured
     if: ${{ vars.ENABLE_CODECLIMATE == 'true' }}
 
     steps:
@@ -52,9 +53,11 @@ jobs:
         run: |
           ./cc-test-reporter after-build --exit-code $?
 
+  # SonarCloud integration (requires SONAR_TOKEN secret)
   sonarcloud:
     name: SonarCloud Analysis
     runs-on: [self-hosted, linux, x64, podman]
+    # Only run if SonarCloud is configured
     if: ${{ vars.ENABLE_SONARCLOUD == 'true' }}
 
     steps:
@@ -96,6 +99,7 @@ jobs:
             -Dsonar.tests=tests/
             -Dsonar.python.version=3.12
 
+  # Internal quality metrics (always runs)
   quality-metrics:
     name: Quality Metrics
     runs-on: [self-hosted, linux, x64, podman]

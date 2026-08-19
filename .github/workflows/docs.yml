@@ -1,10 +1,9 @@
 # Documentation Generation Workflow
 # Auto-generates API documentation using pdoc and deploys to GitHub Pages
-#
-# Runs on fleet self-hosted (gha-work image: Ubuntu 24.04, uv, UID 1001).
 
 name: Documentation
 
+# Manual only — no push/pull_request CI triggers
 on:
   push:
     branches:

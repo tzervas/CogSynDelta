@@ -1,12 +1,10 @@
 # Release Workflow for CogSynDelta
 # Triggers on merge to main, creates releases with semantic versioning
 # Builds artifacts but does NOT publish to PyPI (requires explicit approval)
-#
-# Expects fleet gha-work image (uv, gitleaks, Ubuntu 24.04, UID 1001)
-# from ap-fleet-work-images via runner-ctl GHA_IMAGE / image-map.
 
 name: Release
 
+# Manual only — no push/pull_request CI triggers
 on:
   workflow_dispatch:
     inputs:

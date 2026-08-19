@@ -1,9 +1,6 @@
 # Security scanning workflow for CogSynDelta (Private Repository)
 # Includes CodeQL SAST, dependency review, and secret scanning
 #
-# Expects fleet gha-work image (uv, gitleaks, Ubuntu 24.04, UID 1001)
-# from ap-fleet-work-images via runner-ctl GHA_IMAGE / image-map.
-#
 # GHAS (GitHub Advanced Security) Requirements:
 # - CodeQL upload to Security tab requires GHAS (set ENABLE_CODEQL_UPLOAD='true')
 # - Dependency Review requires GHAS (set ENABLE_DEPENDENCY_REVIEW='true')
@@ -17,6 +14,7 @@
 
 name: Security
 
+# Manual only — no push/pull_request CI triggers
 on:
   push:
     branches:
