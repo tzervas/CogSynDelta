@@ -94,24 +94,26 @@ jobs:
             git push
           fi
 
-  # Job to run if self-hosted runner is available (future)
-  # Uncomment when akula-prime is configured as a runner
+  # akula-prime GPU runner labels are self-hosted,linux,x64,gpu,akula-prime.
+  # Do NOT add `podman` — GitHub matches supersets, so a GPU runner with
+  # `podman` would steal homelab CPU jobs.
+  gpu-runner-smoke:
+    name: GPU runner smoke (akula-prime)
+    runs-on: [self-hosted, linux, x64, gpu, akula-prime]
+    timeout-minutes: 10
+    steps:
+      - name: Verify NVIDIA GPU via CDI
+        run: |
+          set -euo pipefail
+          nvidia-smi -L
+          nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used --format=csv
+          test -c /dev/nvidia0
+          echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
+
+  # Full benches need a CUDA/Python work image (not the runner-ctl snapshot).
   # self-hosted-benchmark:
   #   name: Run GPU Benchmarks (Self-Hosted)
-  #   runs-on: [self-hosted, gpu, akula-prime]
-  #   if: false  # Disabled until self-hosted runner is configured
-  #
+  #   runs-on: [self-hosted, linux, x64, gpu, akula-prime]
   #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v6
-  #
-  #     - name: Run GPU benchmarks
-  #       run: |
-  #         ./scripts/capture_gpu_benchmarks.sh
-  #
-  #     - name: Upload benchmark artifacts
-  #       uses: actions/upload-artifact@v6
-  #       with:
-  #         name: gpu-benchmark-${{ github.run_id }}
-  #         path: benchmark_results/
-  #         retention-days: 365
+  #     - uses: actions/checkout@v6
+  #     - run: ./scripts/capture_gpu_benchmarks.sh
