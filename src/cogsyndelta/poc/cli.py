@@ -42,6 +42,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run train, compress, or bench and print JSON.
+
+    Args:
+        argv: Optional CLI tokens (defaults to ``sys.argv[1:]``).
+
+    Returns:
+        Process exit code (0 on measured pass).
+    """
     args = _build_parser().parse_args(argv)
     ctx = DeviceContext.resolve(args.device)
     cfg = PocConfig(device=args.device, seed=args.seed)

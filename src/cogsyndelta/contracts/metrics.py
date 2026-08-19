@@ -11,6 +11,8 @@ from typing import Any
 
 
 class MetricsStatus(str, Enum):
+    """Measured-claim row status (not a secret)."""
+
     PASS = "pass"  # noqa: S105 — status token, not a secret
     GAP = "gap"
     UNKNOWN = "unknown"
@@ -29,6 +31,7 @@ class MetricsRecord:
     timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the record, using the enum value for ``status``."""
         d = asdict(self)
         d["status"] = self.status.value
         return d

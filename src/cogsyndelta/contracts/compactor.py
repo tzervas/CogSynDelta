@@ -25,10 +25,12 @@ class CompactBlob:
 
     @property
     def stored_bytes(self) -> int:
+        """Serialized payload size in bytes."""
         return len(self.payload)
 
     @property
     def original_bytes(self) -> int:
+        """Uncompressed tensor size in bytes (float32=4, else 2)."""
         # float32 default; adjust if dtype known
         itemsize = 4 if self.original_dtype in ("float32", "torch.float32") else 2
         return self.original_numel * itemsize
@@ -74,6 +76,12 @@ class BasisResidualCompactor:
     name = "basis_residual"
 
     def __init__(self, dim: int = 512, basis_rank: int = 64) -> None:
+        """Build a fixed random basis of shape ``[dim, rank]``.
+
+        Args:
+            dim: Input embedding dimension.
+            basis_rank: Number of basis columns (clamped to ``dim``).
+        """
         self.dim = dim
         self.basis_rank = min(basis_rank, dim)
         # Fixed random orthonormal-ish basis (deterministic seed for tests)
@@ -83,6 +91,14 @@ class BasisResidualCompactor:
         self.basis = q  # [dim, rank]
 
     def compact(self, x: torch.Tensor) -> CompactBlob:
+        """Project onto the basis and store coeffs plus residual as float16.
+
+        Args:
+            x: Input tensor ``[D]`` or ``[B, D]``.
+
+        Returns:
+            Blob whose reconstruct path recovers proj + residual.
+        """
         if x.dim() == 1:
             x = x.unsqueeze(0)
         x_cpu = x.detach().float().cpu()
@@ -108,6 +124,14 @@ class BasisResidualCompactor:
         )
 
     def reconstruct(self, blob: CompactBlob) -> torch.Tensor:
+        """Reload coeffs/residual from bytes and add them back.
+
+        Args:
+            blob: Output of ``compact``.
+
+        Returns:
+            Reconstructed tensor on CPU.
+        """
         data = torch.load(io.BytesIO(blob.payload), weights_only=True, map_location="cpu")
         coeffs = data["coeffs"].float()
         residual = data["residual"].float()
@@ -115,6 +139,15 @@ class BasisResidualCompactor:
         return proj + residual
 
     def measured_ratio(self, x: torch.Tensor, blob: CompactBlob) -> float:
+        """Return original_bytes / stored_bytes for this blob.
+
+        Args:
+            x: Unused; ratio is taken from the blob metadata.
+            blob: Compacted payload.
+
+        Returns:
+            Byte ratio, or 0.0 if original_bytes is 0.
+        """
         orig = blob.original_bytes
         if orig <= 0:
             return 0.0
@@ -130,12 +163,28 @@ class CalibratedQuantCompactor:
     name = "calibrated_quant"
 
     def __init__(self, bits: int = 8) -> None:
+        """Configure uniform quantizer width.
+
+        Args:
+            bits: Quantization bits in ``[2, 16]``.
+
+        Raises:
+            ValueError: If ``bits`` is outside that range.
+        """
         if bits < 2 or bits > 16:
             raise ValueError("bits must be in [2, 16]")
         self.bits = bits
         self._levels = (1 << bits) - 1
 
     def compact(self, x: torch.Tensor) -> CompactBlob:
+        """Calibrate per-dim min/max on this batch and store uint8 codes.
+
+        Args:
+            x: Input tensor ``[D]`` or ``[B, D]``.
+
+        Returns:
+            Blob with codes, vmin, and scale.
+        """
         if x.dim() == 1:
             x = x.unsqueeze(0)
         x_cpu = x.detach().float().cpu()
@@ -163,6 +212,14 @@ class CalibratedQuantCompactor:
         )
 
     def reconstruct(self, blob: CompactBlob) -> torch.Tensor:
+        """Dequantize ``q * scale + vmin`` from the serialized blob.
+
+        Args:
+            blob: Output of ``compact``.
+
+        Returns:
+            Reconstructed tensor on CPU.
+        """
         data = torch.load(io.BytesIO(blob.payload), weights_only=True, map_location="cpu")
         q = data["q"].float()
         vmin = data["vmin"].float()
@@ -170,6 +227,15 @@ class CalibratedQuantCompactor:
         return q * scale + vmin
 
     def measured_ratio(self, x: torch.Tensor, blob: CompactBlob) -> float:
+        """Return original_bytes / stored_bytes for this blob.
+
+        Args:
+            x: Unused; ratio is taken from the blob metadata.
+            blob: Compacted payload.
+
+        Returns:
+            Byte ratio, or 0.0 if original_bytes is 0.
+        """
         orig = blob.original_bytes
         if orig <= 0:
             return 0.0

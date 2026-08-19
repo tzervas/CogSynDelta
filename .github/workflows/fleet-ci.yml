@@ -13,7 +13,7 @@ on:
 
 concurrency:
   group: fleet-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -53,7 +53,9 @@ jobs:
     needs: detect
     if: needs.detect.outputs.python == 'true'
     runs-on: [self-hosted, linux, x64, podman]
-    timeout-minutes: 20
+    timeout-minutes: 25
+    env:
+      UV_COMPILE_BYTECODE: "0"
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -74,12 +76,12 @@ jobs:
       - name: Ruff (poc surface)
         run: |
           set -euo pipefail
-          uv run ruff check src/cogsyndelta/contracts src/cogsyndelta/poc \
+          uv run --no-sync ruff check src/cogsyndelta/contracts src/cogsyndelta/poc \
             tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py
       - name: Pytest PoC (must fail job on failure)
         run: |
           set -euo pipefail
-          uv run pytest tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py -q --tb=short
+          uv run --no-sync pytest tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py -q --tb=short
 
   noop:
     name: no stack detected

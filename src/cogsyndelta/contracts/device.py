@@ -19,10 +19,12 @@ class DeviceContext:
 
     @property
     def is_cuda(self) -> bool:
+        """True when the resolved device is CUDA."""
         return self.device.type == "cuda"
 
     @property
     def name(self) -> str:
+        """Stable device label: ``cpu`` or ``cuda:N``."""
         if self.device.type == "cpu":
             return "cpu"
         index = self.device.index if self.device.index is not None else 0

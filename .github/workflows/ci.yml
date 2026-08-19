@@ -21,7 +21,11 @@ env:
   UV_VERSION: "0.7.17"
   # Pre-download dependencies before any firewall/network restrictions
   UV_LINK_MODE: copy
-  UV_COMPILE_BYTECODE: 1
+  UV_COMPILE_BYTECODE: "0"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   lint:
@@ -42,7 +46,7 @@ jobs:
     - name: Install linting tools
       run: |
         uv tool install ruff@${{ env.RUFF_VERSION }}
-        uv tool install mypy@${{ env.MYPY_VERSION }} --with types-PyYAML --with torch --with numpy
+        uv tool install mypy@${{ env.MYPY_VERSION }} --with types-PyYAML
 
     # Individual tool runs for fine-grained fail-fast debugging
     - name: Ruff lint check
@@ -98,6 +102,7 @@ jobs:
     name: Test on Python 3.12
     runs-on: [self-hosted, linux, x64, podman]
     needs: [lint]
+    timeout-minutes: 25
 
     steps:
     - uses: actions/checkout@v6
@@ -121,7 +126,7 @@ jobs:
 
     - name: Run tests with pytest
       run: |
-        uv run pytest tests/ -v --cov=cogsyndelta --cov-report=xml --cov-report=term
+        uv run --no-sync pytest tests/ -v --cov=cogsyndelta --cov-report=xml --cov-report=term
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v5

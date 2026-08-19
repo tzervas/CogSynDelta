@@ -507,6 +507,7 @@ class FisherInformationPredictor(nn.Module):
 
         # Compute Fisher diagonal
         def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
+            """Yield minibatches of 32 for Fisher estimation."""
             for i in range(0, len(train_x), 32):
                 yield train_x[i : i + 32], train_y[i : i + 32]
 
@@ -575,6 +576,7 @@ class FisherInformationPredictor(nn.Module):
         if not self._fisher_cache:
 
             def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
+                """Yield minibatches of 32 for cached Fisher estimation."""
                 for i in range(0, len(train_x), 32):
                     yield train_x[i : i + 32], train_y[i : i + 32]
 

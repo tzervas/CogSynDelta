@@ -49,6 +49,17 @@ def run_compression_bench(
     batch: int = 16,
     seed: int = 42,
 ) -> list[MetricsRecord]:
+    """Run basis-residual and calibrated-quant compactors on random embeddings.
+
+    Args:
+        cfg: Compression hyperparameters.
+        device_ctx: Resolved CPU/CUDA device.
+        batch: Synthetic batch size.
+        seed: RNG seed.
+
+    Returns:
+        One MetricsRecord per compactor.
+    """
     torch.manual_seed(seed)
     x = torch.randn(batch, cfg.embed_dim, device=device_ctx.device)
     records: list[MetricsRecord] = []
