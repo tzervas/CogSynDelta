@@ -238,7 +238,9 @@ class TestModelOptimization:
 
         # Count layers
         original_layers = list(simple_model.modules())
-        optimized_layers = list(optimized.modules())
+        # torch.compile wraps in OptimizedModule; compare the original graph.
+        unwrapped = getattr(optimized, "_orig_mod", optimized)
+        optimized_layers = list(unwrapped.modules())
 
         assert len(original_layers) == len(optimized_layers)
 

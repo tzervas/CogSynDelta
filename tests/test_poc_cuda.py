@@ -33,9 +33,7 @@ def test_device_cuda_resolve() -> None:
 
 def test_train_loss_decreases_cuda() -> None:
     """LatentVAE ELBO last step is below first step on CUDA."""
-    cfg = TrainConfig(
-        steps=40, batch_size=32, hidden_dim=64, latent_dim=8, learning_rate=1e-2
-    )
+    cfg = TrainConfig(steps=40, batch_size=32, hidden_dim=64, latent_dim=8, learning_rate=1e-2)
     ctx = DeviceContext.resolve("cuda")
     result = train_latent_vae(cfg, ctx, seed=123)
     assert result["device"].startswith("cuda")
@@ -46,9 +44,7 @@ def test_train_loss_decreases_cuda() -> None:
 
 def test_compression_bench_cuda() -> None:
     """Basis residual stays high-fidelity on a CUDA tensor."""
-    cfg = CompressionConfig(
-        embed_dim=128, basis_rank=32, quant_bits=8, min_fidelity=0.85
-    )
+    cfg = CompressionConfig(embed_dim=128, basis_rank=32, quant_bits=8, min_fidelity=0.85)
     ctx = DeviceContext.resolve("cuda")
     records = run_compression_bench(cfg, ctx, batch=8, seed=7)
     by_name = {r.name: r for r in records}
