@@ -36,8 +36,8 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python 3.14
-      run: uv python install 3.14
+    - name: Set up Python 3.12
+      run: uv python install 3.12
 
     - name: Install linting tools
       run: |
@@ -66,8 +66,8 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python 3.14
-      run: uv python install 3.14
+    - name: Set up Python 3.12
+      run: uv python install 3.12
 
     - name: Install pre-commit
       run: uv tool install pre-commit
@@ -87,15 +87,15 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python 3.14
-      run: uv python install 3.14
+    - name: Set up Python 3.12
+      run: uv python install 3.12
 
     - name: Run quality checks (90+ required)
       # Quality script uses only stdlib, no dependencies needed
       run: uv run --no-project python scripts/quality_control.py src/ --fail-under 90
 
   test:
-    name: Test on Python 3.14
+    name: Test on Python 3.12
     runs-on: [self-hosted, linux, x64, podman]
     needs: [lint]
 
@@ -108,8 +108,8 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python 3.14
-      run: uv python install 3.14
+    - name: Set up Python 3.12
+      run: uv python install 3.12
 
     - name: Install dependencies with CPU-only PyTorch
       run: |
@@ -150,8 +150,8 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python 3.14
-      run: uv python install 3.14
+    - name: Set up Python 3.12
+      run: uv python install 3.12
 
     - name: Build package
       run: uv build
