@@ -1,6 +1,9 @@
 # Fast PoC CI — contracts + poc only. Prefer while full suite is heavy.
 # cancel-in-progress: false — a prior run was killed after 13m of real work
 # when a later push landed. Self-hosted capacity is limited; finish started jobs.
+#
+# TEMPORARY: runs-on ubuntu-latest while self-hosted runners are offline / not
+# consuming. Restore to [self-hosted, linux, x64, podman] when home-lab is up.
 name: poc-ci
 
 on:
@@ -20,7 +23,8 @@ permissions:
 jobs:
   poc:
     name: PoC contracts + train + compress
-    runs-on: [self-hosted, linux, x64, podman]
+    runs-on: ubuntu-latest
+    # restore when home-lab online: runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
