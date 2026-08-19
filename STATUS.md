@@ -35,7 +35,7 @@ PoC-2 proves **two regions + a real MoE gate**. It is not mHC.
 | Basis residual ratio (stored bytes) | report true ratio | **~1.3–1.6×** (not 10×) | **pass** (honest) |
 | Calibrated 8-bit quant fidelity | ≥0.90 cosine | **0.99999** | **pass** |
 | Device CPU path | works without CUDA | 6/6 tests green | **pass** |
-| Device CUDA path | works when CUDA present | not run on desktop yet | unknown |
+| Device CUDA path | works when CUDA present | RTX 5080 / torch 2.9.1+cu128: see CUDA table below | **pass** |
 
 ## PoC-2 scope
 
@@ -58,6 +58,28 @@ PoC-2 proves **two regions + a real MoE gate**. It is not mHC.
 | Routed-stream 8-bit fidelity | ≥0.90 cosine | **0.999992** | **pass** |
 | Routed-stream 8-bit ratio | report true ratio | **0.735×** (2785 vs 2048 B; tiny batch expands) | **pass** (honest) |
 | PoC tests | all green | **15/15** | **pass** |
+
+## Device CUDA (measured 2026-08-19, RTX 5080)
+
+Hardware: NVIDIA GeForce RTX 5080 (16303 MiB, sm_120), driver 610.57.04,
+torch 2.9.1+cu128, CUDA 12.8. CLI:
+`python -m cogsyndelta.poc.cli {train,compress,route} --device cuda`.
+`tests/test_poc_cuda.py` skips when `torch.cuda.is_available()` is false.
+
+| Claim | Target | Measured | Status |
+|---|---|---|---|
+| LatentVAE train loss decreases | last < first over ≥20 steps | 68.85 → 66.67 (20 steps, seed 42) | **pass** |
+| Basis residual fidelity | ≥0.99 cosine | **1.000** | **pass** |
+| Basis residual ratio (stored bytes) | report true ratio | **1.617×** (20261 vs 32768 B) | **pass** (honest) |
+| Calibrated 8-bit quant fidelity | ≥0.90 cosine | **0.999992** | **pass** |
+| Calibrated 8-bit quant ratio | report true ratio | **2.673×** (12257 vs 32768 B) | **pass** (honest) |
+| Softmax weights sum to 1 | per-token sum == 1 | **1.000** | **pass** |
+| Top-k=1 load is a real split | both regions receive tokens | **0.375 / 0.625** (batch 8, stream_dim 32, seed 42) | **pass** |
+| Routed-stream 8-bit fidelity | ≥0.90 cosine | **0.999995** | **pass** |
+| Routed-stream 8-bit ratio | report true ratio | **0.427×** (2401 vs 1024 B; tiny batch expands) | **pass** (honest) |
+| Device CUDA path | kernels run when CUDA present | train/compress/route CLI + tests | **pass** |
+
+No 10× compression claim. Ratios are original_bytes / stored_bytes.
 
 ## Historical (pre-PoC DenseDifferential, do not market)
 
