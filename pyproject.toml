@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cogsyndelta"
 version = "0.2.0"
-description = "PCN-VAE-GAN hybrid self-improving AI with VL-JEPA, mHC, quantum compute, and production-ready memory management"
+description = "MoE-adjacent one-mind AI: cognitive regions + measured memory compression (PoC: LatentVAE)"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12,<3.14"
 license = {text = "MIT"}
 authors = [
     {name = "tzervas", email = "111450100+tzervas@users.noreply.github.com"}
@@ -17,11 +17,9 @@ keywords = [
     "deep-learning",
     "pytorch",
     "vae",
-    "gan",
-    "predictive-coding",
-    "self-improving-ai",
-    "quantum-computing",
-    "memory-management",
+    "mixture-of-experts",
+    "cognitive-architecture",
+    "memory-compression",
     "cuda",
     "gpu-acceleration"
 ]
@@ -31,31 +29,26 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
 dependencies = [
-    "torch>=2.9.0,<3.0.0",
-    "torchvision>=0.24.0,<1.0.0",
-    "numpy>=2.4.0,<3.0.0",
+    "torch>=2.2.0,<3.0.0",
+    "torchvision>=0.17.0,<1.0.0",
+    "numpy>=1.26.0,<3.0.0",
     "pyyaml>=6.0.0,<7.0.0",
-    "fastapi>=0.128.0,<1.0.0",
-    "uvicorn[standard]>=0.40.0,<1.0.0",
-    "pydantic>=2.12.0,<3.0.0",
-    "python-multipart>=0.0.31,<1.0.0",
-    "websockets>=16.0,<17.0",
-    "llama-index-core>=0.14.0,<1.0.0",
-    "llama-index-embeddings-huggingface>=0.6.0,<1.0.0",
-    "llama-index-vector-stores-faiss>=0.5.0,<1.0.0",
-    "faiss-cpu>=1.9.0,<2.0.0",
-    "httpx>=0.28.0,<1.0.0",
-    "aiohttp>=3.14.1,<4.0.0",  # Security: fixes CVE-2025-30167, CVE-2025-32667 and others
+    "fastapi>=0.110.0,<1.0.0",
+    "uvicorn[standard]>=0.27.0,<1.0.0",
+    "pydantic>=2.6.0,<3.0.0",
+    "python-multipart>=0.0.9,<1.0.0",
+    "websockets>=12.0,<17.0",
+    "httpx>=0.27.0,<1.0.0",
+    "aiohttp>=3.9.0,<4.0.0",
 ]
 
 [project.optional-dependencies]
-# NOTE: Quantum packages (qiskit, pennylane, cirq) not compatible with Python 3.14 yet
-# Install manually with Python 3.13 or earlier if needed
 vision = [
     "opencv-python>=4.10.0,<5.0.0",
     "mss>=10.0.0,<11.0.0",
@@ -66,34 +59,33 @@ audio = [
     "sounddevice>=0.5.0,<1.0.0",
 ]
 gpu-nvidia = [
-    "triton>=3.3.0,<4.0.0",
+    "triton>=3.0.0,<4.0.0",
+]
+rag = [
+    "llama-index-core>=0.14.0,<1.0.0",
+    "llama-index-embeddings-huggingface>=0.6.0,<1.0.0",
+    "llama-index-vector-stores-faiss>=0.5.0,<1.0.0",
+    "faiss-cpu>=1.9.0,<2.0.0",
 ]
 inference-providers = [
-    "openai>=2.15.0,<3.0.0",
-    "anthropic>=0.76.0,<1.0.0",
-    "google-cloud-aiplatform>=1.86.0,<2.0.0",
-    "replicate>=1.0.0,<2.0.0",
-    "together>=1.5.0,<2.0.0",
-    "groq>=1.0.0,<2.0.0",
+    "openai>=1.0.0,<3.0.0",
+    "anthropic>=0.40.0,<1.0.0",
 ]
 all = [
-    "cogsyndelta[vision,audio,gpu-nvidia,inference-providers]"
+    "cogsyndelta[vision,audio,gpu-nvidia,rag,inference-providers]"
 ]
-# Dev dependencies for pip install -e ".[dev]" compatibility
 dev = [
-    "pytest>=9.0.3,<10.0.0",
-    "pytest-cov>=7.0.0,<8.0.0",
-    "pytest-asyncio>=1.3.0,<2.0.0",
-    "pytest-xdist>=3.8.0,<4.0.0",
-    "ruff>=0.14.13,<0.15.0",
-    "mypy>=1.19.0,<2.0.0",
-    "pre-commit>=4.5.0,<5.0.0",
+    "pytest>=8.0.0,<10.0.0",
+    "pytest-cov>=5.0.0,<8.0.0",
+    "pytest-asyncio>=0.23.0,<2.0.0",
+    "ruff>=0.6.0,<0.15.0",
+    "mypy>=1.8.0,<2.0.0",
     "types-PyYAML>=6.0.0,<7.0.0",
 ]
 docs = [
-    "sphinx>=9.0.0,<10.0.0",
-    "sphinx-rtd-theme>=3.1.0,<4.0.0",
-    "myst-parser>=5.0.0,<6.0.0",
+    "sphinx>=7.0.0,<10.0.0",
+    "sphinx-rtd-theme>=2.0.0,<4.0.0",
+    "myst-parser>=3.0.0,<6.0.0",
 ]
 
 [project.urls]
@@ -105,23 +97,21 @@ Issues = "https://github.com/tzervas/CogSynDelta/issues"
 [project.scripts]
 cogsyndelta-server = "cogsyndelta.api.server:main"
 cogsyndelta-benchmark = "benchmarks.run:main"
+cogsyndelta-poc = "cogsyndelta.poc.cli:main"
 
 [dependency-groups]
-# For uv sync --group dev
 dev = [
-    "pytest>=9.0.3,<10.0.0",
-    "pytest-cov>=7.0.0,<8.0.0",
-    "pytest-asyncio>=1.3.0,<2.0.0",
-    "pytest-xdist>=3.8.0,<4.0.0",
-    "ruff>=0.14.13,<0.15.0",
-    "mypy>=1.19.0,<2.0.0",
-    "pre-commit>=4.5.0,<5.0.0",
+    "pytest>=8.0.0,<10.0.0",
+    "pytest-cov>=5.0.0,<8.0.0",
+    "pytest-asyncio>=0.23.0,<2.0.0",
+    "ruff>=0.6.0,<0.15.0",
+    "mypy>=1.8.0,<2.0.0",
     "types-PyYAML>=6.0.0,<7.0.0",
 ]
 docs = [
-    "sphinx>=9.0.0,<10.0.0",
-    "sphinx-rtd-theme>=3.1.0,<4.0.0",
-    "myst-parser>=5.0.0,<6.0.0",
+    "sphinx>=7.0.0,<10.0.0",
+    "sphinx-rtd-theme>=2.0.0,<4.0.0",
+    "myst-parser>=3.0.0,<6.0.0",
 ]
 
 [tool.uv]
@@ -144,152 +134,70 @@ url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-rocm63"
-url = "https://download.pytorch.org/whl/rocm6.3"
-explicit = true
-
-[[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+# Default source for desktop GPU installs; CI uses --no-sources + cpu index
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }
 torchvision = { index = "pytorch-cu128" }
 
 [tool.setuptools]
-packages = ["cogsyndelta"]
 package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.setuptools.package-data]
 cogsyndelta = ["config/*.yaml", "config/*.json"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py314"
-
-# Include src and tests directories
+target-version = "py312"
 include = ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py", "benchmarks/**/*.py"]
-exclude = [
-    ".git",
-    ".venv",
-    "venv",
-    "__pycache__",
-    "*.egg-info",
-    "build",
-    "dist",
-]
+exclude = [".git", ".venv", "venv", "__pycache__", "*.egg-info", "build", "dist"]
 
 [tool.ruff.format]
-# Use ruff format instead of black
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.ruff.lint]
-# Balanced rule set: high quality without being pedantic
-select = [
-    "E",      # pycodestyle errors
-    "F",      # pyflakes
-    "I",      # isort
-    "N",      # pep8-naming
-    "W",      # pycodestyle warnings
-    "UP",     # pyupgrade
-    "B",      # flake8-bugbear
-    "C4",     # flake8-comprehensions
-    "SIM",    # flake8-simplify
-    "S",      # flake8-bandit (security)
-    "RET",    # flake8-return
-    "PTH",    # flake8-use-pathlib
-    "PL",     # pylint subset
-    "RUF",    # ruff-specific rules
-]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "S", "RET", "PTH", "PL", "RUF"]
 ignore = [
-    "E501",   # line too long (handled by formatter)
-    "S101",   # assert usage (fine in tests and early dev)
-    "S104",   # binding to all interfaces (needed for servers)
-    "S603",   # subprocess without shell=True check
-    "PLR0913", # too many arguments (too pedantic for early dev)
-    "PLR2004", # magic value comparison (too pedantic)
-    "PLR0912", # too many branches (complexity handled by quality script)
-    "PLR0915", # too many statements (complexity handled by quality script)
-    "RET504", # unnecessary assignment before return (sometimes clearer)
-    "RUF001", # ambiguous unicode in string (intentional math symbols)
-    "RUF002", # ambiguous unicode in docstring (intentional math symbols)
-    "RUF003", # ambiguous unicode in comment (intentional math symbols)
-    "N812",   # lowercase imported as non-lowercase (F is common for functional)
-    "PLC0415", # import outside top-level (sometimes needed for optional deps)
-    "UP008",  # super-call-with-parameters (explicit can be clearer)
-    "PTH123", # builtin-open (pathlib open not always better)
-    "PTH118", # os-path-join (pathlib not always better for simple cases)
-    "PTH103", # os-makedirs (pathlib not always better)
-    "PTH207", # glob (pathlib glob not always better)
-    "B007",   # unused loop control variable (underscore convention handled)
-    "PLR1722", # sys.exit vs exit (minor)
-    # Early development relaxations - tighten later
-    "RUF013", # implicit Optional (common in early dev)
-    "RUF059", # unused unpacked variable (often used for destructuring)
-    "N806",   # variable name should be lowercase (tensor dims are often uppercase)
-    "N801",   # class name should use CapWords (mHC is intentional naming)
-    "B904",   # raise without from (minor - can add later)
-    "B905",   # zip without strict (minor - can add later)
-    "B006",   # mutable default argument (valid issue but common pattern)
-    "S310",   # suspicious URL open (needed for fetching docs)
-    "S301",   # pickle security (internal use only)
-    "SIM102", # nested if (sometimes more readable)
-    "SIM103", # needless bool (sometimes clearer)
-    "SIM108", # ternary (sometimes if-else is clearer)
-    "SIM118", # dict.keys() (sometimes clearer)
-    "PLW2901", # loop variable overwritten (common pattern for processing)
-    "PLW0603", # global statement (sometimes needed)
-    "RET503", # missing explicit return (sometimes cleaner)
-    "B028",   # no explicit stacklevel (minor)
-    "C414",   # unnecessary list in sorted (minor)
-    "E722",   # bare except (sometimes needed)
-    "RUF005", # collection literal concat (minor style)
+    "E501", "S101", "S104", "S603", "PLR0913", "PLR2004", "PLR0912", "PLR0915",
+    "RET504", "RUF001", "RUF002", "RUF003", "N812", "PLC0415", "UP008",
+    "PTH123", "PTH118", "PTH103", "PTH207", "B007", "PLR1722",
+    "RUF013", "RUF059", "N806", "N801", "B904", "B905", "B006",
+    "S310", "S301", "SIM102", "SIM103", "SIM108", "SIM118",
+    "PLW2901", "PLW0603", "RET503", "B028", "C414", "E722", "RUF005",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "PLR2004"]  # Allow asserts and magic values in tests
-"scripts/**/*.py" = ["S603", "S607"]   # Allow subprocess in scripts
-"benchmarks/**/*.py" = ["F841"]        # Allow unused variables in benchmarks (timing loops)
-"examples/**/*.py" = ["F841"]          # Allow unused variables in examples (demos)
+"tests/**/*.py" = ["S101", "PLR2004"]
+"scripts/**/*.py" = ["S603", "S607"]
+"benchmarks/**/*.py" = ["F841"]
+"examples/**/*.py" = ["F841"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["cogsyndelta"]
 
 [tool.mypy]
-python_version = "3.14"
-warn_return_any = false  # Relaxed for early development
+python_version = "3.12"
+warn_return_any = false
 warn_unused_configs = true
-disallow_untyped_defs = false  # Relaxed for early development
-check_untyped_defs = false  # Relaxed for early development
-disallow_incomplete_defs = false  # Relaxed for early development
+disallow_untyped_defs = false
+check_untyped_defs = false
+disallow_incomplete_defs = false
 disallow_untyped_calls = false
 warn_redundant_casts = true
-warn_unused_ignores = false  # Relaxed - ignores may be version-specific
-strict_optional = false  # Relaxed for early development
-ignore_missing_imports = true  # Many deps may lack stubs
-no_implicit_optional = false  # Allow implicit Optional for early dev
-
-# Exclude problematic paths from mypy checking
-exclude = [
-    "tests/",
-    "benchmarks/",
-    "examples/",
-    "scripts/",
-]
+warn_unused_ignores = false
+strict_optional = false
+ignore_missing_imports = true
+no_implicit_optional = false
+exclude = ["tests/", "benchmarks/", "examples/", "scripts/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -299,9 +207,6 @@ python_functions = ["test_*"]
 addopts = "-v --tb=short"
 asyncio_mode = "auto"
 
-# =============================================================================
-# Semantic Release Configuration
-# =============================================================================
 [tool.semantic_release]
 version_variables = ["src/cogsyndelta/__init__.py:__version__"]
 version_toml = ["pyproject.toml:project.version"]
@@ -316,11 +221,6 @@ tag_format = "v{version}"
 match = "main"
 prerelease = false
 
-[tool.semantic_release.branches.staging]
-match = "staging"
-prerelease = true
-prerelease_token = "rc"
-
 [tool.semantic_release.branches.develop]
 match = "develop"
 prerelease = true
@@ -332,21 +232,4 @@ minor_tags = ["feat"]
 patch_tags = ["fix", "perf"]
 
 [tool.semantic_release.changelog]
-template_dir = "templates"
 changelog_file = "CHANGELOG.md"
-
-# =============================================================================
-# Pydocstyle Configuration
-# =============================================================================
-[tool.pydocstyle]
-convention = "google"
-# D100: Missing docstring in public module
-# D104: Missing docstring in public package
-# D105: Missing docstring in magic method
-# D107: Missing docstring in __init__
-# D212: Multi-line docstring summary should start at first line (conflicts with D213)
-# D205: 1 blank line required between summary line and description
-# D415: First line should end with punctuation (too pedantic for early dev)
-add-ignore = ["D100", "D104", "D105", "D107", "D212", "D205", "D415"]
-match = "(?!test_).*\\.py"
-match-dir = "^(?!tests|benchmarks|examples).*"
