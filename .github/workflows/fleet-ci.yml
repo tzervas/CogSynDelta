@@ -1,4 +1,5 @@
 # Fleet standard CI — self-hosted. Honest status: pytest failure fails the job.
+# cancel-in-progress: false — rapid pushes were killing 13m+ in-flight work.
 name: fleet-ci
 
 on:
@@ -10,7 +11,7 @@ on:
 
 concurrency:
   group: fleet-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
