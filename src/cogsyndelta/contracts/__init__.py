@@ -10,10 +10,12 @@ from cogsyndelta.contracts.compactor import (
 from cogsyndelta.contracts.config import CompressionConfig, DevicePrefer, PocConfig, TrainConfig
 from cogsyndelta.contracts.device import DeviceContext
 from cogsyndelta.contracts.metrics import MetricsRecord, MetricsStatus, write_metrics_json
+from cogsyndelta.contracts.region import CognitiveRegion
 
 __all__ = [
     "BasisResidualCompactor",
     "CalibratedQuantCompactor",
+    "CognitiveRegion",
     "CompactBlob",
     "Compactor",
     "CompressionConfig",

@@ -1,14 +1,8 @@
 """
-CogSynDelta: PCN-VAE-GAN Hybrid Self-Improving AI
+CogSynDelta: MoE-adjacent one-mind architecture.
 
-A production-ready self-improving AI system combining:
-- Predictive Coding Networks (PCN)
-- Variational Autoencoders (VAE)
-- Generative Adversarial Networks (GAN)
-- Vision-Language Joint Embedding Predictive Architecture (VL-JEPA)
-- Moderated Hyper Connections (mHC)
-- Quantum Computing Integration
-- Production-grade Memory Management
+Cognitive regions (expert-like modules) share a compressed memory substrate
+and optional DeviceContext (cpu|cuda|auto). PoC path: LatentVAE + measured compression.
 """
 
 __version__ = "0.2.0"

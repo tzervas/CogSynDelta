@@ -1,12 +1,11 @@
-# Fleet standard CI — self-hosted. Honest status on trunk via Actions badge.
-# See docs/FLEET_STANDARDS.md (or plans/fractal/P26_FLEET_STANDARDS.md).
+# Fleet standard CI — self-hosted. Honest status: pytest failure fails the job.
 name: fleet-ci
 
 on:
   push:
-    branches: [main, master, dev]
+    branches: [main, master, dev, develop]
   pull_request:
-    branches: [main, master, dev]
+    branches: [main, master, dev, develop]
   workflow_dispatch:
 
 concurrency:
@@ -33,7 +32,6 @@ jobs:
           if [ -f pyproject.toml ] || [ -f requirements.txt ] || [ -f setup.py ]; then python=true; fi
           echo "rust=$rust" >> "$GITHUB_OUTPUT"
           echo "python=$python" >> "$GITHUB_OUTPUT"
-          echo "Detected rust=$rust python=$python"
 
   rust:
     name: cargo check/test
@@ -52,6 +50,7 @@ jobs:
     needs: detect
     if: needs.detect.outputs.python == 'true'
     runs-on: [self-hosted, linux, x64, podman]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -59,28 +58,24 @@ jobs:
         with:
           version: "latest"
           enable-cache: true
-      - name: Sync (best-effort)
+      - name: Sync (CPU torch)
         run: |
           set -euo pipefail
+          uv python install 3.12 || true
           if [ -f uv.lock ] || [ -f pyproject.toml ]; then
-            uv sync --all-groups 2>/dev/null || uv sync 2>/dev/null || true
+            uv sync --group dev --no-sources \
+              --extra-index-url https://download.pytorch.org/whl/cpu \
+              --index-strategy unsafe-best-match || uv sync --group dev
           fi
-      - name: Ruff (if configured)
+      - name: Ruff (poc surface)
         run: |
           set -euo pipefail
-          if [ -f pyproject.toml ] && grep -q '\[tool.ruff' pyproject.toml 2>/dev/null; then
-            uv run ruff check . || python -m ruff check .
-          else
-            echo "ruff not configured — skip"
-          fi
-      - name: Pytest (if tests exist)
+          uv run ruff check src/cogsyndelta/contracts src/cogsyndelta/poc \
+            tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py
+      - name: Pytest PoC (must fail job on failure)
         run: |
           set -euo pipefail
-          if [ -d tests ] || [ -d test ]; then
-            uv run pytest -q 2>/dev/null || pytest -q 2>/dev/null || echo "pytest failed or missing — mark job fail" >&2
-          else
-            echo "no tests/ directory — skip"
-          fi
+          uv run pytest tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py -q --tb=short
 
   noop:
     name: no stack detected
@@ -89,5 +84,5 @@ jobs:
     runs-on: [self-hosted, linux, x64, podman]
     steps:
       - run: |
-          echo "No Cargo.toml / pyproject detected. fleet-ci reports success with no gates."
-          echo "Add stack files or a product-specific CI job for real coverage."
+          echo "No stack detected."
+          exit 1
