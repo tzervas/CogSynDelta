@@ -1,5 +1,7 @@
 # Fleet standard CI — self-hosted. Honest status: pytest failure fails the job.
 # cancel-in-progress: false — rapid pushes were killing 13m+ in-flight work.
+# Work rootfs: fleet gha-work image (ap-fleet-work-images) via host GHA_IMAGE.
+# runs-on labels match fleet agent defaults.
 name: fleet-ci
 
 on:
@@ -62,6 +64,7 @@ jobs:
       - name: Sync (CPU torch)
         run: |
           set -euo pipefail
+          # Keep within requires-python (>=3.12,<3.14)
           uv python install 3.12 || true
           if [ -f uv.lock ] || [ -f pyproject.toml ]; then
             uv sync --group dev --no-sources \

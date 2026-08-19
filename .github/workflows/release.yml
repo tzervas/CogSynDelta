@@ -1,10 +1,12 @@
 # Release Workflow for CogSynDelta
 # Triggers on merge to main, creates releases with semantic versioning
 # Builds artifacts but does NOT publish to PyPI (requires explicit approval)
+#
+# Work rootfs: fleet gha-work image (ap-fleet-work-images) via host GHA_IMAGE.
+# runs-on labels match fleet agent defaults.
 
 name: Release
 
-# Manual only — no push/pull_request CI triggers
 on:
   workflow_dispatch:
     inputs:
@@ -21,6 +23,7 @@ concurrency:
 
 env:
   UV_VERSION: "0.7.17"
+  PYTHON_VERSION: "3.12"
 
 jobs:
   # Check if release is needed (skip for docs-only changes)
@@ -84,8 +87,8 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
 
-      - name: Set up Python 3.14
-        run: uv python install 3.14
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
         run: uv sync --group dev

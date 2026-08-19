@@ -2,8 +2,8 @@
 # cancel-in-progress: false — a prior run was killed after 13m of real work
 # when a later push landed. Self-hosted capacity is limited; finish started jobs.
 #
-# Runs on fleet self-hosted runners (labels match gha-runner-ctl / ap-fleet-work-images
-# gha-work image: Ubuntu 24.04, uv, gitleaks, gh, Rust, UID 1001).
+# runs-on labels match fleet agent defaults; work rootfs is the shared
+# gha-work image (ap-fleet-work-images) via host GHA_IMAGE.
 name: poc-ci
 
 on:

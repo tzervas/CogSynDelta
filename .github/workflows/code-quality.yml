@@ -1,14 +1,17 @@
 # Third-party code quality analysis for CogSynDelta (Private Repository)
 # Integrates with CodeClimate and SonarCloud for external validation
+#
+# Work rootfs: fleet gha-work image (ap-fleet-work-images) via host GHA_IMAGE.
+# runs-on labels match fleet agent defaults.
 
 name: Code Quality
 
-# Manual only — no push/pull_request CI triggers
 on:
   workflow_dispatch:
 
 env:
   UV_VERSION: "0.7.17"
+  PYTHON_VERSION: "3.12"
 
 jobs:
   # CodeClimate integration (requires CC_TEST_REPORTER_ID secret)
@@ -29,7 +32,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.14
+        run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
         run: |
@@ -73,7 +76,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.14
+        run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
         run: |
@@ -97,7 +100,7 @@ jobs:
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.sources=src/
             -Dsonar.tests=tests/
-            -Dsonar.python.version=3.14
+            -Dsonar.python.version=3.12
 
   # Internal quality metrics (always runs)
   quality-metrics:
@@ -115,7 +118,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.14
+        run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install analysis tools
         run: |

@@ -1,9 +1,11 @@
 # Documentation Generation Workflow
 # Auto-generates API documentation using pdoc and deploys to GitHub Pages
+#
+# Work rootfs: fleet gha-work image (ap-fleet-work-images) via host GHA_IMAGE.
+# runs-on labels match fleet agent defaults.
 
 name: Documentation
 
-# Manual only — no push/pull_request CI triggers
 on:
   push:
     branches:
@@ -28,6 +30,7 @@ concurrency:
 
 env:
   UV_VERSION: "0.7.17"
+  PYTHON_VERSION: "3.12"
 
 jobs:
   build:
@@ -43,8 +46,8 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
 
-      - name: Set up Python 3.14
-        run: uv python install 3.14
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
         run: |

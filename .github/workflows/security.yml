@@ -12,7 +12,8 @@
 # - ENABLE_DEPENDENCY_REVIEW: 'true' to run dependency review (requires GHAS)
 # - ENABLE_SNYK: 'true' to run Snyk scans (requires SNYK_TOKEN secret)
 #
-# Runs on fleet self-hosted (gha-work image: Ubuntu 24.04, uv, gitleaks, UID 1001).
+# Work rootfs: fleet gha-work image (ap-fleet-work-images) via host GHA_IMAGE.
+# runs-on labels match fleet agent defaults.
 
 name: Security
 
@@ -29,6 +30,7 @@ on:
       - develop
   workflow_dispatch:
 
+# Restrict permissions for security
 permissions:
   contents: read
   security-events: write
@@ -36,12 +38,18 @@ permissions:
 
 env:
   UV_VERSION: "0.7.17"
+  PYTHON_VERSION: "3.12"
 
 jobs:
+  # CodeQL Static Analysis (SAST)
+  # NOTE: CodeQL analysis runs successfully but upload requires GitHub Advanced Security (GHAS)
+  # For private repos without GHAS, set ENABLE_CODEQL_UPLOAD='false' to skip upload step
+  # Analysis results are saved as artifacts when upload is disabled
   codeql:
     name: CodeQL Analysis
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 30
+    # Only run if code scanning is enabled (set ENABLE_CODEQL=true in repo variables)
     if: ${{ vars.ENABLE_CODEQL == 'true' }}
 
     steps:
@@ -52,7 +60,9 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: python
+          # Use extended queries for more thorough analysis
           queries: security-extended,security-and-quality
+          # Config for private repo - no code upload
           config: |
             paths-ignore:
               - tests
@@ -67,7 +77,10 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:python"
+          # Only upload if GHAS is enabled (requires paid GHAS for private repos)
+          # Set ENABLE_CODEQL_UPLOAD='true' in repo variables if GHAS is available
           upload: ${{ vars.ENABLE_CODEQL_UPLOAD == 'true' }}
+          # Save SARIF results as artifact when upload is disabled
           output: sarif-results
 
       - name: Upload SARIF as artifact (when GHAS upload disabled)
@@ -78,9 +91,13 @@ jobs:
           path: sarif-results
           retention-days: 30
 
+  # Dependency Review (PR only)
+  # Requires GitHub Advanced Security (paid for private repos)
+  # Enable at: Settings > Security > Code security and analysis > Dependency graph
   dependency-review:
     name: Dependency Review
     runs-on: [self-hosted, linux, x64, podman]
+    # Only run on PRs AND when GHAS is enabled (set ENABLE_DEPENDENCY_REVIEW=true)
     if: github.event_name == 'pull_request' && vars.ENABLE_DEPENDENCY_REVIEW == 'true'
 
     steps:
@@ -90,12 +107,16 @@ jobs:
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
         with:
+          # Fail on high/critical vulnerabilities
           fail-on-severity: high
+          # Allow permissive licenses (deny all others by default)
           allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0, Unlicense, WTFPL, CC0-1.0, 0BSD
 
+  # Snyk Security Scan (requires SNYK_TOKEN secret)
   snyk:
     name: Snyk Security Scan
     runs-on: [self-hosted, linux, x64, podman]
+    # Only run if SNYK_TOKEN is configured
     if: ${{ vars.ENABLE_SNYK == 'true' }}
 
     steps:
@@ -108,7 +129,7 @@ jobs:
           version: ${{ env.UV_VERSION }}
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Generate requirements for Snyk
         run: |
@@ -129,6 +150,7 @@ jobs:
           sarif_file: snyk.sarif
         continue-on-error: true
 
+  # Python-specific security checks (always runs)
   python-security:
     name: Python Security Checks
     runs-on: [self-hosted, linux, x64, podman]
@@ -143,7 +165,7 @@ jobs:
           version: ${{ env.UV_VERSION }}
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install security tools
         run: |
@@ -152,7 +174,9 @@ jobs:
 
       - name: Run Bandit security linter
         run: |
+          # Run bandit for JSON report (always succeeds)
           uv tool run bandit -r src/ -f json -o bandit-report.json || echo "Bandit found issues (see report)"
+          # Run bandit for human output (-ll = only medium+, -ii = only medium+ confidence)
           uv tool run bandit -r src/ -ll -ii || echo "::notice::Bandit found potential security issues. Review bandit-report.json artifact."
 
       - name: Run pip-audit for known vulnerabilities
