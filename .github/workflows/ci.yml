@@ -1,6 +1,7 @@
 name: CI/CD Pipeline
 
-# Manual only — no push/pull_request CI triggers
+# Expects fleet gha-work image (uv, gitleaks, Ubuntu 24.04, UID 1001)
+# from ap-fleet-work-images via runner-ctl GHA_IMAGE / image-map.
 on:
   push:
     branches:
@@ -16,11 +17,9 @@ on:
 
 env:
   # Pin tool versions for consistency between local and CI
-  # Python must stay within requires-python (>=3.12,<3.14) from pyproject.toml
   RUFF_VERSION: "0.14.13"
   MYPY_VERSION: "1.19.1"
   UV_VERSION: "0.7.17"
-  PYTHON_VERSION: "3.12"
   # Pre-download dependencies before any firewall/network restrictions
   UV_LINK_MODE: copy
   UV_COMPILE_BYTECODE: 1
@@ -38,8 +37,8 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python
-      run: uv python install ${{ env.PYTHON_VERSION }}
+    - name: Set up Python 3.12
+      run: uv python install 3.12
 
     - name: Install linting tools
       run: |
@@ -68,8 +67,8 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python
-      run: uv python install ${{ env.PYTHON_VERSION }}
+    - name: Set up Python 3.12
+      run: uv python install 3.12
 
     - name: Install pre-commit
       run: uv tool install pre-commit
@@ -89,15 +88,15 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python
-      run: uv python install ${{ env.PYTHON_VERSION }}
+    - name: Set up Python 3.12
+      run: uv python install 3.12
 
     - name: Run quality checks (90+ required)
       # Quality script uses only stdlib, no dependencies needed
       run: uv run --no-project python scripts/quality_control.py src/ --fail-under 90
 
   test:
-    name: Test on Python ${{ env.PYTHON_VERSION }}
+    name: Test on Python 3.12
     runs-on: [self-hosted, linux, x64, podman]
     needs: [lint]
 
@@ -110,8 +109,8 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python
-      run: uv python install ${{ env.PYTHON_VERSION }}
+    - name: Set up Python 3.12
+      run: uv python install 3.12
 
     - name: Install dependencies with CPU-only PyTorch
       run: |
@@ -152,8 +151,8 @@ jobs:
         version: ${{ env.UV_VERSION }}
         enable-cache: true
 
-    - name: Set up Python
-      run: uv python install ${{ env.PYTHON_VERSION }}
+    - name: Set up Python 3.12
+      run: uv python install 3.12
 
     - name: Build package
       run: uv build

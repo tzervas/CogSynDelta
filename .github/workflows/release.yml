@@ -2,8 +2,8 @@
 # Triggers on merge to main, creates releases with semantic versioning
 # Builds artifacts but does NOT publish to PyPI (requires explicit approval)
 #
-# Work rootfs: fleet gha-work image (ap-fleet-work-images) via host GHA_IMAGE.
-# runs-on labels match fleet agent defaults.
+# Expects fleet gha-work image (uv, gitleaks, Ubuntu 24.04, UID 1001)
+# from ap-fleet-work-images via runner-ctl GHA_IMAGE / image-map.
 
 name: Release
 
@@ -23,7 +23,6 @@ concurrency:
 
 env:
   UV_VERSION: "0.7.17"
-  PYTHON_VERSION: "3.12"
 
 jobs:
   # Check if release is needed (skip for docs-only changes)
@@ -87,8 +86,8 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
 
-      - name: Set up Python
-        run: uv python install ${{ env.PYTHON_VERSION }}
+      - name: Set up Python 3.12
+        run: uv python install 3.12
 
       - name: Install dependencies
         run: uv sync --group dev

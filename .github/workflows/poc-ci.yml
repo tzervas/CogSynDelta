@@ -2,8 +2,8 @@
 # cancel-in-progress: false — a prior run was killed after 13m of real work
 # when a later push landed. Self-hosted capacity is limited; finish started jobs.
 #
-# runs-on labels match fleet agent defaults; work rootfs is the shared
-# gha-work image (ap-fleet-work-images) via host GHA_IMAGE.
+# Expects fleet gha-work image (uv, gitleaks, Ubuntu 24.04, UID 1001)
+# from ap-fleet-work-images via runner-ctl GHA_IMAGE / image-map.
 name: poc-ci
 
 on:
@@ -26,10 +26,10 @@ jobs:
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true
