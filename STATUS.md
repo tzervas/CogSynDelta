@@ -1,4 +1,4 @@
-# CogSynDelta Status (PoC-1)
+# CogSynDelta Status (PoC-1 + PoC-2)
 
 Single source of truth for **targets vs measured vs gaps**.
 Generated from local container CI 2026-08-19.
@@ -10,12 +10,12 @@ CogSynDelta is **MoE-adjacent, not multi-agent**:
 | MoE concept | CSD analog |
 |---|---|
 | Expert | Cognitive **region** (module of one mind) |
-| Gating / router | Interconnect / moderated hyper-connection (later) |
+| Gating / router | Softmax top-k (PoC-2). Interconnect / mHC **later** |
 | Shared residual stream | Shared latent + compressed memory substrate |
 | — | Explore → cull → meta-optimize control loop |
 
 PoC-1 proves the **substrate**: one region (LatentVAE) + measured memory compression + DeviceContext.
-Multi-region routing and the control loop come after the substrate has real numbers.
+PoC-2 proves **two regions + a real MoE gate**. It is not mHC.
 
 ## PoC-1 scope
 
@@ -26,7 +26,7 @@ Multi-region routing and the control loop come after the substrate has real numb
 | Measured compression (bytes round-trip) | Quantum backends |
 | Home-lab CPU CI | RTX 5080 as CI requirement |
 
-## Claims table (measured 2026-08-19, CPU)
+## PoC-1 claims (measured 2026-08-19, CPU)
 
 | Claim | Target | Measured | Status |
 |---|---|---|---|
@@ -36,6 +36,28 @@ Multi-region routing and the control loop come after the substrate has real numb
 | Calibrated 8-bit quant fidelity | ≥0.90 cosine | **0.99999** | **pass** |
 | Device CPU path | works without CUDA | 6/6 tests green | **pass** |
 | Device CUDA path | works when CUDA present | not run on desktop yet | unknown |
+
+## PoC-2 scope
+
+| In scope | Out of scope |
+|---|---|
+| `CognitiveRegion.activate(stream) → [B, D]` | Changing LatentVAE train `forward` tuple |
+| `RegionRegistry` register / get / duplicate reject | AgentFleet / marketplace |
+| ResidualMLP + stream-dim LatentVAE | More than two regions |
+| Softmax top-k mix (MoE gate) | mHC / moderated interconnect |
+| Optional 8-bit compact of routed stream | Aux load-balance loss / training the gate |
+
+## PoC-2 claims (measured 2026-08-19, CPU)
+
+| Claim | Target | Measured | Status |
+|---|---|---|---|
+| Both regions satisfy CognitiveRegion | isinstance + activate shape | ResidualMLP + LatentVAE | **pass** |
+| LatentVAE.forward still ELBO tuple | (recon, mu, logvar) | train path unchanged | **pass** |
+| Softmax weights sum to 1 | per-token sum == 1 | **1.000** | **pass** |
+| Top-k=1 load is a real split | both regions receive tokens | **0.375 / 0.625** (batch 8) | **pass** |
+| Routed-stream 8-bit fidelity | ≥0.90 cosine | **0.999992** | **pass** |
+| Routed-stream 8-bit ratio | report true ratio | **0.735×** (2785 vs 2048 B; tiny batch expands) | **pass** (honest) |
+| PoC tests | all green | **15/15** | **pass** |
 
 ## Historical (pre-PoC DenseDifferential, do not market)
 

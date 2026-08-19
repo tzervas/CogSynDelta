@@ -6,7 +6,8 @@ CSD is closer to Mixture-of-Experts than to a multi-agent swarm:
 - Shared compressed memory is the substrate all regions read/write
 - Explore → cull → meta-optimize is cognitive control over the whole mind
 
-PoC-1 ships one trainable region (LatentVAE) + shared memory compactors.
+The protocol surface is ``activate(stream) -> [B, D]``. Train-time
+``forward`` on a region (e.g. LatentVAE ELBO tuple) is a separate API.
 Do not introduce AgentFleet / SWE-agent modules on this surface.
 """
 
@@ -21,12 +22,15 @@ import torch
 class CognitiveRegion(Protocol):
     """One specialist module of a single mind.
 
-    Implementations are neural regions (VAE encoder, vision encoder, planner head),
-    not autonomous agents with their own tools and identity.
+    Implementations are neural regions (VAE encoder, residual MLP, later
+    vision / planner heads), not autonomous agents with tools and identity.
     """
 
     name: str
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Region forward pass on a shared-device tensor."""
+    def activate(self, stream: torch.Tensor) -> torch.Tensor:
+        """Map shared stream ``[B, D]`` to same-shaped ``[B, D]``.
+
+        This is the routing surface. It is not the train-loss forward.
+        """
         ...
