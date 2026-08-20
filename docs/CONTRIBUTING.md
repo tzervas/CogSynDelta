@@ -34,6 +34,9 @@ Be respectful, inclusive, and professional in all interactions.
 
 ## Development Setup
 
+Python floor is **3.12** (`requires-python = ">=3.12,<3.14"`). Do not install 3.14
+for this tree.
+
 ```bash
 # Install uv (if not already installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -42,30 +45,23 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/tzervas/CogSynDelta.git
 cd CogSynDelta
 
-# Install all dependencies (uv handles Python 3.14 automatically)
-uv sync
+# Create .venv (uv reads .python-version → 3.12)
+uv sync --group dev
 
-# Install pre-commit hooks
-uv run pre-commit install
-
-# Run tests
-uv run pytest tests/ -v
-
-# Run benchmarks
-uv run cogsyndelta-benchmark
+# Same gates as GitHub Actions (lint, mypy, quality>=90, poc-ci, full pytest)
+# Run this before every push. --cpu matches CI torch wheels; default is cu128.
+./scripts/ci_local.sh
+./scripts/ci_local.sh --poc          # fast loop
+./scripts/ci_local.sh --cpu          # exact CI CPU-torch sync
 ```
 
 ### Using uvx for Development Tools
 
 ```bash
-# Linting (runs in isolated environment)
-uvx ruff check src/ tests/
-
-# Formatting
-uvx black src/ tests/
-
-# Type checking (uses project config)
-uv run mypy src/
+# Versions pinned to .github/workflows/ci.yml
+uvx ruff@0.14.13 check src/ tests/ benchmarks/ scripts/ examples/
+uvx ruff@0.14.13 format --check src/ tests/ benchmarks/ scripts/ examples/
+uvx mypy@1.19.1 --with types-PyYAML src/
 ```
 
 ## Coding Standards
