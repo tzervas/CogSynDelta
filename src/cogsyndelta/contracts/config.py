@@ -42,6 +42,21 @@ class RouteConfig(BaseModel):
     compact: bool = True
 
 
+class RouteTrainConfig(BaseModel):
+    """Train the softmax gate (and optionally regions) with Switch aux LB."""
+
+    stream_dim: int = 16
+    hidden_dim: int = 32
+    latent_dim: int = 4
+    top_k: int = Field(default=1, ge=1)
+    batch_size: int = 8
+    eval_batch_size: int = Field(default=8, ge=1)
+    steps: int = 40
+    learning_rate: float = 1e-2
+    aux_coef: float = Field(default=1.0, ge=0.0)
+    train_regions: bool = True
+
+
 class PocConfig(BaseModel):
     """Top-level PoC config."""
 
@@ -49,4 +64,5 @@ class PocConfig(BaseModel):
     train: TrainConfig = Field(default_factory=TrainConfig)
     compression: CompressionConfig = Field(default_factory=CompressionConfig)
     route: RouteConfig = Field(default_factory=RouteConfig)
+    route_train: RouteTrainConfig = Field(default_factory=RouteTrainConfig)
     seed: int = 42

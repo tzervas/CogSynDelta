@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   poc:
-    name: PoC contracts + train + compress + route
+    name: PoC contracts + train + compress + route + train-route
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 25
     steps:
@@ -48,12 +48,14 @@ jobs:
         run: |
           uv run --no-sync ruff check src/cogsyndelta/contracts src/cogsyndelta/poc \
             tests/test_poc_contracts.py tests/test_poc_train.py \
-            tests/test_poc_compress.py tests/test_poc_registry.py
+            tests/test_poc_compress.py tests/test_poc_registry.py \
+            tests/test_poc_route_train.py
 
       - name: Pytest PoC
         run: |
           uv run --no-sync pytest tests/test_poc_contracts.py tests/test_poc_train.py \
-            tests/test_poc_compress.py tests/test_poc_registry.py -q --tb=short
+            tests/test_poc_compress.py tests/test_poc_registry.py \
+            tests/test_poc_route_train.py -q --tb=short
 
       - name: CLI smoke
         run: |
@@ -61,3 +63,4 @@ jobs:
           uv run --no-sync python -m cogsyndelta.poc.cli train --device cpu --steps 10 --checkpoint /tmp/poc_vae.pt
           uv run --no-sync python -m cogsyndelta.poc.cli compress --device cpu --batch 4
           uv run --no-sync python -m cogsyndelta.poc.cli route --device cpu --batch 8
+          uv run --no-sync python -m cogsyndelta.poc.cli train-route --device cpu --steps 10

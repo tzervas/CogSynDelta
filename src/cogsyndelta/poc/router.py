@@ -86,3 +86,51 @@ class SoftmaxRouter(nn.Module):
             region_names=names,
             load=load,
         )
+
+
+def switch_aux_load_balance(weights: Tensor, topk_index: Tensor) -> Tensor:
+    """Switch-Transformer load-balance: ``N * sum_i(f_i * P_i)``.
+
+    For a batch of ``T`` tokens and ``N`` regions:
+
+    - ``P_i`` is the mean softmax probability on region ``i``
+    - ``f_i`` is the fraction of tokens whose top-k includes ``i``
+
+    Uniform routing yields ``1.0``. Collapse onto one region yields ``N``.
+
+    Why: Softmax top-k without an auxiliary term sends every token to the
+    currently-better region. Switch (Fedus et al., 2021) balances token
+    fraction against probability mass so both regions stay in use.
+
+    Args:
+        weights: Softmax router probabilities ``[T, N]``.
+        topk_index: Hard dispatch indices ``[T, K]`` from ``torch.topk``.
+
+    Returns:
+        Scalar tensor ``N * sum(f_i * P_i)``.
+
+    Raises:
+        ValueError: If ranks or batch sizes do not match.
+    """
+    if weights.ndim != 2:
+        raise ValueError(f"weights must be [T, N], got {tuple(weights.shape)}")
+    if topk_index.ndim != 2:
+        raise ValueError(f"topk_index must be [T, K], got {tuple(topk_index.shape)}")
+    if topk_index.size(0) != weights.size(0):
+        raise ValueError(
+            f"batch mismatch: weights {tuple(weights.shape)} vs "
+            f"topk_index {tuple(topk_index.shape)}"
+        )
+    n_regions = weights.size(-1)
+    dispatch = torch.zeros(
+        weights.size(0),
+        n_regions,
+        device=weights.device,
+        dtype=weights.dtype,
+    )
+    ones = torch.ones_like(topk_index, dtype=weights.dtype)
+    dispatch.scatter_add_(1, topk_index, ones)
+    dispatch = dispatch.clamp_max(1.0)
+    token_frac = dispatch.mean(dim=0)
+    prob_frac = weights.mean(dim=0)
+    return n_regions * (token_frac * prob_frac).sum()

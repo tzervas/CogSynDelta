@@ -12,6 +12,7 @@ from cogsyndelta.contracts.config import (
     DevicePrefer,
     PocConfig,
     RouteConfig,
+    RouteTrainConfig,
     TrainConfig,
 )
 from cogsyndelta.contracts.device import DeviceContext
@@ -33,6 +34,7 @@ __all__ = [
     "PocConfig",
     "RegionRegistry",
     "RouteConfig",
+    "RouteTrainConfig",
     "TrainConfig",
     "measured_fidelity",
     "write_metrics_json",

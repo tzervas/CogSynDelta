@@ -10,12 +10,18 @@ from __future__ import annotations
 import pytest
 import torch
 
-from cogsyndelta.contracts.config import CompressionConfig, RouteConfig, TrainConfig
+from cogsyndelta.contracts.config import (
+    CompressionConfig,
+    RouteConfig,
+    RouteTrainConfig,
+    TrainConfig,
+)
 from cogsyndelta.contracts.device import DeviceContext
 from cogsyndelta.contracts.metrics import MetricsStatus
 from cogsyndelta.poc.compress import run_compression_bench
 from cogsyndelta.poc.route import run_route
 from cogsyndelta.poc.train import train_latent_vae
+from cogsyndelta.poc.train_route import train_softmax_router
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(),
@@ -72,3 +78,29 @@ def test_route_bench_cuda() -> None:
     assert set(load) == {"residual_mlp", "stream_vae"}
     assert all(v > 0.0 for v in load.values())
     assert abs(sum(load.values()) - 1.0) < 1e-5
+
+
+def test_train_route_loss_decreases_cuda() -> None:
+    """Routed recon falls on CUDA; aux LB finite; load not 1.0/0.0."""
+    cfg = RouteTrainConfig(
+        steps=24,
+        batch_size=8,
+        eval_batch_size=8,
+        hidden_dim=32,
+        stream_dim=16,
+        latent_dim=4,
+        learning_rate=1e-2,
+        aux_coef=1.0,
+    )
+    ctx = DeviceContext.resolve("cuda")
+    result = train_softmax_router(cfg, ctx, seed=42)
+    assert result["device"].startswith("cuda")
+    assert result["last_loss"] < result["first_loss"], (
+        f"first={result['first_loss']:.4f} last={result['last_loss']:.4f}"
+    )
+    assert result["last_aux_lb"] == result["last_aux_lb"]
+    assert abs(result["last_aux_lb"]) != float("inf")
+    load = result["load"]
+    assert set(load) == {"residual_mlp", "stream_vae"}
+    assert {round(v, 6) for v in load.values()} != {0.0, 1.0}, load
+    assert all(v > 0.0 for v in load.values()), load

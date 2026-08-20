@@ -94,6 +94,7 @@ POC_PYTESTS=(
     tests/test_poc_train.py
     tests/test_poc_compress.py
     tests/test_poc_registry.py
+    tests/test_poc_route_train.py
 )
 if [[ -f tests/test_poc_cuda.py ]]; then
     POC_PYTESTS+=(tests/test_poc_cuda.py)
@@ -110,6 +111,10 @@ run "poc cli compress" uv run --no-sync python -m cogsyndelta.poc.cli compress \
 if [[ -f src/cogsyndelta/poc/route.py ]]; then
     run "poc cli route" uv run --no-sync python -m cogsyndelta.poc.cli route \
         --device cpu --batch 8
+fi
+if [[ -f src/cogsyndelta/poc/train_route.py ]]; then
+    run "poc cli train-route" uv run --no-sync python -m cogsyndelta.poc.cli train-route \
+        --device cpu --steps 10
 fi
 
 if [[ "${POC_ONLY}" -eq 0 ]]; then

@@ -1,9 +1,10 @@
-"""cogsyndelta-poc CLI: train | compress | bench | route."""
+"""cogsyndelta-poc CLI: train | compress | bench | route | train-route."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 
 from cogsyndelta.contracts.config import PocConfig
@@ -12,6 +13,7 @@ from cogsyndelta.contracts.metrics import MetricsRecord, MetricsStatus, write_me
 from cogsyndelta.poc.compress import run_compression_bench
 from cogsyndelta.poc.route import run_route
 from cogsyndelta.poc.train import train_latent_vae
+from cogsyndelta.poc.train_route import train_softmax_router
 
 
 def _add_device(p: argparse.ArgumentParser) -> None:
@@ -46,11 +48,25 @@ def _build_parser() -> argparse.ArgumentParser:
     route.add_argument("--batch", type=int, default=16)
     route.add_argument("--stream-dim", type=int, default=64)
     route.add_argument("--no-compact", action="store_true")
+
+    train_route = sub.add_parser(
+        "train-route",
+        help="Train softmax gate with Switch aux load-balance (MoE, not mHC)",
+    )
+    _add_device(train_route)
+    train_route.add_argument("--steps", type=int, default=40)
+    train_route.add_argument("--batch-size", type=int, default=8)
+    train_route.add_argument("--aux-coef", type=float, default=1.0)
+    train_route.add_argument(
+        "--gate-only",
+        action="store_true",
+        help="Freeze region params; train the softmax gate only",
+    )
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run train, compress, or bench and print JSON.
+    """Run train, compress, bench, route, or train-route and print JSON.
 
     Args:
         argv: Optional CLI tokens (defaults to ``sys.argv[1:]``).
@@ -128,6 +144,36 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0 if all(r.status == MetricsStatus.PASS for r in out["records"]) else 1
+
+    if args.command == "train-route":
+        cfg.route_train.steps = args.steps
+        cfg.route_train.batch_size = args.batch_size
+        cfg.route_train.aux_coef = args.aux_coef
+        cfg.route_train.train_regions = not args.gate_only
+        result = train_softmax_router(cfg.route_train, ctx, seed=args.seed)
+        aux_ok = math.isfinite(result["last_aux_lb"])
+        load_vals = list(result["load"].values())
+        split = all(v > 0.0 for v in load_vals)
+        improved = result["last_loss"] < result["first_loss"]
+        print(
+            json.dumps(
+                {
+                    "device": result["device"],
+                    "first_loss": result["first_loss"],
+                    "last_loss": result["last_loss"],
+                    "improved": improved,
+                    "first_aux_lb": result["first_aux_lb"],
+                    "last_aux_lb": result["last_aux_lb"],
+                    "aux_finite": aux_ok,
+                    "load": result["load"],
+                    "aux_formula": result["aux_formula"],
+                    "steps": result["steps"],
+                    "notes": result["notes"],
+                },
+                indent=2,
+            )
+        )
+        return 0 if improved and aux_ok and split else 1
 
     return 2
 
