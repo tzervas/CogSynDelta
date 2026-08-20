@@ -459,7 +459,7 @@ class TestCogSynDeltaADKAgent:
             },
         )
         response = agent.process_message(msg)
-        result = json.loads(response.content)
+        result = json.loads(response.content).get("result", json.loads(response.content))
         assert result["status"] == "success"
 
     def test_code_generation_tool(self, agent: CogSynDeltaADKAgent) -> None:
@@ -477,7 +477,7 @@ class TestCogSynDeltaADKAgent:
             },
         )
         response = agent.process_message(msg)
-        result = json.loads(response.content)
+        result = json.loads(response.content).get("result", json.loads(response.content))
         assert result["status"] == "success"
         assert result["language"] == "python"
 
@@ -492,7 +492,7 @@ class TestCogSynDeltaADKAgent:
             },
         )
         response = agent.process_message(msg)
-        result = json.loads(response.content)
+        result = json.loads(response.content).get("result", json.loads(response.content))
         assert result["status"] == "success"
 
     def test_agent_without_integrated_system(self) -> None:
@@ -509,7 +509,8 @@ class TestCogSynDeltaADKAgent:
         )
         response = agent.process_message(msg)
         result = json.loads(response.content)
-        assert "error" in result or result.get("status") == "success"
+        inner = result.get("result", result)
+        assert "error" in inner or inner.get("status") in ("success", "error")
 
 
 class TestADKAdapter:

@@ -18,6 +18,7 @@ from __future__ import annotations
 import statistics
 import unittest
 
+import pytest
 import torch
 import torch.nn.functional as F
 
@@ -199,6 +200,7 @@ class TestCompressionBaselines(unittest.TestCase):
         Note: This compactor requires trained neural networks. Without
         training, fidelity will be lower than spec targets.
         """
+        pytest.importorskip("sklearn")
         from cogsyndelta.memory.dense_embeddings import DenseDifferentialMemoryStore
 
         store = DenseDifferentialMemoryStore(
