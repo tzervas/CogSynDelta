@@ -21,6 +21,7 @@ class LatentVAE(nn.Module):
         hidden_dim: int = 128,
         latent_dim: int = 16,
         sigma_scale: float = 1.0,
+        name: str = "latent_vae",
     ) -> None:
         """Build a two-layer encoder/decoder VAE.
 
@@ -29,8 +30,10 @@ class LatentVAE(nn.Module):
             hidden_dim: Hidden width.
             latent_dim: Bottleneck size.
             sigma_scale: Multiplier on the reparameterized std.
+            name: Registry name for this region.
         """
         super().__init__()
+        self.name = name
         self.input_dim = input_dim
         self.latent_dim = latent_dim
         self.sigma_scale = sigma_scale
@@ -90,6 +93,11 @@ class LatentVAE(nn.Module):
         mu, logvar = self.encode(x)
         z = self.reparameterize(mu, logvar)
         return self.decode(z), mu, logvar
+
+    def activate(self, stream: torch.Tensor) -> torch.Tensor:
+        """Shared-stream surface: decode(mu). Train still uses forward()."""
+        mu, _logvar = self.encode(stream)
+        return self.decode(mu)
 
     def elbo_loss(
         self,

@@ -7,10 +7,17 @@ from cogsyndelta.contracts.compactor import (
     Compactor,
     measured_fidelity,
 )
-from cogsyndelta.contracts.config import CompressionConfig, DevicePrefer, PocConfig, TrainConfig
+from cogsyndelta.contracts.config import (
+    CompressionConfig,
+    DevicePrefer,
+    PocConfig,
+    RouteConfig,
+    TrainConfig,
+)
 from cogsyndelta.contracts.device import DeviceContext
 from cogsyndelta.contracts.metrics import MetricsRecord, MetricsStatus, write_metrics_json
 from cogsyndelta.contracts.region import CognitiveRegion
+from cogsyndelta.contracts.registry import RegionRegistry
 
 __all__ = [
     "BasisResidualCompactor",
@@ -24,6 +31,8 @@ __all__ = [
     "MetricsRecord",
     "MetricsStatus",
     "PocConfig",
+    "RegionRegistry",
+    "RouteConfig",
     "TrainConfig",
     "measured_fidelity",
     "write_metrics_json",

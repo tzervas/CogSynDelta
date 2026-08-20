@@ -55,8 +55,6 @@ jobs:
     if: needs.detect.outputs.python == 'true' && github.event_name != 'pull_request'
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 25
-    env:
-      UV_COMPILE_BYTECODE: "0"
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -78,11 +76,13 @@ jobs:
         run: |
           set -euo pipefail
           uv run --no-sync ruff check src/cogsyndelta/contracts src/cogsyndelta/poc \
-            tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py
+            tests/test_poc_contracts.py tests/test_poc_train.py \
+            tests/test_poc_compress.py tests/test_poc_registry.py
       - name: Pytest PoC (must fail job on failure)
         run: |
           set -euo pipefail
-          uv run --no-sync pytest tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py -q --tb=short
+          uv run --no-sync pytest tests/test_poc_contracts.py tests/test_poc_train.py \
+            tests/test_poc_compress.py tests/test_poc_registry.py -q --tb=short
 
   noop:
     name: no stack detected

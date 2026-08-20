@@ -31,10 +31,22 @@ class CompressionConfig(BaseModel):
     basis_rank: int = 64
 
 
+class RouteConfig(BaseModel):
+    """Two-region softmax route settings. Gate is MoE, not mHC."""
+
+    stream_dim: int = 64
+    hidden_dim: int = 128
+    latent_dim: int = 16
+    top_k: int = Field(default=1, ge=1)
+    batch_size: int = 16
+    compact: bool = True
+
+
 class PocConfig(BaseModel):
     """Top-level PoC config."""
 
     device: DevicePrefer = "cpu"
     train: TrainConfig = Field(default_factory=TrainConfig)
     compression: CompressionConfig = Field(default_factory=CompressionConfig)
+    route: RouteConfig = Field(default_factory=RouteConfig)
     seed: int = 42

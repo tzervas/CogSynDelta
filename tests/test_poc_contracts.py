@@ -10,6 +10,8 @@ from cogsyndelta.contracts.compactor import (
     measured_fidelity,
 )
 from cogsyndelta.contracts.device import DeviceContext
+from cogsyndelta.contracts.region import CognitiveRegion
+from cogsyndelta.poc.vae import LatentVAE
 
 
 def test_device_cpu_resolve() -> None:
@@ -43,3 +45,15 @@ def test_calibrated_quant_roundtrip_bytes() -> None:
     recon = c.reconstruct(blob)
     fid = measured_fidelity(x, recon)
     assert fid >= 0.85, f"got {fid}"
+
+
+def test_latent_vae_is_cognitive_region() -> None:
+    model = LatentVAE(input_dim=8, hidden_dim=16, latent_dim=4)
+    assert isinstance(model, CognitiveRegion)
+    x = torch.randn(2, 8)
+    y = model.activate(x)
+    assert y.shape == x.shape
+    recon, mu, logvar = model.forward(x)
+    assert isinstance(recon, torch.Tensor)
+    assert mu.shape[-1] == 4
+    assert logvar.shape[-1] == 4

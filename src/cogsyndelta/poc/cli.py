@@ -1,4 +1,4 @@
-"""cogsyndelta-poc CLI: train | compress | bench."""
+"""cogsyndelta-poc CLI: train | compress | bench | route."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from cogsyndelta.contracts.config import PocConfig
 from cogsyndelta.contracts.device import DeviceContext
 from cogsyndelta.contracts.metrics import MetricsRecord, MetricsStatus, write_metrics_json
 from cogsyndelta.poc.compress import run_compression_bench
+from cogsyndelta.poc.route import run_route
 from cogsyndelta.poc.train import train_latent_vae
 
 
@@ -38,6 +39,13 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_device(bench)
     bench.add_argument("--out", type=str, default="benchmark_results/poc_metrics.json")
     bench.add_argument("--steps", type=int, default=30)
+
+    route = sub.add_parser("route", help="Softmax-route two stream regions (MoE gate, not mHC)")
+    _add_device(route)
+    route.add_argument("--top-k", type=int, default=1)
+    route.add_argument("--batch", type=int, default=16)
+    route.add_argument("--stream-dim", type=int, default=64)
+    route.add_argument("--no-compact", action="store_true")
     return p
 
 
@@ -103,6 +111,23 @@ def main(argv: list[str] | None = None) -> int:
         write_metrics_json(args.out, records)
         print(f"Wrote {args.out}")
         return 0
+
+    if args.command == "route":
+        cfg.route.top_k = args.top_k
+        cfg.route.batch_size = args.batch
+        cfg.route.stream_dim = args.stream_dim
+        cfg.route.compact = not args.no_compact
+        out = run_route(cfg.route, ctx, seed=args.seed)
+        print(
+            json.dumps(
+                {
+                    **out["route"],
+                    "records": [r.to_dict() for r in out["records"]],
+                },
+                indent=2,
+            )
+        )
+        return 0 if all(r.status == MetricsStatus.PASS for r in out["records"]) else 1
 
     return 2
 
