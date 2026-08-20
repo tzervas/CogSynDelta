@@ -36,7 +36,6 @@ for arg in "$@"; do
     esac
 done
 
-export UV_COMPILE_BYTECODE="${UV_COMPILE_BYTECODE:-0}"
 export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
 
 if ! command -v uv >/dev/null 2>&1; then
