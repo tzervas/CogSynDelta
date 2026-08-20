@@ -1,0 +1,60 @@
+# Fast PoC CI — contracts + poc only. Prefer while full suite is heavy.
+# cancel-in-progress: false — a prior run was killed after 13m of real work
+# when a later push landed. Self-hosted capacity is limited; finish started jobs.
+#
+# Runs on fleet gha-work image via [self-hosted, linux, x64, podman] labels.
+# After CPU `uv sync --no-sources`, later `uv run` steps must use `--no-sync`
+# so `[tool.uv.sources]` pytorch-cu128 does not re-resolve CUDA wheels.
+# uv.lock pins CUDA torch; do not pass `--frozen` (it would install CUDA).
+name: poc-ci
+
+on:
+  push:
+    branches: [main, develop, 'feat/poc-**']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: poc-ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  poc:
+    name: PoC contracts + train + compress
+    runs-on: [self-hosted, linux, x64, podman]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Python + deps (CPU torch)
+        run: |
+          set -euo pipefail
+          uv python install 3.12 || uv python install 3.13 || true
+          uv sync --group dev --no-sources --no-compile-bytecode --link-mode copy \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
+
+      - name: Ruff (poc surface only)
+        run: |
+          uv run --no-sync ruff check src/cogsyndelta/contracts src/cogsyndelta/poc \
+            tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py
+
+      - name: Pytest PoC
+        run: |
+          uv run --no-sync pytest tests/test_poc_contracts.py tests/test_poc_train.py tests/test_poc_compress.py -q --tb=short
+
+      - name: CLI smoke
+        run: |
+          set -euo pipefail
+          uv run --no-sync python -m cogsyndelta.poc.cli train --device cpu --steps 10 --checkpoint /tmp/poc_vae.pt
+          uv run --no-sync python -m cogsyndelta.poc.cli compress --device cpu --batch 4

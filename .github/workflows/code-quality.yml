@@ -29,7 +29,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.14
+        run: uv python install 3.12
 
       - name: Install dependencies
         run: |
@@ -73,7 +73,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.14
+        run: uv python install 3.12
 
       - name: Install dependencies
         run: |
@@ -97,7 +97,7 @@ jobs:
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.sources=src/
             -Dsonar.tests=tests/
-            -Dsonar.python.version=3.14
+            -Dsonar.python.version=3.12
 
   # Internal quality metrics (always runs)
   quality-metrics:
@@ -115,7 +115,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.14
+        run: uv python install 3.12
 
       - name: Install analysis tools
         run: |

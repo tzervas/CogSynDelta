@@ -47,7 +47,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 30
     # Only run if code scanning is enabled (set ENABLE_CODEQL=true in repo variables)
-    if: ${{ vars.ENABLE_CODEQL == 'true' }}
+    if: ${{ vars.ENABLE_CODEQL == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
     steps:
       - name: Checkout repository
@@ -126,7 +126,7 @@ jobs:
           version: ${{ env.UV_VERSION }}
 
       - name: Set up Python
-        run: uv python install 3.14
+        run: uv python install 3.12
 
       - name: Generate requirements for Snyk
         run: |
@@ -160,9 +160,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           version: ${{ env.UV_VERSION }}
-
-      - name: Set up Python
-        run: uv python install 3.14
+          enable-cache: true
 
       - name: Install security tools
         run: |
@@ -179,7 +177,7 @@ jobs:
       - name: Run pip-audit for known vulnerabilities
         run: |
           uv export --no-hashes > requirements-audit.txt
-          # pip-audit may fail if packages don't have vulnerability data yet (Python 3.14 beta)
+          # pip-audit may fail if packages don't have vulnerability data yet
           uv tool run pip-audit -r requirements-audit.txt --desc on || echo "::notice::pip-audit completed with findings or unavailable packages."
 
       - name: Upload security reports
