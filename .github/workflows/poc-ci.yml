@@ -27,8 +27,6 @@ jobs:
     name: PoC contracts + train + compress
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 25
-    env:
-      UV_COMPILE_BYTECODE: "0"
     steps:
       - uses: actions/checkout@v6
 

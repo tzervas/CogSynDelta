@@ -9,9 +9,7 @@ from cogsyndelta.poc.compress import run_compression_bench
 
 
 def test_compression_bench_basis_passes() -> None:
-    cfg = CompressionConfig(
-        embed_dim=128, basis_rank=32, quant_bits=8, min_fidelity=0.85
-    )
+    cfg = CompressionConfig(embed_dim=128, basis_rank=32, quant_bits=8, min_fidelity=0.85)
     ctx = DeviceContext.resolve("cpu")
     records = run_compression_bench(cfg, ctx, batch=8, seed=7)
     by_name = {r.name: r for r in records}

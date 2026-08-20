@@ -21,7 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Self
 
 
 class AgentRole(str, Enum):
@@ -89,7 +89,7 @@ class A2AMessage:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> A2AMessage:
+    def from_dict(cls, data: dict) -> Self:
         """Create A2AMessage instance from dictionary."""
         return cls(
             message_id=data["message_id"],

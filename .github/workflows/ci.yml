@@ -19,8 +19,6 @@ env:
   RUFF_VERSION: "0.14.13"
   MYPY_VERSION: "1.19.1"
   UV_VERSION: "0.7.17"
-  # Pre-download dependencies before any firewall/network restrictions
-  UV_COMPILE_BYTECODE: "0"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}

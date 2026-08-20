@@ -57,9 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "train":
         cfg.train.steps = args.steps
         cfg.train.batch_size = args.batch_size
-        result = train_latent_vae(
-            cfg.train, ctx, seed=args.seed, checkpoint_path=args.checkpoint
-        )
+        result = train_latent_vae(cfg.train, ctx, seed=args.seed, checkpoint_path=args.checkpoint)
         print(
             json.dumps(
                 {
@@ -77,9 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "compress":
         cfg.compression.quant_bits = args.bits
         cfg.compression.embed_dim = args.embed_dim
-        records = run_compression_bench(
-            cfg.compression, ctx, batch=args.batch, seed=args.seed
-        )
+        records = run_compression_bench(cfg.compression, ctx, batch=args.batch, seed=args.seed)
         print(json.dumps([r.to_dict() for r in records], indent=2))
         return 0 if all(r.status == MetricsStatus.PASS for r in records) else 1
 

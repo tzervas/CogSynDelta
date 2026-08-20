@@ -38,8 +38,16 @@ class CompactBlob:
 
 def measured_fidelity(original: torch.Tensor, reconstructed: torch.Tensor) -> float:
     """Cosine similarity between original and reconstructed (batch-mean if 2D)."""
-    o = original.detach().float().reshape(original.shape[0], -1) if original.dim() > 1 else original.detach().float().unsqueeze(0)
-    r = reconstructed.detach().float().reshape(reconstructed.shape[0], -1) if reconstructed.dim() > 1 else reconstructed.detach().float().unsqueeze(0)
+    o = (
+        original.detach().float().reshape(original.shape[0], -1)
+        if original.dim() > 1
+        else original.detach().float().unsqueeze(0)
+    )
+    r = (
+        reconstructed.detach().float().reshape(reconstructed.shape[0], -1)
+        if reconstructed.dim() > 1
+        else reconstructed.detach().float().unsqueeze(0)
+    )
     if o.shape != r.shape:
         raise ValueError(f"Shape mismatch original {o.shape} vs reconstructed {r.shape}")
     sim = F.cosine_similarity(o, r, dim=-1)
