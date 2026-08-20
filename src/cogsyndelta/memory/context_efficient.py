@@ -308,7 +308,7 @@ class ChunkedCompactor(nn.Module):
         return self._blend_chunks(reconstructed_chunks)
 
     def _blend_chunks(self, chunks: list[torch.Tensor]) -> torch.Tensor:
-        """Blend overlapping chunks using weighted average.
+        """Blend overlapping chunks using trapezoidal linear-ramp weights.
 
         Args:
             chunks: List of reconstructed chunks.
@@ -319,16 +319,29 @@ class ChunkedCompactor(nn.Module):
         if len(chunks) == 1:
             return chunks[0]
 
-        # Simple concatenation with overlap trimming
-        # TODO: Implement proper blending weights
-        result_parts = [chunks[0][: -self.overlap] if self.overlap > 0 else chunks[0]]
-        for i in range(1, len(chunks) - 1):
-            start = self.overlap // 2
-            end = -self.overlap + self.overlap // 2 if self.overlap > 0 else None
-            result_parts.append(chunks[i][start:end])
-        if len(chunks) > 1:
-            result_parts.append(chunks[-1][self.overlap // 2 :] if self.overlap > 0 else chunks[-1])
+        if self.overlap <= 0:
+            return torch.cat(chunks, dim=0)
 
+        device = chunks[0].device
+        dtype = chunks[0].dtype
+
+        # Linear ramp weights for overlap region: 1.0 down to 0.0 for chunk i tail,
+        # and 0.0 up to 1.0 for chunk i+1 head.
+        ramp = torch.linspace(1.0, 0.0, steps=self.overlap, device=device, dtype=dtype).unsqueeze(
+            -1
+        )
+
+        result_parts = [chunks[0][: -self.overlap]]
+        for i in range(len(chunks) - 1):
+            curr_overlap = chunks[i][-self.overlap :]
+            next_overlap = chunks[i + 1][: self.overlap]
+            blended = curr_overlap * ramp + next_overlap * (1.0 - ramp)
+            result_parts.append(blended)
+
+            if i < len(chunks) - 2:
+                result_parts.append(chunks[i + 1][self.overlap : -self.overlap])
+
+        result_parts.append(chunks[-1][self.overlap :])
         return torch.cat(result_parts, dim=0)
 
 
