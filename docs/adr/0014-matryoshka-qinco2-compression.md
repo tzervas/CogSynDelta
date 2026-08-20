@@ -59,21 +59,21 @@ from sentence_transformers.losses import MatryoshkaLoss, MultipleNegativesRankin
 
 class MatryoshkaEmbedder:
     """Matryoshka-trained embeddings with multi-scale fidelity.
-    
+
     The key insight: By training with losses at multiple truncation
     points, the model learns to frontload semantic information into
     early dimensions. This enables flexible compression without
     catastrophic fidelity loss.
-    
+
     Why these dimensions: Powers of 2 align with hardware, and
     [64, 128, 256, 512] covers 8x to 1x compression range.
     """
-    
+
     TRUNCATION_DIMS = [64, 128, 256, 512]
-    
+
     def __init__(self, base_model: str = "sentence-transformers/all-MiniLM-L6-v2"):
         self.model = SentenceTransformer(base_model)
-        
+
     def train_matryoshka(
         self,
         train_dataloader,
@@ -81,7 +81,7 @@ class MatryoshkaEmbedder:
         dim_weights: dict[int, float] | None = None,
     ):
         """Train with MatryoshkaLoss for multi-scale compression.
-        
+
         Args:
             train_dataloader: DataLoader with (anchor, positive) pairs
             epochs: Training epochs
@@ -89,7 +89,7 @@ class MatryoshkaEmbedder:
         """
         if dim_weights is None:
             dim_weights = {d: 1.0 for d in self.TRUNCATION_DIMS}
-        
+
         base_loss = MultipleNegativesRankingLoss(self.model)
         matryoshka_loss = MatryoshkaLoss(
             model=self.model,
@@ -97,29 +97,29 @@ class MatryoshkaEmbedder:
             matryoshka_dims=self.TRUNCATION_DIMS,
             matryoshka_weights=list(dim_weights.values()),
         )
-        
+
         self.model.fit(
             train_objectives=[(train_dataloader, matryoshka_loss)],
             epochs=epochs,
         )
-    
+
     def encode_truncated(
         self,
         texts: list[str],
         target_dim: int,
     ) -> torch.Tensor:
         """Encode and truncate to target dimension.
-        
+
         Args:
             texts: Input texts to encode
             target_dim: Truncation dimension (64, 128, 256, or 512)
-            
+
         Returns:
             Truncated embeddings [batch, target_dim]
         """
         full_embeddings = self.model.encode(texts, convert_to_tensor=True)
         return full_embeddings[:, :target_dim]
-    
+
     def compression_ratio(self, target_dim: int) -> float:
         """Calculate compression ratio for target dimension."""
         full_dim = self.model.get_sentence_embedding_dimension()
@@ -137,16 +137,16 @@ from vector_quantize_pytorch import ResidualVQ
 
 class QINCo2Quantizer(nn.Module):
     """QINCo2-inspired neural codebook quantization.
-    
+
     Unlike standard RVQ with fixed codebooks, this uses a small
     neural network to generate codebooks conditioned on prior
     quantization steps. This captures inter-codebook dependencies.
-    
+
     Why neural codebooks: Fixed codebooks can't adapt to the
     residual distribution, which changes with each stage. Neural
     generation achieves 34-44% MSE reduction over RVQ.
     """
-    
+
     def __init__(
         self,
         embed_dim: int = 512,
@@ -156,7 +156,7 @@ class QINCo2Quantizer(nn.Module):
         super().__init__()
         self.embed_dim = embed_dim
         self.num_stages = num_stages
-        
+
         # Neural codebook generator (conditions on prior codes)
         self.codebook_generator = nn.ModuleList([
             nn.Sequential(
@@ -166,27 +166,27 @@ class QINCo2Quantizer(nn.Module):
             )
             for i in range(num_stages)
         ])
-        
+
         # Base codebook (learned)
         self.base_codebooks = nn.ParameterList([
             nn.Parameter(torch.randn(codebook_size, embed_dim))
             for _ in range(num_stages)
         ])
-        
+
         # Code embedding (for conditioning)
         self.code_embed = nn.Embedding(codebook_size, 64)
-        
+
     def encode(
         self,
         x: torch.Tensor,
         target_fidelity: float = 0.95,
     ) -> tuple[list[torch.Tensor], float]:
         """Encode with adaptive stages until fidelity target met.
-        
+
         Args:
             x: Input embeddings [batch, embed_dim]
             target_fidelity: Stop early if fidelity achieved
-            
+
         Returns:
             (list of codes per stage, achieved fidelity)
         """
@@ -194,7 +194,7 @@ class QINCo2Quantizer(nn.Module):
         residual = x.clone()
         reconstructed = torch.zeros_like(x)
         prior_codes = torch.zeros(x.shape[0], 0, device=x.device)
-        
+
         for stage_idx in range(self.num_stages):
             # Generate codebook conditioned on prior codes
             if stage_idx == 0:
@@ -206,25 +206,25 @@ class QINCo2Quantizer(nn.Module):
                 codebook_flat = self.codebook_generator[stage_idx](context)
                 codebook = codebook_flat.view(-1, self.base_codebooks[0].shape[0], self.embed_dim)
                 codebook = codebook[0]  # Use first sample's generated codebook
-            
+
             # Quantize residual
             distances = torch.cdist(residual, codebook)
             code_idx = distances.argmin(dim=-1)
             codes.append(code_idx)
-            
+
             # Update for next stage
             quantized = codebook[code_idx]
             reconstructed = reconstructed + quantized
             residual = x - reconstructed
             prior_codes = torch.cat([prior_codes, code_idx.unsqueeze(-1).float()], dim=-1)
-            
+
             # Check fidelity early stopping
             fidelity = F.cosine_similarity(x, reconstructed, dim=-1).mean().item()
             if fidelity >= target_fidelity:
                 break
-        
+
         return codes, fidelity
-    
+
     def decode(self, codes: list[torch.Tensor]) -> torch.Tensor:
         """Decode from codes back to embedding."""
         reconstructed = torch.zeros(codes[0].shape[0], self.embed_dim)
@@ -241,12 +241,12 @@ class QINCo2Quantizer(nn.Module):
 
 class MRLQINCoPipeline:
     """Combined Matryoshka + QINCo2 compression pipeline.
-    
+
     Achieves ≥95% fidelity at 10-16x compression by:
     1. Matryoshka truncation (dimension reduction)
     2. QINCo2 quantization (bit reduction)
     """
-    
+
     def __init__(
         self,
         matryoshka_embedder: MatryoshkaEmbedder,
@@ -254,7 +254,7 @@ class MRLQINCoPipeline:
     ):
         self.matryoshka = matryoshka_embedder
         self.quantizer = quantizer
-    
+
     def compress(
         self,
         embeddings: torch.Tensor,
@@ -262,7 +262,7 @@ class MRLQINCoPipeline:
         min_fidelity: float = 0.95,
     ) -> CompressedEmbedding:
         """Compress with fidelity guarantee.
-        
+
         Strategy:
         1. Choose MRL truncation level based on target compression
         2. Apply QINCo2 quantization
@@ -277,13 +277,13 @@ class MRLQINCoPipeline:
             trunc_dim = 256  # 2x from 512
         else:
             trunc_dim = 512  # No truncation
-        
+
         # MRL truncation
         truncated = embeddings[:, :trunc_dim]
-        
+
         # QINCo2 quantization with early stopping at fidelity target
         codes, fidelity = self.quantizer.encode(truncated, min_fidelity)
-        
+
         return CompressedEmbedding(
             codes=codes,
             trunc_dim=trunc_dim,

@@ -1,9 +1,9 @@
 # ADR-0010: Ternary Neural Network Exploration (BitNet)
 
-**Status**: Proposed  
-**Date**: 2026-01-19  
-**Decision Makers**: @tzervas  
-**Technical Story**: Exploring 1.58-bit ternary representations for extreme efficiency  
+**Status**: Proposed
+**Date**: 2026-01-19
+**Decision Makers**: @tzervas
+**Technical Story**: Exploring 1.58-bit ternary representations for extreme efficiency
 **Related**: ADR-0009 (Algebraic Training Optimization)
 
 ## Context

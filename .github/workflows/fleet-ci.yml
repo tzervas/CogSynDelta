@@ -55,8 +55,6 @@ jobs:
     if: needs.detect.outputs.python == 'true' && github.event_name != 'pull_request'
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 25
-    env:
-      UV_COMPILE_BYTECODE: "0"
     steps:
       - uses: actions/checkout@v4
       - name: Install uv

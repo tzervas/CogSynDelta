@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeVar
 
 import torch
 
 DevicePrefer = Literal["cpu", "cuda", "auto"]
+TModule = TypeVar("TModule", bound=torch.nn.Module)
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,6 @@ class DeviceContext:
         """Move tensor to this device."""
         return data.to(self.device)
 
-    def module(self, module: torch.nn.Module) -> torch.nn.Module:
-        """Move module to this device."""
+    def module(self, module: TModule) -> TModule:
+        """Move ``module`` onto this device and return the same subclass."""
         return module.to(self.device)

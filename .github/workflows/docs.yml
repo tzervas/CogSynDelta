@@ -32,6 +32,7 @@ jobs:
   build:
     name: Build Documentation
     runs-on: [self-hosted, linux, x64, podman]
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v6
@@ -45,9 +46,13 @@ jobs:
       - name: Set up Python 3.12
         run: uv python install 3.12
 
-      - name: Install dependencies
+      - name: Install dependencies (CPU torch)
         run: |
-          uv sync --group dev --group docs
+          # Docs do not need CUDA. --no-sources bypasses pyproject cu128.
+          # Do not set UV_COMPILE_BYTECODE; uv treats a set var as --compile-bytecode.
+          uv sync --group dev --group docs --no-sources --no-compile-bytecode --link-mode copy \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
 
       - name: Install pdoc
         run: uv tool install pdoc

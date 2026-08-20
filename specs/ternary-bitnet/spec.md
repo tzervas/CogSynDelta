@@ -1,8 +1,8 @@
 # Ternary BitNet Implementation Specification
 
-**Spec ID**: ternary-bitnet  
-**Status**: Draft  
-**Created**: 2026-01-19  
+**Spec ID**: ternary-bitnet
+**Status**: Draft
+**Created**: 2026-01-19
 **Parent ADR**: ADR-0010
 
 ---
@@ -116,14 +116,14 @@ src/cogsyndelta/optimization/ternary/
 def ternary_quantize(W: Tensor) -> tuple[Tensor, Tensor]:
     """
     Quantize floating-point weights to ternary {-1, 0, +1}.
-    
+
     Args:
         W: Float weight tensor of any shape.
-        
+
     Returns:
         W_ternary: Ternary weight tensor (same shape, int8 storage).
         scale: Per-tensor or per-channel scale factor.
-        
+
     Mathematical formulation:
         γ = (1/nm) Σ|W_ij|  (absmean)
         W̃ = RoundClip(W/γ, -1, +1)
@@ -141,14 +141,14 @@ For backpropagation through discrete quantization:
 ```python
 class TernaryQuantizeFunction(torch.autograd.Function):
     """STE: Forward uses ternary, backward passes gradient through."""
-    
+
     @staticmethod
     def forward(ctx, W: Tensor) -> Tensor:
         scale = W.abs().mean()
         W_ternary = (W / (scale + 1e-8)).round().clamp(-1, 1)
         ctx.save_for_backward(W)
         return W_ternary * scale
-    
+
     @staticmethod
     def backward(ctx, grad_output: Tensor) -> Tensor:
         W, = ctx.saved_tensors
@@ -172,10 +172,10 @@ def encode_trits(trits: np.ndarray) -> np.ndarray:
     # Shift from {-1,0,+1} to {0,1,2}
     shifted = trits + 1
     # Pack 5 trits per byte: t0 + 3*t1 + 9*t2 + 27*t3 + 81*t4
-    packed = (shifted[::5] + 
-              3 * shifted[1::5] + 
-              9 * shifted[2::5] + 
-              27 * shifted[3::5] + 
+    packed = (shifted[::5] +
+              3 * shifted[1::5] +
+              9 * shifted[2::5] +
+              27 * shifted[3::5] +
               81 * shifted[4::5])
     return packed.astype(np.uint8)
 
@@ -200,17 +200,17 @@ DECODE_LUT = np.array([
 def ternary_matmul(X: Tensor, W_packed: Tensor, scale: Tensor) -> Tensor:
     """
     Compute X @ W where W is ternary-packed.
-    
+
     Optimization: Separate positive and negative planes.
     Y = scale * (X @ W_pos - X @ W_neg)
-    
+
     Where W_pos[i,j] = 1 if W[i,j] = +1, else 0
           W_neg[i,j] = 1 if W[i,j] = -1, else 0
     """
     W_ternary = unpack_trits(W_packed)  # Decode to {-1,0,+1}
     W_pos = (W_ternary == 1).float()
     W_neg = (W_ternary == -1).float()
-    
+
     # Two sparse matmuls (often faster than one dense for sparse W)
     Y = scale * (X @ W_pos - X @ W_neg)
     return Y
