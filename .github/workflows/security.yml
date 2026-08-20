@@ -130,7 +130,8 @@ jobs:
 
       - name: Generate requirements for Snyk
         run: |
-          uv export --no-hashes > requirements-snyk.txt
+          # --no-sources: lock pins torch==2.9.1+cu128 from pyproject; PyPI has 2.9.1.
+          uv export --python 3.12 --no-hashes --no-sources > requirements-snyk.txt
 
       - name: Run Snyk to check for vulnerabilities
         uses: snyk/actions/python@master
@@ -176,8 +177,9 @@ jobs:
 
       - name: Run pip-audit for known vulnerabilities
         run: |
-          uv export --no-hashes > requirements-audit.txt
-          # pip-audit may fail if packages don't have vulnerability data yet
+          # --no-sources drops [tool.uv.sources] pytorch-cu128 so pip-audit
+          # installs torch==2.9.1 from PyPI instead of torch==2.9.1+cu128.
+          uv export --python 3.12 --no-hashes --no-sources > requirements-audit.txt
           uv tool run pip-audit -r requirements-audit.txt --desc on || echo "::notice::pip-audit completed with findings or unavailable packages."
 
       - name: Upload security reports
