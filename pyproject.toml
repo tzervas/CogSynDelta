@@ -119,7 +119,7 @@ add-bounds = "major"
 python-preference = "managed"
 python-downloads = "automatic"
 link-mode = "hardlink"
-compile-bytecode = true
+compile-bytecode = false
 default-groups = ["dev"]
 cache-keys = [{ file = "pyproject.toml" }, { file = "uv.lock" }]
 

@@ -100,7 +100,7 @@ jobs:
       run: |
         # Use --no-sources to bypass pyproject.toml torch source (cu128)
         # Use --index-strategy unsafe-best-match to allow packages from all indexes
-        uv sync --group dev --no-sources \
+        uv sync --group dev --no-sources --no-compile-bytecode --link-mode copy \
           --extra-index-url https://download.pytorch.org/whl/cpu \
           --index-strategy unsafe-best-match
 

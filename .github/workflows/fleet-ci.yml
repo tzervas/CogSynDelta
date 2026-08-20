@@ -70,9 +70,9 @@ jobs:
           # Keep within requires-python (>=3.12,<3.14)
           uv python install 3.12 || true
           if [ -f uv.lock ] || [ -f pyproject.toml ]; then
-            uv sync --group dev --no-sources \
+            uv sync --group dev --no-sources --no-compile-bytecode --link-mode copy \
               --extra-index-url https://download.pytorch.org/whl/cpu \
-              --index-strategy unsafe-best-match || uv sync --group dev
+              --index-strategy unsafe-best-match || uv sync --group dev --no-compile-bytecode --link-mode copy
           fi
       - name: Ruff (poc surface)
         run: |

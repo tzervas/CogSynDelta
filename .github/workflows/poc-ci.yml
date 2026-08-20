@@ -42,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           uv python install 3.12 || uv python install 3.13 || true
-          uv sync --group dev --no-sources \
+          uv sync --group dev --no-sources --no-compile-bytecode --link-mode copy \
             --extra-index-url https://download.pytorch.org/whl/cpu \
             --index-strategy unsafe-best-match
 
