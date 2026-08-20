@@ -56,13 +56,9 @@ class SoftmaxRouter(nn.Module):
     def route(self, stream: Tensor, regions: Sequence[CognitiveRegion]) -> RouteResult:
         """Mix region activations. ``stream`` is ``[B, D]``."""
         if len(regions) != self.n_regions:
-            raise ValueError(
-                f"expected {self.n_regions} regions, got {len(regions)}"
-            )
+            raise ValueError(f"expected {self.n_regions} regions, got {len(regions)}")
         if stream.ndim != 2 or stream.size(-1) != self.dim:
-            raise ValueError(
-                f"stream must be [B, {self.dim}], got {tuple(stream.shape)}"
-            )
+            raise ValueError(f"stream must be [B, {self.dim}], got {tuple(stream.shape)}")
         names = tuple(r.name for r in regions)
         logits = self.gate(stream)
         full_weights = F.softmax(logits, dim=-1)

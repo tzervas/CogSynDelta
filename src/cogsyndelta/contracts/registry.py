@@ -23,9 +23,7 @@ class RegionRegistry:
     def register(self, region: CognitiveRegion) -> None:
         """Add a region. Raises if name is empty or already taken."""
         if not isinstance(region, CognitiveRegion):
-            raise TypeError(
-                f"region must satisfy CognitiveRegion, got {type(region)!r}"
-            )
+            raise TypeError(f"region must satisfy CognitiveRegion, got {type(region)!r}")
         name = region.name
         if not name:
             raise ValueError("region.name must be a non-empty str")

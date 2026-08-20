@@ -44,9 +44,7 @@ def run_route(
     torch.manual_seed(seed)
     registry = default_two_region_mind(cfg.stream_dim, cfg.hidden_dim, cfg.latent_dim)
     registry.to(device_ctx.device)
-    router = SoftmaxRouter(
-        dim=cfg.stream_dim, n_regions=len(registry), top_k=cfg.top_k
-    )
+    router = SoftmaxRouter(dim=cfg.stream_dim, n_regions=len(registry), top_k=cfg.top_k)
     router = device_ctx.module(router)
     router.eval()
     stream = torch.randn(cfg.batch_size, cfg.stream_dim, device=device_ctx.device)
@@ -75,9 +73,7 @@ def run_route(
             name="softmax_router_weights",
             claim="per-token softmax weights sum to 1",
             measured={
-                "weight_sum_mean": round(
-                    float(result.weights.sum(dim=-1).mean().item()), 6
-                ),
+                "weight_sum_mean": round(float(result.weights.sum(dim=-1).mean().item()), 6),
                 "load": payload["load"],
             },
             status=MetricsStatus.PASS
