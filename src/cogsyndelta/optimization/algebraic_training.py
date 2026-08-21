@@ -1936,9 +1936,7 @@ class UnifiedAlgebraicTrainer:
 
         return results
 
-    def _optimize_auxiliary_components(
-        self, train_x: Tensor, results: dict[str, Any]
-    ) -> None:
+    def _optimize_auxiliary_components(self, train_x: Tensor, results: dict[str, Any]) -> None:
         """Optimize mHC and interconnect pathway components algebraically.
 
         Args:
