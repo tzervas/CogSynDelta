@@ -308,28 +308,49 @@ class ChunkedCompactor(nn.Module):
         return self._blend_chunks(reconstructed_chunks)
 
     def _blend_chunks(self, chunks: list[torch.Tensor]) -> torch.Tensor:
-        """Blend overlapping chunks using weighted average.
+        """Blend overlapping chunks using trapezoidal linear-ramp blending weights.
 
         Args:
-            chunks: List of reconstructed chunks.
+            chunks: List of reconstructed chunks [chunk_size, embed_dim].
 
         Returns:
-            Blended tensor.
+            Blended tensor across all chunks.
         """
         if len(chunks) == 1:
             return chunks[0]
 
-        # Simple concatenation with overlap trimming
-        # TODO: Implement proper blending weights
-        result_parts = [chunks[0][: -self.overlap] if self.overlap > 0 else chunks[0]]
-        for i in range(1, len(chunks) - 1):
-            start = self.overlap // 2
-            end = -self.overlap + self.overlap // 2 if self.overlap > 0 else None
-            result_parts.append(chunks[i][start:end])
-        if len(chunks) > 1:
-            result_parts.append(chunks[-1][self.overlap // 2 :] if self.overlap > 0 else chunks[-1])
+        if self.overlap <= 0:
+            return torch.cat(chunks, dim=0)
 
-        return torch.cat(result_parts, dim=0)
+        num_chunks = len(chunks)
+        blended_parts: list[torch.Tensor] = []
+
+        # Non-overlapping prefix of first chunk
+        blended_parts.append(chunks[0][: -self.overlap])
+
+        for i in range(num_chunks - 1):
+            curr_chunk = chunks[i]
+            next_chunk = chunks[i + 1]
+
+            overlap_curr = curr_chunk[-self.overlap :]
+            overlap_next = next_chunk[: self.overlap]
+
+            # Linear ramp: 1.0 -> 0.0 for curr, 0.0 -> 1.0 for next
+            ramp = torch.linspace(
+                1.0, 0.0, steps=self.overlap + 2, device=curr_chunk.device, dtype=curr_chunk.dtype
+            )[1:-1].unsqueeze(-1)
+
+            blended_overlap = ramp * overlap_curr + (1.0 - ramp) * overlap_next
+            blended_parts.append(blended_overlap)
+
+            if i + 1 < num_chunks - 1:
+                # Middle chunk non-overlapping section
+                blended_parts.append(next_chunk[self.overlap : -self.overlap])
+
+        # Non-overlapping suffix of last chunk
+        blended_parts.append(chunks[-1][self.overlap :])
+
+        return torch.cat(blended_parts, dim=0)
 
 
 class ImportanceContextPruner(nn.Module):
