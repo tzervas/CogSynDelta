@@ -30,7 +30,7 @@
 
 </details>
 
-**A production-ready, brain-inspired self-improving AI system with VL-JEPA, mHC, quantum computing support, and Google ADK compliance.**
+**A brain-inspired self-improving AI system with VL-JEPA, mHC, quantum computing support, and Google ADK compliance.**
 
 ## 🌟 Overview
 
