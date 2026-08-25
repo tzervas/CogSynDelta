@@ -507,6 +507,11 @@ class FisherInformationPredictor(nn.Module):
 
         # Compute Fisher diagonal
         def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
+            """Generate batches for Fisher Information calculation.
+
+            Yields:
+                Tuples of (batch_x, batch_y) tensors.
+            """
             for i in range(0, len(train_x), 32):
                 yield train_x[i : i + 32], train_y[i : i + 32]
 
@@ -575,6 +580,11 @@ class FisherInformationPredictor(nn.Module):
         if not self._fisher_cache:
 
             def data_gen() -> Iterator[tuple[Tensor, Tensor]]:
+                """Generate batches for Fisher Information calculation.
+
+                Yields:
+                    Tuples of (batch_x, batch_y) tensors.
+                """
                 for i in range(0, len(train_x), 32):
                     yield train_x[i : i + 32], train_y[i : i + 32]
 
@@ -1921,7 +1931,28 @@ class UnifiedAlgebraicTrainer:
 
         # 5. Optimize auxiliary components
         print("  [5/5] Optimizing auxiliary components...")
+        self._optimize_auxiliary_components(train_x, results)
 
+        # Apply weights if requested
+        if apply_weights and optimal_weights:
+            print("  Applying predicted weights to model...")
+            with torch.no_grad():
+                for name, param in self.model.named_parameters():
+                    if name in optimal_weights:
+                        param.copy_(optimal_weights[name])
+            results["weights_applied"] = True
+
+        return results
+
+    def _optimize_auxiliary_components(
+        self, train_x: Tensor, results: dict[str, Any]
+    ) -> None:
+        """Optimize auxiliary components such as mHC modules and interconnect pathways.
+
+        Args:
+            train_x: Training input tensor.
+            results: Results dictionary to update in-place with auxiliary analysis.
+        """
         # mHC optimization
         if self.mhc_optimizer and self.mhc_modules:
             mhc_results: dict[str, Any] = {}
@@ -1959,17 +1990,6 @@ class UnifiedAlgebraicTrainer:
                     section_states
                 )
                 results["optimal_pathway_strengths"] = pathway_strengths
-
-        # Apply weights if requested
-        if apply_weights and optimal_weights:
-            print("  Applying predicted weights to model...")
-            with torch.no_grad():
-                for name, param in self.model.named_parameters():
-                    if name in optimal_weights:
-                        param.copy_(optimal_weights[name])
-            results["weights_applied"] = True
-
-        return results
 
     def quick_optimize(
         self,
