@@ -4,7 +4,7 @@
   "quality_report": {
     "stats": {
       "files_analyzed": 32,
-      "total_lines": 16928,
+      "total_lines": 16926,
       "total_functions": 477,
       "total_classes": 142,
       "issues_found": 0
