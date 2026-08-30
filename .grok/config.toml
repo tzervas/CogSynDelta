@@ -1,0 +1,9 @@
+# Repo overlay for CogSynDelta Grok sessions (folder-trust required).
+# Does not replace ~/.grok/config.toml. Copy model tables from
+# config/clients/grok.toml.example into the user config by hand.
+
+[mcp]
+max_output_bytes = 40000
+
+[tools]
+respect_gitignore = false

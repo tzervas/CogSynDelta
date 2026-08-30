@@ -1,0 +1,58 @@
+# Grok harness — CogSynDelta
+
+This checkout is for a **code-thropology dig** (map the sedimentary layers) plus later PoC work. Swap into this worktree; do not author on `main`.
+
+## Where to sit
+
+```
+/home/kang/code/personal/tzervas/csd-worktress/CogSynDelta-wt-grok-harness
+branch: feat/grok-harness   (from origin/main PoC HEAD)
+```
+
+Launch:
+
+```bash
+./scripts/grok-csd
+# or:  cd this worktree && grok
+```
+
+`scripts/grok-csd` refuses protected trunks (`main`, `staging`, `develop`, `dev`) and injects `LOCALAI_API_KEY` from the secret toolchain (never argv).
+
+## Truth order (do not invert)
+
+1. `STATUS.md` — measured PoC-1/2/3 claims
+2. `pyproject.toml` `description` — MoE-adjacent one-mind; Python `>=3.12,<3.14`
+3. `src/cogsyndelta/poc/` — live measured slice
+4. `docs/adr/` — decisions
+5. `memory/constitution.md` — governance
+6. Vault hub `Projects/Repositories/GitHub/tzervas/CogSynDelta/CogSynDelta.md` (ingest may lag HEAD)
+7. `README.md` — **source text, often broader than the PoC**. Do not treat “10–100×”, VL-JEPA, quantum, or agent fleets as measured unless STATUS/tests say so.
+
+CogSynDelta is **MoE-adjacent, not multi-agent**. Regions are experts of one mind. Softmax top-k + Switch aux LB is the gate. mHC / JEPA / quantum are later or stubbed.
+
+## Skills / workflows
+
+| Invoke | What |
+|---|---|
+| `/csd-context` | Load STATUS + PoC layout + GPU/branch rules before edits |
+| `/code-thropology` | Strata map: README vs STATUS vs poc vs archive vs ADRs |
+| `/csd-code-thropology` | Workflow: bounded parallel read-only dig |
+| `/csd-branch-pr-review` | Workflow: open PRs × main/develop — fits vs sediment |
+| `/csd-poc-gpu-drive` | CUDA measure on 5080 (exclusive-seq; do not pause LocalAI) |
+| `/csd-ci-unblock` | Merge-stack CI |
+
+## Self-hosted models
+
+Copy tables from `config/clients/grok.toml.example` into `~/.grok/config.toml` by hand. Default for this dig: **hosted Grok** for orchestration; **`local/code`** (Qwen2.5-Coder-14B on akula-prime `:8080`) when you want the 3090. One GGUF. Do not dual-load with `local/code-heavy`. Do not CUDA-index RAG while LocalAI holds the 3090.
+
+## Hard rules
+
+- Isolated worktree. Never commit or push `main` / `staging` / `develop` / `dev`.
+- Conventional commits. Google-style docstrings. `uv`, not pip.
+- GPU: 3090 = one LocalAI GGUF. 5080 = exclusive PoC CUDA. Keyword-cpu retrieve.
+- Vault writes: `/update-kb` only after durable findings. Never mix operator/model KBs.
+- Never merge GitHub.com without the operator.
+
+Related: memory-gate predecessor (Python), memory-gate-rs successor. Overlap is research (VSA/compression), not a shared impl.
+
+Branch/PR fit: `docs/GROK-STRATA.md`. PoC lives on **main**. `develop` + Jules quality PRs are a second program — do not merge them to “sync.” Open #59 (`ci/akula-gpu-runner` → main) is the one PR that fits, after a rebase onto #66.

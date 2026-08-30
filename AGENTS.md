@@ -53,9 +53,12 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 | Agent | Directory | Format | Status |
 |-------|-----------|--------|--------|
+| **Grok Build** | `.grok/` (skills, hooks, workflows) + `GROK.md` | Markdown / Rhai | ✅ Harness on `feat/grok-harness` worktree |
 | **GitHub Copilot** | `.github/agents/` | Markdown | ✅ Full Support |
 | **Claude Code** | `.claude/commands/` | Markdown | 🔄 Planned |
 | **Cursor** | `.cursor/rules/` | Markdown | 🔄 Planned |
+
+Grok: read `GROK.md` then `STATUS.md` before README. Launch `./scripts/grok-csd` from the isolated worktree. Skills `/csd-context` `/code-thropology`. Never commit on `main` / `staging` / `develop` / `dev`.
 
 ---
 

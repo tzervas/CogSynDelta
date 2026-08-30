@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Launch Grok in the CogSynDelta harness worktree. Never argv secrets.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+case "$branch" in
+  main|staging|develop|dev)
+    echo "csd: refuse launch on protected branch $branch" >&2
+    echo "csd: use $ROOT on feat/grok-harness (or another feat/*)" >&2
+    exit 2
+    ;;
+esac
+export GROK_FOLDER_TRUST="${GROK_FOLDER_TRUST:-1}"
+if [[ -f "$ROOT/.grok/config.toml" ]]; then
+  export GROK_CONFIG_PATH="${GROK_CONFIG_PATH:-$ROOT/.grok/config.toml}"
+fi
+echo "csd: HEAD=$branch $(git rev-parse --short HEAD) root=$ROOT" >&2
+if command -v secret >/dev/null 2>&1; then
+  exec secret exec LOCALAI_API_KEY=gpu/localai-api-key -- grok "$@"
+fi
+exec grok "$@"
