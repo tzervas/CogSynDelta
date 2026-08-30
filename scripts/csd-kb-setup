@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Create CogSynDelta experiment vault + Qdrant collection. Host only. No CUDA.
+set -euo pipefail
+VAULT="${CSD_VAULT:-/akula-data/obsidian/akula-csd-kb}"
+QDRANT="${QDRANT_URL:-http://127.0.0.1:6333}"
+COLL="${CSD_COLLECTION:-akula-csd-kb}"
+mkdir -p "$VAULT/Architecture" "$VAULT/Experiments" "$VAULT/Cycles"
+if [[ ! -f "$VAULT/README.md" ]]; then
+  printf '%s\n' \
+    '# akula-csd-kb' \
+    '' \
+    'CogSynDelta experiment vault. Host agents (Grok, Codex) may write here.' \
+    'Not tzervas-dev-kb. Not akula-model-kb. 1024-d Qwen3 collection `akula-csd-kb`.' \
+    'Index: CogSynDelta `./scripts/csd-kb-index` (5080 exclusive-seq, never pause 3090 LocalAI).' \
+    > "$VAULT/README.md"
+fi
+code=$(curl -sS -o /tmp/akula-csd-coll.json -w '%{http_code}' "$QDRANT/collections/$COLL" || true)
+if [[ "$code" == "200" ]]; then
+  echo "ok  collection $COLL exists"
+else
+  if curl -fsS -X PUT "$QDRANT/collections/$COLL" \
+    -H 'Content-Type: application/json' \
+    -d '{"vectors":{"size":1024,"distance":"Cosine"}}' >/dev/null; then
+    echo "ok  created collection $COLL 1024-d"
+  else
+    echo "warn  Qdrant $QDRANT not up; vault is ready. make -C akula-ai-platform qdrant-up then re-run." >&2
+  fi
+fi
+echo "ok  vault $VAULT"
+ls "$VAULT"

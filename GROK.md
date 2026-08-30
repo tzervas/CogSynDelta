@@ -1,6 +1,6 @@
 # Grok harness — CogSynDelta
 
-This checkout is for a **code-thropology dig** (map the sedimentary layers) plus later PoC work. Swap into this worktree; do not author on `main`.
+Working branch in **`tzervas/CogSynDelta`** (`feat/agent-harness`). Codex: `docs/CODEX.md` + `./scripts/codex-csd`. Architecture intent: `docs/HANDOFF-ARCHITECTURE.md`.
 
 ## Where to sit
 
