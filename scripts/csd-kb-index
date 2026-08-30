@@ -1,17 +1,69 @@
 #!/usr/bin/env bash
-# CUDA reindex of akula-csd-kb on gpu5080 exclusive-seq. Never pause LocalAI on the 3090.
+# Enqueue akula-csd-kb CUDA reindex on gpu5080 timeshare. Never pause LocalAI on the 3090.
+#
+# Does NOT run embeddings itself. Does NOT SSH prime-only venv paths to 5080.
+# Does NOT claim reindex success — check Qdrant points_count after the worker finishes.
 set -euo pipefail
+
 AKULA="${AKULA_ROOT:-/home/kang/code/personal/tzervas/akula-ai-platform}"
 VAULT="${CSD_VAULT:-/akula-data/obsidian/akula-csd-kb}"
 COLL="${CSD_COLLECTION:-akula-csd-kb}"
-OP_VAULT="/home/kang/data/obsidian/tzervas-dev-kb/tzervas-dev-kb"
-RAG_PY="$OP_VAULT/_meta/services/rag/.venv/bin/python"
-IDX="$OP_VAULT/_meta/tools/index_vault_qdrant.py"
-if [[ ! -x "$RAG_PY" ]]; then
-  echo "missing RAG venv $RAG_PY" >&2
+QDRANT="${QDRANT_URL:-http://127.0.0.1:6333}"
+HOST="${CSD_INDEX_HOST:-gpu5080}"
+SUBJECT="${CSD_TIMESHARE_SUBJECT:-csd-kb}"
+# 5080 worker reads its own state file (not prime /akula-data/cabal/gpu-timeshare.json).
+REMOTE_STATE="${CSD_TIMESHARE_STATE:-/home/tzervas/akula-harness/state/gpu-timeshare.json}"
+REMOTE_TS="${CSD_TIMESHARE_BIN:-/home/tzervas/akula-harness/scripts/gpu-timeshare}"
+
+mkdir -p "$VAULT"
+
+echo "csd-kb-index: vault=$VAULT collection=$COLL host=$HOST (timeshare enqueue, never 3090)" >&2
+
+# Local Qdrant shape check on prime (loopback). Fail closed on wrong dimension.
+coll_json="$(curl -fsS "$QDRANT/collections/$COLL" 2>/dev/null || true)"
+if [[ -z "$coll_json" ]]; then
+  echo "csd-kb-index: Qdrant $QDRANT collection $COLL missing; run ./scripts/csd-kb-setup first" >&2
   exit 2
 fi
-mkdir -p "$VAULT"
-export AKULA_GPU_KIND=index
-echo "csd-kb-index: vault=$VAULT collection=$COLL (5080 exclusive if gpu-alloc says so)" >&2
-exec "$AKULA/scripts/with-gpu-rag" -- "$RAG_PY" -u "$IDX" --vault "$VAULT" --collection "$COLL"
+python3 - "$coll_json" "$COLL" <<'PY'
+import json, sys
+raw, coll = sys.argv[1], sys.argv[2]
+d = json.loads(raw)
+res = d.get("result") or {}
+cfg = ((res.get("config") or {}).get("params") or {}).get("vectors") or {}
+size = cfg.get("size") if isinstance(cfg, dict) else None
+points = res.get("points_count")
+status = res.get("status")
+print(f"csd-kb-index: qdrant {coll} status={status} size={size} points={points}", file=sys.stderr)
+if size != 1024:
+    print(f"csd-kb-index: refusing wrong vector size {size!r} (need 1024)", file=sys.stderr)
+    sys.exit(3)
+PY
+
+# Enqueue onto the 5080 worker queue via SSH. Never pass prime-only absolute venv paths.
+enqueue_json="$(
+  ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" \
+    env AKULA_TIMESHARE="$REMOTE_STATE" \
+    python3 "$REMOTE_TS" enqueue --kind rag-index --subject "$SUBJECT" --host "$HOST"
+)"
+echo "csd-kb-index: enqueue $enqueue_json" >&2
+
+python3 - "$enqueue_json" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+if not d.get("ok"):
+    print(f"csd-kb-index: enqueue refused: {d}", file=sys.stderr)
+    sys.exit(4)
+print(f"csd-kb-index: queued id={d.get('id')} dedup={d.get('dedup', False)}")
+PY
+
+cat >&2 <<EOF
+csd-kb-index: enqueued behind Comfy/exclusive-seq on $HOST.
+  Remaining before points_count > 0 (operator):
+  1) Deploy index_vault_qdrant.py + CUDA torch/transformers/qdrant_client venv on $HOST
+  2) Mount or sync vault $VAULT onto $HOST (not present today)
+  3) Expose Qdrant beyond 127.0.0.1 on prime, or tunnel, so $HOST can upsert
+  4) Free ≥8192 MiB on $HOST (do not stop healthy Comfy from this script)
+  Never use 3090 LocalAI as an embedding fallback.
+  Verify: curl -fsS $QDRANT/collections/$COLL | python3 -c 'import sys,json; r=json.load(sys.stdin)["result"]; print(r["points_count"], r["config"]["params"]["vectors"]["size"])'
+EOF

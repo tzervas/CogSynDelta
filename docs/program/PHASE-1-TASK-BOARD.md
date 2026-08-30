@@ -73,13 +73,15 @@ dependencies are hard sequencing gates.
 
 ## Current operational blockers
 
-- Before `P1-00`, repair the 5080 KB-index workflow as one operations-only change. The current
-  launcher SSHes prime-only absolute paths; the remote timer reads a different queue state; its
-  worker routes `index` to non-indexing `model-kb-ingest`; and it does not serialize against the
-  healthy resident Comfy process. Provide the remote runtime/vault/Qdrant route, enforce admission,
-  then reindex and verify a 1024-d nonempty `akula-csd-kb` collection. Do not use the 3090 fallback.
-- `forgejo-runner-cpu` on homelab was inactive and the Forgejo admin runner list was empty at the
-  Phase 0 snapshot. `P1-00` is blocked until it is active and registered.
+- Before `P1-00`, finish the 5080 KB-index **runtime** deploy. Launcher path is fixed to enqueue
+  `rag-index`/`csd-kb` onto the 5080 **local** timeshare state (not prime-only venv SSH, not prime
+  queue file). Still blocked for nonempty `akula-csd-kb`: no indexer/torch on 5080, vault not
+  mounted, Qdrant bound `127.0.0.1` on prime only, Comfy holds ~11 GiB. Do not use the 3090 fallback.
+- Forgejo CPU runners (live 2026-08-30): `homelab-cpu` (id 4) on homelab **and** `akula-prime-cpu`
+  (id 2) on prime — both user-unit `forgejo-runner-cpu`, labels
+  `self-hosted,linux,x64,podman,compute-cpu,host-homelab`, both picking jobs. Product CI host of
+  record remains either labeled host; prefer always-up **homelab** for long jobs. `P1-00` is no
+  longer blocked on “runner missing.”
 - Current Python workflows omit `compute-cpu` and `host-homelab`; one branch adds the noncanonical
   `scribe-cpu-build`. Re-author the selector instead of merging that branch.
 - Current Python fleet CI masks test failures with fallback commands. Land the focused fail-closed

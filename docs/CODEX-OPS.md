@@ -77,17 +77,25 @@ AKULA=/home/kang/code/personal/tzervas/akula-ai-platform
 "$AKULA/scripts/with-gpu-5080" --mode exclusive-seq -- \
   bash -lc 'cd /path/to/CogSynDelta && uv run python -m cogsyndelta.poc.cli train --device cuda --steps 20'
 
-# RAG / CSD vault index (this repo)
+# RAG / CSD vault index (this repo) — enqueues on 5080 local timeshare state via SSH.
+# Does not SSH prime-only venv paths. Does not pause 3090 LocalAI. Does not stop Comfy.
 ./scripts/csd-kb-index
 
-# queue behind Comfy if media is running
-"$AKULA/scripts/gpu-timeshare" enqueue --kind rag-index --subject csd-kb --host gpu5080
-"$AKULA/scripts/gpu-timeshare" status
+# Equivalent manual enqueue (must target 5080 state, not prime /akula-data/cabal/…):
+ssh -o BatchMode=yes gpu5080 \
+  env AKULA_TIMESHARE=/home/tzervas/akula-harness/state/gpu-timeshare.json \
+  python3 /home/tzervas/akula-harness/scripts/gpu-timeshare \
+  enqueue --kind rag-index --subject csd-kb --host gpu5080
+ssh -o BatchMode=yes gpu5080 \
+  env AKULA_TIMESHARE=/home/tzervas/akula-harness/state/gpu-timeshare.json \
+  python3 /home/tzervas/akula-harness/scripts/gpu-timeshare status
 ```
+
+Prime `gpu-timeshare` state (`/akula-data/cabal/gpu-timeshare.json`) is **not** the 5080 worker queue. The 5080 timer uses `AKULA_TIMESHARE=/home/tzervas/akula-harness/state/gpu-timeshare.json`. Enqueue there, or the job never claims.
 
 `share-small` only if `nvidia-smi` free ≥ 8192 MiB and the helper is ≤ ~6 GiB. Otherwise refuse (exit 3). No MIG.
 
-**Maximal leverage:** Codex infers on 3090 (`local/code`) **while** a 5080 job trains or indexes. That is the parallelism. Do not run Comfy and CSD CUDA on the 5080 at once.
+**Maximal leverage:** Codex infers on 3090 (`local/code`) **while** a 5080 job trains or indexes. That is the parallelism. Do not run Comfy and CSD CUDA on the 5080 at once. Reindex needs: indexer + CUDA venv on 5080, vault mount/sync, Qdrant reachable from 5080 (today loopback-only on prime), and free VRAM after Comfy.
 
 ## Homelab + Forgejo CPU
 
