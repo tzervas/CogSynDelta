@@ -12,9 +12,11 @@ cd /home/kang/code/personal/tzervas/CogSynDelta   # this repo, feat/agent-harnes
 
 Trust the project when Codex asks (required for `.codex/config.toml`, hooks, MCP). Review hooks with `/hooks`.
 
-Architecture intent (not measured STATUS): `docs/HANDOFF-ARCHITECTURE.md`. **Read that file** (it is too large to embed in AGENTS.md). Measured capabilities: `STATUS.md`. Strata/PRs: `docs/GROK-STRATA.md`.
+Architecture intent (unvetted ChatGPT context — **not** measured STATUS): `docs/HANDOFF-ARCHITECTURE.md`. **Read that file** and vet it against live Python source. Measured capabilities: `STATUS.md`. Strata/PRs: `docs/GROK-STRATA.md`.
 
-First Codex turn should follow §35 of the handoff: map implemented / partial / planned / proposed. Do not import Gated DeltaNet, Titans, or JEPA in that turn.
+**Python first.** Prove regions, routing, and memory in CogSynDelta + Python `memory-gate`. Rust (`memory-gate-rs`) is a later rewrite for performance, memory safety, and efficiency — not this pass.
+
+First Codex turn should follow §35: map implemented / partial / planned / proposed against the **Python** trees. Do not import Gated DeltaNet, Titans, or JEPA; do not start a Rust port.
 
 ## Knowledge planes (host agent, like Grok)
 

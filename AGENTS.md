@@ -61,7 +61,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 **Python floor is `pyproject.toml` (`>=3.12,<3.14`), not the README 3.14 badge.**
 
-Read `STATUS.md` before README. Architecture intent: `docs/HANDOFF-ARCHITECTURE.md` (open the file; do not treat it as implemented). Strata/PRs: `docs/GROK-STRATA.md`. Codex/Grok launchers refuse `main` / `staging` / `develop` / `dev`.
+Read `STATUS.md` before README. `docs/HANDOFF-ARCHITECTURE.md` is unvetted ChatGPT context — reconcile with live **Python** source before treating any section as real. **Python-first;** Rust rewrite (`memory-gate-rs`) only after the Python path is proven (performance / safety / efficiency). Strata/PRs: `docs/GROK-STRATA.md`. Launchers refuse `main` / `staging` / `develop` / `dev`.
 
 ### Knowledge planes (host agents)
 

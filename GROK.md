@@ -1,6 +1,6 @@
 # Grok harness — CogSynDelta
 
-Working branch in **`tzervas/CogSynDelta`** (`feat/agent-harness`). Codex: `docs/CODEX.md` + `./scripts/codex-csd`. Architecture intent: `docs/HANDOFF-ARCHITECTURE.md`.
+Working branch in **`tzervas/CogSynDelta`** (`feat/agent-harness`). Codex: `docs/CODEX.md` + `./scripts/codex-csd`. `docs/HANDOFF-ARCHITECTURE.md` is unvetted ChatGPT context — vet against live **Python** source. Python-first; Rust rewrite later for speed/safety.
 
 ## Where to sit
 

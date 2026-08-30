@@ -3,7 +3,7 @@ title: CogSynDelta + Memory-Gate architecture handoff
 status: working-context
 indexed: 2026-08-30
 audience: Codex / Grok / humans
-truth: STATUS.md remains the measured-capability source. This document is design intent + research map, not a claim of implementation.
+truth: STATUS.md remains the measured-capability source. This document is unvetted ChatGPT design context. Reconcile every claim against live Python source before treating it as real. Python-first; Rust rewrite only after the Python path is proven.
 ---
 
 # CogSynDelta + Memory-Gate — Architecture Handoff Context
@@ -24,6 +24,14 @@ This handoff summarizes the current architectural discussion around:
 The goal is **not** to immediately implement every architecture discussed.
 
 The goal is to preserve the original design intent, clarify boundaries between projects, identify promising research directions, and establish a controlled path for implementation and experimentation.
+
+**This file is still context, not a spec.** It was drafted in ChatGPT and **must be vetted against the live trees** (`CogSynDelta` Python, `memory-gate` Python, `memory-gate-rs` as a later target). `STATUS.md`, tests, and source win over every section below.
+
+**Implementation order (operator, 2026-08-30):**
+
+1. **Python first** for CogSynDelta and Memory-Gate. The PyTorch / scientific-Python ecosystem is the place to prove regions, routing, memory tiers, and consolidation. Do not start a Rust port to “do it right.”
+2. After the Python path is **measured and complete enough to trust**, rewrite hot paths in Rust (`memory-gate-rs` and later CogSynDelta-rs) for **performance, memory safety, speed, and efficiency**.
+3. `memory-gate-rs` remains a research/reference tree (VSA / `HolographicStore`). It is **not** the current implementation vehicle.
 
 ---
 
@@ -453,11 +461,11 @@ VSA structure
 
 # 10. Memory-Gate Python vs Rust
 
-The Rust implementation is the preferred direction for future core work.
+**Python is the current implementation vehicle.** Prove Memory-Gate (tiers, consolidation-that-creates, persona namespace, write gates) in Python first, next to CogSynDelta’s PyTorch regions. The AI/ML stack (torch, numpy, existing tests, CUDA PoC) is already there.
 
-`memory-gate-rs` is more architecturally interesting because it contains a genuinely different representation layer via VSA/holographic memory.
+`memory-gate-rs` is architecturally interesting (VSA / `HolographicStore`) and is the **planned rewrite target** after the Python design is proven — for performance, memory safety, and efficiency — not the first place to land new behavior.
 
-The Python implementation remains useful as prior work/reference but should not necessarily remain the canonical runtime.
+Do not treat the Rust tree as canonical runtime. Do not port a feature to Rust until the same feature has a measured Python path.
 
 Important existing implementation caveat:
 
@@ -1550,22 +1558,26 @@ remains immutable and always available as a clean fallback.
 
 # 35. Immediate Codex Task Orientation
 
+This handoff is **unvetted ChatGPT context**. Reconcile it with live code before any architecture change.
+
+**Python first.** Implementation and experiments land in CogSynDelta (`src/cogsyndelta/`, PyTorch) and Python `memory-gate`. Rust (`memory-gate-rs`) is a later rewrite for speed/safety/efficiency after the Python path is proven.
+
 Before making architectural changes:
 
-1. Inspect all three repositories and reconcile this handoff against the actual current source.
-2. Treat repository status/docs and tests as stronger evidence than aspirational comments.
+1. Inspect the **Python** trees first (`CogSynDelta`, `memory-gate`) and only then `memory-gate-rs` as a reference. Reconcile every claim in this file against source, `STATUS.md`, and tests.
+2. Treat repository status/docs and tests as stronger evidence than this document or README comments.
 3. Identify where current implementation already satisfies this design.
 4. Identify nomenclature that overstates implementation.
 5. Produce an architecture map of:
 
-   * implemented
+   * implemented (cite file)
    * partially implemented
    * planned
-   * newly proposed
+   * newly proposed (this handoff only — not yet accepted)
 6. Identify interfaces that can evolve without unnecessary rewrites.
 7. Preserve backwards compatibility where practical.
-8. Do not begin a giant refactor merely because the conceptual architecture is larger than the current implementation.
-9. Prefer small controlled experiments and explicit ADRs.
+8. Do not begin a giant refactor merely because the conceptual architecture is larger than the current implementation. Do not start a Rust rewrite this turn.
+9. Prefer small controlled **Python** experiments and explicit ADRs.
 10. Keep all claims empirical: separate hypotheses from measured results.
 
-The first likely implementation work should focus on clean interfaces and experimental scaffolding, not on importing every proposed research architecture.
+The first likely implementation work should focus on clean Python interfaces and experimental scaffolding (parameter-matched `CognitiveRegion` variants), not on importing every proposed research architecture and not on `memory-gate-rs`.
