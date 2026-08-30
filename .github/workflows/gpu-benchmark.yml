@@ -5,7 +5,10 @@
 name: GPU Benchmarks
 
 on:
-  # Manual trigger with benchmark results upload
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       benchmark_json:
@@ -29,9 +32,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: gpu-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   upload-results:
     name: Upload Benchmark Results
+    if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, linux, x64, podman]
 
     steps:
@@ -94,24 +102,60 @@ jobs:
             git push
           fi
 
-  # Job to run if self-hosted runner is available (future)
-  # Uncomment when akula-prime is configured as a runner
-  # self-hosted-benchmark:
-  #   name: Run GPU Benchmarks (Self-Hosted)
-  #   runs-on: [self-hosted, gpu, akula-prime]
-  #   if: false  # Disabled until self-hosted runner is configured
-  #
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v6
-  #
-  #     - name: Run GPU benchmarks
-  #       run: |
-  #         ./scripts/capture_gpu_benchmarks.sh
-  #
-  #     - name: Upload benchmark artifacts
-  #       uses: actions/upload-artifact@v6
-  #       with:
-  #         name: gpu-benchmark-${{ github.run_id }}
-  #         path: benchmark_results/
-  #         retention-days: 365
+  # akula-prime GPU runner labels are self-hosted,linux,x64,gpu,akula-prime.
+  # Do NOT add `podman` — GitHub matches supersets, so a GPU runner with
+  # `podman` would steal homelab CPU jobs.
+  gpu-runner-smoke:
+    name: GPU runner smoke (akula-prime)
+    runs-on: [self-hosted, linux, x64, gpu, akula-prime]
+    timeout-minutes: 10
+    steps:
+      - name: Verify NVIDIA GPU via CDI
+        run: |
+          set -euo pipefail
+          nvidia-smi -L
+          nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used --format=csv
+          test -c /dev/nvidia0
+          echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
+
+  # Same commands as local `scripts/ci_local.sh --poc --cuda`. Keep CUDA
+  # [tool.uv.sources] (do not pass --no-sources). No UV_COMPILE_BYTECODE env.
+  gpu-poc-cuda:
+    name: PoC CUDA tests (akula-prime)
+    runs-on: [self-hosted, linux, x64, gpu, akula-prime]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.7.17"
+          enable-cache: true
+
+      - name: Python + CUDA torch
+        run: |
+          set -euo pipefail
+          uv python install 3.12
+          uv sync --group dev --no-compile-bytecode --link-mode copy
+
+      - name: Assert CUDA
+        run: |
+          set -euo pipefail
+          nvidia-smi -L
+          uv run --no-sync python - <<'PY'
+          import torch
+          assert torch.cuda.is_available(), "torch.cuda.is_available() is False"
+          print(f"torch {torch.__version__} device {torch.cuda.get_device_name(0)}")
+          PY
+
+      - name: Pytest PoC CUDA
+        run: uv run --no-sync pytest tests/test_poc_cuda.py -q --tb=short
+
+      - name: CLI smoke CUDA
+        run: |
+          set -euo pipefail
+          uv run --no-sync python -m cogsyndelta.poc.cli train --device cuda --steps 10 --checkpoint /tmp/poc_vae_cuda.pt
+          uv run --no-sync python -m cogsyndelta.poc.cli compress --device cuda --batch 4
+          uv run --no-sync python -m cogsyndelta.poc.cli route --device cuda --batch 8
+          uv run --no-sync python -m cogsyndelta.poc.cli train-route --device cuda --steps 10

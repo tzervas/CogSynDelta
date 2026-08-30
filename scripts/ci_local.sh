@@ -4,6 +4,7 @@
 # Default: project .venv (Python 3.12, CUDA torch from pyproject cu128).
 # --cpu:   CI-identical CPU torch (--no-sources + pytorch.org/whl/cpu).
 # --poc:   skip full tests/ (only poc-ci surface + CLI smoke).
+# --cuda:  CLI smokes use --device cuda; fail if torch.cuda is unavailable.
 # --pre-commit: also run pre-commit --all-files (CI job, not a required check).
 #
 # Why: ruff S105, quality docstrings, and Python-floor drift landed on GitHub
@@ -19,14 +20,16 @@ PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 
 CPU_SYNC=0
 POC_ONLY=0
+CUDA_CLI=0
 RUN_PRECOMMIT=0
 for arg in "$@"; do
     case "$arg" in
         --cpu) CPU_SYNC=1 ;;
         --poc) POC_ONLY=1 ;;
+        --cuda) CUDA_CLI=1 ;;
         --pre-commit) RUN_PRECOMMIT=1 ;;
         -h|--help)
-            echo "usage: $0 [--cpu] [--poc] [--pre-commit]"
+            echo "usage: $0 [--cpu] [--poc] [--cuda] [--pre-commit]"
             exit 0
             ;;
         *)
@@ -104,17 +107,25 @@ run "poc pytest" uv run --no-sync pytest "${POC_PYTESTS[@]}" -q --tb=short
 
 SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/csd-ci-local.XXXXXX")"
 trap 'rm -rf "${SMOKE_DIR}"' EXIT
+CLI_DEVICE="cpu"
+if [[ "${CUDA_CLI}" -eq 1 ]]; then
+    if ! uv run --no-sync python -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)"; then
+        echo "ci_local --cuda: torch.cuda.is_available() is False" >&2
+        exit 1
+    fi
+    CLI_DEVICE="cuda"
+fi
 run "poc cli train" uv run --no-sync python -m cogsyndelta.poc.cli train \
-    --device cpu --steps 10 --checkpoint "${SMOKE_DIR}/poc_vae.pt"
+    --device "${CLI_DEVICE}" --steps 10 --checkpoint "${SMOKE_DIR}/poc_vae.pt"
 run "poc cli compress" uv run --no-sync python -m cogsyndelta.poc.cli compress \
-    --device cpu --batch 4
+    --device "${CLI_DEVICE}" --batch 4
 if [[ -f src/cogsyndelta/poc/route.py ]]; then
     run "poc cli route" uv run --no-sync python -m cogsyndelta.poc.cli route \
-        --device cpu --batch 8
+        --device "${CLI_DEVICE}" --batch 8
 fi
 if [[ -f src/cogsyndelta/poc/train_route.py ]]; then
     run "poc cli train-route" uv run --no-sync python -m cogsyndelta.poc.cli train-route \
-        --device cpu --steps 10
+        --device "${CLI_DEVICE}" --steps 10
 fi
 
 if [[ "${POC_ONLY}" -eq 0 ]]; then
