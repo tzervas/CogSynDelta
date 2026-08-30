@@ -1,12 +1,13 @@
 # Grok harness — CogSynDelta
 
-Working branch in **`tzervas/CogSynDelta`** (`feat/agent-harness`). Codex: `docs/CODEX.md` + `./scripts/codex-csd`. `docs/HANDOFF-ARCHITECTURE.md` is unvetted ChatGPT context — vet against live **Python** source. Python-first; Rust rewrite later for speed/safety.
+Working branch in **`tzervas/CogSynDelta`** (`feat/agent-harness`). Codex: `docs/CODEX.md` + `./scripts/codex-csd`. Persistent program: `docs/PROGRAM-GOALS.md`. `docs/HANDOFF-ARCHITECTURE.md` is unvetted ChatGPT context — vet against live **Python** source. Python-first (memory-gate, then CSD); Rust rewrite later for speed/safety.
 
 ## Where to sit
 
 ```
-/home/kang/code/personal/tzervas/csd-worktress/CogSynDelta-wt-grok-harness
-branch: feat/grok-harness   (from origin/main PoC HEAD)
+/home/kang/code/personal/tzervas/CogSynDelta
+branch: feat/agent-harness   (from origin/main PoC HEAD)
+Forgejo deep tree: https://git.vectorweight.com/tzervas/CogSynDelta
 ```
 
 Launch:

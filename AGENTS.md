@@ -75,6 +75,7 @@ Read `STATUS.md` before README. `docs/HANDOFF-ARCHITECTURE.md` is unvetted ChatG
 - Flag README or comments that claim VL-JEPA, quantum, mHC, Titans, or 10× compression unless `STATUS.md` or a test you ran supports it.
 - Flag PRs targeting `develop` Jules/maintenance quality bots as out of program (see `docs/GROK-STRATA.md`).
 - Prefer one architecture change per experiment with an ADR.
+- GPUs / Forgejo / HF: `docs/CODEX-OPS.md`. 3090 = one LocalAI GGUF; 5080 = exclusive CUDA/index; homelab = CPU Actions (`compute-cpu`, `host-homelab`). Code on Forgejo **deep trees** (`tzervas/CogSynDelta`, `memory-gate`, `memory-gate-rs`); checkpoints on private `tzervas/cogsyndelta`. Program + keep/drop: `docs/PROGRAM-GOALS.md`. Audit every branch before merging.
 
 ---
 

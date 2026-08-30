@@ -53,3 +53,7 @@ Never write `tzervas-dev-kb` or `akula-model-kb` from Codex. Never merge collect
 | `config/clients/grok.toml.example` | LocalAI aliases (optional; Codex default is OpenAI models) |
 
 Install CLI if missing: `npm i -g @openai/codex`. Auth is ChatGPT/API in `~/.codex` (not this repo).
+
+**Program goals (persistent):** [PROGRAM-GOALS.md](PROGRAM-GOALS.md). Phase 0 = plan + **audit every branch** on CogSynDelta, memory-gate, and memory-gate-rs (KEEP/CHERRY-PICK/ARCHIVE/CLOSE). Phase 1 = Python memory-gate complete. Do not start the Rust rewrite.
+
+**GPUs, pause, Forgejo, HF cards:** [CODEX-OPS.md](CODEX-OPS.md). Skill `/csd-ops`. Keep `local/code` on the 3090; run CSD CUDA and `csd-kb-index` on the 5080; git the **full tree** to `git.vectorweight.com` (never a shallow `main`); weights to private `tzervas/cogsyndelta`.
