@@ -43,6 +43,8 @@ CogSynDelta is **MoE-adjacent, not multi-agent**. Regions are experts of one min
 | `/csd-ci-unblock` | Merge-stack CI |
 | `/csd-python-first-drive` | One closeable Python-first increment (`P1-00`…`P1-17`, `ops-index`, `ops-runner`) |
 
+WebUI/Comfy (`ai.vectorweight.com`, `media.vectorweight.com`): **other Grok session**, cwd akula-ai-platform. Brief: `docs/program/HANDOFF-NEXT.md`.
+
 ## Self-hosted models
 
 Copy tables from `config/clients/grok.toml.example` into `~/.grok/config.toml` by hand. Default for this dig: **hosted Grok** for orchestration; **`local/code`** (Qwen2.5-Coder-14B on akula-prime `:8080`) on the 3090 for implementation slices. One GGUF. Do not dual-load with `local/code-heavy`. Do not CUDA-index RAG while LocalAI holds the 3090. Private HF datasets (`tzervas/cogsyndelta-eval`) only if/when a board row needs a corpus.
