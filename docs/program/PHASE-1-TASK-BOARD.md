@@ -36,7 +36,7 @@ green. GitHub remains a read-only operator mirror.
 | `P1-12` | `P1-11` | **Implement resumable slow CLS** — `feat/cls-slow-pass` | Bounded scheduler/checkpoint processes a known window, can stop/restart without double promotion, reports partial/failure honestly, and never runs uncontrolled background work. Slow promotion policy has measured CPU baseline before any GPU experiment. | High-reasoning scheduling; `local/code` checkpoint slices; homelab CPU soak. |
 | `P1-13` | `P1-09`, `P1-11` | **Add Akula persona backend** — `feat/akula-persona-backend` | Read-only adapter loads versioned definitions only from `/akula-data/obsidian/akula-personas/Personas`; validates schema; instantiates a basin-selection/configuration object; never writes or queries a KB and never models personas as MoE experts/agents. Fixture tests use a temporary persona directory. | High-reasoning semantics/security; `local/code` parser/test slices. |
 | `P1-14` | `P1-10`, `P1-12`, `P1-13` | **Implement stable application façade and adapter boundary** — `feat/memory-application-facade` | One public Python façade exposes typed `start`, `stop`, `drain`, `flush`, `learn`, `retrieve`, `consolidate`, and `instantiate_persona`. Existing agent adapters consume only this façade and cannot call stores directly. Transport/MCP bindings remain separate thin consumers; tests prove no durability bypass and no swarm semantics. | High-reasoning boundary design/review; `local/code` one adapter test + one façade method per slice. |
-| `P1-15` | `P1-07`, `P1-09` | **Add golden recall evaluation** — `test/golden-recall-qwen3` | Corpus, queries, relevance labels, model revision, distance metric, `k`, and threshold are pinned. Deterministic ranking logic runs on CPU; a 5080 exclusive-seq job records actual Qwen3-1024 recall and latency. A skip cannot satisfy the required check. | High-reasoning eval design; Medium + 5080 for measured run; Small model may format results only. |
+| `P1-15` | `P1-07`, `P1-09` | **Add golden recall evaluation** — `test/golden-recall-qwen3` | Corpus, queries, relevance labels, model revision, distance metric, `k`, and threshold are pinned **on private HF `tzervas/cogsyndelta-eval`** (copy a public set into that repo if/when needed). Deterministic ranking logic runs on CPU; a 5080 exclusive-seq job records actual Qwen3-1024 recall and latency. A skip or missing Hub download cannot satisfy the required check. | High-reasoning eval design; Medium + 5080 for measured run; `local/code` may format results only. |
 | `P1-16` | `P1-14`, `P1-15` | **Prove the lifecycle through restart** — `test/memory-gate-lifecycle` | Hermetic SQLite scenario and real Qdrant scenario both execute learn → close/restart → retrieve → fast/slow consolidate → persona instantiate through the public façade. All acknowledged input remains traceable, domain-isolated, and correctly dimensioned; adapter-bypass and failure injection tests pass. | High-reasoning integration/review; homelab CPU, then Medium + 5080 only for real embedding leg. |
 | `P1-17` | `P1-16` | **Close the Python-vs-Rust gap ledger** — `docs/phase1-exit` | Every REQUIRED row in the Phase 0 gap map links to a passing test; STATUS and private HF model-index/card contain only measured claims; Rust-only/VSA items remain explicitly deferred. Publish no checkpoint unless one was actually produced. **Stop and re-plan Phase 2.** | High-reasoning Codex/Grok; HF/Forgejo ops under operator policy. |
 
@@ -73,16 +73,14 @@ dependencies are hard sequencing gates.
 
 ## Current operational blockers
 
-- Before `P1-00`, finish the 5080 KB-index **runtime** deploy. Launcher path is fixed to enqueue
-  `rag-index`/`csd-kb` onto the 5080 **local** timeshare state (not prime-only venv SSH, not prime
-  queue file). Still blocked for nonempty `akula-csd-kb`: no indexer/torch on 5080, vault not
-  mounted, Qdrant bound `127.0.0.1` on prime only, Comfy holds ~11 GiB. Do not use the 3090 fallback.
-- Forgejo CPU runners (live 2026-08-30): `homelab-cpu` (id 4) on homelab **and** `akula-prime-cpu`
-  (id 2) on prime — both user-unit `forgejo-runner-cpu`, labels
-  `self-hosted,linux,x64,podman,compute-cpu,host-homelab`, both picking jobs. Product CI host of
-  record remains either labeled host; prefer always-up **homelab** for long jobs. `P1-00` is no
-  longer blocked on “runner missing.”
-- Current Python workflows omit `compute-cpu` and `host-homelab`; one branch adds the noncanonical
-  `scribe-cpu-build`. Re-author the selector instead of merging that branch.
-- Current Python fleet CI masks test failures with fallback commands. Land the focused fail-closed
-  behavior before trusting any product gate.
+- 5080 index launcher now enqueues on the remote timeshare and refuses 0-point success. Still
+  blocked on: remote Qwen3-1024 runtime, vault mount on gpu5080, Qdrant off loopback, ≥8192 MiB
+  free (do not kill healthy Comfy). Collection remains 1024-d / 0 points. Do not use the 3090
+  fallback.
+- Cabal-collective runners (`akula-prime-cpu`, `homelab-cpu`) are healthy but **out of scope** for
+  user `tzervas/*`. P1-00 YAML is fail-closed on `ci/forgejo-cpu-fail-closed` (Forgejo PR #1);
+  checks stay waiting until a **second** runner is registered to user `tzervas` (preferred:
+  `tzervas-homelab-cpu`). Do not re-register the live cabal units.
+- P1-01 contract is on Forgejo PR #2. Do not start P1-02 product code until a tzervas-scoped
+  runner has produced a real (honest red or green) Forgejo run of P1-00.
+- Golden-recall corpora wait for P1-15: private HF `tzervas/cogsyndelta-eval`, if and when.

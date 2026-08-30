@@ -104,12 +104,15 @@ impl_p += "If ID is ops-index: repair csd-kb-index remote path; enqueue behind C
 impl_p += "If ID is ops-runner: discover and restore the Forgejo CPU runner; do not fake green.\n";
 impl_p += "Commit on the feature branch. Push to forgejo remote if credentials work.\n";
 impl_p += "Open a Forgejo PR if the forge CLI/API is available; otherwise report the push.\n";
+impl_p += "You are local/code on the resident 3090 LocalAI. Keep LocalAI loaded. Never pause it.\n";
+impl_p += "Never steal the 5080 from Comfy. Never deploy a CogSynDelta checkpoint.\n";
+impl_p += "HF datasets: only if this ID is P1-15+; use private tzervas/cogsyndelta-eval.\n";
 impl_p += "Return status, summary, verify_ok (local checks), branch, commit, optional pr_url.\n";
 let impl = agent(impl_p, #{
     label: "implement",
     capability_mode: "all",
     output_schema: impl_schema,
-    model: "grok-4.5",
+    model: "local/code",
 });
 if impl == () || !impl.success || impl.output == () {
     complete(#{ summary: "implement failed", id: pick.output.id });

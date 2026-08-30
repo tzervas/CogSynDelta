@@ -33,6 +33,28 @@ directory are what agents implement against.
 - Shared Akula Qdrant is pinned Qwen3-Embedding-0.6B at **1024** dimensions.
 - Pruning is not consolidation. A skip is not a green check.
 
+## Compute split (until a CSD model is actually deployed)
+
+Do **not** train or ship CogSynDelta weights yet. Use the lab as assist:
+
+| Resource | Until CSD deploy | Do not |
+|---|---|---|
+| Hosted Grok 4.6 / 4.5 | Orchestration, ADRs, review, Forgejo ops, swarms/workflows | Stuff implementation into the parent chat |
+| **3090 Ti LocalAI** `local/code` (Qwen2.5-Coder-14B) | Keep loaded. Implementation slices: one failing test + one function | Pause for RAG; dual-load a second 14B; swap to `local/reasoning` unless a plan-only exclusive job |
+| **5080** | Enqueue CUDA / `csd-kb-index` / later Qwen3-1024 measure | Steal from healthy Comfy; index with the 3090; mix 384-d |
+| Homelab CPU | Forgejo product CI once a **tzervas-scoped** runner exists | Pretend cabal-collective runners cover `tzervas/*` |
+
+Parallelism is **3090 inference while a 5080 job runs**, not two jobs on one card.
+
+## Hugging Face datasets (if and when)
+
+Private Hub only, when a board row actually needs a corpus:
+
+- Model checkpoints later: `tzervas/cogsyndelta`
+- Eval dumps / golden sets: `tzervas/cogsyndelta-eval`
+- First consumer is **P1-15** (golden recall). Until then do not invent Hub numbers or upload empty cards.
+- Public datasets may be **copied into** the private eval repo if/when a test needs them. Pin revision, license, and split in the card YAML `datasets:` list. Never treat a skipped download as a pass.
+
 ## Goal 0 — trustworthy operations (in flight)
 
 1. Repair the 5080 `akula-csd-kb` index path:

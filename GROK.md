@@ -45,7 +45,7 @@ CogSynDelta is **MoE-adjacent, not multi-agent**. Regions are experts of one min
 
 ## Self-hosted models
 
-Copy tables from `config/clients/grok.toml.example` into `~/.grok/config.toml` by hand. Default for this dig: **hosted Grok** for orchestration; **`local/code`** (Qwen2.5-Coder-14B on akula-prime `:8080`) when you want the 3090. One GGUF. Do not dual-load with `local/code-heavy`. Do not CUDA-index RAG while LocalAI holds the 3090.
+Copy tables from `config/clients/grok.toml.example` into `~/.grok/config.toml` by hand. Default for this dig: **hosted Grok** for orchestration; **`local/code`** (Qwen2.5-Coder-14B on akula-prime `:8080`) on the 3090 for implementation slices. One GGUF. Do not dual-load with `local/code-heavy`. Do not CUDA-index RAG while LocalAI holds the 3090. Private HF datasets (`tzervas/cogsyndelta-eval`) only if/when a board row needs a corpus.
 
 ## Hard rules
 

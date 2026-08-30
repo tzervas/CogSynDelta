@@ -168,8 +168,10 @@ Only after Phase 3 exit.
 
 ## Allocation (how work is sized)
 
-Phase 0 is **planning** (this model / Codex). Implementation is **right-sized
-smaller models** with matching reasoning:
+Phase 0 is **complete**. Implementation uses hosted Grok for orchestration and
+the resident 3090 `local/code` GGUF for slices. Do not deploy a CogSynDelta
+checkpoint until Phase 3 has something real to ship. Hugging Face datasets
+are **if/when** (`tzervas/cogsyndelta-eval`).
 
 | Slice | Who | Reasoning |
 |---|---|---|
@@ -191,8 +193,11 @@ See `docs/CODEX-OPS.md`.
   Parallelism = 3090 inference **plus** 5080 job, not two jobs on one card.
 - **Homelab:** Forgejo CPU runner `homelab-cpu` labels
   `self-hosted,linux,x64,podman,compute-cpu,host-homelab`. Never `gpu`.
-- **Hugging Face:** `tzervas/cogsyndelta` (private model) +
-  `tzervas/cogsyndelta-eval` (private dataset). Card YAML is Hub metadata.
+- **Hugging Face:** `tzervas/cogsyndelta` (private model, checkpoints **when
+  we actually train**) + `tzervas/cogsyndelta-eval` (private dataset, **if and
+  when** a test needs a corpus — first consumer is Phase 1 golden recall).
+  Public datasets may be copied into the private eval repo with pin + license.
+  Card YAML is Hub metadata. No empty marketing uploads.
 - **Knowledge:** RO `tzervas-dev-kb` + `akula-model-kb`; RW gap-kb; RW+reindex
   `akula-csd-kb` on 5080. Keyword retrieve on `:8091`/`:8092` is CPU.
 
