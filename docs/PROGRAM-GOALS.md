@@ -53,21 +53,20 @@ Do not author on `main` / `staging` / `develop` / `dev`.
 merge when CI is honestly green and a self-review COMMENT exists. Cabal never
 APPROVEs. Operator still owns the GitHub.com mirror.
 
-## Phase 0 — Plan, inventory, keep/drop (now)
+## Phase 0 — Plan, inventory, keep/drop (**complete** 2026-08-30)
 
-Owner: Grok (this pass) then Codex as host agent. **No large implementation yet.**
+Official artifacts (implement against these, not the ChatGPT handoff):
 
-1. Read `STATUS.md`, `docs/GROK-STRATA.md`, this file, `docs/CODEX-OPS.md`.
-2. **Branch archaeology on all three repos.** Every remote head and every open
-   PR gets a KEEP / CHERRY-PICK / ARCHIVE / CLOSE verdict with a one-line why.
-   Write the table into `akula-csd-kb` (RW) and keep `docs/GROK-STRATA.md` for CSD.
-3. Gap map: Python `memory-gate` vs `memory-gate-rs` vs CSD `src/cogsyndelta/memory/`.
-4. Confirm lab: 3090 LocalAI `local/code` stays up; 5080 exclusive-seq for CUDA;
-   homelab `forgejo-runner-cpu` is `compute-cpu,host-homelab`; HF `tzervas/cogsyndelta`
-   private exists.
+- [docs/program/PYTHON-FIRST-PLAN.md](program/PYTHON-FIRST-PLAN.md)
+- [docs/program/PHASE-0-KEEP-DROP.md](program/PHASE-0-KEEP-DROP.md)
+- [docs/program/PYTHON-MEMORY-GATE-GAP-MAP.md](program/PYTHON-MEMORY-GATE-GAP-MAP.md)
+- [docs/program/PHASE-1-TASK-BOARD.md](program/PHASE-1-TASK-BOARD.md)
 
-**Do not close GitHub PRs from the agent.** Recommend CLOSE on Forgejo copies and
-in the audit note. Operator closes on GitHub.com when they mirror.
+Phase 0 Codex planning is accepted. **Implementation is in progress** (Goal 0
+ops + Phase 1 board). Drive one ID at a time with `/csd-python-first-drive`.
+
+**Do not close GitHub PRs from the agent.** CLOSE rows are operator
+recommendations. Operator closes on GitHub.com when they mirror.
 
 ### Keep / drop protocol (mandatory)
 
@@ -101,7 +100,7 @@ Starting hypotheses (must be **re-validated** against the live trees, not copied
 - CLOSE/defer: Dependabot on GitHub Actions that we will not run here; `merge/main-into-dev`.
 - Use this tree to **write the gap list for Python**, not to add features in Rust.
 
-## Phase 1 — Python memory-gate complete
+## Phase 1 — Python memory-gate complete (**current**)
 
 Goal: Python `memory-gate` is the **full dynamic memory and persona backend**,
 validated, production-ready, wired to akula knowledge planes.

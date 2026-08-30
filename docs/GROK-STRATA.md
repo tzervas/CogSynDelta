@@ -51,8 +51,13 @@ Claude/copilot remote branches (`claude/*`, `copilot/create-pcn-vae-gan-hybrid`)
 | Quality-bot PRs | develop #27–#67 | Noise on sediment |
 | README VL-JEPA / quantum / agent fleet | marketing on all tips | Not measured |
 
+Full Forgejo keep/drop (126 heads, 2026-08-30): `docs/program/PHASE-0-KEEP-DROP.md`.
+Python-first execution plan: `docs/program/PYTHON-FIRST-PLAN.md`.
+
 ## Next honest increment (one slice)
 
-1. Rebase #59 onto `origin/main` and land GPU CI if the operator wants it.
+1. Drive Phase 1 from `docs/program/PHASE-1-TASK-BOARD.md` (`P1-00` CI, then
+   lifecycle contract). Rebase #59 onto `origin/main` only as a separate CSD CI
+   slice; do not mix it into memory-gate PRs.
 2. Dig Program A only (`/code-thropology`, `/csd-code-thropology`).
 3. Do **not** merge develop or Jules PRs into main to “catch up.”

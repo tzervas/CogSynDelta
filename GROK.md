@@ -41,6 +41,7 @@ CogSynDelta is **MoE-adjacent, not multi-agent**. Regions are experts of one min
 | `/csd-branch-pr-review` | Workflow: open PRs × main/develop — fits vs sediment |
 | `/csd-poc-gpu-drive` | CUDA measure on 5080 (exclusive-seq; do not pause LocalAI) |
 | `/csd-ci-unblock` | Merge-stack CI |
+| `/csd-python-first-drive` | One closeable Python-first increment (`P1-00`…`P1-17`, `ops-index`, `ops-runner`) |
 
 ## Self-hosted models
 
