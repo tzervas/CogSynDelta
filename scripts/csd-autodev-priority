@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Autodev owns both GPUs. Pause idle Open WebUI. Keep Comfy masked.
+# Never docker-stop akula-localai.
+set -euo pipefail
+ACTION="${1:-status}"
+STEER="${CSD_STEER:-/akula-data/cabal/csd-steer.json}"
+
+# WebUIs belong on homelab only. Prime must not run Open WebUI.
+webui_homelab_only() {
+  docker update --restart=no akula-open-webui >/dev/null 2>&1 || true
+  docker stop akula-open-webui >/dev/null 2>&1 || true
+  echo "prime-webui: stopped (UI is homelab-only)"
+}
+
+webui_start() {
+  ssh -o BatchMode=yes homelab \
+    'sudo -n systemctl start akula-open-webui.service' >/dev/null 2>&1 || true
+  echo "homelab-webui: running (backends are 3090/5080 APIs)"
+}
+
+comfy_hold() {
+  ssh -o BatchMode=yes gpu5080 \
+    'sudo -n systemctl mask akula-comfyui.service >/dev/null; systemctl is-enabled akula-comfyui.service' \
+    || true
+  echo "comfy: masked"
+}
+
+case "$ACTION" in
+  on)
+    mkdir -p "$(dirname "$STEER")"
+    python3 - "$STEER" <<'PY'
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+d = {}
+if p.is_file():
+    try:
+        d = json.loads(p.read_text())
+    except json.JSONDecodeError:
+        d = {}
+d["autodev_priority"] = True
+d["pause"] = False
+p.write_text(json.dumps(d, indent=2) + "\n")
+PY
+    comfy_hold
+    webui_homelab_only
+    webui_start
+    ;;
+  off)
+    python3 - "$STEER" <<'PY'
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+d = {}
+if p.is_file():
+    try:
+        d = json.loads(p.read_text())
+    except json.JSONDecodeError:
+        d = {}
+d["autodev_priority"] = False
+p.write_text(json.dumps(d, indent=2) + "\n")
+PY
+    webui_start
+    echo "comfy: still masked until operator unmask"
+    ;;
+  status)
+    echo "steer=$(cat "$STEER" 2>/dev/null || echo '{}')"
+    docker inspect -f 'prime-webui={{.State.Status}}' akula-open-webui 2>/dev/null || echo prime-webui=none
+    ssh -o BatchMode=yes homelab 'systemctl is-active akula-open-webui.service' 2>/dev/null | awk '{print "homelab-webui="$1}'
+    ssh -o BatchMode=yes gpu5080 'systemctl is-enabled akula-comfyui.service 2>/dev/null; systemctl --user is-active forgejo-runner-gpu-tzervas.service' | awk 'NR==1{print "comfy="$1} NR==2{print "gpu-runner="$1}'
+    ;;
+  *)
+    echo "usage: csd-autodev-priority on|off|status" >&2
+    exit 2
+    ;;
+esac

@@ -131,7 +131,9 @@ while round < 3 {
         impl_p += "Push Forgejo as tzervas + git-askpass, credential.helper disabled.\n";
         impl_p += "Open/push a Forgejo PR. The Merge phase waits on CI; do not merge here.\n";
         impl_p += "If this increment cannot progress, set progressed=false and say why.\n";
-        impl_p += "Do not start G-TRAIN. Keep 3090 LocalAI loaded. Implement as grok-4.6.\n";
+        impl_p += "Do not start G-TRAIN. Keep 3090 LocalAI loaded.\n";
+        impl_p += "Patches: ./scripts/csd-localai-queue complete --kind autodev --prompt ...\n";
+        impl_p += "Autodev priority over WebUI/Comfy. WebUIs live on homelab only.\n";
         impl_p += "Return goal_id, status, summary, verify_ok, progressed, branch, commit, pr_url.\n";
         let impl = agent(impl_p, #{
             label: "drive-goal",

@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Serial LocalAI queue on the 3090. Autodev jobs beat WebUI/interactive.
+
+Workflows cannot spawn model slug local/code. They call this CLI instead;
+one worker POSTs to LocalAI. Steer pause skips new autodev pops.
+
+  csd-localai-queue complete --prompt '...'     # enqueue + wait
+  csd-localai-queue worker                      # loop
+  csd-localai-queue status
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import time
+import urllib.request
+import uuid
+from pathlib import Path
+
+DIR = Path(os.environ.get("CSD_LOCALAI_QUEUE", "/akula-data/cabal/localai-queue"))
+STEER = Path(os.environ.get("CSD_STEER", "/akula-data/cabal/csd-steer.json"))
+LOCALAI = os.environ.get("LOCALAI_URL", "http://127.0.0.1:8080")
+ALIAS = os.environ.get("CSD_LOCALAI_ALIAS", "local/code")
+PRIO = {"autodev": 0, "test": 1, "helper": 2, "webui": 9, "interactive": 9}
+
+
+def key() -> str:
+    return os.environ.get("LOCALAI_API_KEY") or ""
+
+
+def load_steer() -> dict:
+    if not STEER.is_file():
+        return {}
+    try:
+        return json.loads(STEER.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def enqueue(prompt: str, kind: str, alias: str) -> str:
+    DIR.mkdir(parents=True, exist_ok=True)
+    jid = uuid.uuid4().hex[:12]
+    rec = {
+        "id": jid,
+        "kind": kind,
+        "alias": alias,
+        "prompt": prompt,
+        "status": "queued",
+        "prio": PRIO.get(kind, 5),
+        "t": time.time(),
+    }
+    (DIR / f"{jid}.json").write_text(json.dumps(rec), encoding="utf-8")
+    return jid
+
+
+def next_job() -> dict | None:
+    jobs = []
+    for p in DIR.glob("*.json"):
+        if p.name.endswith(".result.json"):
+            continue
+        try:
+            rec = json.loads(p.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if rec.get("status") == "queued":
+            jobs.append(rec)
+    if not jobs:
+        return None
+    jobs.sort(key=lambda r: (int(r.get("prio") or 5), float(r.get("t") or 0)))
+    return jobs[0]
+
+
+def complete_job(rec: dict, text: str, err: str = "") -> None:
+    rec["status"] = "error" if err else "done"
+    rec["result"] = text
+    rec["error"] = err
+    (DIR / f"{rec['id']}.json").write_text(json.dumps(rec), encoding="utf-8")
+    (DIR / f"{rec['id']}.result.json").write_text(json.dumps(rec), encoding="utf-8")
+
+
+def call_localai(prompt: str, alias: str) -> str:
+    body = json.dumps(
+        {
+            "model": alias,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 2048,
+            "temperature": 0.2,
+        }
+    ).encode()
+    hdr = {"Content-Type": "application/json"}
+    if key():
+        hdr["Authorization"] = f"Bearer {key()}"
+    req = urllib.request.Request(f"{LOCALAI}/v1/chat/completions", data=body, headers=hdr)
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        data = json.loads(resp.read().decode())
+    return str(((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+
+
+def worker_once() -> bool:
+    steer = load_steer()
+    if steer.get("pause"):
+        return False
+    rec = next_job()
+    if not rec:
+        return False
+    rec["status"] = "running"
+    (DIR / f"{rec['id']}.json").write_text(json.dumps(rec), encoding="utf-8")
+    try:
+        text = call_localai(str(rec.get("prompt") or ""), str(rec.get("alias") or ALIAS))
+        complete_job(rec, text)
+    except Exception as exc:  # noqa: BLE001
+        complete_job(rec, "", str(exc)[:500])
+    return True
+
+
+def wait_result(jid: str, timeout: float) -> dict:
+    path = DIR / f"{jid}.result.json"
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if path.is_file():
+            return json.loads(path.read_text(encoding="utf-8"))
+        worker_once()
+        time.sleep(0.2)
+    return {"id": jid, "status": "timeout", "error": "timeout"}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    en = sub.add_parser("complete")
+    en.add_argument("--prompt", required=True)
+    en.add_argument("--kind", default="autodev")
+    en.add_argument("--alias", default=ALIAS)
+    en.add_argument("--timeout", type=float, default=300)
+    sub.add_parser("worker")
+    sub.add_parser("status")
+    args = ap.parse_args()
+    if args.cmd == "status":
+        n = len(list(DIR.glob("*.json"))) if DIR.is_dir() else 0
+        print(json.dumps({"dir": str(DIR), "files": n, "steer": load_steer()}))
+        return 0
+    if args.cmd == "worker":
+        while True:
+            if not worker_once():
+                time.sleep(2)
+        return 0
+    jid = enqueue(args.prompt, args.kind, args.alias)
+    rec = wait_result(jid, args.timeout)
+    print(rec.get("result") or rec.get("error") or "")
+    return 0 if rec.get("status") == "done" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

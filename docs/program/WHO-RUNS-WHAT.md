@@ -19,19 +19,24 @@ Grok is the control plane: plans, WAN, merge policy, research feed.
 | Homelab `homelab-cpu` | 192.168.1.170 | none | Forgejo CPU Actions |
 | `gpu5080-tzervas` | gpu5080 | none | Forgejo GPU Actions, queued on `gpu5080.lock` |
 
-So: autodev **workflows are hosted Grok**, not the 3090 coder, until a local
-harness calls LocalAI. That gap is what `scripts/csd-lab-console` and
-`code.vectorweight.com` are for.
+**WebUIs live on homelab only.** GPU backends are akula-prime (3090 LocalAI)
+and gpu5080 (CUDA / helpers / GPU CI). Prime must not run Open WebUI.
+
+Workflows still **orchestrate** as grok-4.5/4.6 (host slugs), but **code
+generation goes through** `./scripts/csd-localai-queue` → 3090 `local/code`
+(autodev priority over WebUI chat). 5080 is tests/helpers behind `gpu5080.lock`.
+
+## Operator UI
+
+- Chat: https://code.vectorweight.com (homelab Open WebUI → 3090 `:8080`)
+- Lab/steer: https://code.vectorweight.com/lab (`csd-lab-console`)
+- Autodev priority: `./scripts/csd-autodev-priority on` (Comfy masked; prime WebUI off)
 
 ## How to invert it (self-hosted lift)
 
-1. Chat / steer / watch: `./scripts/csd-lab-console` or https://code.vectorweight.com
-   (Open WebUI → LocalAI `local/code`).
-2. Local implement loop (Cabal `cabal-dev-loop` pattern): one file, pytest,
-   Forgejo PR — **LocalAI writes, Grok reviews**. Not wired as the default
-   `/csd-python-first-drive` child yet (workflow host slugs are grok-4.5/4.6
-   only).
-3. 5080: GPU tests + CUDA jobs, not text implement.
+1. Implement agents call `csd-localai-queue complete --kind autodev`.
+2. 5080: GPU pytest + helper models, never a second 14B.
+3. Hosted Grok: pick, verify, WAN, merge-when-green.
 
 ## Monitor
 

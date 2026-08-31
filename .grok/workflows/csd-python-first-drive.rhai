@@ -107,8 +107,10 @@ if pick.output.closeable == false {
 phase("Implement");
 let impl_p = "";
 impl_p += "Implement exactly one closeable Python-first increment.\n";
-impl_p += "Open a Forgejo PR. Do not merge yet in this implement step; the Merge\n";
-impl_p += "phase waits on CI. Never merge Jules/develop/GitHub bot PRs.\n";
+impl_p += "Code-generation: CogSynDelta ./scripts/csd-localai-queue complete --kind autodev\n";
+impl_p += "--prompt '...' (3090 local/code, queued; autodev beats WebUI). Do not dual 14B.\n";
+impl_p += "5080 is CUDA/tests/helpers behind gpu5080.lock, not a second 14B.\n";
+impl_p += "Open a Forgejo PR. Merge phase waits on CI. Never Jules/develop/GitHub bots.\n";
 impl_p += "ID: " + pick.output.id + "\n";
 impl_p += "DoD: " + pick.output.dod + "\n";
 impl_p += "Repo: " + pick.output.repo + "\n";
