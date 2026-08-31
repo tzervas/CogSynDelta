@@ -1,0 +1,32 @@
+# Snippet only. Copy selected [model.*] tables into ~/.grok/config.toml.
+# Do not overwrite hosted xAI models or [mcp_servers] from automation.
+# LocalAI names match akula-ai-platform config/localai/models/*.yaml.
+
+[model.local-code]
+model = "local/code"
+name = "Local code (Qwen2.5-Coder-14B)"
+description = "CogSynDelta dig / edits. Exclusive 3090. Unloads chat."
+base_url = "http://127.0.0.1:8080/v1"
+api_backend = "chat_completions"
+env_key = "LOCALAI_API_KEY"
+context_window = 16384
+temperature = 0.2
+
+[model.local-fast]
+model = "local/fast"
+name = "Local fast (Ministral-3-14B)"
+description = "Daily chat alias. Same GGUF as local-general."
+base_url = "http://127.0.0.1:8080/v1"
+api_backend = "chat_completions"
+env_key = "LOCALAI_API_KEY"
+context_window = 16384
+temperature = 0.07
+
+[model.local-reasoning]
+model = "local/reasoning"
+name = "Local reasoning (gpt-oss-20b)"
+description = "Plan / strata synthesis. Exclusive 3090 Harmony."
+base_url = "http://127.0.0.1:8080/v1"
+api_backend = "chat_completions"
+env_key = "LOCALAI_API_KEY"
+context_window = 16384

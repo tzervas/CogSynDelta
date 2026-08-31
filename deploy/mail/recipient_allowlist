@@ -1,0 +1,4 @@
+# Envelope recipients allowed on the send-only MTA.
+# Not an open relay even from Grafana. Hash with: postmap hash:/etc/postfix/recipient_allowlist
+maintainers@vectorweight.com OK
+alerts@vectorweight.com OK

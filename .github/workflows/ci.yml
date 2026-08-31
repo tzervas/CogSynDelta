@@ -29,7 +29,7 @@ jobs:
     name: Lint & Format Check
     runs-on: [self-hosted, linux, x64, podman]
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Install uv
       uses: astral-sh/setup-uv@v7
@@ -56,7 +56,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: [self-hosted, linux, x64, podman]
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Install uv
       uses: astral-sh/setup-uv@v7
@@ -71,7 +71,7 @@ jobs:
     name: Quality Score Check
     runs-on: [self-hosted, linux, x64, podman]
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Run quality checks (90+ required)
       # Stdlib only. Runner image already has python3.
@@ -83,7 +83,7 @@ jobs:
     timeout-minutes: 25
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Install uv
       uses: astral-sh/setup-uv@v7
@@ -96,6 +96,11 @@ jobs:
 
     - name: Install dependencies with CPU-only PyTorch
       run: |
+        set -euo pipefail
+        # Isolate from ~/.cache/uv — concurrent homelab jobs racing torch wheel
+        # extract fail with "No such file or directory" on libtorch_global_deps.so.
+        export UV_CACHE_DIR="${RUNNER_TEMP:-/tmp}/uv-cache-${GITHUB_RUN_ID:-$$}"
+        mkdir -p "$UV_CACHE_DIR"
         # Use --no-sources to bypass pyproject.toml torch source (cu128)
         # Use --index-strategy unsafe-best-match to allow packages from all indexes
         uv sync --group dev --no-sources --no-compile-bytecode --link-mode copy \
@@ -106,15 +111,9 @@ jobs:
       run: |
         uv run --no-sync pytest tests/ -q --tb=short --cov=cogsyndelta --cov-report=xml --cov-report=term
 
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
-      continue-on-error: true
+    # Codecov action is not mirrored on data.forgejo.org; cloning it
+    # aborted the whole job before pytest. Coverage XML stays in the
+    # workspace. Do not re-add uses: codecov/* until the mirror exists.
 
   # CodeQL removed - requires Code Scanning to be enabled in repo settings
   # Enable at: Settings > Security > Code scanning > Set up code scanning
@@ -126,7 +125,7 @@ jobs:
     needs: [test]
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Install uv
       uses: astral-sh/setup-uv@v7
@@ -146,7 +145,7 @@ jobs:
         uv tool run twine check dist/*
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v3
       with:
         name: dist
         path: dist/

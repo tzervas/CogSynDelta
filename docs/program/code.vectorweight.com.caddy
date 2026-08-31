@@ -1,0 +1,20 @@
+# Homelab Caddy: CSD lab harness only.
+# Chat/Open WebUI stays https://ai.vectorweight.com (existing instance).
+# GPU backends: akula-prime :8080 LocalAI, gpu5080 CUDA/helpers.
+
+https://code.vectorweight.com {
+  import tls_vectorweight
+  encode gzip
+  handle /chat* {
+    redir https://ai.vectorweight.com{uri} 302
+  }
+  reverse_proxy 192.168.1.98:9118 {
+    header_up Host {host}
+    header_up X-Forwarded-Proto {scheme}
+    fail_duration 10s
+  }
+}
+
+http://code.vectorweight.com {
+  redir https://code.vectorweight.com{uri} permanent
+}

@@ -27,7 +27,14 @@ from cogsyndelta.core.vl_jepa_extension import (
     TemporalMemoryBank,
     VisionEncoder,
 )
-from cogsyndelta.memory.memory_persistence import InfiniteLoopSafeguard, PersistentMemoryBank
+from cogsyndelta.memory.memory_persistence import (
+    DEFAULT_GPU_TIMEOUT_S,
+    DEFAULT_MAX_OUTPUT_BYTES,
+    LAB_GPU_MAX_PROCESS_BYTES,
+    LAB_GPU_MIN_PROCESS_BYTES,
+    InfiniteLoopSafeguard,
+    PersistentMemoryBank,
+)
 
 
 class IntegratedSelfImprovingSystem(nn.Module):
@@ -92,10 +99,16 @@ class IntegratedSelfImprovingSystem(nn.Module):
         if safeguard_config.get("enabled", True):
             loop_config = safeguard_config.get("loop_detection", {})
             timeout_config = safeguard_config.get("timeouts", {})
+            limits = safeguard_config.get("resource_limits", {})
             self.safeguard = InfiniteLoopSafeguard(
                 max_iterations=loop_config.get("max_iterations", 1000),
                 max_repetitions=loop_config.get("max_repetitions", 5),
-                timeout_seconds=timeout_config.get("max_execution_time", 300),
+                timeout_seconds=timeout_config.get("max_execution_time", DEFAULT_GPU_TIMEOUT_S),
+                max_output_size=int(limits.get("max_output_size", DEFAULT_MAX_OUTPUT_BYTES)),
+                max_memory_usage=int(limits.get("max_memory_usage", LAB_GPU_MIN_PROCESS_BYTES)),
+                max_memory_usage_ceiling=int(
+                    limits.get("max_memory_usage_ceiling", LAB_GPU_MAX_PROCESS_BYTES)
+                ),
             )
         else:
             self.safeguard = None

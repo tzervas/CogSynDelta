@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -62,7 +62,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # Full history for better analysis
 
@@ -106,7 +106,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -143,7 +143,7 @@ jobs:
           uv run --no-project python scripts/quality_control.py src/ >> quality-metrics.md
 
       - name: Upload quality metrics
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v3
         with:
           name: quality-metrics
           path: quality-metrics.md

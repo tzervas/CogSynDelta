@@ -28,7 +28,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -39,6 +39,10 @@ jobs:
       - name: Python + deps (CPU torch)
         run: |
           set -euo pipefail
+          # Isolate from ~/.cache/uv — concurrent jobs racing torch wheel extract
+          # fail with "No such file or directory" on libtorch_global_deps.so.
+          export UV_CACHE_DIR="${RUNNER_TEMP:-/tmp}/uv-cache-${GITHUB_RUN_ID:-$$}"
+          mkdir -p "$UV_CACHE_DIR"
           uv python install 3.12 || uv python install 3.13 || true
           uv sync --group dev --no-sources --no-compile-bytecode --link-mode copy \
             --extra-index-url https://download.pytorch.org/whl/cpu \

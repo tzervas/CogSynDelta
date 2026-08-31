@@ -21,6 +21,8 @@ An Architecture Decision Record captures an important architectural decision mad
 | [0004](0004-graceful-degradation-patterns.md) | Graceful Degradation Patterns | Accepted | 2026-01-18 |
 | [0005](0005-conventional-commits.md) | Conventional Commits Standard | Accepted | 2026-01-18 |
 | [0006](0006-google-style-docstrings.md) | Google Style Docstrings | Accepted | 2026-01-18 |
+| [0015](0015-lan-gpu-model-pool.md) | LAN GPU inference pool (3090 Ti + 5080) | Accepted (Stage A) | 2026-08-31 |
+| [0016](0016-consumer-gpu-share.md) | MIG-like GPU share on consumer cards | Proposed | 2026-08-31 |
 
 ## Creating New ADRs
 

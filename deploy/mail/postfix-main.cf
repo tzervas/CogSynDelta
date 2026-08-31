@@ -1,0 +1,61 @@
+# Send-only MTA for homelab Grafana/CSD alerts.
+# Not an MX. vectorweight.com MX is Google. Do not receive internet mail.
+# Do not listen on 0.0.0.0. Do not port-forward 25/587/465.
+
+smtpd_banner = $myhostname ESMTP
+biff = no
+append_dot_mydomain = no
+readme_directory = no
+compatibility_level = 3.6
+
+myhostname = mail.vectorweight.com
+myorigin = vectorweight.com
+# Not a destination for @vectorweight.com — that is Google Workspace.
+mydestination = localhost
+relayhost =
+inet_interfaces = 127.0.0.1, 172.30.0.1
+inet_protocols = ipv4
+
+# Submitters: loopback + Grafana container only (not the rest of security-net).
+mynetworks = 127.0.0.1/32, 172.30.0.13/32
+smtpd_client_restrictions = permit_mynetworks, reject
+smtpd_helo_restrictions = permit_mynetworks, reject
+smtpd_relay_restrictions = permit_mynetworks, reject
+# permit_mynetworks is NOT used here: it would skip the allowlists.
+smtpd_sender_restrictions = check_sender_access hash:/etc/postfix/sender_allowlist, reject
+smtpd_recipient_restrictions = check_recipient_access hash:/etc/postfix/recipient_allowlist, reject
+smtpd_helo_required = yes
+smtpd_sasl_auth_enable = no
+disable_vrfy_command = yes
+smtpd_discard_ehlo_keywords = etrn, starttls, silent-discard
+smtpd_forbid_unauth_pipelining = yes
+smtpd_forbid_bare_newline = reject
+strict_rfc821_envelopes = yes
+local_transport = error: this host does not accept local mail
+alias_maps =
+alias_database =
+
+# Outbound TLS when the peer offers it (Gmail does). Inbound smtpd has no TLS.
+smtp_tls_security_level = may
+smtp_tls_loglevel = 1
+smtp_tls_CApath = /etc/ssl/certs
+smtpd_tls_security_level = none
+
+mailbox_size_limit = 0
+recipient_delimiter = +
+home_mailbox =
+message_size_limit = 204800
+
+# Slow a compromised Grafana; alerts are low volume.
+anvil_rate_time_unit = 60s
+smtpd_client_connection_count_limit = 4
+smtpd_client_connection_rate_limit = 8
+smtpd_client_message_rate_limit = 20
+smtpd_client_recipient_rate_limit = 20
+default_destination_concurrency_limit = 2
+default_destination_rate_delay = 1s
+
+# Do not bounce forever. No DSN to grafana@ (that mailbox does not exist).
+maximal_queue_lifetime = 1d
+bounce_queue_lifetime = 4h
+notify_classes = resource, software

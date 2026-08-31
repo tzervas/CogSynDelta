@@ -1,5 +1,6 @@
 # Fleet security lint/scan — self-hosted. Badge reflects honest job status on trunk.
 # cancel-in-progress: false — do not kill started scans on rapid pushes.
+# No continue-on-error / missing-tool skip. Homelab CPU already has trivy.
 name: fleet-security
 
 on:
@@ -24,7 +25,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Run gitleaks
@@ -45,15 +46,14 @@ jobs:
     name: trivy filesystem (vuln+secret+license)
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 15
-    continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Trivy fs
         run: |
           set -euo pipefail
           if ! command -v trivy >/dev/null 2>&1; then
-            echo "trivy missing — advisory skip (continue-on-error)"
-            exit 0
+            echo "trivy missing on runner — FAIL (honest security gate)" >&2
+            exit 1
           fi
           trivy fs --scanners vuln,secret,license \
             --severity HIGH,CRITICAL \

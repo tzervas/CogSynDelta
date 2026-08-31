@@ -75,6 +75,17 @@ This document tracks all third-party dependencies, their licenses, and complianc
 |---------|---------|---------|-------|------------------|
 | triton | >=3.3.0 | MIT | Kernel optimization | None required |
 
+### Lab runtime images (not Python package deps)
+
+Pinned in `config/model-router.json` `runtimes`. Do not load vLLM on
+the 3090 beside `local/code`.
+
+| Image / source | License | Usage |
+|---|---|---|
+| localai/localai CUDA 12 (llama.cpp wrap) | MIT | 3090 autodev GGUF |
+| vllm/vllm-openai:v0.28.0 (akula pin) | Apache-2.0 | 5080 batched/MoE/HF |
+| microsoft/BitNet (source; no lab image yet) | MIT | W1.58 specialists |
+
 ### Inference Providers (`[inference-providers]`)
 
 | Package | Version | License | Usage | Compliance Notes |

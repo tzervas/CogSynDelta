@@ -53,9 +53,29 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 | Agent | Directory | Format | Status |
 |-------|-----------|--------|--------|
+| **Grok Build** | `.grok/` + `GROK.md` | Markdown / Rhai | ✅ `./scripts/grok-csd` |
+| **OpenAI Codex** | `.codex/` + this file | TOML / hooks / skills | ✅ `./scripts/codex-csd` |
 | **GitHub Copilot** | `.github/agents/` | Markdown | ✅ Full Support |
 | **Claude Code** | `.claude/commands/` | Markdown | 🔄 Planned |
 | **Cursor** | `.cursor/rules/` | Markdown | 🔄 Planned |
+
+**Python floor is `pyproject.toml` (`>=3.12,<3.14`), not the README 3.14 badge.**
+
+Read `STATUS.md` before README. `docs/HANDOFF-ARCHITECTURE.md` is unvetted ChatGPT context — reconcile with live **Python** source before treating any section as real. **Python-first;** Rust rewrite (`memory-gate-rs`) only after the Python path is proven (performance / safety / efficiency). Strata/PRs: `docs/GROK-STRATA.md`. Launchers refuse `main` / `staging` / `develop` / `dev`.
+
+### Knowledge planes (host agents)
+
+- **RO:** operator `tzervas-dev-kb`, model `akula-model-kb`, shared Cabal segments. MCP + `:8091` keyword-cpu.
+- **RW process memory:** `akula-gap-kb` (`:8092` / MCP). Not chat RAG.
+- **RW + reindex (Codex/Grok experiment plane):** `akula-csd-kb`. `./scripts/csd-kb-setup` then `./scripts/csd-kb-index` (5080 exclusive-seq, **never pause 3090 LocalAI**).
+- Never write operator or model vaults. Never mix 384-d collections.
+
+### Code Review Rules
+
+- Flag README or comments that claim VL-JEPA, quantum, mHC, Titans, or 10× compression unless `STATUS.md` or a test you ran supports it.
+- Flag PRs targeting `develop` Jules/maintenance quality bots as out of program (see `docs/GROK-STRATA.md`).
+- Prefer one architecture change per experiment with an ADR.
+- GPUs / Forgejo / HF: `docs/CODEX-OPS.md`. 3090 = one LocalAI GGUF; 5080 = exclusive CUDA/index; homelab = CPU Actions (`compute-cpu`, `host-homelab`). Code on Forgejo **deep trees** (`tzervas/CogSynDelta`, `memory-gate`, `memory-gate-rs`); checkpoints on private `tzervas/cogsyndelta`. Program + keep/drop: `docs/PROGRAM-GOALS.md`. Audit every branch before merging.
 
 ---
 

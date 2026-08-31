@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Escalate to hosted Grok Build CLI only when policy says so.
+
+Default is dry-run (log, no API). Set CSD_ESCALATE=1 to actually call:
+  grok --print --prompt-file ... --allow 'Read' --deny 'Bash(curl *)'
+
+Reasons allowed: wan, stall, adr, merge-policy, safety.
+Never G-TRAIN. Never --always-approve.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import time
+from pathlib import Path
+
+LOG = Path("/akula-data/cabal/escalate-log.jsonl")
+ALLOW = {"wan", "stall", "adr", "merge-policy", "safety"}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--reason", required=True)
+    ap.add_argument("--prompt", required=True)
+    args = ap.parse_args()
+    reason = args.reason.strip().lower()
+    rec = {
+        "t": time.time(),
+        "reason": reason,
+        "prompt": args.prompt[:2000],
+        "fired": False,
+        "ok": reason in ALLOW,
+    }
+    if reason not in ALLOW:
+        rec["error"] = "reason not in allowlist"
+    elif os.environ.get("CSD_ESCALATE") == "1":
+        pfile = Path("/tmp/csd-escalate-prompt.txt")
+        pfile.write_text(args.prompt, encoding="utf-8")
+        cmd = [
+            "grok",
+            "--print",
+            "--prompt-file",
+            str(pfile),
+            "--allow",
+            "Read",
+            "--deny",
+            "Bash(curl *)",
+            "--deny",
+            "Bash(wget *)",
+        ]
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=180, check=False)
+        rec["fired"] = True
+        rec["rc"] = p.returncode
+        rec["out"] = (p.stdout or "")[:4000]
+        rec["err"] = (p.stderr or "")[:1000]
+    else:
+        rec["note"] = "dry-run; export CSD_ESCALATE=1 to call grok CLI"
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with LOG.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec) + "\n")
+    print(json.dumps({k: rec[k] for k in rec if k != "prompt"}))
+    return 0 if rec.get("ok") else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

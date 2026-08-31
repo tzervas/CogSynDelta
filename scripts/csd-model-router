@@ -1,0 +1,632 @@
+#!/usr/bin/env python3
+"""Place, migrate, and pack LocalAI/helpers across 3090 Ti and 5080.
+
+Never dual 14B. Autodev default is local/code on the 3090. 5080 helpers
+use gpu5080.lock. Small fits_5080 models migrate off the 3090 when a
+tight 14B/heavy must load; they restore only after min_dwell and only
+when it makes sense (no ping-pong). Combined ~40 GiB pool is planned,
+not executed, until pool.enabled and 5080 GGUFs exist.
+
+  csd-model-router status
+  csd-model-router request --alias local/code --why autodev --ttl 3600
+  csd-model-router pack
+  csd-model-router restore
+  csd-model-router plan-pool --alias pool/large
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import time
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+LOCALAI = os.environ.get("LOCALAI_URL", "http://127.0.0.1:8080")
+_CAT: dict[str, Any] | None = None
+
+
+def state_path() -> Path:
+    return Path(
+        os.environ.get("CSD_ROUTER_STATE", "/akula-data/cabal/model-router-state.json")
+    )
+
+
+def plan_path() -> Path:
+    return Path(os.environ.get("CSD_GPU_PLAN", "/akula-data/cabal/gpu-plan.json"))
+
+
+def cat_path() -> Path:
+    return Path(
+        os.environ.get("CSD_ROUTER_CATALOG", str(ROOT / "config/model-router.json"))
+    )
+
+
+def catalog() -> dict[str, Any]:
+    """Load the router catalog, cached for one process."""
+    global _CAT
+    if _CAT is None:
+        _CAT = json.loads(cat_path().read_text(encoding="utf-8"))
+    return _CAT
+
+
+def reset_catalog() -> None:
+    """Drop the cached catalog. Why: tests swap catalogs via env."""
+    global _CAT
+    _CAT = None
+
+
+def key() -> str:
+    return os.environ.get("LOCALAI_API_KEY") or ""
+
+
+def load_state() -> dict[str, Any]:
+    path = state_path()
+    if path.is_file():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+    return {"resident": {}, "parked": {}, "history": []}
+
+
+def save_state(st: dict[str, Any]) -> None:
+    path = state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    st["history"] = (st.get("history") or [])[-40:]
+    path.write_text(json.dumps(st, indent=2) + "\n", encoding="utf-8")
+
+
+def load_inventory() -> dict[str, Any]:
+    """Read last gpu-plan.json if present; empty dict otherwise."""
+    path = plan_path()
+    if path.is_file():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def host_caps(host: str, inventory: dict[str, Any] | None = None) -> set[str]:
+    """Effective capability tags for a host, overlaying live inventory.
+
+    Why: 5080 has no GGUF today, so gguf-infer is only a future cap.
+    Blackwell vs Ampere tags keep CUDA work off the 3090.
+    """
+    cat = catalog()
+    spec = (cat.get("hosts") or {}).get(host) or {}
+    caps = set(spec.get("caps") or [])
+    inv = inventory or {}
+    if host == "gpu5080":
+        node = inv.get("gpu5080") or {}
+        n_gguf = int(node.get("gguf_count") or 0)
+        if n_gguf <= 0:
+            caps.discard("gguf-infer")
+            caps.add("no-gguf")
+        else:
+            caps.add("gguf-infer")
+        if node.get("helper_ok") is False:
+            caps.discard("embed")
+    return caps
+
+
+def caps_ok(alias_spec: dict[str, Any], host: str, inventory: dict[str, Any]) -> bool:
+    """Return True if host provides every needs_caps tag for the alias."""
+    need = set(alias_spec.get("needs_caps") or [])
+    if not need:
+        return True
+    have = host_caps(host, inventory)
+    return need <= have
+
+
+def prefer_score(alias_spec: dict[str, Any], host: str, inventory: dict[str, Any]) -> int:
+    """Count of prefer_caps the host has. Higher is a better match."""
+    prefer = set(alias_spec.get("prefer_caps") or [])
+    return len(prefer & host_caps(host, inventory))
+
+
+def ping(alias: str) -> str:
+    body = json.dumps(
+        {
+            "model": alias,
+            "messages": [{"role": "user", "content": "Reply with the single word OK."}],
+            "max_tokens": 4,
+            "temperature": 0,
+        }
+    ).encode()
+    hdr = {"Content-Type": "application/json"}
+    if key():
+        hdr["Authorization"] = f"Bearer {key()}"
+    req = urllib.request.Request(f"{LOCALAI}/v1/chat/completions", data=body, headers=hdr)
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read().decode())
+    return str(((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+
+
+def expire_residents(st: dict[str, Any], now: float) -> None:
+    res = st.get("resident") or {}
+    st["resident"] = {k: v for k, v in res.items() if float(v.get("until") or 0) > now}
+
+
+def clashes(want: dict[str, Any], resident: dict[str, Any]) -> str | None:
+    wclass = want.get("class")
+    aliases = catalog().get("aliases") or {}
+    for alias, rec in resident.items():
+        spec = aliases.get(alias) or {}
+        if wclass in (spec.get("exclusive_with") or []) or spec.get("class") in (
+            want.get("exclusive_with") or []
+        ):
+            if alias == want.get("_name"):
+                continue
+            return alias
+    return None
+
+
+def split_plan(vram_mib: int) -> dict[str, Any]:
+    """Plan a llama.cpp RPC layer split by 24:16 VRAM ratio.
+
+    Why: 3090 Ti ~24 GiB + 5080 ~16 GiB ≈ 40 GiB combined. Tight
+    decode stays on one card; this plan is for latency-ok-lan models
+    that do not fit either card. Not executed until pool.enabled.
+    """
+    pool = catalog().get("pool") or {}
+    ratio = pool.get("ratio_prime_5080") or [24, 16]
+    p, g = int(ratio[0]), int(ratio[1])
+    total = max(p + g, 1)
+    prime_share = int(vram_mib * p / total)
+    return {
+        "backend": pool.get("backend") or "llama.cpp-rpc",
+        "enabled": bool(pool.get("enabled")),
+        "prime_layers_vram_mib": prime_share,
+        "gpu5080_layers_vram_mib": vram_mib - prime_share,
+        "rpc": {"prime": pool.get("rpc_prime"), "gpu5080": pool.get("rpc_5080")},
+        "combined_mib": pool.get("combined_mib"),
+        "headroom_mib": pool.get("headroom_mib"),
+        "latency": "LAN hop per decode step on 5080 layers",
+        "tight_stays_on_one_card": pool.get("tight_stays_on_one_card", True),
+    }
+
+
+def should_restore(  # noqa: PLR0911
+    parked: dict[str, Any],
+    st: dict[str, Any],
+    inventory: dict[str, Any],
+    now: float,
+) -> str:
+    """Decide restore / stay / drop for one parked alias.
+
+    Returns stay, restore-prime, or drop-for-cuda.
+    Why: swap back only when it makes sense. Min dwell stops ping-pong
+    from the 30s autodev tick. CUDA on 5080 beats a parked helper.
+    """
+    pool = catalog().get("pool") or {}
+    dwell = float(pool.get("min_dwell_s") or 600)
+    since = float(parked.get("since") or 0)
+    if now - since < dwell:
+        return "stay"
+    aliases = catalog().get("aliases") or {}
+    name = str(parked.get("alias") or "")
+    spec = aliases.get(name) or {}
+    res = st.get("resident") or {}
+    exclusive_on_prime = any(
+        (aliases.get(a) or {}).get("class") in {"14b", "heavy", "pooled"}
+        and rec.get("host") == "akula-prime"
+        for a, rec in res.items()
+    )
+    node5080 = inventory.get("gpu5080") or {}
+    lock_busy = "idle" not in str(node5080.get("lock") or "idle")
+    helper_ok = bool(node5080.get("helper_ok"))
+    prime = inventory.get("akula-prime") or {}
+    leftover = int(prime.get("free_mib") or 0)
+    vram = int(spec.get("vram_mib") or parked.get("vram_mib") or 0)
+    if lock_busy or not helper_ok:
+        if leftover >= vram + 1024 and not exclusive_on_prime:
+            return "restore-prime"
+        if leftover >= vram + 1024 and spec.get("latency") == "ok-lan":
+            # 14B still resident; only if leftover truly holds the helper.
+            used = int(prime.get("used_mib") or 0)
+            total = int(prime.get("total_mib") or 23028)
+            if total - used >= vram + 1024:
+                return "restore-prime"
+        return "drop-for-cuda"
+    if exclusive_on_prime:
+        return "stay"
+    if leftover < vram + 1024:
+        return "stay"
+    if spec.get("latency") == "tight":
+        return "restore-prime"
+    prefs = list(spec.get("host_pref") or [])
+    if prefs and prefs[0] == "akula-prime":
+        # 3090 idle long enough: preferred home is prime, not the 5080.
+        return "restore-prime"
+    return "stay"
+
+
+def _evict(st: dict[str, Any], alias: str, why: str, now: float) -> None:
+    st.setdefault("resident", {}).pop(alias, None)
+    st.setdefault("history", []).append({"t": now, "evict": alias, "why": why})
+
+
+def _park(
+    st: dict[str, Any],
+    alias: str,
+    spec: dict[str, Any],
+    why: str,
+    now: float,
+    physical: bool,
+) -> dict[str, Any]:
+    rec = {
+        "alias": alias,
+        "from": "akula-prime",
+        "host": "gpu5080",
+        "since": now,
+        "why": why,
+        "vram_mib": spec.get("vram_mib"),
+        "physical": physical,
+    }
+    st.setdefault("parked", {})[alias] = rec
+    st.setdefault("resident", {})[alias] = {
+        "host": "gpu5080",
+        "until": now + int(spec.get("ttl_s") or 180),
+        "why": why,
+        "parked": True,
+        "physical": physical,
+    }
+    st.setdefault("history", []).append(
+        {"t": now, "migrate": alias, "to": "gpu5080", "physical": physical, "why": why}
+    )
+    return rec
+
+
+def migrate_small_off_prime(
+    st: dict[str, Any],
+    inventory: dict[str, Any],
+    why: str,
+    now: float,
+) -> list[dict[str, Any]]:
+    """Move fits_5080 residents off the 3090 to make room for a tight model.
+
+    Physical load only if 5080 has gguf-infer (GGUF on disk) and lock idle.
+    Otherwise record a logical park so we do not pretend the 8B is loaded.
+    """
+    aliases = catalog().get("aliases") or {}
+    moved: list[dict[str, Any]] = []
+    node = inventory.get("gpu5080") or {}
+    helper_ok = bool(node.get("helper_ok"))
+    physical_ok = helper_ok and "gguf-infer" in host_caps("gpu5080", inventory)
+    for alias, rec in list((st.get("resident") or {}).items()):
+        if rec.get("host") != "akula-prime":
+            continue
+        spec = aliases.get(alias) or {}
+        if not spec.get("fits_5080"):
+            continue
+        if spec.get("class") in {"14b", "heavy", "pooled", "cuda"}:
+            continue
+        if not helper_ok:
+            continue
+        moved.append(_park(st, alias, spec, why, now, physical_ok))
+    return moved
+
+
+def place_host(
+    spec: dict[str, Any],
+    inventory: dict[str, Any],
+) -> str:
+    """Pick akula-prime, gpu5080, pool, or reject from caps + VRAM + latency."""
+    prefs = list(spec.get("host_pref") or ["akula-prime"])
+    if spec.get("pool_ok") and not spec.get("fits_prime") and not spec.get("fits_5080"):
+        return "pool"
+    ranked: list[tuple[int, str]] = []
+    for host in prefs:
+        if host == "pool":
+            continue
+        if not caps_ok(spec, host, inventory):
+            continue
+        if host == "gpu5080" and spec.get("fits_5080") is False:
+            continue
+        if host == "akula-prime" and spec.get("fits_prime") is False:
+            continue
+        if host == "gpu5080":
+            node = inventory.get("gpu5080") or {}
+            if spec.get("needs_lock") == "gpu5080" and not node.get("helper_ok", True):
+                continue
+        ranked.append((prefer_score(spec, host, inventory), host))
+    if not ranked:
+        if spec.get("pool_ok"):
+            return "pool"
+        return "reject"
+    ranked.sort(key=lambda x: (-x[0], prefs.index(x[1]) if x[1] in prefs else 9))
+    return ranked[0][1]
+
+
+def request_alias(  # noqa: PLR0911
+    alias: str,
+    why: str,
+    ttl: int | None,
+    noping: bool = False,
+    now: float | None = None,
+    inventory: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Request a model: migrate, place, optional ping, never dual 14B."""
+    cat = catalog()
+    spec = (cat.get("aliases") or {}).get(alias)
+    if not spec:
+        return {"ok": False, "error": f"unknown alias {alias}"}
+    spec = dict(spec)
+    spec["_name"] = alias
+    now = time.time() if now is None else now
+    inv = inventory if inventory is not None else load_inventory()
+    st = load_state()
+    st.setdefault("resident", {})
+    st.setdefault("parked", {})
+    st.setdefault("history", [])
+    expire_residents(st, now)
+
+    if spec.get("latency") == "tight" and spec.get("pool_ok"):
+        return {
+            "ok": False,
+            "error": "tight-latency cannot split across LAN",
+            "alias": alias,
+        }
+
+    host = place_host(spec, inv)
+    if host == "pool":
+        plan = split_plan(int(spec.get("vram_mib") or 0))
+        pool = cat.get("pool") or {}
+        if spec.get("preempt_autodev") is False and cat.get("autodev_sticky"):
+            if any(
+                a == cat.get("autodev_default") for a in (st.get("resident") or {})
+            ):
+                return {
+                    "ok": False,
+                    "error": "pool would preempt autodev",
+                    "alias": alias,
+                    "plan": plan,
+                }
+        if not plan.get("enabled") or "no-gguf" in host_caps("gpu5080", inv):
+            return {
+                "ok": False,
+                "error": "pool-parked",
+                "alias": alias,
+                "plan": plan,
+                "note": pool.get("note"),
+            }
+        return {"ok": False, "error": "pool-not-wired", "alias": alias, "plan": plan}
+
+    if host == "reject":
+        return {
+            "ok": False,
+            "error": "no host with required caps / VRAM",
+            "alias": alias,
+            "needs_caps": spec.get("needs_caps"),
+        }
+
+    ttl_s = int(ttl if ttl is not None else spec.get("ttl_s") or 180)
+    migrated: list[dict[str, Any]] = []
+    if host == "akula-prime" and spec.get("class") in {"14b", "heavy", "vision"}:
+        migrated = migrate_small_off_prime(st, inv, f"room for {alias}", now)
+
+    hit = clashes(spec, st.get("resident") or {})
+    if hit and hit != alias:
+        exclusive = spec.get("class") in {"14b", "heavy", "vision", "pooled", "cuda"}
+        if exclusive or (
+            cat.get("never_dual_14b") and spec.get("class") in {"14b", "heavy", "vision"}
+        ):
+            _evict(st, hit, f"exclusive for {alias}", now)
+
+    if host == "gpu5080":
+        physical = "gguf-infer" in host_caps("gpu5080", inv)
+        st["resident"][alias] = {
+            "host": "gpu5080",
+            "until": now + ttl_s,
+            "why": why,
+            "physical": physical,
+            "note": (
+                "helper slot; run under gpu5080.lock"
+                if physical
+                else "logical park; no 5080 GGUF yet"
+            ),
+        }
+        save_state(st)
+        return {
+            "ok": True,
+            "alias": alias,
+            "host": "gpu5080",
+            "ttl_s": ttl_s,
+            "loaded": physical,
+            "migrated": migrated,
+        }
+
+    already = (st.get("resident") or {}).get(alias) or {}
+    remaining = float(already.get("until") or 0) - now
+    do_ping = (not noping) and remaining < 300
+    text = ""
+    if do_ping:
+        text = ping(alias)
+    st["resident"][alias] = {
+        "host": "akula-prime",
+        "until": now + ttl_s,
+        "why": why,
+        "ping": text[:80] if text else already.get("ping"),
+        "noping": noping or not do_ping,
+    }
+    st.get("parked", {}).pop(alias, None)
+    save_state(st)
+    return {
+        "ok": True,
+        "alias": alias,
+        "host": "akula-prime",
+        "ttl_s": ttl_s,
+        "ping": text[:80] if text else None,
+        "migrated": migrated,
+    }
+
+
+def restore_pass(
+    now: float | None = None,
+    inventory: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Apply should_restore to every parked alias. No ping-pong."""
+    now = time.time() if now is None else now
+    inv = inventory if inventory is not None else load_inventory()
+    st = load_state()
+    expire_residents(st, now)
+    actions: list[dict[str, Any]] = []
+    for alias, parked in list((st.get("parked") or {}).items()):
+        parked = dict(parked)
+        parked["alias"] = alias
+        decision = should_restore(parked, st, inv, now)
+        if decision == "stay":
+            continue
+        if decision == "restore-prime":
+            spec = (catalog().get("aliases") or {}).get(alias) or {}
+            st.get("parked", {}).pop(alias, None)
+            st.setdefault("resident", {})[alias] = {
+                "host": "akula-prime",
+                "until": now + int(spec.get("ttl_s") or 180),
+                "why": "restore-when-sensible",
+            }
+            st.setdefault("history", []).append(
+                {"t": now, "restore": alias, "to": "akula-prime"}
+            )
+            actions.append({"alias": alias, "op": "restore-prime"})
+        elif decision == "drop-for-cuda":
+            st.get("parked", {}).pop(alias, None)
+            st.get("resident", {}).pop(alias, None)
+            st.setdefault("history", []).append(
+                {"t": now, "drop": alias, "why": "5080-cuda"}
+            )
+            actions.append({"alias": alias, "op": "drop-for-cuda"})
+    save_state(st)
+    return {"ok": True, "actions": actions}
+
+
+def pack_helpers(
+    noping: bool = True,
+    now: float | None = None,
+    inventory: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Fill leftover VRAM with helpers that fit, without dual 14B or OOM.
+
+    Why: autodev should stand up embed/8B in free space instead of
+    leaving the 5080 idle while the 3090 holds only local/code.
+    """
+    now = time.time() if now is None else now
+    inv = inventory if inventory is not None else load_inventory()
+    cat = catalog()
+    default = str(cat.get("autodev_default") or "local/code")
+    actions: list[dict[str, Any]] = []
+    rec = request_alias(default, "autodev-pack", None, noping=noping, now=now, inventory=inv)
+    actions.append(rec)
+    prime = inv.get("akula-prime") or {}
+    node = inv.get("gpu5080") or {}
+    prime_free = int(prime.get("free_mib") or 0)
+    gpu_free = int(node.get("free_mib") or 0)
+    aliases = cat.get("aliases") or {}
+    # Prefer 5080 for embed (Blackwell/CUDA), 3090 leftover for tiny GGUF.
+    order = ["embed-qwen3-0.6b", "local/uncensored-fast"]
+    st = load_state()
+    for name in order:
+        spec = aliases.get(name) or {}
+        vram = int(spec.get("vram_mib") or 0)
+        host = place_host(spec, inv)
+        if host == "reject":
+            continue
+        if name in (st.get("resident") or {}):
+            continue
+        if host == "gpu5080":
+            if not node.get("helper_ok"):
+                # Fallback: 3090 leftover if caps allow and it fits.
+                if caps_ok(spec, "akula-prime", inv) and prime_free >= vram + 1024:
+                    host = "akula-prime"
+                else:
+                    continue
+            elif gpu_free < vram + 512:
+                continue
+        if host == "akula-prime" and prime_free < vram + 1024:
+            continue
+        if spec.get("class") in {"14b", "heavy"}:
+            continue
+        got = request_alias(name, "pack-helper", None, noping=True, now=now, inventory=inv)
+        actions.append(got)
+        if got.get("ok") and got.get("host") == "gpu5080":
+            gpu_free -= vram
+        elif got.get("ok") and got.get("host") == "akula-prime":
+            prime_free -= vram
+        st = load_state()
+    rest = restore_pass(now=now, inventory=inv)
+    return {"ok": True, "actions": actions, "restore": rest}
+
+
+def job_to_alias(job: str) -> str:
+    job = job.lower()
+    for alias, spec in (catalog().get("aliases") or {}).items():
+        if job in (spec.get("jobs") or []) or job == alias:
+            return alias
+    return str(catalog().get("autodev_default") or "local/code")
+
+
+def status_blob() -> dict[str, Any]:
+    cat = catalog()
+    inv = load_inventory()
+    return {
+        "catalog": list(cat.get("aliases") or {}),
+        "hosts": {
+            name: {"caps": sorted(host_caps(name, inv)), "spec": spec}
+            for name, spec in (cat.get("hosts") or {}).items()
+        },
+        "pool": cat.get("pool"),
+        "state": load_state(),
+        "inventory": inv,
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("status")
+    rq = sub.add_parser("request")
+    rq.add_argument("--alias")
+    rq.add_argument("--job")
+    rq.add_argument("--why", default="autodev")
+    rq.add_argument("--ttl", type=int)
+    rq.add_argument("--noping", action="store_true")
+    sub.add_parser("pack").add_argument("--noping", action="store_true", default=True)
+    sub.add_parser("restore")
+    pp = sub.add_parser("plan-pool")
+    pp.add_argument("--alias", default="pool/large")
+    args = ap.parse_args()
+    if args.cmd == "status":
+        print(json.dumps(status_blob(), indent=2))
+        return 0
+    if args.cmd == "pack":
+        rec = pack_helpers(noping=bool(args.noping))
+        print(json.dumps(rec))
+        return 0 if rec.get("ok") else 1
+    if args.cmd == "restore":
+        rec = restore_pass()
+        print(json.dumps(rec))
+        return 0
+    if args.cmd == "plan-pool":
+        spec = (catalog().get("aliases") or {}).get(args.alias) or {}
+        rec = {
+            "alias": args.alias,
+            "plan": split_plan(int(spec.get("vram_mib") or 36000)),
+            "ok": False,
+            "error": "pool-parked",
+        }
+        print(json.dumps(rec, indent=2))
+        return 0
+    alias = args.alias or (
+        job_to_alias(args.job) if args.job else catalog().get("autodev_default")
+    )
+    rec = request_alias(str(alias), args.why, args.ttl, noping=args.noping)
+    print(json.dumps(rec))
+    return 0 if rec.get("ok") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

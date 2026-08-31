@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""Forgejo API as identity ``autodev``. Token from CSD vault only.
+
+Allowlisted repos: tzervas/CogSynDelta, tzervas/memory-gate.
+Never prints TOKEN. Never GitHub.
+
+  secret exec TOKEN=git/autodev -- ./scripts/csd-autodev-forgejo prs memory-gate
+  secret exec TOKEN=git/autodev -- ./scripts/csd-autodev-forgejo status CogSynDelta <sha>
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+FJ = "https://git.vectorweight.com/api/v1"
+ALLOW = frozenset({"tzervas/CogSynDelta", "tzervas/memory-gate"})
+USER = "autodev"
+
+
+def token() -> str:
+    tok = os.environ.get("TOKEN") or os.environ.get("FORGEJO_TOKEN") or ""
+    if not tok:
+        print("need TOKEN=git/autodev via secret exec", file=sys.stderr)
+        sys.exit(2)
+    return tok
+
+
+def repo_id(raw: str) -> str:
+    name = raw if "/" in raw else f"tzervas/{raw}"
+    if name not in ALLOW:
+        print(f"repo not allowlisted: {name}", file=sys.stderr)
+        sys.exit(2)
+    return name
+
+
+def api(method: str, path: str, body: dict | None = None) -> tuple[int, object]:
+    data = None if body is None else json.dumps(body).encode()
+    req = urllib.request.Request(
+        FJ + path,
+        data=data,
+        method=method,
+        headers={
+            "Authorization": f"token {token()}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            raw = resp.read().decode()
+            return resp.status, json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode()[:400]
+
+
+def cmd_whoami(_: argparse.Namespace) -> int:
+    """Repo-limited tokens have no read:user; 403 on /user is expected."""
+    code, body = api("GET", "/user")
+    login = body.get("login") if isinstance(body, dict) else None
+    code2, _ = api("GET", "/repos/tzervas/memory-gate")
+    print(json.dumps({"http": code, "login": login, "memory_gate": code2}))
+    return 0 if code2 == 200 else 1
+
+
+def cmd_prs(ns: argparse.Namespace) -> int:
+    repo = repo_id(ns.repo)
+    q = urllib.parse.urlencode({"state": ns.state, "limit": str(ns.limit)})
+    code, body = api("GET", f"/repos/{repo}/pulls?{q}")
+    if not isinstance(body, list):
+        print(json.dumps({"http": code, "error": body}))
+        return 1
+    rows = [
+        {
+            "number": p.get("number"),
+            "title": p.get("title"),
+            "state": p.get("state"),
+            "head": (p.get("head") or {}).get("ref"),
+            "mergeable": p.get("mergeable"),
+            "user": (p.get("user") or {}).get("login"),
+        }
+        for p in body
+    ]
+    print(json.dumps({"http": code, "repo": repo, "pulls": rows}, indent=2))
+    return 0
+
+
+def cmd_pr_create(ns: argparse.Namespace) -> int:
+    repo = repo_id(ns.repo)
+    code, body = api(
+        "POST",
+        f"/repos/{repo}/pulls",
+        {
+            "title": ns.title,
+            "body": ns.body or "",
+            "head": ns.head,
+            "base": ns.base,
+        },
+    )
+    if not isinstance(body, dict) or code not in {201, 200}:
+        print(json.dumps({"http": code, "error": body}))
+        return 1
+    print(
+        json.dumps(
+            {
+                "http": code,
+                "number": body.get("number"),
+                "url": body.get("html_url") or body.get("url"),
+                "user": (body.get("user") or {}).get("login"),
+            }
+        )
+    )
+    return 0
+
+
+def cmd_status(ns: argparse.Namespace) -> int:
+    repo = repo_id(ns.repo)
+    code, body = api("GET", f"/repos/{repo}/commits/{ns.sha}/status")
+    if not isinstance(body, dict):
+        print(json.dumps({"http": code, "error": body}))
+        return 1
+    checks = [
+        {
+            "context": s.get("context"),
+            "state": s.get("status") or s.get("state"),
+        }
+        for s in (body.get("statuses") or [])
+    ]
+    print(json.dumps({"http": code, "state": body.get("state"), "checks": checks}, indent=2))
+    return 0 if code == 200 else 1
+
+
+def cmd_comment(ns: argparse.Namespace) -> int:
+    repo = repo_id(ns.repo)
+    code, body = api(
+        "POST",
+        f"/repos/{repo}/issues/{ns.number}/comments",
+        {"body": ns.body},
+    )
+    ok = code in {201, 200}
+    print(json.dumps({"http": code, "ok": ok}))
+    return 0 if ok else 1
+
+
+def cmd_wait(ns: argparse.Namespace) -> int:
+    """Poll combined status. Does not merge. Honest red stays red."""
+    repo = repo_id(ns.repo)
+    deadline = time.time() + ns.timeout
+    last = ""
+    while time.time() < deadline:
+        code, body = api("GET", f"/repos/{repo}/commits/{ns.sha}/status")
+        state = body.get("state") if isinstance(body, dict) else "error"
+        if state != last:
+            print(json.dumps({"http": code, "state": state}), flush=True)
+            last = str(state)
+        if state in {"success", "failure", "error"}:
+            return 0 if state == "success" else 1
+        time.sleep(ns.poll)
+    print(json.dumps({"http": 0, "state": "timeout"}))
+    return 2
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("whoami")
+    p_list = sub.add_parser("prs")
+    p_list.add_argument("repo")
+    p_list.add_argument("--state", default="open")
+    p_list.add_argument("--limit", type=int, default=20)
+    p_new = sub.add_parser("pr-create")
+    p_new.add_argument("repo")
+    p_new.add_argument("title")
+    p_new.add_argument("head")
+    p_new.add_argument("--base", default="main")
+    p_new.add_argument("--body", default="")
+    p_st = sub.add_parser("status")
+    p_st.add_argument("repo")
+    p_st.add_argument("sha")
+    p_c = sub.add_parser("comment")
+    p_c.add_argument("repo")
+    p_c.add_argument("number", type=int)
+    p_c.add_argument("body")
+    p_w = sub.add_parser("wait")
+    p_w.add_argument("repo")
+    p_w.add_argument("sha")
+    p_w.add_argument("--timeout", type=int, default=1800)
+    p_w.add_argument("--poll", type=int, default=30)
+    ns = ap.parse_args()
+    dispatch = {
+        "whoami": cmd_whoami,
+        "prs": cmd_prs,
+        "pr-create": cmd_pr_create,
+        "status": cmd_status,
+        "comment": cmd_comment,
+        "wait": cmd_wait,
+    }
+    return dispatch[ns.cmd](ns)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

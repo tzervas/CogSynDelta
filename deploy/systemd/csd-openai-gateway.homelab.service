@@ -1,0 +1,21 @@
+[Unit]
+Description=CSD OpenAI gateway on homelab (forwards to prime LocalAI)
+After=default.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kang/code/personal/tzervas/CogSynDelta
+Environment=LOCALAI_URL=http://192.168.1.98:8080
+Environment=CSD_GW_BIND=192.168.1.170
+Environment=CSD_GW_FORWARD_ONLY=1
+Environment=SECRET_VAULT=/home/kang/.config/csd/vault
+Environment=SOPS_AGE_KEY_FILE=/home/kang/.config/csd/vault/age.txt
+# CSD vault replica (same age key as prime). Never operator ~/.secrets.
+ExecStart=/usr/local/bin/secret exec LOCALAI_API_KEY=gpu/localai-api-key -- /usr/bin/python3 /home/kang/code/personal/tzervas/CogSynDelta/scripts/csd-openai-gateway --port 9120
+Restart=always
+RestartSec=3
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

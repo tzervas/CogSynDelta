@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Launch OpenAI Codex in this CogSynDelta checkout. Never argv secrets.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+case "$branch" in
+  main|staging|develop|dev)
+    echo "csd: refuse Codex launch on protected branch $branch" >&2
+    exit 2
+    ;;
+esac
+echo "csd-codex: HEAD=$branch $(git rev-parse --short HEAD) root=$ROOT" >&2
+echo "csd-codex: read docs/HANDOFF-ARCHITECTURE.md + STATUS.md; RW vault akula-csd-kb" >&2
+if ! command -v codex >/dev/null 2>&1; then
+  echo "csd-codex: install CLI: npm i -g @openai/codex" >&2
+  exit 127
+fi
+exec codex "$@"

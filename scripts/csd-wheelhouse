@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Download Python wheels on a WAN host (akula-prime) into /akula-data/pypi-offline
+# and rsync to gpu5080. Sandbox/5080 jobs use --offline --find-links.
+# Does not fetch chromadb (CVE) or CUDA torch (5080 uses the Comfy image).
+set -euo pipefail
+DEST="${CSD_WHEELHOUSE:-/akula-data/pypi-offline}"
+REMOTE="${CSD_WHEELHOUSE_REMOTE:-gpu5080:/home/tzervas/akula-harness/pypi-offline}"
+CSD="${CSD_ROOT:-/home/kang/code/personal/tzervas/CogSynDelta}"
+MG="${MEMORY_GATE_ROOT:-/home/kang/code/personal/tzervas/python-ai/memory-gate}"
+mkdir -p "$DEST"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-$DEST/uv-cache}"
+mkdir -p "$UV_CACHE_DIR"
+
+echo "csd-wheelhouse: dest=$DEST" >&2
+# Core + test tools. No torch/chromadb (GPU torch = Comfy image; chroma blocked).
+uv pip download -d "$DEST" --python-platform x86_64-manylinux_2_28 \
+  pydantic numpy prometheus-client pytest pytest-asyncio pytest-cov \
+  pytest-timeout ruff mypy pyyaml httpx hypothesis packaging pluggy \
+  iniconfig exceptiongroup tomli sqlite-vec qdrant-client grpcio \
+  protobuf pydantic-core typing-extensions anyio \
+  >/dev/null
+if [[ -f "$MG/pyproject.toml" ]]; then
+  uv export --directory "$MG" --extra dev --no-hashes --no-emit-workspace \
+    2>/dev/null | grep -vE '^(chromadb|torch|transformers|sentence-transformers|nvidia-)' \
+    > /tmp/mg-wheels.txt || true
+  if [[ -s /tmp/mg-wheels.txt ]]; then
+    uv pip download -d "$DEST" -r /tmp/mg-wheels.txt >/dev/null || true
+  fi
+fi
+if [[ -f "$CSD/pyproject.toml" ]]; then
+  uv export --directory "$CSD" --extra dev --no-hashes --no-emit-workspace \
+    2>/dev/null | grep -vE '^(torch|torchvision|triton|nvidia-|chromadb)' \
+    > /tmp/csd-wheels.txt || true
+  if [[ -s /tmp/csd-wheels.txt ]]; then
+    uv pip download -d "$DEST" -r /tmp/csd-wheels.txt >/dev/null || true
+  fi
+fi
+ls "$DEST"/*.whl 2>/dev/null | wc -l | awk '{print "csd-wheelhouse: wheels="$1}'
+echo "csd-wheelhouse: rsync $REMOTE" >&2
+ssh -o BatchMode=yes gpu5080 'mkdir -p /home/tzervas/akula-harness/pypi-offline'
+rsync -a --include '*.whl' --include '*.tar.gz' --exclude uv-cache --exclude '*' \
+  "$DEST"/ gpu5080:/home/tzervas/akula-harness/pypi-offline/ || \
+  rsync -a "$DEST"/ gpu5080:/home/tzervas/akula-harness/pypi-offline/
+echo "csd-wheelhouse: ok UV_FIND_LINKS=$DEST (remote /home/tzervas/akula-harness/pypi-offline)"
