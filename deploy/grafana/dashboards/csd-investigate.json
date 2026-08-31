@@ -1,0 +1,616 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Error rate (Loki), saturation (GPU), latency (scrape). No invented RED.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "csd-investigate"
+      ],
+      "title": "CSD lab",
+      "type": "dashboards"
+    }
+  ],
+  "liveNow": false,
+  "panels": [
+    {
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "content": "**Not classic RED.** There is no `http_requests_total` or app latency histogram. Used live series only: Loki error rate, `up` (availability), `scrape_duration_seconds` (scrape latency, often ~8s timeout), GPU util/VRAM (saturation). node_exporter `node_load1` exists unlabeled and is omitted here so taxonomy filters stay honest. 3090 LocalAI stay loaded; Comfy masked.",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.4.0",
+      "title": "RED/USE \u2014 real metrics only",
+      "type": "text"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 2,
+      "panels": [],
+      "title": "Errors / availability",
+      "type": "row"
+    },
+    {
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "id": 3,
+      "libraryPanel": {
+        "name": "CSD Loki errors",
+        "uid": "csd-lib-loki-errors"
+      },
+      "title": "Loki errors",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "id": 4,
+      "libraryPanel": {
+        "name": "CSD VM scrape up",
+        "uid": "csd-lib-vm-up"
+      },
+      "title": "VM scrape up",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 10,
+      "panels": [],
+      "title": "Saturation (GPUs)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percentunit",
+          "links": [
+            {
+              "title": "Loki {group,service,host}",
+              "url": "",
+              "internal": {
+                "datasourceName": "Loki",
+                "datasourceUid": "P8E80F9AEF21F6940",
+                "query": {
+                  "expr": "{group=\"${__field.labels.group}\",service=\"${__field.labels.service}\",host=\"${__field.labels.host}\"}",
+                  "queryType": "range",
+                  "refId": "A"
+                }
+              }
+            },
+            {
+              "title": "CSD logs drilldown",
+              "url": "/d/csd-logs?var-group=${__field.labels.group}&var-service=${__field.labels.service}&var-host=${__field.labels.host}&var-env=${__field.labels.env}&var-ns=${__field.labels.ns}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "akula_gpu_utilization_ratio{host=~\"$host|akula-$host\"}",
+          "legendFormat": "{{host}} {{name}}",
+          "range": true,
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "title": "GPU util (saturation)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percentunit",
+          "links": [
+            {
+              "title": "Loki {group,service,host}",
+              "url": "",
+              "internal": {
+                "datasourceName": "Loki",
+                "datasourceUid": "P8E80F9AEF21F6940",
+                "query": {
+                  "expr": "{group=\"${__field.labels.group}\",service=\"${__field.labels.service}\",host=\"${__field.labels.host}\"}",
+                  "queryType": "range",
+                  "refId": "A"
+                }
+              }
+            },
+            {
+              "title": "CSD logs drilldown",
+              "url": "/d/csd-logs?var-group=${__field.labels.group}&var-service=${__field.labels.service}&var-host=${__field.labels.host}&var-env=${__field.labels.env}&var-ns=${__field.labels.ns}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "akula_gpu_memory_used_mib{host=~\"$host|akula-$host\"} / clamp_min(akula_gpu_memory_total_mib{host=~\"$host|akula-$host\"}, 1)",
+          "legendFormat": "{{host}} {{name}}",
+          "range": true,
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "title": "VRAM fraction (saturation)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "id": 20,
+      "panels": [],
+      "title": "Latency (scrape, not app RED)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s",
+          "links": [
+            {
+              "title": "Loki {group,service,host}",
+              "url": "",
+              "internal": {
+                "datasourceName": "Loki",
+                "datasourceUid": "P8E80F9AEF21F6940",
+                "query": {
+                  "expr": "{group=\"${__field.labels.group}\",service=\"${__field.labels.service}\",host=\"${__field.labels.host}\"}",
+                  "queryType": "range",
+                  "refId": "A"
+                }
+              }
+            },
+            {
+              "title": "CSD logs drilldown",
+              "url": "/d/csd-logs?var-group=${__field.labels.group}&var-service=${__field.labels.service}&var-host=${__field.labels.host}&var-env=${__field.labels.env}&var-ns=${__field.labels.ns}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 21,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "scrape_duration_seconds{env=~\"$env\", host=~\"$host\", ns=~\"$ns\", group=~\"$group\", service=~\"$service\"}",
+          "legendFormat": "{{group}}/{{service}}/{{instance}}",
+          "range": true,
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "title": "scrape_duration_seconds",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 30,
+      "panels": [],
+      "title": "Logs for the selected group/service/host",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki_ds}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Loki {group,service,host}",
+              "url": "",
+              "internal": {
+                "datasourceName": "Loki",
+                "datasourceUid": "P8E80F9AEF21F6940",
+                "query": {
+                  "expr": "{group=\"${__field.labels.group}\",service=\"${__field.labels.service}\",host=\"${__field.labels.host}\"}",
+                  "queryType": "range",
+                  "refId": "A"
+                }
+              }
+            },
+            {
+              "title": "Jaeger trace_id",
+              "url": "",
+              "internal": {
+                "datasourceName": "Jaeger",
+                "datasourceUid": "csd-jaeger",
+                "query": {
+                  "query": "${__value.raw}",
+                  "queryType": "traceId"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "id": 31,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki_ds}"
+          },
+          "editorMode": "code",
+          "expr": "{env=~\"$env\", host=~\"$host\", ns=~\"$ns\", group=~\"$group\", service=~\"$service\"}",
+          "maxLines": 200,
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Loki {env,host,ns,group,service}",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "csd",
+    "lab",
+    "csd-investigate"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "VictoriaMetrics",
+          "value": "P4169E866C3094E38"
+        },
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "Loki",
+          "value": "P8E80F9AEF21F6940"
+        },
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "loki_ds",
+        "query": "loki",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "P4169E866C3094E38"
+        },
+        "definition": "label_values({env!=\"\"}, env)",
+        "includeAll": true,
+        "label": "env",
+        "multi": true,
+        "name": "env",
+        "query": "label_values({env!=\"\"}, env)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "P4169E866C3094E38"
+        },
+        "definition": "label_values({host!=\"\"}, host)",
+        "includeAll": true,
+        "label": "host",
+        "multi": true,
+        "name": "host",
+        "query": "label_values({host!=\"\"}, host)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "P4169E866C3094E38"
+        },
+        "definition": "label_values({ns!=\"\"}, ns)",
+        "includeAll": true,
+        "label": "ns",
+        "multi": true,
+        "name": "ns",
+        "query": "label_values({ns!=\"\"}, ns)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "P4169E866C3094E38"
+        },
+        "definition": "label_values({group!=\"\"}, group)",
+        "includeAll": true,
+        "label": "group",
+        "multi": true,
+        "name": "group",
+        "query": "label_values({group!=\"\"}, group)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "P4169E866C3094E38"
+        },
+        "definition": "label_values({service!=\"\"}, service)",
+        "includeAll": true,
+        "label": "service",
+        "multi": true,
+        "name": "service",
+        "query": "label_values({service!=\"\"}, service)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "CSD investigate",
+  "uid": "csd-investigate",
+  "weekStart": ""
+}

@@ -1,0 +1,229 @@
+{
+  "schema": "akula-comfy-workflows/v1",
+  "ui": "https://media.vectorweight.com",
+  "host": "gpu5080",
+  "comfy": "http://192.168.1.252:8188",
+  "source": "akula-ai-platform/config/media/workflows.json",
+  "note": "Catalog only. Live /object_info when Comfy is unmasked. Fail-closed when masked.",
+  "workflows": [
+    {
+      "file": "ace-step-instrumental.json",
+      "alias": "local/music",
+      "name": "ACE-Step instrumental \u2014 local/music",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "ace-step-score.json",
+      "alias": "local/score",
+      "name": "ACE-Step score \u2014 local/score",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "ace-step-song.json",
+      "alias": "local/music",
+      "name": "ACE-Step song \u2014 local/music",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "flux-anchor-i2i.json",
+      "alias": "local/image-img2img",
+      "name": "FLUX.2 klein 4B anchor img2img \u2014 local/image-img2img",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "flux-character-sheet.json",
+      "alias": "local/image",
+      "name": "FLUX.2 klein 4B character sheet \u2014 local/image",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "flux-scene-still.json",
+      "alias": "local/image",
+      "name": "FLUX.2 klein 4B scene still \u2014 local/image",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "img-upscale-realesrgan-x2.json",
+      "alias": "local/image-upscale",
+      "name": "RealESRGAN x2 still \u2014 local/image-upscale",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "img2img-flux2-klein-4b.json",
+      "alias": "local/image-img2img",
+      "name": "FLUX.2 klein 4B img2img \u2014 local/image-img2img",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "img2video-wan22-ti2v-5b.json",
+      "alias": "local/video-i2v",
+      "name": "Wan2.2 TI2V 5B image-to-video \u2014 local/video-i2v",
+      "kind": "video",
+      "uncensored": false
+    },
+    {
+      "file": "seedance-cloud-i2v.json",
+      "alias": "cloud/seedance-i2v",
+      "name": "CLOUD Seedance 1.5 i2v",
+      "kind": "video",
+      "uncensored": false,
+      "cloud": true
+    },
+    {
+      "file": "seedance-cloud-t2v.json",
+      "alias": "cloud/seedance-t2v",
+      "name": "CLOUD Seedance 1.5 t2v",
+      "kind": "video",
+      "uncensored": false,
+      "cloud": true
+    },
+    {
+      "file": "seedvr2-upscale.json",
+      "alias": "local/seedvr2",
+      "name": "SeedVR2 3B upscale \u2014 local/seedvr2",
+      "kind": "video",
+      "uncensored": false
+    },
+    {
+      "file": "text2video-wan22-ti2v-5b-hq.json",
+      "alias": "local/video-hq",
+      "name": "Wan2.2 TI2V 5B HQ 1280\u00d7704 49f \u2014 local/video-hq",
+      "kind": "video",
+      "uncensored": false
+    },
+    {
+      "file": "text2video-wan22-ti2v-5b-short.json",
+      "alias": "local/video-short",
+      "name": "Wan2.2 TI2V 5B short 33f draft \u2014 local/video-short",
+      "kind": "video",
+      "uncensored": false
+    },
+    {
+      "file": "text2video-wan22-ti2v-5b.json",
+      "alias": "local/video",
+      "name": "Wan2.2 TI2V 5B \u2014 local/video",
+      "kind": "video",
+      "uncensored": false
+    },
+    {
+      "file": "txt2img-flux2-klein-4b-draft.json",
+      "alias": "local/image-draft",
+      "name": "FLUX.2 klein 4B draft 512 \u2014 local/image-draft",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "txt2img-flux2-klein-4b-landscape.json",
+      "alias": "local/image-landscape",
+      "name": "FLUX.2 klein 4B landscape 1024\u00d7576 \u2014 local/image-landscape",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "txt2img-flux2-klein-4b-square-768.json",
+      "alias": "local/image-square",
+      "name": "FLUX.2 klein 4B square 768 \u2014 local/image-square",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "txt2img-flux2-klein-4b.json",
+      "alias": "local/image",
+      "name": "FLUX.2 klein 4B distilled \u2014 local/image",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "uncensored-img2video-wan22-ti2v-5b.json",
+      "alias": "local/video-uncensored-i2v",
+      "name": "UNCENSORED \u2014 Wan2.2 TI2V 5B image-to-video (local/video-uncensored-i2v)",
+      "kind": "video",
+      "uncensored": true
+    },
+    {
+      "file": "uncensored-text2video-wan22-ti2v-5b-short.json",
+      "alias": "local/video-uncensored-short",
+      "name": "UNCENSORED \u2014 Wan2.2 TI2V 5B short (local/video-uncensored-short)",
+      "kind": "video",
+      "uncensored": true
+    },
+    {
+      "file": "uncensored-text2video-wan22-ti2v-5b.json",
+      "alias": "local/video-uncensored",
+      "name": "UNCENSORED \u2014 Wan2.2 TI2V 5B (local/video-uncensored)",
+      "kind": "video",
+      "uncensored": true
+    },
+    {
+      "file": "uncensored-txt2img-flux2-klein-4b-portrait.json",
+      "alias": "local/image-uncensored-portrait",
+      "name": "UNCENSORED \u2014 FLUX.2 klein 4B portrait (local/image-uncensored-portrait)",
+      "kind": "image",
+      "uncensored": false
+    },
+    {
+      "file": "uncensored-txt2img-flux2-klein-4b.json",
+      "alias": "local/image-uncensored",
+      "name": "UNCENSORED \u2014 FLUX.2 klein 4B (local/image-uncensored)",
+      "kind": "image",
+      "uncensored": true
+    },
+    {
+      "file": "uncensored-video-hybrid-upscale-rife.json",
+      "alias": "local/video-uncensored-hybrid",
+      "name": "UNCENSORED \u2014 ESRGAN+RIFE hybrid (local/video-uncensored-hybrid)",
+      "kind": "video",
+      "uncensored": true
+    },
+    {
+      "file": "uncensored-video-rife-x2.json",
+      "alias": "local/video-uncensored-rife",
+      "name": "UNCENSORED \u2014 RIFE x2 video (local/video-uncensored-rife)",
+      "kind": "video",
+      "uncensored": true
+    },
+    {
+      "file": "uncensored-video-upscale-realesrgan-x2.json",
+      "alias": "local/video-uncensored-upscale",
+      "name": "UNCENSORED \u2014 RealESRGAN x2 video (local/video-uncensored-upscale)",
+      "kind": "video",
+      "uncensored": true
+    },
+    {
+      "file": "video-hybrid-upscale-rife.json",
+      "alias": "local/video-hybrid",
+      "name": "ESRGAN x2 + RIFE x2 \u2014 local/video-hybrid",
+      "kind": "video",
+      "uncensored": false
+    },
+    {
+      "file": "video-rife-x2.json",
+      "alias": "local/video-rife",
+      "name": "RIFE x2 video \u2014 local/video-rife",
+      "kind": "video",
+      "uncensored": false
+    },
+    {
+      "file": "video-upscale-lanczos-x2.json",
+      "alias": "local/video-upscale-cpuish",
+      "name": "Lanczos x2 video \u2014 local/video-upscale-cpuish",
+      "kind": "video",
+      "uncensored": false
+    },
+    {
+      "file": "video-upscale-realesrgan-x2.json",
+      "alias": "local/video-upscale",
+      "name": "RealESRGAN x2 video \u2014 local/video-upscale",
+      "kind": "video",
+      "uncensored": false
+    }
+  ]
+}
