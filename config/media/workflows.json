@@ -2,7 +2,7 @@
   "schema": "akula-comfy-workflows/v1",
   "ui": "https://media.vectorweight.com",
   "host": "gpu5080",
-  "comfy": "http://192.168.1.252:8188",
+  "comfy": "http://192.168.1.251:8188",
   "source": "akula-ai-platform/config/media/workflows.json",
   "note": "Catalog only. Live /object_info when Comfy is unmasked. Fail-closed when masked.",
   "workflows": [

@@ -46,7 +46,7 @@ IMAGE_NODES = Path(
     )
 )
 GPU_PLAN = Path(os.environ.get("CSD_GPU_PLAN", "/akula-data/cabal/gpu-plan.json"))
-COMFY_URL = os.environ.get("CSD_COMFY_URL", "http://192.168.1.252:8188").rstrip("/")
+COMFY_URL = os.environ.get("CSD_COMFY_URL", "http://192.168.1.251:8188").rstrip("/")
 MASKED_NOTES = "masked"
 
 

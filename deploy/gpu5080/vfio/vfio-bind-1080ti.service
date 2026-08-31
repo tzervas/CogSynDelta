@@ -1,0 +1,13 @@
+[Unit]
+Description=VFIO-bind GTX 1080 Ti 06:00.0 only; RTX 5080 stays host nvidia
+Documentation=file:///home/tzervas/akula-harness/config/qemu/gpu5080-1080ti-rag.xml
+After=systemd-modules-load.service systemd-udevd.service
+Before=nvidia-factory-limits.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/vfio-bind-1080ti.sh
+
+[Install]
+WantedBy=multi-user.target

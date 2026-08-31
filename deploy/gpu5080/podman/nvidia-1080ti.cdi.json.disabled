@@ -1,0 +1,11 @@
+{
+  "cdiVersion": "0.6.0",
+  "kind": "csd.vectorweight.com/gtx1080ti",
+  "annotations": {
+    "csd.vectorweight.com/status": "disabled-stub",
+    "csd.vectorweight.com/host": "gpu5080",
+    "csd.vectorweight.com/lan": "192.168.1.251",
+    "csd.vectorweight.com/note": "Host nvidia.yaml CDI nvidia.com/gpu=* is the RTX 5080 UUID GPU-087267a6-14fb-0af3-da30-9a1a18523106. 1080 Ti is vfio-pci at 06:00.0. Do not install this JSON on the gpu5080 host. After the VFIO guest nvidia-smi -L lists Pascal, generate a real nvidia.com/gpu CDI inside that guest for that UUID only."
+  },
+  "devices": []
+}

@@ -40,7 +40,10 @@ One contact-point test via Grafana API after reload, not a flood.
 ## Dashboards / library / playlist (API apply)
 
 Folder **CSD lab** live uid `ffwv6ar8e06pse`. Template vars **env, host, ns,
-group, service** are `label_values` queries (not IP lists).
+group, service, path** are `label_values` queries (not IP lists).
+Do not add `path` to every PromQL selector: `akula-node` omits taxonomy
+`path` (collides with `node_filesystem` mount `path`). No Tempo. SMTP bind
+unchanged (`GF_SMTP_HOST=172.30.0.1:25`).
 
 ```bash
 secret exec TOKEN=homelab/grafana-sa-token -- python3 deploy/grafana/apply.py

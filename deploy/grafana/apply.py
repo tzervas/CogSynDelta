@@ -6,7 +6,7 @@ Reads GRAFANA_URL (default https://grafana.vectorweight.com) and TOKEN
 datasource. Jaeger is LAN 172.30.0.15:16686 only.
 
 Why: Grafana 11.4 was dashboard-first UniFi; CSD needs taxonomy variables
-(env, host, ns, group, service) queried from labels, drilldown to Loki
+(env, host, ns, group, service, path) queried from labels, drilldown to Loki
 and Jaeger, and reusable library panels. PromQL/LogQL only use series
 that were live at authoring time.
 """
@@ -35,7 +35,7 @@ FOLDER_TITLE = "CSD lab"
 SCHEMA = 39
 PLUGIN = "11.4.0"
 OUT_DIR = Path(__file__).resolve().parent / "dashboards"
-REQUIRED_VARS = ("env", "host", "ns", "group", "service")
+REQUIRED_VARS = ("env", "host", "ns", "group", "service", "path")
 
 TAX_SEL = (
     'env=~"$env", host=~"$host", ns=~"$ns", '
@@ -125,7 +125,7 @@ def ds_ref(kind: str, uid: str) -> dict[str, str]:
 
 
 def taxonomy_vars(ds_type: str, ds_uid: str) -> list[dict[str, Any]]:
-    """Build env/host/ns/group/service variables from label_values.
+    """Build env/host/ns/group/service/path variables from label_values.
 
     Args:
         ds_type: prometheus or loki.

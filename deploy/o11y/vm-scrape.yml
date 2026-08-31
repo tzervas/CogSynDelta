@@ -7,7 +7,13 @@
 # not a DCGM/nvidia_smi job. Alloy is not on homelab.
 #
 # host is taxonomy short form (prime|gpu5080). Keep existing role/gpu.
+# gpu5080 is 192.168.1.251 (router static). Never .252 as current.
 # Do not set path on akula-node: node_exporter already exports path= mountpoint.
+#
+# 1080 Ti RAG (group=akula-rag, ns=index, path=lab.gpu5080.index.1080ti):
+# not a separate scrape target. nvidia-smi on gpu5080 is 5080-only (lspci
+# 06:00.0 unbound). metric_relabel stamps taxonomy if name matches 1080 Ti.
+# Do not invent PromQL for that card until those series exist.
 
 global:
   scrape_interval: 15s
@@ -28,7 +34,7 @@ scrape_configs:
           kind: gpu
           group: csd-autodev
           path: lab.csd.gpu
-      - targets: ["192.168.1.252:9108"]
+      - targets: ["192.168.1.251:9108"]
         labels:
           host: gpu5080
           role: media
@@ -44,6 +50,34 @@ scrape_configs:
         regex: akula-prime
         replacement: prime
         target_label: host
+    metric_relabel_configs:
+      # Fire only when exporter name is 1080 Ti. 5080 / 3090 series keep
+      # static labels. RE2 (no (?i)). Observed nvidia-smi name would be
+      # "NVIDIA GeForce GTX 1080 Ti" if the card binds.
+      - source_labels: [name]
+        regex: ".*1080[[:space:]]*Ti.*"
+        target_label: gpu
+        replacement: gtx1080ti
+      - source_labels: [name]
+        regex: ".*1080[[:space:]]*Ti.*"
+        target_label: group
+        replacement: akula-rag
+      - source_labels: [name]
+        regex: ".*1080[[:space:]]*Ti.*"
+        target_label: ns
+        replacement: index
+      - source_labels: [name]
+        regex: ".*1080[[:space:]]*Ti.*"
+        target_label: kind
+        replacement: gpu
+      - source_labels: [name]
+        regex: ".*1080[[:space:]]*Ti.*"
+        target_label: path
+        replacement: lab.gpu5080.index.1080ti
+      - source_labels: [name]
+        regex: ".*1080[[:space:]]*Ti.*"
+        target_label: host
+        replacement: gpu5080
 
   - job_name: akula-node
     metrics_path: /metrics
@@ -57,7 +91,7 @@ scrape_configs:
           service: prometheus-node-exporter
           kind: api
           group: csd-autodev
-      - targets: ["192.168.1.252:9100"]
+      - targets: ["192.168.1.251:9100"]
         labels:
           host: gpu5080
           role: media
@@ -73,3 +107,5 @@ scrape_configs:
         target_label: host
     # Taxonomy path omitted: colliding with node_filesystem path would drop
     # mountpoints and explode cardinality.
+    # RAID live mount on gpu5080 is /mnt/bulk-old (md127, degraded). Do not
+    # invent a node_filesystem PromQL panel for it here.

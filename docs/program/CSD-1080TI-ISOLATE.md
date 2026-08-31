@@ -152,10 +152,14 @@ Persist (ids are 1080 Ti only):
 | `/etc/modules-load.d/vfio-1080ti.conf` | vfio modules |
 | `/etc/udev/rules.d/10-vfio-1080ti.rules` | `driver_override` on `06:00.*` only |
 
+Git CaC (same files): `deploy/gpu5080/vfio/`. Re-apply from
+[deploy/README.md](../../deploy/README.md) if the host drifts.
+
 Libvirt XML stub (no disk image this run; qemu/ovmf **not** installed):
 
-- Host: `/home/tzervas/akula-harness/config/qemu/gpu5080-1080ti-rag.xml`
-- Repo: [gpu5080-1080ti-rag.xml](gpu5080-1080ti-rag.xml)
+- Canonical: [deploy/gpu5080/libvirt/gpu5080-1080ti-rag.xml](../../deploy/gpu5080/libvirt/gpu5080-1080ti-rag.xml)
+- Host working copy (not a git remote): `/home/tzervas/akula-harness/config/qemu/gpu5080-1080ti-rag.xml`
+- Docs mirror: [gpu5080-1080ti-rag.xml](gpu5080-1080ti-rag.xml)
 
 Guest NVIDIA: R535 / R550 / last R570 (Pascal `sm_61`). **Not** host 610.
 Factory eco PL **in the guest** after that driver binds:
@@ -276,7 +280,7 @@ Until `nvidia-smi` on gpu5080 (or the guest) lists the 1080 Ti, keep
 ## References
 
 - Role catalog: [CSD-1080TI-RAG.md](CSD-1080TI-RAG.md)
-- Libvirt stub: [gpu5080-1080ti-rag.xml](gpu5080-1080ti-rag.xml)
+- Libvirt stub: [deploy/gpu5080/libvirt/gpu5080-1080ti-rag.xml](../../deploy/gpu5080/libvirt/gpu5080-1080ti-rag.xml)
 - ADR-0016 / horizon: [GPU-SHARE.md](GPU-SHARE.md) (`G-1080`)
 - Placement: [CODEX-OPS.md](../CODEX-OPS.md) · [WHO-RUNS-WHAT.md](WHO-RUNS-WHAT.md)
 - 5080 host CI: `.github/workflows/gpu-5080.yml` (must keep the 5080

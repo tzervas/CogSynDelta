@@ -1,0 +1,29 @@
+# DISABLED stub — filename is not .container so quadlet ignores it.
+# gpu5080 host 192.168.1.251: nvidia.com/gpu=0 and
+# nvidia.com/gpu=GPU-087267a6-14fb-0af3-da30-9a1a18523106 ARE THE RTX 5080.
+# 1080 Ti is vfio-pci 06:00.0. Do not copy this to host /etc/containers/systemd/.
+#
+# Guest only, after Pascal nvidia-smi -L lists a UUID:
+#   1. Copy to the guest as gpu5080-1080ti-rag.container
+#   2. Set Device=nvidia.com/gpu=<GUEST-UUID> (never all, never the 5080 UUID)
+#   3. Bind RAG store from mechanical RAID virtiofs — not /models on sda2
+# Never 0.0.0.0 WAN. Never LocalAI 14B. Never pause 3090 LocalAI.
+
+[Unit]
+Description=DISABLED 1080 Ti RAG (guest UUID only; not host)
+# After=nvidia-persistenced.service
+
+[Container]
+# Image=  # llama.cpp / embed sm_61 only. Not vLLM. Not localai 14B.
+# ContainerName=gpu5080-1080ti-rag
+# Device=nvidia.com/gpu=REPLACE_WITH_GUEST_1080TI_UUID
+# PublishPort=127.0.0.1:8081:8080
+# AddDevice=  # empty: do not add host 5080 nodes
+# SecurityLabelDisable=true
+# Pull=never
+
+[Service]
+# Type=notify
+
+[Install]
+# WantedBy=default.target

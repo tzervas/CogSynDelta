@@ -8,7 +8,10 @@ Later: `/csd-grafana-o11y` then `args.apply=true` (see
 [HANDOFF-NEXT.md](HANDOFF-NEXT.md)). Stack facts: [O11Y.md](O11Y.md).
 Hosts/GPUs: [CODEX-OPS.md](../CODEX-OPS.md). Coupling: [HARNESS.md](HARNESS.md).
 Who runs what: [WHO-RUNS-WHAT.md](WHO-RUNS-WHAT.md). Vault:
-[CSD-SECRETS.md](CSD-SECRETS.md).
+[CSD-SECRETS.md](CSD-SECRETS.md). 1080 Ti RAG:
+[CSD-1080TI-RAG.md](CSD-1080TI-RAG.md). Isolate:
+[CSD-1080TI-ISOLATE.md](CSD-1080TI-ISOLATE.md). Eco:
+[CSD-GPU-ECO.md](CSD-GPU-ECO.md).
 
 ## Hard rules
 
@@ -20,6 +23,8 @@ Who runs what: [WHO-RUNS-WHAT.md](WHO-RUNS-WHAT.md). Vault:
 - Never write operator or model vaults. Never mix 384-d Qdrant.
 - Do not duplicate the UniFi security-net stack. Do not add a VLAN this run.
 - Metric / log labels are **bounded** and contain **no user content** (P1-10).
+- gpu5080 LAN is **`192.168.1.251`** (operator router static). Never write
+  `192.168.1.252` as current. Never VFIO the RTX 5080.
 
 Forgejo Actions `runs-on` labels (`self-hosted`, `linux`, `x64`, `podman`,
 `compute-cpu`, `host-homelab`, `gpu`, `5080`, `host-gpu5080`) are a **different
@@ -30,17 +35,18 @@ vocabulary**. Do not copy them into Prometheus / Loki.
 ## Keys and allowed values
 
 Seven keys. All required on CSD-owned series. Values are closed sets except
-`service` (closed catalog below) and `path` (derived).
+`service` (closed catalog below) and `path` (derived). Annotations below
+(`eco`, RAID mount, isolation env) are **not** Prom keys.
 
 | Key | Allowed values | Cardinality | Why |
 |---|---|---|---|
 | `env` | `lab` \| `ci` \| `prod-intent` | 3 | Split day-to-day lab from Actions from “must stay up” public frontends |
 | `host` | `prime` \| `gpu5080` \| `homelab` | 3 | Short form of akula-prime / gpu5080 / homelab. Not FQDNs, not IPs |
-| `ns` | `csd` \| `webui` \| `media` \| `mail` \| `git` \| `o11y` \| `runner` | 7 | Logical namespace, not a Kubernetes ns, not a new VLAN |
+| `ns` | `csd` \| `webui` \| `media` \| `mail` \| `git` \| `o11y` \| `runner` \| `index` | 8 | Logical namespace, not a Kubernetes ns, not a new VLAN |
 | `service` | full systemd **or** compose/quadlet **or** Forgejo runner name | catalog | One string per process. No aliases |
 | `kind` | `api` \| `gpu` \| `ui` \| `mta` \| `runner` \| `index` \| `gateway` | 7 | What it *is*, so filters survive rename |
-| `group` | `csd-autodev` \| `akula-chat` \| `akula-media` \| `forgejo-ci` \| `grafana-stack` | 5 | Set that fails/recovers together |
-| `path` | `{env}.{ns}.{kind}` or `{env}.{host}.{kind}` when `ns=runner` | derived | Grafana/Loki filter; never free-form |
+| `group` | `csd-autodev` \| `akula-chat` \| `akula-media` \| `forgejo-ci` \| `grafana-stack` \| `akula-rag` | 6 | Set that fails/recovers together |
+| `path` | `{env}.{ns}.{kind}`; `{env}.{host}.{kind}` when `ns=runner`; `{env}.{host}.{ns}.{device}` for 1080 Ti RAG | derived | Grafana/Loki filter; never free-form |
 
 Do **not** add `instance`, `job`, `pod`, `container_id`, `commit`, `pr`,
 `user`, `model`, `prompt`, or file paths as label keys. Those belong in
@@ -59,40 +65,43 @@ log **fields** or trace **tags** with explicit bounds, not index labels.
 | Value | Machine | IP (LAN) | GPU |
 |---|---|---|---|
 | `prime` | akula-prime | `192.168.1.98` | RTX 3090 Ti. One LocalAI GGUF (`local/code`) |
-| `gpu5080` | gpu5080 | `192.168.1.252` | RTX 5080. Exclusive-seq CUDA/index/GPU CI. Comfy **masked** |
+| `gpu5080` | gpu5080 | `192.168.1.251` | RTX 5080 (host). Exclusive-seq CUDA/index/GPU CI. Comfy **masked**. GTX 1080 Ti PCI `06:00.0` is **lspci-only** (not a second `host`) |
 | `homelab` | homelab | `192.168.1.170` | none. UI + Forgejo CPU + o11y + send-only MTA |
 
 `host=prime` is the label. Router JSON still says `akula-prime`. Do not emit
 both. Future `gpu5080-1080ti` is **not** a host value until `nvidia-smi` lists
-the card (`G-1080` blocked).
+the card (`G-1080` blocked). Same box, same IP `.251`. Was `.252`; never
+write `.252` as current.
 
 ### `ns`
 
 | Value | Owns |
 |---|---|
-| `csd` | CogSynDelta harness: autodev, lab console, OpenAI gateway, CSD vault, `akula-csd-kb` index |
+| `csd` | CogSynDelta harness: autodev, lab console, OpenAI gateway, CSD vault, `akula-csd-kb` index on the **5080** |
 | `webui` | Open WebUI `ai.vectorweight.com` (homelab only). Not a second WebUI on `code.vectorweight.com` |
 | `media` | `akula-comfyui.service` on gpu5080. **Masked.** Label if a leftover log line appears; do not start it |
 | `mail` | Homelab Postfix send-only |
 | `git` | Forgejo `git.vectorweight.com` |
 | `o11y` | Grafana, Loki, VictoriaMetrics, Jaeger, OpenSearch (internal), status aggregator |
 | `runner` | Forgejo self-hosted runners |
+| `index` | 1080 Ti RAG retrieve/index sandbox (`group=akula-rag`). Not the 5080 `csd-kb-index` oneshot (`ns=csd` `kind=index`) until that job is promoted |
 
 ### `kind`
 
 | Value | Means |
 |---|---|
 | `api` | HTTP JSON API (lab `/api/apply`, LocalAI `/v1`, Qdrant, keyword-cpu, Forgejo, status) |
-| `gpu` | Process that occupies a GPU (LocalAI GGUF, Comfy, CUDA job) |
+| `gpu` | Process that occupies a GPU (LocalAI GGUF, Comfy, CUDA job, 1080 Ti RAG when bound) |
 | `ui` | Browser frontend (lab console, Open WebUI, Grafana, Jaeger UI) |
 | `mta` | Send-only mail |
 | `runner` | Forgejo Actions worker |
-| `index` | RAG/Qdrant index job (`csd-kb-index`, 5080 exclusive-seq) |
+| `index` | RAG/Qdrant index job (`csd-kb-index`, 5080 exclusive-seq until 1080 Ti is live) |
 | `gateway` | Reverse proxy / OpenAI-compat forwarder / Caddy |
 
 Pick **one** primary `kind`. LocalAI is `gpu` (the card owner); its HTTP is
 still that same series. Lab console on homelab is `ui`; the prime process
-that serves `/api/apply` is `api`.
+that serves `/api/apply` is `api`. 1080 Ti RAG is `kind=gpu` with `ns=index`
+(the card occupant in the index sandbox).
 
 ### `service` catalog
 
@@ -139,7 +148,9 @@ are not in this table or in a unit file under `deploy/`.
 
 Live names read off homelab 2026-08-31. Do **not** invent `unifi-jaeger` /
 `unifi-vm`. Alloy is **not** installed. Do not attach taxonomy `path` to
-`akula-node` (collides with `node_filesystem` mount `path`).
+`akula-node` (collides with `node_filesystem` mount `path`). Do not invent a
+1080 Ti systemd/quadlet `service` until `nvidia-smi` (host or guest) lists
+that UUID.
 
 ### `path` (derived)
 
@@ -155,6 +166,13 @@ When `ns=runner`, middle segment is `host` so CPU and GPU CI do not collide:
 path = {env}.{host}.{kind}
 ```
 
+1080 Ti RAG on gpu5080 is device-qualified (four segments). `host` stays
+`gpu5080`. Do not emit `gpu5080-1080ti` as `host`.
+
+```
+path = {env}.{host}.{ns}.{device} = lab.gpu5080.index.1080ti
+```
+
 Examples (these are the only patterns):
 
 | Series | `path` |
@@ -164,6 +182,7 @@ Examples (these are the only patterns):
 | Homelab lab UI | `lab.csd.ui` |
 | 3090 LocalAI | `lab.csd.gpu` (one series; chat and autodev share the GGUF) |
 | 5080 CUDA / index | `lab.csd.index` (index job) / `lab.csd.gpu` (card occupant) |
+| 1080 Ti RAG (when `nvidia-smi` lists it) | `lab.gpu5080.index.1080ti` |
 | Homelab CPU Actions | `ci.homelab.runner` |
 | 5080 GPU Actions | `ci.gpu5080.runner` |
 | Grafana | `prod-intent.o11y.ui` |
@@ -225,6 +244,33 @@ Autodev has priority on `local/code` over WebUI chat
 **Masked** (operator grant 2026-08-31). Unmask only with operator
 `args.comfy=true` when `gpu5080.lock` is idle. Do not start from CSD.
 
+### `akula-rag`
+
+1080 Ti retrieve/index on **gpu5080** (`192.168.1.251`). **Not live** until
+`nvidia-smi` lists GTX 1080 Ti (PCI `06:00.0` is lspci-only as of 2026-08-31).
+Do not invent a `service` or PromQL until then. Relabel existing
+`akula_gpu_*` `name` → `gtx1080ti` **if** that series appears
+(`deploy/o11y/vm-scrape.yml`).
+
+| Key | Value |
+|---|---|
+| `env` | `lab` |
+| `host` | `gpu5080` |
+| `ns` | `index` |
+| `kind` | `gpu` |
+| `group` | `akula-rag` |
+| `path` | `lab.gpu5080.index.1080ti` |
+
+Tuple: `env=lab host=gpu5080 ns=index kind=gpu group=akula-rag path=lab.gpu5080.index.1080ti`.
+
+Isolation env on that box is `1080ti-sandbox` (VFIO guest preferred; host
+UUID-only container/VM fallback). Not a new `host`, not a new VLAN, not a
+Prom key. 5080 CUDA CI stays isolation env `host`. RAG must not take
+`gpu5080.lock` or 5080 VRAM.
+
+Qdrant collection remains `akula-csd-kb` at **1024** dimensions. Never mix
+384-d. 3090 LocalAI stays loaded on prime.
+
 ### `forgejo-ci`
 
 | service | env | host | ns | kind | path |
@@ -264,10 +310,25 @@ use these same keys as resource attributes.
 
 ---
 
+## Annotations (not Prom keys)
+
+Do not scrape these as label keys. Grafana/Loki cardinality stays the seven
+keys. Document here so RAID / eco / sandbox are filterable in runbooks.
+
+| Annotation | Value | Evidence (2026-08-31, gpu5080 `.251`) |
+|---|---|---|
+| `eco` | `factory-default-pl` | [CSD-GPU-ECO.md](CSD-GPU-ECO.md). Persistence + `power.default_limit` only. 5080 UUID `GPU-087267a6-14fb-0af3-da30-9a1a18523106` default 360 W. 1080 Ti: same policy **when bound**; lspci-only today |
+| RAID array | `/dev/md127` name `gpu5080:bulk` UUID `2fb1b150:fb96fedc:9f569b6b:ddfc2276` | `/etc/mdadm/mdadm.conf` ARRAY. raid1, **degraded** `[2/1] [_U]`, **read-only**, `sda1` only |
+| RAID volume `mount` | `/mnt/bulk-old` | live `lsblk`. fstab intends `LABEL=bulk` → `/bulk` (not mounted). Dual 2.7 T HGST: `sda` in md; `sdb` is `zfs_member` at `/mnt/sdb1-inspect`, not in the array |
+| Preserve | `/models` on `sda2` | fstab bind `/models-hdd` → `/models`. Do not steal for guest root |
+| isolation env | `host` \| `1080ti-sandbox` | same box, same LAN IP. Not a VLAN. See layer 2a |
+
+---
+
 ## Isolation environments (long-term)
 
-Five layers. Innermost first. **Do not invent a new VLAN this run.** Existing
-nets only.
+Five layers plus gpu5080 sandbox (2a). Innermost first. **Do not invent a
+new VLAN this run.** Existing nets only.
 
 ### 1. Process / user unit
 
@@ -287,10 +348,26 @@ Failure of one unit must not require opening another group's ports.
 | Host | May run | Must not run |
 |---|---|---|
 | `prime` | LocalAI (stay loaded), autodev worker, lab API, optional CPU runner | Open WebUI, Forgejo GPU jobs, `csd-kb-index` CUDA |
-| `gpu5080` | Exclusive-seq CUDA, index, GPU CI, share-small embed when lock idle | Second 14B, `compute-cpu` workflows, Comfy while autodev owns the card |
+| `gpu5080` | Exclusive-seq CUDA, index, GPU CI, share-small embed when lock idle; 1080 Ti RAG in `1080ti-sandbox` only | Second 14B, `compute-cpu` workflows, Comfy while autodev owns the card, VFIO of the 5080 |
 | `homelab` | WebUIs, Caddy, Forgejo CPU runner, grafana-stack, postfix | GPU jobs, LocalAI GGUF |
 
 Parallelism is **across hosts** (3090 text + 5080 CUDA), not two 14Bs.
+
+### 2a. gpu5080 isolation env (`host` vs `1080ti-sandbox`)
+
+Same machine, same LAN `192.168.1.251`. Not a Prom `env` / `host` value.
+Container or VM; VFIO **`06:00.0` only** (never the 5080).
+
+| Isolation env | What | Must not |
+|---|---|---|
+| `host` | RTX 5080 on host `nvidia.ko` (Blackwell 610), `gpu5080.lock`, NVMe root, Forgejo GPU Actions | VFIO the 5080; pause 3090 LocalAI; unmask Comfy |
+| `1080ti-sandbox` | GTX 1080 Ti PCI `06:00.0` in a **container or VM** (VFIO guest + Pascal driver preferred; host UUID-only CDI/Podman fallback after bind) | 5080 VRAM / CUDA IPC / MPS; `gpu5080.lock` to “borrow” the 5080; `0.0.0.0` WAN; guest root on `/models` |
+
+Do not **enable** CDI/quadlet/libvirt until `nvidia-smi` (host **or** guest)
+lists the 1080 Ti UUID. Docker/Podman cannot load two `nvidia.ko` versions.
+Disabled stubs live in `deploy/gpu5080/podman/` (`*.disabled`) and
+`deploy/gpu5080/libvirt/`; see `deploy/README.md`. Host CDI
+`nvidia.com/gpu=0` is the RTX 5080 — never pass it to RAG.
 
 ### 3. LAN ns / quadlet (existing nets only)
 
@@ -298,7 +375,7 @@ No new VLAN, bridge, or security-net subnet in this change.
 
 | Net | Use | Documented members |
 |---|---|---|
-| LAN `192.168.1.0/24` | Host front-doors | prime `.98`, gpu5080 `.252`, homelab `.170` |
+| LAN `192.168.1.0/24` | Host front-doors | prime `.98`, gpu5080 `.251`, homelab `.170` |
 | UniFi security-net `172.30.0.x` (existing quadlets; prefix not in this repo) | o11y + SMTP | gateway `.1` (postfix), Grafana `.13`, Jaeger `.15`, OpenSearch `.21` |
 
 Caddy `code.vectorweight.com` → `192.168.1.98:9118`. Open WebUI stays
@@ -331,6 +408,7 @@ Qdrant: 1024-d Qwen3 collections only. Never mix 384-d. Keyword retrieve
 |---|---|---|
 | 3090 Ti on prime | Stay loaded. Prime timeshare `/akula-data/cabal/gpu-timeshare.json` only if CSD must **own the whole card** (rare; restore LocalAI on EXIT) | Never pause for RAG or `csd-kb-index` |
 | 5080 | `gpu5080.lock` + timeshare `AKULA_TIMESHARE=/home/tzervas/akula-harness/state/gpu-timeshare.json` (not the prime file) | One exclusive-seq job. `share-small` only if free ≥ 8192 MiB and helper ≤ ~6 GiB |
+| 1080 Ti | none (must not take `gpu5080.lock`) | RAG in `1080ti-sandbox` only. `eco=factory-default-pl` when bound |
 | Comfy | masked `akula-comfyui.service` | Do not unmask from CSD |
 
 Prime timeshare state is **not** the 5080 worker queue. Enqueue on the 5080
@@ -356,28 +434,30 @@ Sender `grafana@vectorweight.com`. Recipients `maintainers@` /
 
 ## Cardinality budget
 
-Worst case today: `3 env × 3 host × 7 ns × ~20 service × 7 kind × 5 group`
+Worst case today: `3 env × 3 host × 8 ns × ~20 service × 7 kind × 6 group`
 would explode if cross-producted. **Do not** attach unused keys at scrape
 time as empty. Emit the seven keys with the **one** allowed tuple from the
 group map.
 
 Refuse a new `service` value until it has a row in the catalog and a unit
-file or runner registration. Refuse a new `group` until two or more units
-fail together.
+file or runner registration. `akula-rag` is catalogued as a group for the
+1080 Ti tuple; it has **no** live unit until bind. Do not invent PromQL
+for 1080 Ti while `nvidia-smi -L` is 5080-only.
 
 Prom/Loki reserved: do not override `job` / `instance` meaning. Put CSD
-taxonomy **next to** them, not instead of `__address__`.
+taxonomy **next to** them, not instead of `__address__`. Do not set
+taxonomy `path` on `akula-node` (collides with `node_filesystem` `path`).
 
 ---
 
 ## Not this run
 
-- No Grafana dashboard / playlist / alert provision (`args.apply` later).
-- No new security-net IPs, VLANs, or quadlets.
 - No Tempo.
+- No SMTP bind change.
 - No OTLP from CSD until `intern_parallel`.
 - No Comfy unmask.
-- No 1080 Ti host value.
+- No 1080 Ti **host** value (`host` stays `gpu5080`).
+- No new scrape target for 1080 Ti until `akula_gpu_*` `name` matches it.
 - No Plane / OpenProject install (Forgejo Projects API is 404; milestones
   stay git-side).
 

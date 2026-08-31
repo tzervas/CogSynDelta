@@ -22,7 +22,7 @@ def load_comfy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
         "CSD_COMFY_IMAGE_WORKFLOW",
         str(ROOT / "config" / "media" / "comfy-image-workflow.json"),
     )
-    monkeypatch.setenv("CSD_COMFY_URL", "http://192.168.1.252:8188")
+    monkeypatch.setenv("CSD_COMFY_URL", "http://192.168.1.251:8188")
     loader = importlib.machinery.SourceFileLoader("csd_comfy", str(SCRIPT))
     spec = importlib.util.spec_from_loader("csd_comfy", loader)
     assert spec is not None
