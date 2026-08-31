@@ -26,7 +26,7 @@ Read `docs/program/IMPLEMENTER-HANDOFF.md` then `PYTHON-FIRST-PLAN.md` and
 - P1-00 https://git.vectorweight.com/tzervas/memory-gate/pulls/1 — `ci/forgejo-cpu-fail-closed`. Local pytest **134 passed / 1 gpu deselected** after await-learn + ruff 0.16.5 + cryptography 50.0.1 + current-tree gitleaks + chroma `.trivyignore`. Push and wait Forgejo; merge only if **legitimately green**.
 - P1-01 https://git.vectorweight.com/tzervas/memory-gate/pulls/2 — `docs/memory-lifecycle-contract` @ `7b5c877`. Docs only.
 - P1-03 chroma mitigation https://git.vectorweight.com/tzervas/memory-gate/pulls/3 — `fix/chroma-cve-client-only` @ `1b07c56`. Client-only refuse. **Not** an upstream wheel patch.
-- P1-02 https://git.vectorweight.com/tzervas/memory-gate/pulls/4 — `feat/public-error-contract` @ `90a37ce`. `memory_gate.errors` + nine named types + `map_backend_error`. **60** public-error tests passed. Mapper **not** wired into gateway/store raise sites yet (VectorStore* still leak there). Local main `691bb85` untouched.
+- P1-02 https://git.vectorweight.com/tzervas/memory-gate/pulls/4 — `feat/public-error-contract` @ `52e8aac`. Types + `raise_mapped` self-chain fix. **Not merged**: Forgejo 1 ok / 14 fail (not legitimately green). Uncommitted mapper wiring may be in-flight on the p1-02 worktree (`csd-goal-loop`). Local main `691bb85` untouched.
 
 Worktrees: `...-wt-p1-00`, `...-wt-p1-01`, `...-wt-chroma-cve`, `...-wt-p1-02`. **Never** reset `.../python-ai/memory-gate` (`local/kang-main-wip`).
 
