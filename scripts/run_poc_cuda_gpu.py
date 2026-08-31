@@ -11,8 +11,9 @@ import json
 import sys
 import time
 import traceback
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 def _device_cuda_resolve() -> None:
