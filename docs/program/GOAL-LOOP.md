@@ -1,1 +1,1 @@
-This document outlines the do-while loop for goals, including stall, switch, and unblock mechanisms. It serves as a guide for managing and progressing through the various goals in the project.
+This document outlines the do-while loop for goals, including stall, switch, and unblock mechanisms. It provides a structured approach to managing and advancing goals within the project.
