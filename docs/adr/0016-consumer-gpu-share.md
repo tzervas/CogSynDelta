@@ -92,8 +92,9 @@ process-cap layer. Capability tags already exist (ADR-0015).
 ## Implementation
 
 Horizon pack: `docs/program/GPU-SHARE.md`. Catalog stub:
-`future_hosts.gpu5080-1080ti`. Router must ignore `future_hosts` until
-promoted. Autoloop must not start `G-SHARE` / `G-1080`.
+`future_hosts.gpu5080-1080ti` (`live: false`). Router must ignore
+`future_hosts` for scheduling until promoted. Autoloop must not start
+`G-SHARE` / `G-1080`.
 
 ## References
 

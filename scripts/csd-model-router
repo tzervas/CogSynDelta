@@ -90,11 +90,32 @@ def load_inventory() -> dict[str, Any]:
     return {}
 
 
+def schedulable_hosts() -> set[str]:
+    """Host ids the router may pick.
+
+    Why: future_hosts (gpu5080-1080ti) is a catalog stub with live=false.
+    The GTX 1080 Ti is not seated. Scheduling it would invent a Pascal
+    device or steal 5080 exclusive-seq for RAG/index. Promote to hosts
+    only after nvidia-smi on gpu5080 lists the card.
+    """
+    cat = catalog()
+    future = set((cat.get("future_hosts") or {}).keys())
+    out: set[str] = set()
+    for name, spec in (cat.get("hosts") or {}).items():
+        if name in future:
+            continue
+        if spec.get("live") is False or spec.get("installed") is False:
+            continue
+        out.add(name)
+    return out
+
+
 def host_caps(host: str, inventory: dict[str, Any] | None = None) -> set[str]:
     """Effective capability tags for a host, overlaying live inventory.
 
     Why: 5080 has no GGUF today, so gguf-infer is only a future cap.
-    Blackwell vs Ampere tags keep CUDA work off the 3090.
+    Blackwell vs Ampere tags keep CUDA work off the 3090. Never read
+    future_hosts here — those ids are not schedulable.
     """
     cat = catalog()
     spec = (cat.get("hosts") or {}).get(host) or {}
@@ -320,8 +341,11 @@ def place_host(
     if spec.get("pool_ok") and not spec.get("fits_prime") and not spec.get("fits_5080"):
         return "pool"
     ranked: list[tuple[int, str]] = []
+    allowed = schedulable_hosts()
     for host in prefs:
         if host == "pool":
+            continue
+        if host not in allowed:
             continue
         if not caps_ok(spec, host, inventory):
             continue

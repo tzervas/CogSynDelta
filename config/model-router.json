@@ -59,7 +59,9 @@
       "sm": "6.1",
       "vram_mib": 11264,
       "safeguard_mib": 10240,
+      "live": false,
       "installed": false,
+      "role": "retrieve-index-light",
       "caps": ["pascal", "sm_61", "gguf-infer-legacy", "11gb"],
       "lacks": [
         "tensor-cores",
@@ -72,8 +74,14 @@
         "blackwell",
         "ampere"
       ],
-      "prefer_jobs": ["tiny-tenant", "legacy-gguf", "encode-overflow"],
-      "note": "Not live. Promote to hosts only after nvidia-smi on gpu5080 lists it. Factory cooler first."
+      "prefer_jobs": [
+        "rag-index",
+        "retrieve",
+        "keyword-cpu",
+        "small-embed",
+        "light-gguf"
+      ],
+      "note": "live=false: keep this id in future_hosts only. Router must ignore future_hosts for scheduling — the GTX 1080 Ti is not seated (Pascal sm_61 ~11GiB GDDR5X, factory cooler first, same box as the RTX 5080 at 192.168.1.252). Not a 5080 substitute: no PoC CUDA, FP8/FP4, dual-14B, or exclusive-seq. Role when promoted: RAG retrieve/index, keyword-cpu assist, small embed, light GGUF. Promote to hosts only after nvidia-smi on gpu5080 lists both cards."
     }
   },
   "runtimes": {
