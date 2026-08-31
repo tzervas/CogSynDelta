@@ -42,7 +42,7 @@ Phase 1 only. Horizon training is **blocked** until `P1-16` / `G-LIFE`.
 | G-FLEET | PR #5 | **Merged** `7595bd53` |
 | P1-04 | PR #6 | **Merged** `58934e6` |
 | P1-03 chroma | PR #3 | Red. Not a wheel patch. Do not merge. |
-| **Next** | **P1-03 durable learn** (`G-ACK`) | Kill `create_task` fire-and-forget. New worktree off `forgejo/main`. Then P1-06 SQLite. |
+| P1-03 durable | PR #7 | Head `7bac0e3`. Merge iff legitimately green. Then P1-06 SQLite. |
 
 **Never** reset `python-ai/memory-gate` (`local/kang-main-wip` `691bb85`).
 Sibling worktrees from `forgejo/main`.
