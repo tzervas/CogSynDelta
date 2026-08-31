@@ -30,7 +30,7 @@ QD_PACK = ROOT / "docs/program/CONTEXT-PACK-G-QD.md"
 MG_WT = Path(
     os.environ.get(
         "CSD_AUTODEV_WT",
-        "/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-08",
+        "/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-09",
     )
 )
 P108_PACK = ROOT / "docs/program/CONTEXT-PACK-P1-08.md"
@@ -81,7 +81,7 @@ def apply_http(payload: dict) -> dict:
         tf = Path(os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token"))
         if tf.is_file():
             token = tf.read_text(encoding="utf-8").strip()
-    wt = os.environ.get("CSD_APPLY_WORKTREE", "p1-08")
+    wt = os.environ.get("CSD_APPLY_WORKTREE", "p1-09")
     body = json.dumps(
         {
             "worktree": wt,

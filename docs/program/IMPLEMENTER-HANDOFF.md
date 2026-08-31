@@ -48,8 +48,9 @@ Phase 1 only. Horizon training is **blocked** until `P1-16` / `G-LIFE`.
 | P1-03 chroma | PR #3 | Red. Not a wheel patch. Do not merge. |
 | P1-03 durable | PR #7 | **Merged** `6c0c6fb5` |
 | P1-06 | PR #8 | **Merged** `a1f648d` (head `9c6c09d`) |
-| P1-07 | PR #9 | **Merged** `a823268` (head `5546ad7`). Next is **P1-08**. |
-| P1-08 | `memory-gate-wt-p1-08` | `feat/tiered-memory-policy`. One failing pytest + one function. |
+| P1-07 | PR #9 | **Merged** `a823268` (head `5546ad7`). |
+| P1-08 | PR #11 | **Merged** `2c11c3f` (head `43272f7`). |
+| P1-09 | `memory-gate-wt-p1-09` | `feat/gateway-retrieve-domain`. One failing pytest + one function. |
 
 **Never** reset `python-ai/memory-gate` (`local/kang-main-wip` `691bb85`).
 Sibling worktrees from `forgejo/main`.

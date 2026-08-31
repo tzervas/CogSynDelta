@@ -6,7 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/kang/code/personal/tzervas/CogSynDelta
-Environment=CSD_AUTODEV_WT=/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-08
+Environment=CSD_AUTODEV_WT=/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-09
+Environment=CSD_APPLY_WORKTREE=p1-09
 Environment=SECRET_VAULT=/akula-data/cabal/csd-vault
 Environment=SOPS_AGE_KEY_FILE=/akula-data/cabal/csd-vault/age.txt
 Environment=GIT_USERNAME=autodev

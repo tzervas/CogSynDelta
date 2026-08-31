@@ -47,6 +47,7 @@ CUDA/tests/helpers behind the lock. WebUIs on homelab. Stop hosted
 
 ## Priority
 
-`G-QD` met. Next board: P1-08 tiered store (not `G-LIFE` yet). Skip stalled. Never start
+`G-QD` met. P1-08 merged `2c11c3f` (PR #11). Next closeable: P1-09
+retrieve/domain (not `G-LIFE` yet). Skip stalled. Never start
 `G-TRAIN`, `G-SPLIT`, `G-SHARE`, or `G-1080` from an autoloop.
 Never reset `kang-main-wip`.
