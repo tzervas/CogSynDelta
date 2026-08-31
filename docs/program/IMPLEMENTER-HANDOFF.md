@@ -38,10 +38,12 @@ green.
 | ID | Repo / worktree | Notes |
 |---|---|---|
 | P1-00 | `python-ai/memory-gate-wt-p1-00` PR #1 | **Merged** `7c1cdeba`. Fail-closed CI on Forgejo `main`. |
-| P1-01 | `...-wt-p1-01` PR #2 | Docs contract. Unmerged |
-| P1-02 | `...-wt-p1-02` PR #4 | Public errors + mapper. Head `f586dde` (main merged). Local trivy clean. Merge only if legitimately green |
-| P1-03 chroma | `...-wt-chroma-cve` PR #3 | Client-only refuse. Not a wheel patch |
-| Next product | P1-03 durable learn **if** not already on PR #1; else P1-04 in-memory oracle after P1-02 types exist | One change per PR |
+| P1-01 | `...-wt-p1-01` PR #2 | Docs contract. Unmerged (not green). |
+| P1-02 | `...-wt-p1-02` PR #4 | **Merged** `81af7f98`. Public errors + mapper. |
+| G-FLEET | `...-wt-fleet-py` PR #5 | **Merged** `7595bd53`. No cargo jobs on Python repo. |
+| P1-03 chroma | `...-wt-chroma-cve` PR #3 | Client-only refuse. Not a wheel patch. Red; do not merge. |
+| P1-04 | `...-wt-p1-04` PR #6 | Head `38156b3`. MemoryStore + in-memory oracle. Merge only if legitimately green. |
+| Next product | P1-06 SQLite after PR #6 merges | One change per PR |
 
 **Never** reset `python-ai/memory-gate` (`local/kang-main-wip` `691bb85`).
 Sibling worktrees from `forgejo/main`.

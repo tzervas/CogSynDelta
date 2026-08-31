@@ -8,9 +8,9 @@ Horizon rows stay **blocked** until Phase 1 exit. Not `STATUS.md`.
 | ID | Goal | Status | Blocker | Sandbox? | Refs |
 |---|---|---|---|---|---|
 | G-CI | Forgejo required checks **legitimately green** on memory-gate PR #1, then merge | met | Merged `500039e` as tzervas. Merge commit `7c1cdeba`. Jobs ran: quality, security, unit, integration, regression, gitleaks, trivy, fleet-ci python. Skips were rust-only `if:` (not fake green). | n/a | PR #1 |
-| G-ERR | Public `memory_gate.errors` in use; mapper at store/gateway or documented leftover closed | open | Merged `forgejo/main` (`7c1cdeba`) + `raise_mapped`. Local trivy clean (`cryptography` 50.0.1). Head `f586dde` pushed. Merge only if Forgejo required checks **ran and succeeded**. | wait CI | P1-02 |
-| G-FLEET | memory-gate `fleet-ci.yml` must not schedule cargo/rust jobs | open | Python-only repo; skip-if-rust still queues skipped jobs | yes | fleet-ci.yml |
-| G-STORE | In-memory oracle + store protocol conformance | open | After typed errors (PR #4 merged `81af7f98`) | yes | P1-04 |
+| G-ERR | Public `memory_gate.errors` in use; mapper at store/gateway or documented leftover closed | met | Merged as tzervas PR #4 `81af7f98`. Taxonomy + `raise_mapped` on store/gateway. | n/a | P1-02 |
+| G-FLEET | memory-gate `fleet-ci.yml` must not schedule cargo/rust jobs | met | Merged PR #5 `7595bd53` (head `7ecf2dc`). Python job **ran** (4m52s). No cargo job queued. `Cargo.toml` presence fails closed. Skip-if-rust was not kept. | n/a | fleet-ci.yml |
+| G-STORE | In-memory oracle + store protocol conformance | open | PR #6 `feat/store-conformance-contract` @ `38156b3`. Local unit 212 passed / 96.6% cov. Merge only if Forgejo required checks **ran and succeeded**. | wait CI | P1-04 |
 | G-SQL | Durable SQLite+sqlite-vec backend | open | After G-STORE | yes | P1-06; SELF-HOSTED-DRIVE-TARGETS storage |
 | G-QD | Qdrant 1024-d Qwen3 binding, fail-closed 384 | open | After G-STORE; 5080 only for measure | CPU tests yes; 5080 CUDA ok (Comfy masked) | P1-07 |
 | G-LIFE | learn → retrieve → consolidate → persona through restart | open | After G-SQL, G-QD, CLS, persona | yes once deps met | P1-16 |
@@ -25,5 +25,5 @@ Horizon rows stay **blocked** until Phase 1 exit. Not `STATUS.md`.
 
 ## Priority
 
-`G-CI` → `G-ERR` → `G-STORE` → `G-SQL` / `G-QD` → … → `G-LIFE`. Skip stalled.
+`G-CI` → `G-ERR` → `G-FLEET` → `G-STORE` → `G-SQL` / `G-QD` → … → `G-LIFE`. Skip stalled.
 Never start `G-TRAIN` from an autoloop.
