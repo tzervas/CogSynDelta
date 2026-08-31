@@ -8,7 +8,7 @@ Horizon rows stay **blocked** until Phase 1 exit. Not `STATUS.md`.
 | ID | Goal | Status | Blocker | Sandbox? | Refs |
 |---|---|---|---|---|---|
 | G-CI | Forgejo required checks **legitimately green** on memory-gate PR #1, then merge | met | Merged `500039e` as tzervas. Merge commit `7c1cdeba`. Jobs ran: quality, security, unit, integration, regression, gitleaks, trivy, fleet-ci python. Skips were rust-only `if:` (not fake green). | n/a | PR #1 |
-| G-ERR | Public `memory_gate.errors` in use; mapper at store/gateway or documented leftover closed | open | Mapper on store+gateway. Head `571d99c`. **Merge blocked**: fleet-security trivy still honest red. Do not merge red. | yes (trivy) | P1-02 |
+| G-ERR | Public `memory_gate.errors` in use; mapper at store/gateway or documented leftover closed | open | Merged `forgejo/main` (`7c1cdeba`) + `raise_mapped`. Local trivy clean (`cryptography` 50.0.1). Head `f586dde` pushed. Merge only if Forgejo required checks **ran and succeeded**. | wait CI | P1-02 |
 | G-STORE | In-memory oracle + store protocol conformance | open | After typed errors | yes | P1-04 |
 | G-SQL | Durable SQLite+sqlite-vec backend | open | After G-STORE | yes | P1-06; SELF-HOSTED-DRIVE-TARGETS storage |
 | G-QD | Qdrant 1024-d Qwen3 binding, fail-closed 384 | open | After G-STORE; 5080 only for measure | CPU tests yes; embeddings no if Comfy | P1-07 |
