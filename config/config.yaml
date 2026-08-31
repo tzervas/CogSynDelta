@@ -270,16 +270,19 @@ safeguards:
     max_repetitions: 5  # Maximum state repetitions before breaking
     state_hash_window: 100  # Window for detecting repetitions
 
-  # Timeouts
+  # Timeouts — lab GPU jobs (5080 exclusive / 3090 Ti exclusive)
   timeouts:
-    max_execution_time: 300  # seconds (5 minutes)
-    max_generation_time: 60  # seconds for code generation
-    max_inference_time: 10  # seconds per inference
+    max_execution_time: 3600  # seconds (1h GPU train/eval; CPU smoke can pass a smaller value)
+    max_generation_time: 300
+    max_inference_time: 120
 
-  # Resource limits
+  # Resource limits — process budget, not a claim that CSD currently uses this much.
+  # Default = RTX 5080 exclusive (16303 MiB card minus ~2 GiB CUDA headroom).
+  # Ceiling = RTX 3090 Ti exclusive (23028 MiB minus ~2 GiB). Never dual 14B.
   resource_limits:
-    max_memory_usage: 1073741824  # 1GB in bytes
-    max_output_size: 10485760  # 10MB in bytes
+    max_memory_usage: 14947450880  # (16303-2048) MiB; 5080 exclusive floor
+    max_memory_usage_ceiling: 21999124480  # (23028-2048) MiB; 3090 Ti exclusive ceiling
+    max_output_size: 536870912  # 512 MiB
     max_queue_size: 1000  # Maximum items in processing queue
 
   # Ethical constraints

@@ -341,12 +341,17 @@ See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for complete results.
 
 ## 🔒 Safety & Ethics
 
-Built-in safeguards:
-- Loop detection (max 5 repetitions)
-- Execution timeouts (300s default)
-- Resource limits (1GB memory, 10MB output)
+Built-in safeguards (`InfiniteLoopSafeguard` / `config.yaml`):
+- Loop detection (max 5 identical state hashes)
+- Execution timeouts (3600s default for lab GPU jobs)
+- Process budget: **14 GiB default** (RTX 5080 exclusive, ~2 GiB CUDA headroom);
+  **20 GiB ceiling** (RTX 3090 Ti exclusive). Output cap 512 MiB.
 - Forbidden pattern detection
 - Circuit breakers for runaway processes
+
+These are **caps**, not a claim that the PoC currently fills 14 GiB. PoC CUDA
+used ~766 MiB (`STATUS.md`). CSD CUDA belongs on the 5080; the 3090 Ti stays
+`local/code` unless a job exclusive-owns it.
 
 ## 📄 License
 

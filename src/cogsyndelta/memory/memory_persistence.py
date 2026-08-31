@@ -32,6 +32,17 @@ from torch import nn
 
 from cogsyndelta.core.logging_config import get_logger
 
+# Lab process budgets. 5080 is the default CUDA host; 3090 Ti is exclusive ceiling.
+# Headroom is CUDA context / display, not unused CSD weights.
+_MIB = 1024 * 1024
+LAB_GPU_5080_MIB = 16303
+LAB_GPU_3090TI_MIB = 23028
+CUDA_HEADROOM_MIB = 2048
+LAB_GPU_MIN_PROCESS_BYTES = (LAB_GPU_5080_MIB - CUDA_HEADROOM_MIB) * _MIB
+LAB_GPU_MAX_PROCESS_BYTES = (LAB_GPU_3090TI_MIB - CUDA_HEADROOM_MIB) * _MIB
+DEFAULT_MAX_OUTPUT_BYTES = 512 * _MIB
+DEFAULT_GPU_TIMEOUT_S = 3600.0
+
 # Module logger with skip tracking for graceful degradation
 _logger = get_logger(__name__)
 
@@ -545,21 +556,38 @@ class InfiniteLoopSafeguard:
     """
 
     def __init__(
-        self, max_iterations: int = 1000, max_repetitions: int = 5, timeout_seconds: float = 300.0
+        self,
+        max_iterations: int = 1000,
+        max_repetitions: int = 5,
+        timeout_seconds: float = DEFAULT_GPU_TIMEOUT_S,
+        max_output_size: int = DEFAULT_MAX_OUTPUT_BYTES,
+        max_memory_usage: int = LAB_GPU_MIN_PROCESS_BYTES,
+        max_memory_usage_ceiling: int = LAB_GPU_MAX_PROCESS_BYTES,
     ) -> None:
-        """Initialize safeguard with iteration limits and ethical constraints."""
+        """Initialize safeguard with iteration limits and lab GPU process budgets.
+
+        Args:
+            max_iterations: Hard cap on check_state calls.
+            max_repetitions: Identical state hashes before loop-break.
+            timeout_seconds: Wall time for a GPU job (default 1h).
+            max_output_size: Tensor/text output cap (default 512 MiB).
+            max_memory_usage: Default process budget = 5080 exclusive
+                (card minus ~2 GiB CUDA headroom).
+            max_memory_usage_ceiling: Never exceed 3090 Ti exclusive budget.
+        """
         self.max_iterations = max_iterations
         self.max_repetitions = max_repetitions
         self.timeout_seconds = timeout_seconds
+        max_memory_usage = min(max_memory_usage, max_memory_usage_ceiling)
 
         self.loop_state = LoopDetectionState(max_repetitions=max_repetitions)
         self.iteration_count = 0
         self.start_time = datetime.now()
 
-        # Ethical constraints
         self.ethical_constraints: dict[str, Any] = {
-            "max_output_size": 10 * 1024 * 1024,  # 10MB
-            "max_memory_usage": 1024 * 1024 * 1024,  # 1GB
+            "max_output_size": max_output_size,
+            "max_memory_usage": max_memory_usage,
+            "max_memory_usage_ceiling": max_memory_usage_ceiling,
             "forbidden_patterns": ["infinite_loop", "memory_bomb", "fork_bomb"],
         }
 

@@ -85,16 +85,17 @@ safeguards:
     max_iterations: 1000             # Max iterations
     max_repetitions: 5               # Max state repeats
 
-  # Timeouts
+  # Timeouts — lab GPU jobs
   timeouts:
-    max_execution_time: 300          # Seconds
-    max_generation_time: 60
-    max_inference_time: 10
+    max_execution_time: 3600         # 1h GPU; pass a smaller value for CPU smoke
+    max_generation_time: 300
+    max_inference_time: 120
 
-  # Resource limits
+  # Resource limits — 5080 exclusive floor / 3090 Ti exclusive ceiling
   resource_limits:
-    max_memory_usage: 1073741824     # 1GB in bytes
-    max_output_size: 10485760        # 10MB in bytes
+    max_memory_usage: 14947450880    # (16303-2048) MiB; 5080 exclusive
+    max_memory_usage_ceiling: 21999124480  # (23028-2048) MiB; 3090 Ti exclusive
+    max_output_size: 536870912       # 512 MiB
     max_queue_size: 1000
 
   # Ethical constraints
