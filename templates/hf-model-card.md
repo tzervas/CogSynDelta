@@ -52,7 +52,8 @@ fine-tune starts from one of these two, not from an unlabeled mix.
 
 **Code (deep git tree):** [git.vectorweight.com/tzervas/CogSynDelta](https://git.vectorweight.com/tzervas/CogSynDelta)
 **Memory backend (Python):** [tzervas/memory-gate](https://git.vectorweight.com/tzervas/memory-gate)
-**Eval dumps (dataset repo):** [tzervas/cogsyndelta-eval](https://huggingface.co/datasets/tzervas/cogsyndelta-eval)
+**Eval dumps:** [tzervas/cogsyndelta-eval](https://huggingface.co/datasets/tzervas/cogsyndelta-eval) (not a train mix)
+**Train data (when it exists):** `tzervas/cogsyndelta-data` configs `common` (foundation) and `region-<id>` (cherry-picked specialists). Extra `tzervas/cogsyndelta-data-<id>` repos only for hard isolation.
 **Measured claims:** `STATUS.md` in the code repo. This card must not exceed that file.
 
 This is a **MoE-adjacent single brain** (cognitive regions + softmax router), not a

@@ -48,7 +48,28 @@ Private HF (when a real checkpoint exists — none today):
 |---|---|---|
 | Bedrock | Regions trained + quantized; no overall unison train | `tzervas/cogsyndelta-bedrock` |
 | Foundation | Bedrock + overall pretrain on the full corpus | `tzervas/cogsyndelta` |
-| Eval / region corpora | Pinned data revisions, not weights | `tzervas/cogsyndelta-eval` (+ per-region subsets) |
+| Eval dumps | Pinned metrics / golden rows, **not** train mixes | `tzervas/cogsyndelta-eval` |
+
+**Datasets (also none today).** Default is **one** private dataset repo with
+Hugging Face **configs** (isolated subsets), not one undifferentiated dump.
+Split to extra repos only when license, size, or a hard isolation wall needs
+it.
+
+| Config / repo | Who trains on it | Isolation |
+|---|---|---|
+| `tzervas/cogsyndelta-data` config `common` | Foundation / overall pretrain | Shared, general corpora |
+| `tzervas/cogsyndelta-data` config `region-<id>` | That region only | Cherry-picked sequences for its job |
+| `tzervas/cogsyndelta-data-<id>` (optional extra repo) | Same as `region-<id>` | Use when a corpus must not sit next to `common` (license, size, leak risk) |
+
+Rules:
+
+- Region/subregion training **must not** silently ingest `common`. A region
+  mix is an explicit include list + data revision, not "the pile minus a tag."
+- Foundation **may** use `common` plus any region rows the region spec
+  **names** as allowed to leak upward. Default is no leak.
+- Eval stays in `cogsyndelta-eval`. Do not train on the eval dump.
+- Every train recipe pins `dataset_id` + `config` + `revision`. A floating
+  `latest` is not a dataset.
 
 Do not publish a foundation card that is only bedrock. Do not train this
 pass. `STATUS.md` is still PoC-only.

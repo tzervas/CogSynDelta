@@ -24,7 +24,7 @@ Read `docs/program/IMPLEMENTER-HANDOFF.md` then `PYTHON-FIRST-PLAN.md` and
 ### Open Forgejo PRs (memory-gate, not merged)
 
 - P1-00 https://git.vectorweight.com/tzervas/memory-gate/pulls/1 — **merged** `7c1cdeba` (head `500039e`). Fail-closed CI on `main`. Local `python-ai/memory-gate` `691bb85` **untouched**.
-- P1-01 https://git.vectorweight.com/tzervas/memory-gate/pulls/2 — `docs/memory-lifecycle-contract` @ `8b47943` restacked on `58934e6`. Docs only (review holes locked in spec/ADR). Merge only if required jobs **ran and succeeded**.
+- P1-01 https://git.vectorweight.com/tzervas/memory-gate/pulls/2 — **merged** `91cc0f79` (head `8b47943`). Quality/security/fleet-ci/tests ran.
 - P1-03 chroma mitigation https://git.vectorweight.com/tzervas/memory-gate/pulls/3 — `fix/chroma-cve-client-only` @ `1b07c56`. Client-only refuse. **Not** an upstream wheel patch. Red; not mergeable.
 - P1-02 https://git.vectorweight.com/tzervas/memory-gate/pulls/4 — **merged** `81af7f98`.
 - G-FLEET https://git.vectorweight.com/tzervas/memory-gate/pulls/5 — **merged** `7595bd53`. Python-only fleet-ci; no cargo jobs.
@@ -44,8 +44,8 @@ Do not merge until Forgejo required checks **ran and succeeded** on the new head
 
 ### Next closeable on this side
 
-1. G-CI / G-ERR / G-FLEET / G-STORE **met**. P1-01 PR #2 restacked on `58934e6`; merge only if required jobs **ran and succeeded**.
-2. Autoloop: wake on Forgejo PR/CI (`scripts/forgejo-pr-watch.py`), then P1-06 SQLite.
+1. G-CI / G-ERR / G-FLEET / G-STORE **met**. P1-01 merged `91cc0f79`.
+2. Autoloop: P1-06 SQLite (`G-SQL`). Wake on Forgejo PR/CI, not a 2h timer.
 3. **Chroma:** do **not** pin `1.5.10.dev266` / `latest`. SQLite+vec + Qdrant until a named patched RC/stable that GHSA lists. PR #3 stays unmerged while red.
 4. HF: private `tzervas/cogsyndelta-eval` only at P1-15.
 

@@ -21,7 +21,7 @@ Horizon rows stay **blocked** until Phase 1 exit. Not `STATUS.md`.
 | ID | Goal | Status | Unblock |
 |---|---|---|---|
 | G-CHROMA | Reintegrate Chroma | blocked | Named patched RC/stable in GHSA — gatekeeper WAN check |
-| G-TRAIN | Region specialization + interconnect train/eval | blocked | Phase 1 exit (`G-LIFE`). Per-region data → train/quantize specialists → bedrock assemble → foundation overall pretrain. One-GPU Python first. Split-GPU is Phase 5. |
+| G-TRAIN | Region specialization + interconnect train/eval | blocked | Phase 1 exit (`G-LIFE`). Isolated `region-<id>` datasets then `common` for foundation. Bedrock then foundation HF. One-GPU Python first. Split-GPU is Phase 5. |
 
 ## Priority
 
