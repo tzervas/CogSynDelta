@@ -19,8 +19,8 @@ hook), not a 2h timer.
 | G-FLEET | No cargo jobs on Python-only fleet-ci | met | PR #5 `7595bd53` | n/a | fleet-ci.yml |
 | G-STORE | Store protocol + in-memory oracle | met | PR #6 `58934e6` | n/a | P1-04 |
 | G-RAG | `akula-csd-kb` 1024-d points > 0 | met | 83 points / 20 files on 5080. Never 3090 | n/a | vault |
-| G-ACK | Durable learn acknowledgement | open | PR #7 `fix/gateway-durable-lifecycle` @ `7bac0e3`. Merge only if required jobs **ran and succeeded**. | wait CI | P1-03 |
-| G-SQL | SQLite+sqlite-vec durable store | open | After G-ACK (board P1-06 still after P1-04; do ACK first — P0) | yes | P1-06 |
+| G-ACK | Durable learn acknowledgement | met | PR #7 merged `6c0c6fb5`. Jobs ran (quality, security, fleet-ci python, tests, gitleaks, trivy, commitizen). | n/a | P1-03 |
+| G-SQL | SQLite+sqlite-vec durable store | open | **Next.** After G-ACK. | yes | P1-06 |
 | G-QD | Qdrant 1024-d Qwen3, fail-closed 384 | open | After G-STORE; 5080 for embed measure | CPU yes | P1-07 |
 | G-LIFE | learn → retrieve → consolidate → persona through restart | open | After G-SQL, G-QD, CLS, persona | later | P1-16 |
 
@@ -41,5 +41,5 @@ hook), not a 2h timer.
 
 ## Priority
 
-`G-ACK` → `G-SQL` → `G-QD` → … → `G-LIFE`. Skip stalled. Never start
+`G-SQL` → `G-QD` → … → `G-LIFE`. Skip stalled. Never start
 `G-TRAIN` or `G-SPLIT` from an autoloop. Never reset `kang-main-wip`.
