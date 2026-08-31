@@ -4,8 +4,9 @@ let meta = #{
     when_to_use: "Drive CogSynDelta Phase 1 memory-gate or Goal 0 ops one ID at a time after the official plan",
     phases: [
         #{ title: "Pick", detail: "resolve ID and refuse stay-open" },
-        #{ title: "Implement", detail: "one isolated increment, no merge" },
+        #{ title: "Implement", detail: "one isolated increment; open Forgejo PR" },
         #{ title: "Verify", detail: "adversarial review against the board gate" },
+        #{ title: "Merge", detail: "wait honest CI then merge; do not wait for chat" },
     ],
 };
 
@@ -37,6 +38,23 @@ let impl_schema = #{
         "honesty_notes": #{ "type": "string" },
     },
 };
+
+let merge_schema = #{
+    "type": "object",
+    "required": ["merged", "reason"],
+    "properties": #{
+        "merged": #{ "type": "boolean" },
+        "reason": #{ "type": "string" },
+        "pr_url": #{ "type": "string" },
+        "merge_sha": #{ "type": "string" },
+        "evidence": #{ "type": "string" },
+    },
+};
+
+fn as_str(x) {
+    if type_of(x) == "string" { return x; }
+    "";
+}
 
 let verdict_schema = #{
     "type": "object",
@@ -89,11 +107,8 @@ if pick.output.closeable == false {
 phase("Implement");
 let impl_p = "";
 impl_p += "Implement exactly one closeable Python-first increment.\n";
-impl_p += "Do not merge in the same run that just pushed (checks will not be green yet).\n";
-impl_p += "On a later increment, merge OUR Forgejo PR only if required checks are\n";
-impl_p += "legitimately green: jobs actually ran and succeeded. Skip, || true,\n";
-impl_p += "continue-on-error, fallback echo, or a missing runner is NOT green.\n";
-impl_p += "Honest red is not mergeable. Never merge Jules/develop/GitHub bot PRs.\n";
+impl_p += "Open a Forgejo PR. Do not merge yet in this implement step; the Merge\n";
+impl_p += "phase waits on CI. Never merge Jules/develop/GitHub bot PRs.\n";
 impl_p += "ID: " + pick.output.id + "\n";
 impl_p += "DoD: " + pick.output.dod + "\n";
 impl_p += "Repo: " + pick.output.repo + "\n";
@@ -102,7 +117,7 @@ impl_p += "Worktree if given: " + pick.output.worktree + "\n";
 impl_p += "Read docs/program/PYTHON-FIRST-PLAN.md and PHASE-1-TASK-BOARD.md first.\n";
 impl_p += "Hard rules: never checkout/reset python-ai/memory-gate main (kang-main-wip).\n";
 impl_p += "Use sibling worktrees from forgejo/main. Never push main/staging/develop/dev.\n";
-impl_p += "Never pause 3090 LocalAI. Never kill Comfy; enqueue 5080 jobs.\n";
+impl_p += "Never pause 3090 LocalAI. Comfy is masked for autodev; do not unmask.\n";
 impl_p += "Never write tzervas-dev-kb or akula-model-kb. Never mix 384-d Qdrant.\n";
 impl_p += "Never bot-push GitHub. Conventional commits. One architecture change.\n";
 impl_p += "If ID is P1-00: remaining fail-closed CI on memory-gate-wt-p1-00 / Forgejo PR #1.\n";
@@ -129,7 +144,7 @@ impl_p += "credential.helper disabled + git-askpass-token under secret exec\n";
 impl_p += "TOKEN=git/cabal-forgejo-admin. Never GitHub bot push. Cabal user is ACL-blocked.\n";
 impl_p += "Open a Forgejo PR if the forge CLI/API is available; otherwise report the push.\n";
 impl_p += "Workflow host cannot spawn LocalAI model slugs; implement here as grok-4.6.\n";
-impl_p += "Keep 3090 LocalAI loaded anyway. Never pause it. Never steal the 5080 from Comfy.\n";
+impl_p += "Keep 3090 LocalAI loaded anyway. Never pause it.\n";
 impl_p += "Never deploy a CogSynDelta checkpoint.\n";
 impl_p += "HF datasets: only if this ID is P1-15+; use private tzervas/cogsyndelta-eval.\n";
 impl_p += "Return status, summary, verify_ok (local checks), branch, commit, optional pr_url.\n";
@@ -162,9 +177,45 @@ let ver = agent(ver_p, #{
     model: "grok-4.5",
 });
 let accepted = ver != () && ver.success && ver.output != () && ver.output.real == true;
+let merged = false;
+let merge_sha = "";
+let merge_reason = "skipped";
+let pru = as_str(impl.output.pr_url);
+if accepted && pru != "" {
+    phase("Merge");
+    let mer_p = "";
+    mer_p += "You merge OUR Forgejo PR. Do not wait for the parent chat.\n";
+    mer_p += "PR: " + pru + "\n";
+    mer_p += "Poll git.vectorweight.com combined commit status with secret exec\n";
+    mer_p += "TOKEN=git/cabal-forgejo-admin until success or ~20 minutes.\n";
+    mer_p += "Legitimately green = required jobs RAN and succeeded (wall time > 0s\n";
+    mer_p += "for quality, security, tests, fleet-ci python, gitleaks, trivy, commitizen).\n";
+    mer_p += "0s parent/matrix placeholders are OK only if the real sibling ran.\n";
+    mer_p += "Skip, || true, cancelled, pending, missing runner, or failure is NOT green.\n";
+    mer_p += "Honest red: do not merge; set merged=false and quote the red job.\n";
+    mer_p += "Never merge Jules/develop/GitHub bots or chroma PR #3.\n";
+    mer_p += "Merge POST /api/v1/repos/tzervas/memory-gate/pulls/{n}/merge as tzervas\n";
+    mer_p += "with Do=merge and chore(merge): title. Return merged, reason, evidence, merge_sha.\n";
+    let mer = agent(mer_p, #{
+        label: "merge-when-green",
+        capability_mode: "all",
+        output_schema: merge_schema,
+        model: "grok-4.6",
+    });
+    if mer != () && mer.success && mer.output != () {
+        if mer.output.merged == true { merged = true; }
+        merge_reason = as_str(mer.output.reason);
+        merge_sha = as_str(mer.output.merge_sha);
+    } else {
+        merge_reason = "merge agent failed";
+    }
+}
 let report = #{
     id: pick.output.id,
     accepted: accepted,
+    merged: merged,
+    merge_sha: merge_sha,
+    merge_reason: merge_reason,
     implement: impl.output,
     verify_reason: if ver != () && ver.output != () { ver.output.reason } else { "verify missing" },
     verify_evidence: if ver != () && ver.output != () { ver.output.evidence } else { "" },
@@ -174,6 +225,8 @@ complete(#{
     path: path,
     id: pick.output.id,
     accepted: accepted,
+    merged: merged,
+    merge_sha: merge_sha,
     summary: impl.output.summary,
     branch: impl.output.branch,
 });

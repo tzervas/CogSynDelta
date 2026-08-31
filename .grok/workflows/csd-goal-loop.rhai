@@ -42,6 +42,18 @@ let impl_schema = #{
     },
 };
 
+let merge_schema = #{
+    "type": "object",
+    "required": ["merged", "reason"],
+    "properties": #{
+        "merged": #{ "type": "boolean" },
+        "reason": #{ "type": "string" },
+        "pr_url": #{ "type": "string" },
+        "merge_sha": #{ "type": "string" },
+        "evidence": #{ "type": "string" },
+    },
+};
+
 let verdict_schema = #{
     "type": "object",
     "required": ["real", "reason", "evidence"],
@@ -117,7 +129,7 @@ while round < 3 {
         impl_p += "Sandbox only. No WAN. No pause LocalAI. Comfy is masked; do not unmask.\n";
         impl_p += "Never reset kang-main-wip. One architecture change. Conventional commits.\n";
         impl_p += "Push Forgejo as tzervas + git-askpass, credential.helper disabled.\n";
-        impl_p += "Merge only if required checks legitimately green (ran and succeeded).\n";
+        impl_p += "Open/push a Forgejo PR. The Merge phase waits on CI; do not merge here.\n";
         impl_p += "If this increment cannot progress, set progressed=false and say why.\n";
         impl_p += "Do not start G-TRAIN. Keep 3090 LocalAI loaded. Implement as grok-4.6.\n";
         impl_p += "Return goal_id, status, summary, verify_ok, progressed, branch, commit, pr_url.\n";
@@ -147,6 +159,26 @@ while round < 3 {
             });
             if ver != () && ver.success && ver.output != () && ver.output.real == true {
                 last_ok = true;
+                let pru = as_str(impl.output.pr_url);
+                if pru != "" {
+                    let mer_p = "";
+                    mer_p += "You merge OUR Forgejo PR. Do not wait for the parent chat.\n";
+                    mer_p += "PR: " + pru + "\n";
+                    mer_p += "Poll combined status until success or ~20 minutes.\n";
+                    mer_p += "Merge only if required jobs RAN and succeeded. Skip/pending/red is not green.\n";
+                    mer_p += "Never merge Jules/develop/GitHub bots or chroma PR #3.\n";
+                    mer_p += "secret exec TOKEN=git/cabal-forgejo-admin. POST merge Do=merge chore(merge): title.\n";
+                    mer_p += "Return merged, reason, evidence, merge_sha.\n";
+                    let mer = agent(mer_p, #{
+                        label: "merge-when-green",
+                        capability_mode: "all",
+                        output_schema: merge_schema,
+                        model: "grok-4.6",
+                    });
+                    if mer != () && mer.success && mer.output != () && mer.output.merged == true {
+                        last_summary = last_summary + " merged";
+                    }
+                }
             } else {
                 last_ok = false;
             }

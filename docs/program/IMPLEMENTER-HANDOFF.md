@@ -20,10 +20,10 @@ Do not reconstruct the parent chat. Read these files with tools.
 
 | Actor | Job |
 |---|---|
-| Hosted Grok (this control plane) | Plans, ADRs, WAN, research feed, merge when legitimately green |
+| Hosted Grok (this control plane) | Plans, ADRs, WAN, research feed. Merge is **not** gated on this chat |
 | Self-hosted `local/code` (3090, 32k Q4 + share-small leftover) | One failing test + one function. No WAN |
-| Autoloop `/csd-goal-loop` | Drive GOALS.md; stall→switch; CI-wake not 2h timer |
-| Autoloop `/csd-python-first-drive` | One board ID per run. Merge only on later green CI |
+| Autoloop `/csd-goal-loop` | Drive GOALS.md; **Merge phase** waits honest CI then merges |
+| Autoloop `/csd-python-first-drive` | One board ID; open PR; Merge phase waits honest CI then merges |
 | Second Grok (akula-ai-platform) | WebUI/Comfy. Do not touch from CSD |
 
 Workflow host **cannot** spawn model slug `local/code` (only `grok-4.5` /

@@ -31,8 +31,8 @@ after the gatekeeper answers.
 
 Lab only: Forgejo `tzervas/*`, localhost Qdrant/LocalAI, `akula-csd-kb` reads,
 homelab CPU CI, sibling git worktrees, `uv`/`pytest`/`ruff` on the worktree.
-Merge our PRs when required jobs **ran and succeeded** without waiting for this
-chat. Do not schedule cargo jobs on Python-only repos (no `if: rust` skip
+Workflows **wait on Forgejo CI and merge themselves** when required jobs **ran
+and succeeded**. Do not wait for this chat. Do not schedule cargo jobs on Python-only repos (no `if: rust` skip
 theatre). If `Cargo.toml` appears later, fail closed and add a real rust job.
 
 **Not sandbox** (gatekeeper or operator): WAN/GitHub/PyPI/HF downloads, pause
