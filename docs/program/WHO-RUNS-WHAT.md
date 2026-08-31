@@ -48,3 +48,25 @@ generation goes through** `./scripts/csd-localai-queue` → 3090 `local/code`
 | Grok workflows | `/workflow runs` in this TUI |
 
 Steer file: `/akula-data/cabal/csd-steer.json` (`pause`, `note`, `next_goal`).
+
+## Long-term: autodev escalates to Grok (minimal perms)
+
+Autodev (local/code + 5080 helpers) **decides** when hosted Grok is worth a
+token. Operator is not in the loop for every stall.
+
+| May escalate (`csd-escalate --reason`) | Must not escalate |
+|---|---|
+| `wan` — GHSA/PyPI/HF named-version check | Every implement tick |
+| `stall` — same fingerprint twice | G-TRAIN / weight training |
+| `adr` — one architecture decision | Dual 14B, pause LocalAI for RAG |
+| `merge-policy` — red vs skip-theatre | Jules/`develop`/GitHub bot merge |
+| `safety` — quota/OOM/collision | `--always-approve` grok CLI |
+
+Default **dry-run** (log `/akula-data/cabal/escalate-log.jsonl`). Fire only if
+`CSD_ESCALATE=1`. CLI: `grok --print --prompt-file` with `--allow Read` and
+`--deny` WAN curl/wget. Other providers later, same allowlist.
+
+**UX:** homelab https://code.vectorweight.com is the chat entry;
+https://code.vectorweight.com/lab is the harness (GPUs, queue, steer). GPU
+backends stay on 3090/5080. That is the DI/DX target: self-hosted loop first,
+tiny Grok assist when the loop itself asks.
