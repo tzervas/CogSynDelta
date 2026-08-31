@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Run PoC CUDA tests on a live GPU. No pytest required. Receipt JSON to --out."""
+
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 import time
@@ -30,7 +32,17 @@ def main() -> int:
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root / "src"))
     sys.path.insert(0, str(root))
-    import tests.test_poc_cuda as m
+    # GPU images often ship a site-packages `tests` package. Load by path.
+    mod_path = root / "tests" / "test_poc_cuda.py"
+    spec = importlib.util.spec_from_file_location("csd_test_poc_cuda", mod_path)
+    if spec is None or spec.loader is None:
+        out["error"] = f"cannot load {mod_path}"
+        Path(args.out).write_text(json.dumps(out, indent=2), encoding="utf-8")
+        print(json.dumps(out, indent=2))
+        return 1
+    m = importlib.util.module_from_spec(spec)
+    sys.modules["csd_test_poc_cuda"] = m
+    spec.loader.exec_module(m)
 
     failed = 0
     for name, fn in vars(m).items():

@@ -4,6 +4,7 @@
 Monitor-safe: stdout is only DONE / FAILED / CANCELLED. No progress spam.
 Uses TOKEN from the environment (secret exec). Never argv.
 """
+
 from __future__ import annotations
 
 import json
@@ -73,7 +74,12 @@ def main() -> int:
     while True:
         try:
             now = snapshot(token)
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+        except (
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            TimeoutError,
+            json.JSONDecodeError,
+        ) as exc:
             # Stay up; do not wake on transient API blips.
             time.sleep(SLEEP)
             _ = exc

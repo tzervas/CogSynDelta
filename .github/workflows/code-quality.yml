@@ -143,7 +143,7 @@ jobs:
           uv run --no-project python scripts/quality_control.py src/ >> quality-metrics.md
 
       - name: Upload quality metrics
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v3
         with:
           name: quality-metrics
           path: quality-metrics.md

@@ -1,4 +1,5 @@
 """Unit tests for scripts/csd-model-router placement and migrate policy."""
+
 from __future__ import annotations
 
 import importlib.machinery
@@ -17,9 +18,7 @@ def load_router(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     """Import the CLI as a module with isolated state/plan paths."""
     monkeypatch.setenv("CSD_ROUTER_STATE", str(tmp_path / "state.json"))
     monkeypatch.setenv("CSD_GPU_PLAN", str(tmp_path / "gpu-plan.json"))
-    monkeypatch.setenv(
-        "CSD_ROUTER_CATALOG", str(ROOT / "config" / "model-router.json")
-    )
+    monkeypatch.setenv("CSD_ROUTER_CATALOG", str(ROOT / "config" / "model-router.json"))
     loader = importlib.machinery.SourceFileLoader("csd_model_router", str(SCRIPT))
     spec = importlib.util.spec_from_loader("csd_model_router", loader)
     assert spec is not None
@@ -74,9 +73,7 @@ def test_14b_not_placed_on_5080(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert spec["fits_5080"] is False
 
 
-def test_migrate_8b_off_prime_for_14b(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_migrate_8b_off_prime_for_14b(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     r = load_router(tmp_path, monkeypatch)
     inventory = inv_idle(helper_ok=True, gguf=0)
     r.request_alias(
@@ -105,34 +102,26 @@ def test_migrate_8b_off_prime_for_14b(
     assert parked["host"] == "gpu5080"
 
 
-def test_no_ping_pong_within_dwell(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_ping_pong_within_dwell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     r = load_router(tmp_path, monkeypatch)
     inventory = inv_idle()
     r.request_alias(
         "local/uncensored-fast", "seed", 180, noping=True, now=1_000.0, inventory=inventory
     )
-    r.request_alias(
-        "local/code", "autodev", 3600, noping=True, now=1_010.0, inventory=inventory
-    )
+    r.request_alias("local/code", "autodev", 3600, noping=True, now=1_010.0, inventory=inventory)
     rest = r.restore_pass(now=1_010.0 + 60.0, inventory=inventory)
     assert rest["actions"] == []
     st = r.load_state()
     assert "local/uncensored-fast" in st["parked"]
 
 
-def test_restore_after_dwell_when_14b_gone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_restore_after_dwell_when_14b_gone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     r = load_router(tmp_path, monkeypatch)
     inventory = inv_idle()
     r.request_alias(
         "local/uncensored-fast", "seed", 180, noping=True, now=1_000.0, inventory=inventory
     )
-    r.request_alias(
-        "local/code", "autodev", 3600, noping=True, now=1_010.0, inventory=inventory
-    )
+    r.request_alias("local/code", "autodev", 3600, noping=True, now=1_010.0, inventory=inventory)
     st = r.load_state()
     st["resident"].pop("local/code", None)
     r.save_state(st)
@@ -144,17 +133,13 @@ def test_restore_after_dwell_when_14b_gone(
     assert ops.get("local/uncensored-fast") == "restore-prime"
 
 
-def test_drop_parked_when_5080_needs_cuda(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_drop_parked_when_5080_needs_cuda(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     r = load_router(tmp_path, monkeypatch)
     inventory = inv_idle()
     r.request_alias(
         "local/uncensored-fast", "seed", 180, noping=True, now=1_000.0, inventory=inventory
     )
-    r.request_alias(
-        "local/code", "autodev", 3600, noping=True, now=1_010.0, inventory=inventory
-    )
+    r.request_alias("local/code", "autodev", 3600, noping=True, now=1_010.0, inventory=inventory)
     busy = inv_idle(helper_ok=False)
     busy["gpu5080"]["lock"] = "1234"
     busy["akula-prime"]["free_mib"] = 2000
@@ -163,13 +148,9 @@ def test_drop_parked_when_5080_needs_cuda(
     assert ops.get("local/uncensored-fast") == "drop-for-cuda"
 
 
-def test_pool_plan_parked_not_executed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pool_plan_parked_not_executed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     r = load_router(tmp_path, monkeypatch)
-    rec = r.request_alias(
-        "pool/large", "trial", 60, noping=True, now=1_000.0, inventory=inv_idle()
-    )
+    rec = r.request_alias("pool/large", "trial", 60, noping=True, now=1_000.0, inventory=inv_idle())
     assert rec["ok"] is False
     assert rec["error"] in {"pool-parked", "pool would preempt autodev"}
     plan = rec["plan"]
@@ -189,9 +170,7 @@ def test_tight_never_splits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 def test_never_dual_14b(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     r = load_router(tmp_path, monkeypatch)
     inventory = inv_idle()
-    r.request_alias(
-        "local/fast", "chat", 300, noping=True, now=1_000.0, inventory=inventory
-    )
+    r.request_alias("local/fast", "chat", 300, noping=True, now=1_000.0, inventory=inventory)
     rec = r.request_alias(
         "local/code", "autodev", 3600, noping=True, now=1_020.0, inventory=inventory
     )
@@ -214,9 +193,7 @@ def test_1080ti_is_future_not_live() -> None:
     assert "sm_120" in stub["lacks"]
 
 
-def test_embed_prefers_5080_caps(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_embed_prefers_5080_caps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     r = load_router(tmp_path, monkeypatch)
     spec = r.catalog()["aliases"]["embed-qwen3-0.6b"]
     inventory = inv_idle(helper_ok=True)

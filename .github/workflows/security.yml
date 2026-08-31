@@ -82,7 +82,7 @@ jobs:
 
       - name: Upload SARIF as artifact (when GHAS upload disabled)
         if: ${{ vars.ENABLE_CODEQL_UPLOAD != 'true' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v3
         with:
           name: codeql-sarif-results
           path: sarif-results
@@ -183,7 +183,7 @@ jobs:
           uv tool run pip-audit -r requirements-audit.txt --desc on || echo "::notice::pip-audit completed with findings or unavailable packages."
 
       - name: Upload security reports
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v3
         if: always()
         with:
           name: security-reports

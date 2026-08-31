@@ -1,4 +1,5 @@
 """Tests for interned RO weights and parallel batch scheduling."""
+
 from __future__ import annotations
 
 import importlib.machinery
@@ -68,8 +69,16 @@ def test_pick_runtime_bitnet_vllm_gguf() -> None:
     assert intern.pick_runtime({"kind": "moe", "format": "safetensors"}) == "vllm"
     plan = intern.intern_plan(
         [
-            {"name": "a", "format": "gguf", "tensors": [{"name": "w", "hash": "x", "nbytes": 8, "writable": False}]},
-            {"name": "b", "format": "bitnet-1.58", "tensors": [{"name": "w", "hash": "y", "nbytes": 8, "writable": False}]},
+            {
+                "name": "a",
+                "format": "gguf",
+                "tensors": [{"name": "w", "hash": "x", "nbytes": 8, "writable": False}],
+            },
+            {
+                "name": "b",
+                "format": "bitnet-1.58",
+                "tensors": [{"name": "w", "hash": "y", "nbytes": 8, "writable": False}],
+            },
         ]
     )
     assert plan["mix"] == ["bitnet-cpp", "llama.cpp"]

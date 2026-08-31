@@ -71,7 +71,7 @@ jobs:
           echo "gpu_benchmark_${TIMESTAMP}.json" > benchmark_results/latest_ref.txt
 
       - name: Upload benchmark artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v3
         with:
           name: gpu-benchmark-${{ inputs.run_date }}
           path: benchmark_results/
@@ -110,7 +110,7 @@ jobs:
   #         ./scripts/capture_gpu_benchmarks.sh
   #
   #     - name: Upload benchmark artifacts
-  #       uses: actions/upload-artifact@v7
+  #       uses: actions/upload-artifact@v3
   #       with:
   #         name: gpu-benchmark-${{ github.run_id }}
   #         path: benchmark_results/
