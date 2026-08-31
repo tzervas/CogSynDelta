@@ -22,7 +22,7 @@ Read `docs/program/PYTHON-FIRST-PLAN.md` then `PHASE-1-TASK-BOARD.md`.
 
 ### Open Forgejo PRs (memory-gate, not merged)
 
-- P1-00 https://git.vectorweight.com/tzervas/memory-gate/pulls/1 — `ci/forgejo-cpu-fail-closed` @ `7119214`. **Real Forgejo run exists** (`homelab-cpu` id 5 idle, labels match). Code quality / commitizen / ruff **success**. Honest reds: pytest unawaited + agent-feedback asserts (P1-03/product, fleet-ci 8 failed / 126 passed); gitleaks 14 historical `.vscode` private-key hits (file gone from HEAD); chromadb 1.5.9. **Install bugs being fixed:** `codecov-action` 404 on data.forgejo.org (unit-test jobs never started), safety 3 `--output` path vs format, trivy `v0.58.1` tag 404 (pin `0.74.0`).
+- P1-00 https://git.vectorweight.com/tzervas/memory-gate/pulls/1 — `ci/forgejo-cpu-fail-closed` @ `a66f730`. **Pytest ran** (unit 8 failed / 121 passed / 1 error in 132s; fleet-ci 8 failed / 126 passed). Ruff/cz green. Honest leftover reds: unawaited + agent-feedback (P1-03), gitleaks 14 historical hits, trivy chromadb 1.5.9 + cryptography. Drop `upload-artifact@v4` (Forgejo GHESNotSupported). P1-02 unblocked.
 - P1-01 https://git.vectorweight.com/tzervas/memory-gate/pulls/2 — `docs/memory-lifecycle-contract` @ `7b5c877`. Docs only.
 - P1-03 chroma mitigation https://git.vectorweight.com/tzervas/memory-gate/pulls/3 — `fix/chroma-cve-client-only` @ `5a9a13f`. Client-only refuse (`chroma_server_*` / `trust_remote_code` / `HttpClient`). **Not** an upstream wheel patch.
 

@@ -110,6 +110,13 @@ impl_p += "continue-on-error / || true. Leave pytest unawaited reds for P1-03.\n
 impl_p += "Leave chromadb 1.5.9 Trivy red until a named patched RC (do not pin .devN).\n";
 impl_p += "If remaining blocker is tzervas-scoped runner, say so; do not fake green.\n";
 impl_p += "If ID is P1-01: spec+ADR+tasks only in memory-gate-wt-p1-01; no product code.\n";
+impl_p += "If ID is P1-02: new sibling worktree from forgejo/main, branch\n";
+impl_p += "feat/public-error-contract. Read P1-01 spec error taxonomy in\n";
+impl_p += "python-ai/memory-gate-wt-p1-01/specs/memory-lifecycle-contract/spec.md\n";
+impl_p += "(Public error taxonomy). Add memory_gate.errors with MemoryGateError and\n";
+impl_p += "the nine named types. Map VectorStoreError/Init/Operation as __cause__.\n";
+impl_p += "Tests per type. Do not swallow asyncio.CancelledError. No product lifecycle.\n";
+impl_p += "Do not reset kang-main-wip. Do not merge. P1-00 honest pytest reds stay.\n";
 impl_p += "If ID is ops-index: repair csd-kb-index remote path; enqueue behind Comfy.\n";
 impl_p += "If ID is ops-runner: discover and restore the Forgejo CPU runner; do not fake green.\n";
 impl_p += "Commit on the feature branch. Push to forgejo as GIT_USERNAME=tzervas with\n";
