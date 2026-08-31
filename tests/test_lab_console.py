@@ -191,3 +191,48 @@ def test_comfy_paths_not_captured_by_lab_wrap(
     assert mod.handle_lab("GET", "/api/comfy/list-workflows", {}) is None
     assert mod.handle_lab("POST", "/api/comfy/queue-prompt", {"prompt": {}}) is None
     assert mod.handle_lab("GET", "/api/status", {}) is None
+
+
+def test_cluster_snapshot_includes_1080ti_guest_ip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cluster snapshot always exposes gpu5080 `.251` and 1080 Ti guest_ip."""
+    mod = load_lab(tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "ssh_5080", lambda _cmd: "")
+    rec = mod.cluster_snapshot()
+    assert rec["gpu5080"]["ip"] == "192.168.1.251"
+    ids = [b["id"] for b in rec["backends"]]
+    assert ids == ["akula-prime", "gpu5080", "gpu5080-1080ti"]
+    assert rec["count"] == 3
+    assert rec["groups"] == ["csd-autodev", "akula-rag"]
+    g = rec["gpu5080_1080ti"]
+    assert g["host"] == "gpu5080"
+    assert g["host_ip"] == "192.168.1.251"
+    assert "guest_ip" in g
+    assert g["guest_ip"] is None
+    assert g["live"] is False
+    assert g["group"] == "akula-rag"
+    assert g["path"] == "lab.gpu5080.index.1080ti"
+    assert "5080-embed" in g["rag"]
+
+
+def test_cluster_snapshot_parses_guest_ip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Parse a real virsh domifaddr IPv4; never treat `.251` as the guest."""
+    mod = load_lab(tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "ssh_5080", lambda _cmd: " vnet0  ipv4  192.168.1.187/24")
+    rec = mod.cluster_snapshot()
+    assert rec["gpu5080_1080ti"]["guest_ip"] == "192.168.1.187"
+    assert rec["gpu5080_1080ti"]["live"] is False
+
+
+def test_steer_post_next_goal_not_p1_08(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /api/steer writes next_goal P1-09 (remaining closeable after P1-08)."""
+    mod = load_lab(tmp_path, monkeypatch)
+    code, rec = mod.handle_lab("POST", "/api/steer", {"next_goal": "P1-09"})
+    assert code == 200
+    assert rec["next_goal"] == "P1-09"
+    got = json.loads((tmp_path / "csd-steer.json").read_text(encoding="utf-8"))
+    assert got["next_goal"] == "P1-09"
+    code, rec = mod.handle_lab("GET", "/api/steer", {})
+    assert code == 200
+    assert rec["next_goal"] == "P1-09"

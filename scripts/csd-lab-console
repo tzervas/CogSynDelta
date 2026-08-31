@@ -9,6 +9,7 @@ Usage:
   ./scripts/csd-lab-console --steer pause
   ./scripts/csd-lab-console --steer resume
   ./scripts/csd-lab-console --steer-note 'hold G-SQL'
+  ./scripts/csd-lab-console --steer-next P1-09
 
 Never pauses LocalAI. Never dual 14B. UI tabs: live dual-host feed (loaded
 models only), pool, history, steer. No catalog dump on the feed tab.
@@ -45,6 +46,7 @@ APPLY_TOKEN_FILE = Path(os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/caba
 WORKTREES = {
     "p1-08": Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-08"),
     "p1-07": Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-07"),
+    "p1-09": Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-09"),
 }
 PROTECTED_WT = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
 ALLOW_PREFIXES = ("src/", "tests/", "docs/")
@@ -64,6 +66,10 @@ GPU_PLAN_CLI = SCRIPTS / "csd-gpu-plan"
 PROTECTED_REFS = frozenset({"main", "staging", "develop", "dev"})
 FORGEJO_ALLOW = frozenset({"tzervas/CogSynDelta", "tzervas/memory-gate"})
 WAN_BINDS = frozenset({"0.0.0.0", "::", "[::]"})
+PRIME_IP = "192.168.1.98"
+GPU5080_IP = "192.168.1.251"
+HOMELAB_IP = "192.168.1.170"
+GUEST_IP_RE = re.compile(r"\b(192\.168\.1\.\d+)\b")
 
 
 def sh(args: list[str], timeout: int = 20) -> str:
@@ -198,6 +204,95 @@ def live_feed(snap: dict) -> dict:
             "mix": "single-or-mix when Stage B RPC is enabled",
             "note": "Unified pool tab. llama.cpp RPC is specified, not enabled.",
         },
+        "cluster": snap.get("cluster") or {},
+    }
+
+
+def cluster_snapshot() -> dict:
+    """LAN cluster including 1080 Ti guest IP when the VFIO guest is live.
+
+    Why: lab UI and autodev must see gpu5080 `.251` and a real guest IP (or
+    none). Do not invent `.252` or mark live without nvidia-smi / domifaddr.
+    """
+    cat = _read_json(ROUTER_JSON)
+    stub = (cat.get("future_hosts") or {}).get("gpu5080-1080ti")
+    if not isinstance(stub, dict):
+        stub = {}
+    raw = ssh_5080("virsh domifaddr gpu5080-1080ti-rag 2>/dev/null || true")
+    guest_ip = None
+    for match in GUEST_IP_RE.finditer(raw or ""):
+        ip = match.group(1)
+        if ip not in {GPU5080_IP, "192.168.1.255", "192.168.1.0"}:
+            guest_ip = ip
+            break
+    live = bool(stub.get("live")) and guest_ip is not None
+    rag = "retrieve-index-light" if live else "5080-embed-or-prime until live=true"
+    hosts = cat.get("hosts") or {}
+    prime_spec = hosts.get("akula-prime") if isinstance(hosts.get("akula-prime"), dict) else {}
+    gpu_spec = hosts.get("gpu5080") if isinstance(hosts.get("gpu5080"), dict) else {}
+    backends = [
+        {
+            "id": "akula-prime",
+            "gpu": prime_spec.get("gpu") or "RTX 3090 Ti",
+            "arch": prime_spec.get("arch"),
+            "sm": prime_spec.get("sm"),
+            "vram_mib": prime_spec.get("vram_mib"),
+            "host_ip": PRIME_IP,
+            "live": True,
+            "group": "csd-autodev",
+            "role": "local/code",
+        },
+        {
+            "id": "gpu5080",
+            "gpu": gpu_spec.get("gpu") or "RTX 5080",
+            "arch": gpu_spec.get("arch"),
+            "sm": gpu_spec.get("sm"),
+            "vram_mib": gpu_spec.get("vram_mib"),
+            "host_ip": GPU5080_IP,
+            "live": True,
+            "group": "csd-autodev",
+            "role": "exclusive-cuda",
+        },
+        {
+            "id": "gpu5080-1080ti",
+            "gpu": stub.get("gpu") or "GTX 1080 Ti",
+            "arch": stub.get("arch"),
+            "sm": stub.get("sm"),
+            "vram_mib": stub.get("vram_mib"),
+            "host_ip": GPU5080_IP,
+            "guest_ip": guest_ip,
+            "live": live,
+            "group": "akula-rag",
+            "path": "lab.gpu5080.index.1080ti",
+            "role": stub.get("role") or "retrieve-index-light",
+            "rag": rag,
+        },
+    ]
+    return {
+        "backends": backends,
+        "count": len(backends),
+        "groups": ["csd-autodev", "akula-rag"],
+        "heterogeneous": True,
+        "not_mig": True,
+        "prime": {"host": "prime", "ip": PRIME_IP, "role": "local/code"},
+        "gpu5080": {
+            "host": "gpu5080",
+            "ip": GPU5080_IP,
+            "role": "exclusive-cuda",
+        },
+        "homelab": {"host": "homelab", "ip": HOMELAB_IP, "role": "ui-cpu-ci"},
+        "gpu5080_1080ti": {
+            "id": "gpu5080-1080ti",
+            "host": "gpu5080",
+            "host_ip": GPU5080_IP,
+            "guest_ip": guest_ip,
+            "live": live,
+            "pci": "06:00.0",
+            "group": "akula-rag",
+            "path": "lab.gpu5080.index.1080ti",
+            "role": "retrieve-index-light",
+            "rag": rag,
+        },
     }
 
 
@@ -241,6 +336,7 @@ def snapshot() -> dict:
         "gpu5080_runner": ssh_5080("systemctl --user is-active forgejo-runner-gpu-tzervas.service"),
         "gpu5080_comfy": ssh_5080("systemctl is-enabled akula-comfyui.service 2>/dev/null || true"),
         "steer": steer,
+        "cluster": cluster_snapshot(),
         "note": "autodev webapp on code.vectorweight.com; chat on ai.vectorweight.com",
         "links": {
             "lab": "https://code.vectorweight.com",
@@ -335,6 +431,8 @@ def print_snap(s: dict) -> None:
         s.get("gpu5080_comfy"),
     )
     print("loaded 5080", [x.get("alias") for x in (feed.get("gpu5080") or {}).get("loaded") or []])
+    print("=== cluster ===")
+    print(json.dumps(s.get("cluster") or {}, indent=2))
     print("=== steer ===")
     print(json.dumps(s.get("steer") or {}, indent=2))
     print(s.get("note"))
@@ -791,8 +889,12 @@ def handle_lab(method: str, path: str, payload: dict) -> tuple[int, dict] | None
         return 200, lab_loop(str(payload.get("mode") or ""))
     if path == "/api/priority":
         return 200, lab_priority(str(payload.get("action") or "status"))
-    if path == "/api/steer" and method == "GET":
-        return 200, _read_json(STEER)
+    if path == "/api/steer":
+        if method == "GET":
+            return 200, _read_json(STEER)
+        if method == "POST":
+            return 200, write_steer(**payload)
+        return 405, {"ok": False, "error": "GET or POST"}
     if path == "/api/forgejo/whoami":
         return 200, lab_forgejo("whoami", payload)
     if path == "/api/forgejo/prs":
@@ -1169,7 +1271,11 @@ function render(d){
   const a0=d.app||{};
   document.getElementById('hdr').textContent=(d.localai||'')+' · worker '+(a0.worker_live?'LIVE':'down')+' · steer '+(d.steer&&d.steer.pause?'PAUSE':'run');
   document.getElementById('c0').innerHTML=card('akula-prime', f.prime||{});
-  document.getElementById('c1').innerHTML=card('gpu5080', f.gpu5080||{});
+  const cl=d.cluster||f.cluster||{};
+  const t=cl.gpu5080_1080ti||{};
+  document.getElementById('c1').innerHTML=card('gpu5080', f.gpu5080||{})
+    +'<p class=muted>1080 Ti guest_ip '+(t.guest_ip||'none')+' live='+String(!!t.live)
+    +' group='+esc(t.group||'')+' path='+esc(t.path||'')+' rag='+esc(t.rag||'')+'</p>';
   const p=f.pool||{};
   const used=p.combined_mib||39331;
   document.getElementById('cpool').innerHTML='<h2>Unified pool</h2>'
@@ -1180,7 +1286,7 @@ function render(d){
     +'<p>parked '+JSON.stringify(p.parked||{})+'</p>'
     +'<p class=muted>'+(p.note||'')+'</p>'
     +'<p class=muted>Single pooled GGUF or a mix lands here when llama.cpp RPC and 5080 GGUFs exist. Tight decode stays on one card; ok-lan may split 24:16.</p>';
-  document.getElementById('raw').textContent=JSON.stringify({steer:d.steer,note:d.note,links:d.links},null,2);
+  document.getElementById('raw').textContent=JSON.stringify({steer:d.steer,cluster:d.cluster,note:d.note,links:d.links},null,2);
   const a=d.app||{};
   document.getElementById('q').textContent=JSON.stringify({live:a.queue_live||[], recent_done:a.queue_recent_done||[]},null,2);
   document.getElementById('ticks').textContent=JSON.stringify(a.ticks||[],null,2);
@@ -1232,12 +1338,16 @@ def main() -> int:
     ap.add_argument("--chat")
     ap.add_argument("--steer", choices=["pause", "resume"])
     ap.add_argument("--steer-note")
+    ap.add_argument("--steer-next")
     args = ap.parse_args()
     if args.steer:
         print(json.dumps(write_steer(pause=args.steer == "pause"), indent=2))
         return 0
     if args.steer_note is not None:
         print(json.dumps(write_steer(note=args.steer_note), indent=2))
+        return 0
+    if args.steer_next is not None:
+        print(json.dumps(write_steer(next_goal=args.steer_next), indent=2))
         return 0
     if args.chat:
         print(chat(args.chat))

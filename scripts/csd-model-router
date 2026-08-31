@@ -8,11 +8,14 @@ when it makes sense (no ping-pong). Combined ~40 GiB pool is planned,
 not executed, until pool.enabled and 5080 GGUFs exist.
 
   csd-model-router status
+  csd-model-router pick --alias local/code
+  csd-model-router pick --job rag-index
   csd-model-router request --alias local/code --why autodev --ttl 3600
   csd-model-router pack
   csd-model-router restore
   csd-model-router plan-pool --alias pool/large
 """
+
 from __future__ import annotations
 
 import argparse
@@ -29,9 +32,7 @@ _CAT: dict[str, Any] | None = None
 
 
 def state_path() -> Path:
-    return Path(
-        os.environ.get("CSD_ROUTER_STATE", "/akula-data/cabal/model-router-state.json")
-    )
+    return Path(os.environ.get("CSD_ROUTER_STATE", "/akula-data/cabal/model-router-state.json"))
 
 
 def plan_path() -> Path:
@@ -39,9 +40,7 @@ def plan_path() -> Path:
 
 
 def cat_path() -> Path:
-    return Path(
-        os.environ.get("CSD_ROUTER_CATALOG", str(ROOT / "config/model-router.json"))
-    )
+    return Path(os.environ.get("CSD_ROUTER_CATALOG", str(ROOT / "config/model-router.json")))
 
 
 def catalog() -> dict[str, Any]:
@@ -332,16 +331,60 @@ def migrate_small_off_prime(
     return moved
 
 
+def lock_busy(node: dict[str, Any]) -> bool:
+    """Return True if gpu5080 exclusive-seq is held.
+
+    Why: gpu5080.lock / CUDA CI / train preempts helpers on that card.
+    `helper_ok=False` or a lock string without "idle" means collision.
+    """
+    if node.get("helper_ok") is False:
+        return True
+    lock = str(node.get("lock") or "idle").lower()
+    return "idle" not in lock
+
+
+def vram_ok(spec: dict[str, Any], host: str, inventory: dict[str, Any]) -> bool:
+    """Return False if placing this alias on host would OOM.
+
+    Why: 14B/heavy occupancy is the model itself (safeguard), not leftover
+    after a sticky local/code load. Helpers must fit remaining free_mib.
+    """
+    vram = int(spec.get("vram_mib") or 0)
+    if vram <= 0:
+        return True
+    cat = catalog()
+    hspec = (cat.get("hosts") or {}).get(host) or {}
+    safeguard = int(hspec.get("safeguard_mib") or hspec.get("vram_mib") or 0)
+    node = inventory.get(host) or {}
+    cls = str(spec.get("class") or "")
+    if cls in {"14b", "heavy"}:
+        return not (safeguard and vram > safeguard)
+    free = node.get("free_mib")
+    if free is not None:
+        return int(free) >= vram
+    if safeguard and vram > safeguard:
+        return False
+    return True
+
+
 def place_host(
     spec: dict[str, Any],
     inventory: dict[str, Any],
 ) -> str:
-    """Pick akula-prime, gpu5080, pool, or reject from caps + VRAM + latency."""
+    """Pick a host from host_pref, or reject on caps / OOM / exclusive-seq.
+
+    host_pref order wins so RAG retrieve-index can prefer gpu5080-1080ti
+    when live and fall back to 5080 embed. prefer_caps is a tiebreaker.
+    future_hosts are never scheduled. 5080 lock busy skips helpers and
+    colliding CUDA on that card only; leftover 3090 may still FIT.
+    """
     prefs = list(spec.get("host_pref") or ["akula-prime"])
     if spec.get("pool_ok") and not spec.get("fits_prime") and not spec.get("fits_5080"):
         return "pool"
-    ranked: list[tuple[int, str]] = []
+    ranked: list[tuple[int, int, str]] = []
     allowed = schedulable_hosts()
+    node5080 = inventory.get("gpu5080") or {}
+    busy5080 = lock_busy(node5080)
     for host in prefs:
         if host == "pool":
             continue
@@ -353,17 +396,55 @@ def place_host(
             continue
         if host == "akula-prime" and spec.get("fits_prime") is False:
             continue
-        if host == "gpu5080":
-            node = inventory.get("gpu5080") or {}
-            if spec.get("needs_lock") == "gpu5080" and not node.get("helper_ok", True):
-                continue
-        ranked.append((prefer_score(spec, host, inventory), host))
+        if host == "gpu5080-1080ti" and spec.get("fits_1080ti") is False:
+            continue
+        if host == "gpu5080" and busy5080:
+            continue
+        if not vram_ok(spec, host, inventory):
+            continue
+        idx = prefs.index(host) if host in prefs else 9
+        ranked.append((idx, -prefer_score(spec, host, inventory), host))
     if not ranked:
         if spec.get("pool_ok"):
             return "pool"
         return "reject"
-    ranked.sort(key=lambda x: (-x[0], prefs.index(x[1]) if x[1] in prefs else 9))
-    return ranked[0][1]
+    ranked.sort()
+    return ranked[0][2]
+
+
+def pick_alias(
+    alias: str,
+    inventory: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Dry-run placement without mutating router state.
+
+    Why: autodev must refuse a pick that OOMs or collides with exclusive-seq
+    before request loads weights. 1080 Ti is skipped until live=true.
+    """
+    cat = catalog()
+    spec = (cat.get("aliases") or {}).get(alias)
+    if not spec:
+        return {"ok": False, "error": f"unknown alias {alias}", "alias": alias}
+    inv = inventory if inventory is not None else load_inventory()
+    host = place_host(spec, inv)
+    rec: dict[str, Any] = {
+        "alias": alias,
+        "host": host,
+        "class": spec.get("class"),
+        "host_pref": spec.get("host_pref"),
+        "vram_mib": spec.get("vram_mib"),
+    }
+    if host == "reject":
+        rec["ok"] = False
+        rec["error"] = "oom or exclusive-seq or missing caps"
+        return rec
+    if host == "pool":
+        rec["ok"] = False
+        rec["error"] = "pool-parked"
+        rec["plan"] = split_plan(int(spec.get("vram_mib") or 0))
+        return rec
+    rec["ok"] = True
+    return rec
 
 
 def request_alias(  # noqa: PLR0911
@@ -401,9 +482,7 @@ def request_alias(  # noqa: PLR0911
         plan = split_plan(int(spec.get("vram_mib") or 0))
         pool = cat.get("pool") or {}
         if spec.get("preempt_autodev") is False and cat.get("autodev_sticky"):
-            if any(
-                a == cat.get("autodev_default") for a in (st.get("resident") or {})
-            ):
+            if any(a == cat.get("autodev_default") for a in (st.get("resident") or {})):
                 return {
                     "ok": False,
                     "error": "pool would preempt autodev",
@@ -464,6 +543,27 @@ def request_alias(  # noqa: PLR0911
             "migrated": migrated,
         }
 
+    if host == "gpu5080-1080ti":
+        st["resident"][alias] = {
+            "host": "gpu5080-1080ti",
+            "until": now + ttl_s,
+            "why": why,
+            "physical": True,
+            "note": (
+                "retrieve-index-light on Pascal; never sm_120/FP8/FP4; "
+                "lan-only listen, never 0.0.0.0 WAN"
+            ),
+        }
+        save_state(st)
+        return {
+            "ok": True,
+            "alias": alias,
+            "host": "gpu5080-1080ti",
+            "ttl_s": ttl_s,
+            "loaded": True,
+            "migrated": migrated,
+        }
+
     already = (st.get("resident") or {}).get(alias) or {}
     remaining = float(already.get("until") or 0) - now
     do_ping = (not noping) and remaining < 300
@@ -513,16 +613,12 @@ def restore_pass(
                 "until": now + int(spec.get("ttl_s") or 180),
                 "why": "restore-when-sensible",
             }
-            st.setdefault("history", []).append(
-                {"t": now, "restore": alias, "to": "akula-prime"}
-            )
+            st.setdefault("history", []).append({"t": now, "restore": alias, "to": "akula-prime"})
             actions.append({"alias": alias, "op": "restore-prime"})
         elif decision == "drop-for-cuda":
             st.get("parked", {}).pop(alias, None)
             st.get("resident", {}).pop(alias, None)
-            st.setdefault("history", []).append(
-                {"t": now, "drop": alias, "why": "5080-cuda"}
-            )
+            st.setdefault("history", []).append({"t": now, "drop": alias, "why": "5080-cuda"})
             actions.append({"alias": alias, "op": "drop-for-cuda"})
     save_state(st)
     return {"ok": True, "actions": actions}
@@ -562,7 +658,7 @@ def pack_helpers(
         if name in (st.get("resident") or {}):
             continue
         if host == "gpu5080":
-            if not node.get("helper_ok"):
+            if not node.get("helper_ok") or lock_busy(node):
                 # Fallback: 3090 leftover if caps allow and it fits.
                 if caps_ok(spec, "akula-prime", inv) and prime_free >= vram + 1024:
                     host = "akula-prime"
@@ -593,6 +689,51 @@ def job_to_alias(job: str) -> str:
     return str(catalog().get("autodev_default") or "local/code")
 
 
+def cluster_backends(cat: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Three-backend cluster snapshot (3090 + 5080 + 1080 Ti).
+
+    Why: lab /api/status must list all cards even when the Pascal guest
+    is not live. Grafana groups stay akula-rag / csd-autodev.
+    """
+    cat = cat if cat is not None else catalog()
+    backends: list[dict[str, Any]] = []
+    for name, spec in (cat.get("hosts") or {}).items():
+        backends.append(
+            {
+                "id": name,
+                "gpu": spec.get("gpu"),
+                "arch": spec.get("arch"),
+                "sm": spec.get("sm"),
+                "vram_mib": spec.get("vram_mib"),
+                "host_ip": spec.get("host_ip"),
+                "live": spec.get("live") is not False,
+                "installed": spec.get("installed") is not False,
+            }
+        )
+    for name, spec in (cat.get("future_hosts") or {}).items():
+        backends.append(
+            {
+                "id": name,
+                "gpu": spec.get("gpu"),
+                "arch": spec.get("arch"),
+                "sm": spec.get("sm"),
+                "vram_mib": spec.get("vram_mib"),
+                "host_ip": spec.get("host_ip"),
+                "live": bool(spec.get("live")),
+                "installed": bool(spec.get("installed")),
+                "role": spec.get("role"),
+            }
+        )
+    return {
+        "backends": backends,
+        "count": len(backends),
+        "heterogeneous": True,
+        "not_mig": True,
+        "groups": ["csd-autodev", "akula-rag"],
+        "never_dual_14b": bool(cat.get("never_dual_14b")),
+    }
+
+
 def status_blob() -> dict[str, Any]:
     cat = catalog()
     inv = load_inventory()
@@ -602,6 +743,8 @@ def status_blob() -> dict[str, Any]:
             name: {"caps": sorted(host_caps(name, inv)), "spec": spec}
             for name, spec in (cat.get("hosts") or {}).items()
         },
+        "future_hosts": cat.get("future_hosts"),
+        "cluster": cluster_backends(cat),
         "pool": cat.get("pool"),
         "state": load_state(),
         "inventory": inv,
@@ -612,6 +755,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status")
+    pk = sub.add_parser("pick")
+    pk.add_argument("--alias")
+    pk.add_argument("--job")
     rq = sub.add_parser("request")
     rq.add_argument("--alias")
     rq.add_argument("--job")
@@ -626,6 +772,13 @@ def main() -> int:
     if args.cmd == "status":
         print(json.dumps(status_blob(), indent=2))
         return 0
+    if args.cmd == "pick":
+        alias = args.alias or (
+            job_to_alias(args.job) if args.job else catalog().get("autodev_default")
+        )
+        rec = pick_alias(str(alias))
+        print(json.dumps(rec, indent=2))
+        return 0 if rec.get("ok") else 1
     if args.cmd == "pack":
         rec = pack_helpers(noping=bool(args.noping))
         print(json.dumps(rec))
@@ -644,9 +797,7 @@ def main() -> int:
         }
         print(json.dumps(rec, indent=2))
         return 0
-    alias = args.alias or (
-        job_to_alias(args.job) if args.job else catalog().get("autodev_default")
-    )
+    alias = args.alias or (job_to_alias(args.job) if args.job else catalog().get("autodev_default"))
     rec = request_alias(str(alias), args.why, args.ttl, noping=args.noping)
     print(json.dumps(rec))
     return 0 if rec.get("ok") else 1

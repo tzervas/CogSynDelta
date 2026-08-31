@@ -230,3 +230,109 @@ def test_embed_prefers_5080_caps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert r.prefer_score(spec, "gpu5080", inventory) > r.prefer_score(
         spec, "akula-prime", inventory
     )
+
+
+def test_helper_aliases_list_multiple_hosts() -> None:
+    """Helper/embed/light aliases may land on leftover 3090, share-small 5080,
+    and gpu5080-1080ti when live. 14B stays on akula-prime.
+    """
+    cat = json.loads((ROOT / "config" / "model-router.json").read_text())
+    assert cat["never_dual_14b"] is True
+    assert cat["autodev_default"] == "local/code"
+    code = cat["aliases"]["local/code"]
+    assert code["host_pref"] == ["akula-prime"]
+    assert code["class"] == "14b"
+    assert code["fits_5080"] is False
+    assert code["fits_1080ti"] is False
+    embed = cat["aliases"]["embed-qwen3-0.6b"]
+    assert embed["host_pref"][0] == "gpu5080-1080ti"
+    assert "gpu5080" in embed["host_pref"]
+    assert "akula-prime" in embed["host_pref"]
+    assert "retrieve" in embed["jobs"]
+    assert "rag-index" in embed["jobs"]
+    eight = cat["aliases"]["local/uncensored-fast"]
+    for host in ("akula-prime", "gpu5080", "gpu5080-1080ti"):
+        assert host in eight["host_pref"]
+        assert host in cat["aliases"]["local/vision"]["host_pref"]
+    assert eight["share"]["akula-prime"] == "leftover"
+    assert eight["share"]["gpu5080"] == "share-small"
+    assert eight["share"]["gpu5080-1080ti"] == "when-live"
+
+
+def test_rag_index_falls_back_to_5080_when_1080ti_not_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = load_router(tmp_path, monkeypatch)
+    assert r.job_to_alias("rag-index") == "embed-qwen3-0.6b"
+    rec = r.pick_alias("embed-qwen3-0.6b", inventory=inv_idle())
+    assert rec["ok"] is True
+    assert rec["host"] == "gpu5080"
+    assert rec["host_pref"][0] == "gpu5080-1080ti"
+
+
+def test_embed_prefers_1080ti_when_promoted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cat = json.loads((ROOT / "config" / "model-router.json").read_text())
+    stub = cat["future_hosts"].pop("gpu5080-1080ti")
+    stub["live"] = True
+    stub["installed"] = True
+    cat["hosts"]["gpu5080-1080ti"] = stub
+    path = tmp_path / "catalog.json"
+    path.write_text(json.dumps(cat), encoding="utf-8")
+    monkeypatch.setenv("CSD_ROUTER_CATALOG", str(path))
+    monkeypatch.setenv("CSD_ROUTER_STATE", str(tmp_path / "state.json"))
+    monkeypatch.setenv("CSD_GPU_PLAN", str(tmp_path / "gpu-plan.json"))
+    loader = importlib.machinery.SourceFileLoader("csd_model_router_live", str(SCRIPT))
+    spec = importlib.util.spec_from_loader("csd_model_router_live", loader)
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    mod.reset_catalog()
+    inventory = inv_idle()
+    inventory["gpu5080-1080ti"] = {
+        "used_mib": 10,
+        "free_mib": 11000,
+        "total_mib": 11264,
+    }
+    rec = mod.pick_alias("embed-qwen3-0.6b", inventory=inventory)
+    assert rec["ok"] is True
+    assert rec["host"] == "gpu5080-1080ti"
+    cuda = mod.catalog()["aliases"]["cuda-eval"]
+    assert mod.place_host(cuda, inventory) == "gpu5080"
+
+
+def test_pick_refuses_oom_and_exclusive_seq(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = load_router(tmp_path, monkeypatch)
+    busy = inv_idle(helper_ok=False)
+    busy["gpu5080"]["lock"] = "1234"
+    embed = r.catalog()["aliases"]["embed-qwen3-0.6b"]
+    # Leftover on 3090 still FITs embed (~4000 of ~6494).
+    assert r.place_host(embed, busy) == "akula-prime"
+    busy["akula-prime"]["free_mib"] = 100
+    rec = r.pick_alias("embed-qwen3-0.6b", inventory=busy)
+    assert rec["ok"] is False
+    assert rec["host"] == "reject"
+    assert "oom" in rec["error"] or "exclusive-seq" in rec["error"]
+    cuda = r.catalog()["aliases"]["cuda-eval"]
+    assert r.place_host(cuda, busy) == "reject"
+    rec14 = r.pick_alias("local/code", inventory=inv_idle())
+    assert rec14["ok"] is True
+    assert rec14["host"] == "akula-prime"
+
+
+def test_cluster_backends_three_hosts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    r = load_router(tmp_path, monkeypatch)
+    rec = r.cluster_backends()
+    ids = [b["id"] for b in rec["backends"]]
+    assert ids == ["akula-prime", "gpu5080", "gpu5080-1080ti"]
+    assert rec["count"] == 3
+    assert rec["never_dual_14b"] is True
+    assert "csd-autodev" in rec["groups"]
+    assert "akula-rag" in rec["groups"]
+    live = {b["id"]: b["live"] for b in rec["backends"]}
+    assert live["akula-prime"] is True
+    assert live["gpu5080"] is True
+    assert live["gpu5080-1080ti"] is False
