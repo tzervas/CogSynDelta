@@ -248,3 +248,113 @@ def test_launch_local_workflow_dispatches_not_grok(
     assert "workflow-dispatch" in flat
     assert "csd-python-first-drive.yml" in flat
     assert "grok" not in flat.lower()
+
+
+def test_cluster_view_three_backends_not_256(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Heartbeat cluster is 3090+5080+guest retrieve-index-light, not 256."""
+    mod = load_loop(tmp_path, monkeypatch)
+    plan = tmp_path / "gpu-plan.json"
+    plan.write_text(
+        '{"gpu5080-1080ti": {"live": true, "name": "NVIDIA GeForce GTX 1080 Ti"}}',
+        encoding="utf-8",
+    )
+    mod.GPU_PLAN = plan
+    view = mod.cluster_view()
+    assert view["backends"] == ["akula-prime", "gpu5080", "gpu5080-1080ti"]
+    assert view["count"] == 3
+    assert view["not_256_specialists"] is True
+    guest = view["gpu5080-1080ti"]
+    assert guest["live"] is True
+    assert guest["role"] == "retrieve-index-light"
+    assert guest["host_ip"] == "192.168.1.251"
+    assert guest["guest_ip"] == "192.168.1.243"
+
+
+def test_beat_records_cluster_next_goal_and_need_grok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """beat() writes next_goal, 1080 Ti live role, mailbox, identity autodev."""
+    mod = load_loop(tmp_path, monkeypatch)
+    steer = tmp_path / "csd-steer.json"
+    steer.write_text(
+        '{"pause": false, "next_goal": "region-pretrain"}',
+        encoding="utf-8",
+    )
+    heart = tmp_path / "autodev-heartbeat.json"
+    need = tmp_path / "csd-need-grok.json"
+    need.write_text('{"need": false}', encoding="utf-8")
+    plan = tmp_path / "gpu-plan.json"
+    plan.write_text(
+        '{"gpu5080-1080ti": {"live": true, "name": "NVIDIA GeForce GTX 1080 Ti"}}',
+        encoding="utf-8",
+    )
+    mod.STEER = steer
+    mod.HEART = heart
+    mod.GROK_NEED = need
+    mod.GPU_PLAN = plan
+    mod.beat()
+    rec = __import__("json").loads(heart.read_text(encoding="utf-8"))
+    assert rec["identity"] == "autodev"
+    assert rec["next_goal"] == "region-pretrain"
+    assert rec["ti"] is True
+    assert rec["cluster"]["backends"] == [
+        "akula-prime",
+        "gpu5080",
+        "gpu5080-1080ti",
+    ]
+    assert rec["cluster"]["gpu5080-1080ti"]["live"] is True
+    assert rec["cluster"]["gpu5080-1080ti"]["role"] == "retrieve-index-light"
+    assert rec["need_grok"]["need"] is False
+    assert rec["need_grok"]["path"] == str(need)
+    assert "memory-gate" not in rec["wt"]
+
+
+def test_ensure_steer_cluster_keeps_region_pretrain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cluster annotation must not steer away from region-pretrain."""
+    mod = load_loop(tmp_path, monkeypatch)
+    steer = tmp_path / "csd-steer.json"
+    steer.write_text(
+        '{"pause": false, "next_goal": "region-pretrain", "note": "keep"}',
+        encoding="utf-8",
+    )
+    plan = tmp_path / "gpu-plan.json"
+    plan.write_text(
+        '{"gpu5080-1080ti": {"live": true, "name": "NVIDIA GeForce GTX 1080 Ti"}}',
+        encoding="utf-8",
+    )
+    need = tmp_path / "csd-need-grok.json"
+    mod.STEER = steer
+    mod.GPU_PLAN = plan
+    mod.GROK_NEED = need
+    out = mod.ensure_steer_cluster()
+    assert out["next_goal"] == "region-pretrain"
+    assert out["cluster"] == ["akula-prime", "gpu5080", "gpu5080-1080ti"]
+    assert out["gpu5080-1080ti"]["live"] is True
+    assert out["gpu5080-1080ti"]["role"] == "retrieve-index-light"
+    assert out["need_grok"] == str(need)
+    assert out["note"] == "keep"
+
+
+def test_ensure_steer_cluster_keeps_p1_09_if_already(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If steer is already P1-09, leave that board row; still attach cluster."""
+    mod = load_loop(tmp_path, monkeypatch)
+    steer = tmp_path / "csd-steer.json"
+    steer.write_text('{"pause": false, "next_goal": "P1-09"}', encoding="utf-8")
+    plan = tmp_path / "gpu-plan.json"
+    plan.write_text(
+        '{"gpu5080-1080ti": {"live": true, "name": "NVIDIA GeForce GTX 1080 Ti"}}',
+        encoding="utf-8",
+    )
+    mod.STEER = steer
+    mod.GPU_PLAN = plan
+    mod.GROK_NEED = tmp_path / "csd-need-grok.json"
+    out = mod.ensure_steer_cluster()
+    assert out["next_goal"] == "P1-09"
+    assert out["cluster"] == ["akula-prime", "gpu5080", "gpu5080-1080ti"]
+

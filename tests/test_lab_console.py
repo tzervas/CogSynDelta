@@ -302,7 +302,10 @@ def test_api_goals_phase1_steer_heartbeat(tmp_path: Path, monkeypatch: pytest.Mo
     assert rec["notes"] == "retrieve domain isolation"
     assert "P1-09" in rec["reasoning"]
     assert rec["heartbeat"]["live"] is True
+    assert rec["heartbeat"]["identity"] == "autodev"
+    assert rec["heartbeat"]["next_goal"] == "P1-09"
     assert rec["heartbeat"]["last"]["goal"] == "P1-09"
+    assert rec["heartbeat"]["cluster"] == {}
     ids = [row["id"] for row in rec["phase1"]]
     assert "P1-08" in ids
     assert "P1-09" in ids

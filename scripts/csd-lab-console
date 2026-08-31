@@ -1206,12 +1206,19 @@ def lab_goals() -> dict:
     age = None
     if hb.get("t"):
         age = time.time() - float(hb.get("t") or 0)
+    cluster = hb.get("cluster") if isinstance(hb.get("cluster"), dict) else {}
+    mailbox = hb.get("need_grok") if isinstance(hb.get("need_grok"), dict) else {}
     heartbeat = {
         "t": hb.get("t"),
         "pid": hb.get("pid"),
         "wt": hb.get("wt"),
         "age_s": age,
         "live": bool(age is not None and age < 90),
+        "identity": hb.get("identity") or "autodev",
+        "next_goal": str(hb.get("next_goal") or next_goal),
+        "ti": hb.get("ti"),
+        "cluster": cluster,
+        "need_grok": mailbox or load_need_grok(),
         "last": {
             "ok": last.get("ok"),
             "goal": str(last.get("goal") or "")[:240],

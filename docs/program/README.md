@@ -12,6 +12,7 @@ Official Python-first plan and Phase 0/1 ledgers. Start at
 - Brain regions (live PoC vs intended): [CSD-BRAIN-REGIONS.md](CSD-BRAIN-REGIONS.md)
 - Tiny region experts (LatentVAE WikiText-2 pretrain): [CSD-REGION-DATASETS.md](CSD-REGION-DATASETS.md)
 - Region-pretrain tick pack: [CONTEXT-PACK-REGION-PRETRAIN.md](CONTEXT-PACK-REGION-PRETRAIN.md)
+- Deployed 3-backend capture: [CONTEXT-PACK-DEPLOYED-2026-08-31.md](CONTEXT-PACK-DEPLOYED-2026-08-31.md)
 - GPU placement / ~40 GiB pool: [GPU-POOL.md](GPU-POOL.md) · ADR-0015
 - GPU share / interned micro-specialists / 1080 Ti: [GPU-SHARE.md](GPU-SHARE.md) · ADR-0016 (horizon)
 - Factory GPU eco (default clocks/PL, persistence): [CSD-GPU-ECO.md](CSD-GPU-ECO.md)

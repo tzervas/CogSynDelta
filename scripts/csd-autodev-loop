@@ -229,6 +229,59 @@ def ti_ok() -> bool:
     return (not name) or ("1080" in name)
 
 
+def cluster_view() -> dict:
+    """Three live backends: 3090 + 5080 + 1080 Ti guest.
+
+    Why: heartbeat/steer must record retrieve-index-light (guest
+    192.168.1.243) beside 3090 local/code and 5080 exclusive-seq.
+    256 specialists (G-SHARE) is horizon, not a live target.
+    """
+    cat = _read_json(ROOT / "config" / "model-router.json")
+    hosts = cat.get("hosts") if isinstance(cat.get("hosts"), dict) else {}
+    spec = hosts.get("gpu5080-1080ti")
+    if not isinstance(spec, dict):
+        spec = {}
+    role = str(spec.get("role") or "retrieve-index-light")
+    return {
+        "backends": ["akula-prime", "gpu5080", "gpu5080-1080ti"],
+        "count": 3,
+        "not_256_specialists": True,
+        "gpu5080-1080ti": {
+            "live": ti_ok(),
+            "role": role,
+            "host_ip": str(spec.get("host_ip") or "192.168.1.251"),
+            "guest_ip": str(spec.get("guest_ip") or "192.168.1.243"),
+        },
+    }
+
+
+def ensure_steer_cluster() -> dict:
+    """Attach cluster facts to steer without changing next_goal.
+
+    Why: do not steer away from region-pretrain. P1-09 stays parked on
+    the board unless the file already names it. Cluster is 3090+5080+guest.
+    """
+    cur = _read_json(STEER)
+    nxt = str(cur.get("next_goal") or "").strip()
+    if nxt not in {"P1-09", "region-pretrain"}:
+        cur["next_goal"] = "region-pretrain"
+    view = cluster_view()
+    wanted = {
+        "cluster": view["backends"],
+        "gpu5080-1080ti": view["gpu5080-1080ti"],
+        "need_grok": str(GROK_NEED),
+    }
+    changed = cur.get("next_goal") != nxt
+    for key, val in wanted.items():
+        if cur.get(key) != val:
+            cur[key] = val
+            changed = True
+    if changed:
+        STEER.parent.mkdir(parents=True, exist_ok=True)
+        STEER.write_text(json.dumps(cur, indent=2) + "\n", encoding="utf-8")
+    return cur
+
+
 def _router(*args: str) -> None:
     _run([str(ROUTER), *args], timeout=60)
 
@@ -324,8 +377,23 @@ def apply_proposal(payload: dict, dest: Path, worktree: str | None = None) -> di
 
 
 def beat(extra: dict | None = None) -> None:
+    """Persist loop liveness plus cluster / next_goal / need_grok mailbox."""
     HEART.parent.mkdir(parents=True, exist_ok=True)
-    rec = {"t": time.time(), "pid": os.getpid(), "wt": str(MG_WT)}
+    goal = next_open_goal() or "region-pretrain"
+    mailbox = _read_json(GROK_NEED)
+    rec = {
+        "t": time.time(),
+        "pid": os.getpid(),
+        "wt": str(dest_worktree(goal)),
+        "identity": IDENTITY,
+        "next_goal": goal,
+        "cluster": cluster_view(),
+        "ti": ti_ok(),
+        "need_grok": {
+            "need": mailbox.get("need") is True,
+            "path": str(GROK_NEED),
+        },
+    }
     if extra:
         rec.update(extra)
     HEART.write_text(json.dumps(rec) + "\n", encoding="utf-8")
@@ -716,6 +784,7 @@ def implement(goal: str) -> dict:
 def tick() -> dict:
     """One autodev cycle: pick, implement or wait, land, merge-when-green."""
     ensure_idle_ping()
+    ensure_steer_cluster()
     beat()
     _run([str(PLAN)], timeout=40)
     _router("request", "--alias", "local/code", "--why", "autodev", "--ttl", "3600", "--noping")
