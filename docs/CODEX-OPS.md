@@ -78,7 +78,8 @@ AKULA=/home/kang/code/personal/tzervas/akula-ai-platform
   bash -lc 'cd /path/to/CogSynDelta && uv run python -m cogsyndelta.poc.cli train --device cuda --steps 20'
 
 # RAG / CSD vault index (this repo) — enqueues on 5080 local timeshare state via SSH.
-# Does not SSH prime-only venv paths. Does not pause 3090 LocalAI. Does not stop Comfy.
+# Does not SSH prime-only venv paths. Does not pause 3090 LocalAI.
+# Operator grant 2026-08-31: Comfy may be stopped/masked so autodev owns the 5080.
 ./scripts/csd-kb-index
 
 # Equivalent manual enqueue (must target 5080 state, not prime /akula-data/cabal/…):
@@ -95,7 +96,9 @@ Prime `gpu-timeshare` state (`/akula-data/cabal/gpu-timeshare.json`) is **not** 
 
 `share-small` only if `nvidia-smi` free ≥ 8192 MiB and the helper is ≤ ~6 GiB. Otherwise refuse (exit 3). No MIG.
 
-**Maximal leverage:** Codex infers on 3090 (`local/code`) **while** a 5080 job trains or indexes. That is the parallelism. Do not run Comfy and CSD CUDA on the 5080 at once. Reindex needs: indexer + CUDA venv on 5080, vault mount/sync, Qdrant reachable from 5080 (today loopback-only on prime), and free VRAM after Comfy.
+**Maximal leverage:** Codex infers on 3090 (`local/code`) **while** a 5080 job trains or indexes. That is the parallelism. Do not run Comfy and CSD CUDA on the 5080 at once.
+
+**Autodev GPU grant (2026-08-31):** both cards dedicated to loops. Keep LocalAI on the 3090. On gpu5080: `sudo systemctl stop akula-comfyui.service && sudo systemctl mask akula-comfyui.service`. Unmask only when the operator returns the card to media. Reindex needs: indexer + CUDA python on 5080, vault sync, Qdrant reachable from 5080 (SSH reverse tunnel to prime loopback `:6333`).
 
 ## Homelab + Forgejo CPU
 

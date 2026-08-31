@@ -34,11 +34,17 @@ chat. Do not schedule cargo jobs on Python-only repos (no `if: rust` skip
 theatre). If `Cargo.toml` appears later, fail closed and add a real rust job.
 
 **Not sandbox** (gatekeeper or operator): WAN/GitHub/PyPI/HF downloads, pause
-3090 LocalAI, preempt Comfy/video on the 5080, git history rewrite, merge of
-red checks, writes to `tzervas-dev-kb` / `akula-model-kb`, Jules/`develop`,
-**registering a new Forgejo runner**. `homelab-cpu` id 5 already has the six
-labels and runs `tzervas/*`. Asking to add `tzervas-homelab-cpu` is an
-operator pause, not a sandbox unblock.
+3090 LocalAI, git history rewrite, merge of red checks, writes to
+`tzervas-dev-kb` / `akula-model-kb`, Jules/`develop`, **registering a new
+Forgejo runner**. `homelab-cpu` id 5 already has the six labels and runs
+`tzervas/*`. Asking to add `tzervas-homelab-cpu` is an operator pause, not a
+sandbox unblock.
+
+**GPU grant (2026-08-31, operator):** both cards are dedicated to autodev.
+Keep 3090 LocalAI (`local/code`) loaded. On 5080, stop/mask Comfy
+(`sudo systemctl stop` + `mask akula-comfyui.service`) and run exclusive-seq
+CUDA/index/eval. Do not wait for Comfy/video. Unmask only if the operator
+returns the 5080 to media.
 
 ## Context pack (always)
 
