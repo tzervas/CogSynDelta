@@ -39,12 +39,9 @@ PHASE1 = Path(
 HAND = ROOT / "docs/program/IMPLEMENTER-HANDOFF.md"
 QD_PACK = ROOT / "docs/program/CONTEXT-PACK-G-QD.md"
 P108_PACK = ROOT / "docs/program/CONTEXT-PACK-P1-08.md"
-MG_WT = Path(
-    os.environ.get(
-        "CSD_AUTODEV_WT",
-        "/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-09",
-    )
-)
+REGION_PACK = ROOT / "docs/program/CONTEXT-PACK-REGION-PRETRAIN.md"
+MG_DEFAULT = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-09")
+MG_WT = Path(os.environ.get("CSD_AUTODEV_WT", str(MG_DEFAULT)))
 PROTECTED = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
 ALLOW_PREFIXES = ("src/", "tests/", "docs/")
 PROTECTED_REFS = frozenset({"main", "staging", "develop", "dev"})
@@ -145,6 +142,33 @@ def phase1_open_ids() -> list[str]:
     return ids
 
 
+def is_region_pretrain(goal: str) -> bool:
+    """True when steer asks for one-region public-split pretrain."""
+    g = (goal or "").lower()
+    if "region-pretrain" in g:
+        return True
+    return "region" in g and "pretrain" in g
+
+
+def dest_worktree(goal: str) -> Path:
+    """CogSynDelta for region-pretrain; memory-gate otherwise.
+
+    Why: P1-09 ticks must not land CSD docs in memory-gate, and
+    region-pretrain must not land in memory-gate-wt-p1-09.
+    """
+    if is_region_pretrain(goal):
+        return ROOT
+    if MG_WT.resolve() == ROOT.resolve():
+        return MG_DEFAULT
+    return MG_WT
+
+
+def apply_worktree_name(goal: str) -> str:
+    if is_region_pretrain(goal):
+        return "region-pretrain"
+    return os.environ.get("CSD_APPLY_WORKTREE", "p1-09")
+
+
 def next_open_goal() -> str:
     """Pick STEER next_goal, else first open PHASE-1 id, else GOALS.md."""
     nxt = str(_read_json(STEER).get("next_goal") or "").strip()
@@ -198,7 +222,7 @@ def _router(*args: str) -> None:
     _run([str(ROUTER), *args], timeout=60)
 
 
-def apply_http(payload: dict) -> dict:
+def apply_http(payload: dict, worktree: str | None = None) -> dict:
     """POST allowlisted file to prime agent. No SSH."""
     import urllib.error
     import urllib.request
@@ -210,7 +234,7 @@ def apply_http(payload: dict) -> dict:
         )
         if tf.is_file():
             token = tf.read_text(encoding="utf-8").strip()
-    wt = os.environ.get("CSD_APPLY_WORKTREE", "p1-09")
+    wt = worktree or os.environ.get("CSD_APPLY_WORKTREE", "p1-09")
     body = json.dumps(
         {
             "worktree": wt,
@@ -250,7 +274,7 @@ def extract_json(text: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def apply_proposal(payload: dict, dest: Path) -> dict:
+def apply_proposal(payload: dict, dest: Path, worktree: str | None = None) -> dict:
     """Write one relative path into the memory-gate worktree.
 
     Why: autodev must land slices without touching kang-main-wip.
@@ -275,9 +299,11 @@ def apply_proposal(payload: dict, dest: Path) -> dict:
         return {"ok": False, "error": "nul in content"}
     if "def test_" in content and "assert" not in content and "pytest.raises" not in content:
         return {"ok": False, "error": "test has no assert; refusing pass stubs"}
+    if dest.resolve() == ROOT.resolve() and rel.startswith("src/memory_gate"):
+        return {"ok": False, "error": "memory-gate path in CSD worktree"}
     url = os.environ.get("CSD_APPLY_URL", "").rstrip("/")
     if url:
-        return apply_http(payload)
+        return apply_http(payload, worktree=worktree)
     target = (dest / rel).resolve()
     if dest.resolve() not in target.parents and target != dest.resolve():
         return {"ok": False, "error": "escaped worktree"}
@@ -496,7 +522,7 @@ def land_git(goal: str, applied: dict) -> dict:
     if applied.get("skipped") or not applied.get("ok"):
         return {"ok": True, "skipped": applied.get("skipped") or "apply-not-ok"}
     rel = str(applied.get("path") or "")
-    cwd = MG_WT
+    cwd = dest_worktree(goal)
     if not cwd.is_dir():
         return {"ok": False, "error": "worktree missing"}
     branch = current_branch(cwd)
@@ -509,7 +535,8 @@ def land_git(goal: str, applied: dict) -> dict:
     porcelain = git_cmd(["status", "--porcelain"], cwd)
     if not str(porcelain.get("stdout") or "").strip():
         return {"ok": True, "skipped": "clean", "branch": branch}
-    msg = f"feat(memory): {goal_id(goal)} autodev slice"
+    scope = "agents" if cwd.resolve() == ROOT.resolve() else "memory"
+    msg = f"feat({scope}): {goal_id(goal)} autodev slice"
     commit = git_cmd(["commit", "-m", msg], cwd)
     if not commit.get("ok"):
         return {"ok": False, "error": commit.get("stdout") or "commit failed"}
@@ -522,7 +549,8 @@ def land_git(goal: str, applied: dict) -> dict:
             "branch": branch,
             "sha": sha,
         }
-    return {"ok": True, "branch": branch, "sha": sha, "repo": "memory-gate"}
+    repo = "CogSynDelta" if cwd.resolve() == ROOT.resolve() else "memory-gate"
+    return {"ok": True, "branch": branch, "sha": sha, "repo": repo}
 
 
 def existing_pr(repo: str, head: str) -> int | None:
@@ -551,7 +579,11 @@ def land_pr(goal: str, git_rec: dict) -> dict:
             [
                 "pr-create",
                 repo,
-                f"feat(memory): {goal_id(goal)}",
+                (
+                    f"feat(agents): {goal_id(goal)}"
+                    if is_region_pretrain(goal)
+                    else f"feat(memory): {goal_id(goal)}"
+                ),
                 head,
                 "--base",
                 "main",
@@ -633,16 +665,27 @@ def follow_pr(last: dict) -> dict:
 
 def implement(goal: str) -> dict:
     """One local/code slice. No WAN. No hosted Grok."""
+    dest = dest_worktree(goal)
     slice_pack = ""
-    if "G-QD" in goal and QD_PACK.is_file():
+    if is_region_pretrain(goal) and REGION_PACK.is_file():
+        slice_pack = REGION_PACK.read_text(encoding="utf-8")[:4000]
+    elif "G-QD" in goal and QD_PACK.is_file():
         slice_pack = QD_PACK.read_text(encoding="utf-8")[:2500]
     elif "P1-08" in goal and P108_PACK.is_file():
         slice_pack = P108_PACK.read_text(encoding="utf-8")[:3500]
+    train_rule = (
+        "Never G-TRAIN bedrock/foundation/14B. One-region pretrain of "
+        "LatentVAE or ResidualMLP on a pinned public train split IS the "
+        "current goal when steered region-pretrain.\n"
+        if is_region_pretrain(goal)
+        else "Never G-TRAIN, G-SPLIT, G-SHARE, G-1080. Never dual 14B.\n"
+    )
     brief = (
         "You are local/code on a 3090. One architecture change. No WAN.\n"
         "Hosted Grok is planner only. Never reset kang-main-wip.\n"
-        "Never G-TRAIN, G-SPLIT, G-SHARE, G-1080. Never dual 14B.\n"
-        f"Worktree: {MG_WT}. JSON only "
+        + train_rule
+        + "Never dual 14B. Regions are MoE experts of one mind, not agents.\n"
+        f"Worktree: {dest}. JSON only "
         '{"path": "src|tests|docs/...", "content": "..."}. '
         "Do not wait-ci unless the slice pack says CI is in flight.\n"
         f"Open goal:\n{goal}\n\n"
@@ -699,7 +742,12 @@ def tick() -> dict:
         }
         beat({"last": rec})
         return rec
-    applied = apply_proposal(extract_json(str(impl.get("text") or "")), MG_WT)
+    dest = dest_worktree(goal)
+    applied = apply_proposal(
+        extract_json(str(impl.get("text") or "")),
+        dest,
+        worktree=apply_worktree_name(goal),
+    )
     git_rec = land_git(goal, applied)
     pr_rec = land_pr(goal, git_rec)
     rec = {
