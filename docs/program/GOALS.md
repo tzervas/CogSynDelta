@@ -8,7 +8,7 @@ Horizon rows stay **blocked** until Phase 1 exit. Not `STATUS.md`.
 | ID | Goal | Status | Blocker | Sandbox? | Refs |
 |---|---|---|---|---|---|
 | G-CI | Forgejo required checks **legitimately green** on memory-gate PR #1, then merge | open | Head `1c22643`. **Do not register a new runner** — `homelab-cpu` id 5 is already active with the six labels. Wait for that run. onnxruntime 1.22.0 bump is WAN/gatekeeper. Do not merge red. | wait existing runner | HANDOFF-NEXT; PR #1 |
-| G-ERR | Public `memory_gate.errors` in use; mapper at store/gateway or documented leftover closed | open | PR #4 @ `b80cd13` maps collection create/stamp/size. Unmerged; checks not green | yes (code) | P1-02; spec FR-010 |
+| G-ERR | Public `memory_gate.errors` in use; mapper at store/gateway or documented leftover closed | open | **Code on PR #4 `b80cd13`**: store+gateway `raise_mapped`; VectorStore* is `__cause__`. Consolidation leftover documented. **Merge blocked**: Forgejo 1 ok / 14 fail (not legitimately green). Restack CI pins from PR #1 rather than a new runner | wait CI / restack | P1-02 |
 | G-STORE | In-memory oracle + store protocol conformance | open | After typed errors | yes | P1-04 |
 | G-SQL | Durable SQLite+sqlite-vec backend | open | After G-STORE | yes | P1-06; SELF-HOSTED-DRIVE-TARGETS storage |
 | G-QD | Qdrant 1024-d Qwen3 binding, fail-closed 384 | open | After G-STORE; 5080 only for measure | CPU tests yes; embeddings no if Comfy | P1-07 |
