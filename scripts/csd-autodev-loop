@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Self-hosted autodev tick: 3090 local/code, no hosted Grok.
+
+Reads GOALS.md + IMPLEMENTER-HANDOFF, packs a brief, queues LocalAI.
+Does not start G-TRAIN. Honors csd-steer.json pause.
+
+  ./scripts/csd-autodev-loop --once
+  ./scripts/csd-autodev-loop --worker
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+STEER = Path("/akula-data/cabal/csd-steer.json")
+OUT = Path("/akula-data/cabal/autodev-out")
+QUEUE = ROOT / "scripts/csd-localai-queue"
+PLAN = ROOT / "scripts/csd-gpu-plan"
+GOALS = ROOT / "docs/program/GOALS.md"
+HAND = ROOT / "docs/program/IMPLEMENTER-HANDOFF.md"
+
+
+def steered_pause() -> bool:
+    if not STEER.is_file():
+        return False
+    try:
+        return bool(json.loads(STEER.read_text()).get("pause"))
+    except json.JSONDecodeError:
+        return False
+
+
+def next_open_goal() -> str:
+    for line in GOALS.read_text(encoding="utf-8").splitlines():
+        if "| G-TRAIN" in line or "| G-SPLIT" in line or "| G-CHROMA" in line:
+            continue
+        if "| G-" in line and "| open |" in line:
+            return line
+    return ""
+
+
+def tick() -> dict:
+    subprocess.run([str(PLAN)], check=False, cwd=ROOT)
+    if steered_pause():
+        return {"ok": True, "skipped": "steer.pause"}
+    goal = next_open_goal()
+    if not goal:
+        return {"ok": True, "skipped": "no open goal"}
+    brief = (
+        "You are local/code on a 3090. One architecture change. No WAN.\n"
+        "Never reset kang-main-wip. Never G-TRAIN. Never dual 14B.\n"
+        "Propose ONE python file (path relative to memory-gate worktree) and "
+        "its full contents as JSON {\"path\": \"...\", \"content\": \"...\"}.\n"
+        f"Open goal row:\n{goal}\n\n"
+        "Handoff (trim):\n"
+        + HAND.read_text(encoding="utf-8")[:4000]
+        + "\nGOALS excerpt:\n"
+        + GOALS.read_text(encoding="utf-8")[:3000]
+    )
+    p = subprocess.run(
+        [str(QUEUE), "complete", "--kind", "autodev", "--prompt", brief, "--timeout", "240"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    text = (p.stdout or p.stderr or "")[:8000]
+    OUT.mkdir(parents=True, exist_ok=True)
+    rec = {
+        "goal": goal.strip(),
+        "rc": p.returncode,
+        "text": text,
+        "t": time.time(),
+    }
+    dest = OUT / f"{int(time.time())}.json"
+    dest.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    return {"ok": p.returncode == 0, "out": str(dest), "goal": goal[:120]}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--worker", action="store_true")
+    args = ap.parse_args()
+    if args.worker:
+        while True:
+            print(json.dumps(tick()), flush=True)
+            time.sleep(30)
+    print(json.dumps(tick()))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

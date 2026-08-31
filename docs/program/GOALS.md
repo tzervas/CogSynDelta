@@ -3,11 +3,11 @@
 Living list for `/csd-goal-loop` and `/csd-python-first-drive`. Update when
 evidence exists. Horizon stays **blocked** until Phase 1 exit. Not `STATUS.md`.
 
-**Drive split:** hosted Grok = plan / WAN / merge-when-green / research feed.
-Workflow implement = `grok-4.6` (host cannot spawn `local/code`). Keep 3090
-`local/code` loaded anyway. Self-hosted does the function+test lift when a
-session can call it. Wake on Forgejo CI (`scripts/forgejo-pr-watch.py` + Stop
-hook), not a 2h timer.
+**Drive split (quota):** hosted Grok = **planner / safety / unblock / context
+pack only**. Do **not** use grok-4.6 as the implementer. Autodev =
+`scripts/csd-autodev-loop` + `csd-localai-queue` → 3090 `local/code`. GPU
+splits: `scripts/csd-gpu-plan`. 5080 = CUDA/tests/helpers behind the lock.
+WebUIs on homelab. Stop hosted `/csd-python-first-drive` implement runs.
 
 ## Active (Phase 1)
 

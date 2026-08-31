@@ -12,8 +12,8 @@ Grok is the control plane: plans, WAN, merge policy, research feed.
 | Path | Where | Model | Why |
 |---|---|---|---|
 | This Grok TUI | akula-prime session | Hosted grok-4.6 | Control plane. You are here. |
-| `/csd-goal-loop` pick/verify | Grok Build workflow host | **grok-4.5** | Workflow runtime cannot spawn `local/code` |
-| `/csd-python-first-drive` implement + merge | same | **grok-4.6** | Same host limit. `local/code` is loaded but not the workflow implementer |
+| `/csd-autodev-loop` | akula-prime | **local/code via queue** | Default implementer. No hosted Grok tokens |
+| `/csd-python-first-drive` | Grok Build | **do not use for implement** | Burns hosted quota; host cannot spawn `local/code` |
 | 3090 LocalAI `local/code` | akula-prime `:8080` | Qwen2.5-Coder-14B Q4 **32k** | Resident assist (~16.5 GiB). Chat via Open WebUI / lab console |
 | 5080 | gpu5080 | **no LLM** (Comfy masked) | Exclusive CUDA/index/GPU CI. Not a second 14B |
 | Homelab `homelab-cpu` | 192.168.1.170 | none | Forgejo CPU Actions |
