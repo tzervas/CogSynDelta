@@ -1,1 +1,1 @@
-This document outlines the do-while loop for goals, detailing how to stall, switch, or unblock tasks based on the current state of the project. It serves as a guide for maintaining the workflow and ensuring that tasks are handled efficiently.
+This document outlines the do-while loop for goals, including stall, switch, and unblock mechanisms.
