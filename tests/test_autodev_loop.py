@@ -358,3 +358,42 @@ def test_ensure_steer_cluster_keeps_p1_09_if_already(
     assert out["next_goal"] == "P1-09"
     assert out["cluster"] == ["akula-prime", "gpu5080", "gpu5080-1080ti"]
 
+
+def test_beat_preserves_inflight_last(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Start-of-tick beat() must not drop an in-flight PR last record."""
+    mod = load_loop(tmp_path, monkeypatch)
+    steer = tmp_path / "csd-steer.json"
+    steer.write_text(
+        '{"pause": false, "next_goal": "region-pretrain"}',
+        encoding="utf-8",
+    )
+    heart = tmp_path / "autodev-heartbeat.json"
+    need = tmp_path / "csd-need-grok.json"
+    need.write_text('{"need": false}', encoding="utf-8")
+    plan = tmp_path / "gpu-plan.json"
+    plan.write_text(
+        '{"gpu5080-1080ti": {"live": true, "name": "NVIDIA GeForce GTX 1080 Ti"}}',
+        encoding="utf-8",
+    )
+    mod.STEER = steer
+    mod.HEART = heart
+    mod.GROK_NEED = need
+    mod.GPU_PLAN = plan
+    inflight = {
+        "ok": False,
+        "goal": "region-pretrain",
+        "number": 3,
+        "sha": "abc123",
+        "merged": False,
+        "required_ran": False,
+    }
+    mod.beat({"last": inflight})
+    mod.beat()
+    rec = __import__("json").loads(heart.read_text(encoding="utf-8"))
+    assert rec["next_goal"] == "region-pretrain"
+    assert rec["last"]["number"] == 3
+    assert rec["last"]["merged"] is False
+    assert rec["last"]["sha"] == "abc123"
+

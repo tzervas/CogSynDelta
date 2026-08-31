@@ -379,6 +379,7 @@ def apply_proposal(payload: dict, dest: Path, worktree: str | None = None) -> di
 def beat(extra: dict | None = None) -> None:
     """Persist loop liveness plus cluster / next_goal / need_grok mailbox."""
     HEART.parent.mkdir(parents=True, exist_ok=True)
+    prev = _read_json(HEART)
     goal = next_open_goal() or "region-pretrain"
     mailbox = _read_json(GROK_NEED)
     rec = {
@@ -394,6 +395,9 @@ def beat(extra: dict | None = None) -> None:
             "path": str(GROK_NEED),
         },
     }
+    last = prev.get("last")
+    if isinstance(last, dict):
+        rec["last"] = last
     if extra:
         rec.update(extra)
     HEART.write_text(json.dumps(rec) + "\n", encoding="utf-8")
