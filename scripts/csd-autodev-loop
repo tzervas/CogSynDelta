@@ -163,6 +163,17 @@ def dest_worktree(goal: str) -> Path:
     return MG_WT
 
 
+def repo_for(goal: str, dest: Path | None = None) -> str:
+    """Forgejo repo for this goal. Region-pretrain is always CogSynDelta."""
+    if is_region_pretrain(goal):
+        return "CogSynDelta"
+    path = (dest or dest_worktree(goal)).resolve()
+    root = ROOT.resolve()
+    if path == root or root in path.parents or "CogSynDelta" in path.parts:
+        return "CogSynDelta"
+    return "memory-gate"
+
+
 def apply_worktree_name(goal: str) -> str:
     if is_region_pretrain(goal):
         return "region-pretrain"
@@ -274,7 +285,7 @@ def extract_json(text: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def apply_proposal(payload: dict, dest: Path, worktree: str | None = None) -> dict:
+def apply_proposal(payload: dict, dest: Path, worktree: str | None = None) -> dict:  # noqa: PLR0911
     """Write one relative path into the memory-gate worktree.
 
     Why: autodev must land slices without touching kang-main-wip.
@@ -487,7 +498,8 @@ def git_cmd(args: list[str], cwd: Path) -> dict:
             for branch in PROTECTED_REFS:
                 if a == branch or a.endswith(f":{branch}") or a.endswith(f"/{branch}"):
                     return {"ok": False, "error": f"refusing {args[0]} {branch}"}
-    rc, text = _run([str(GIT_CLI), *args], cwd=cwd, timeout=120)
+    argv = [str(GIT_CLI), "-C", str(cwd), *args]
+    rc, text = _run(argv, cwd=cwd, timeout=120)
     return {"ok": rc == 0, "rc": rc, "stdout": text}
 
 
@@ -517,29 +529,30 @@ def current_sha(cwd: Path) -> str:
     return str(rec.get("stdout") or "").strip()
 
 
-def land_git(goal: str, applied: dict) -> dict:
+def land_git(goal: str, applied: dict) -> dict:  # noqa: PLR0911
     """Commit and push the applied slice as autodev. Never GitHub."""
     if applied.get("skipped") or not applied.get("ok"):
         return {"ok": True, "skipped": applied.get("skipped") or "apply-not-ok"}
     rel = str(applied.get("path") or "")
     cwd = dest_worktree(goal)
+    repo = repo_for(goal, cwd)
     if not cwd.is_dir():
-        return {"ok": False, "error": "worktree missing"}
+        return {"ok": False, "error": "worktree missing", "repo": repo}
     branch = current_branch(cwd)
     if branch in PROTECTED_REFS:
-        return {"ok": False, "error": f"refusing push {branch}"}
+        return {"ok": False, "error": f"refusing push {branch}", "repo": repo}
     if rel:
         add = git_cmd(["add", "--", rel], cwd)
         if not add.get("ok"):
-            return {"ok": False, "error": add.get("stdout") or "git add failed"}
-    porcelain = git_cmd(["status", "--porcelain"], cwd)
-    if not str(porcelain.get("stdout") or "").strip():
-        return {"ok": True, "skipped": "clean", "branch": branch}
-    scope = "agents" if cwd.resolve() == ROOT.resolve() else "memory"
+            return {"ok": False, "error": add.get("stdout") or "git add failed", "repo": repo}
+    staged = git_cmd(["diff", "--cached", "--name-only"], cwd)
+    if not str(staged.get("stdout") or "").strip():
+        return {"ok": True, "skipped": "clean", "branch": branch, "repo": repo}
+    scope = "agents" if repo == "CogSynDelta" else "memory"
     msg = f"feat({scope}): {goal_id(goal)} autodev slice"
     commit = git_cmd(["commit", "-m", msg], cwd)
     if not commit.get("ok"):
-        return {"ok": False, "error": commit.get("stdout") or "commit failed"}
+        return {"ok": False, "error": commit.get("stdout") or "commit failed", "repo": repo}
     sha = current_sha(cwd)
     push = git_cmd(["push", "forgejo", f"HEAD:{branch}"], cwd)
     if not push.get("ok"):
@@ -548,8 +561,8 @@ def land_git(goal: str, applied: dict) -> dict:
             "error": push.get("error") or push.get("stdout") or "push failed",
             "branch": branch,
             "sha": sha,
+            "repo": repo,
         }
-    repo = "CogSynDelta" if cwd.resolve() == ROOT.resolve() else "memory-gate"
     return {"ok": True, "branch": branch, "sha": sha, "repo": repo}
 
 
@@ -568,7 +581,7 @@ def land_pr(goal: str, git_rec: dict) -> dict:
     """PR / wait / merge-gate. Merge only when required checks ran."""
     if git_rec.get("skipped") or not git_rec.get("ok"):
         return {"ok": bool(git_rec.get("ok")), "skipped": git_rec.get("skipped")}
-    repo = str(git_rec.get("repo") or "memory-gate")
+    repo = str(git_rec.get("repo") or "") or repo_for(goal)
     head = str(git_rec.get("branch") or "")
     sha = str(git_rec.get("sha") or "")
     if not head or not sha:
@@ -629,7 +642,7 @@ def land_pr(goal: str, git_rec: dict) -> dict:
 
 def follow_pr(last: dict) -> dict:
     """Resume wait/merge-gate for an in-flight PR. Does not implement."""
-    repo = str(last.get("repo") or "memory-gate")
+    repo = str(last.get("repo") or "") or repo_for(str(last.get("goal") or ""))
     sha = str(last.get("sha") or "")
     number = last.get("number")
     if not sha or number is None:
@@ -751,7 +764,11 @@ def tick() -> dict:
     git_rec = land_git(goal, applied)
     pr_rec = land_pr(goal, git_rec)
     rec = {
-        "ok": bool(applied.get("ok")) and bool(git_rec.get("ok") or git_rec.get("skipped")),
+        "ok": bool(
+            applied.get("ok")
+            and (git_rec.get("ok") or git_rec.get("skipped"))
+            and (pr_rec.get("ok") or pr_rec.get("skipped") or pr_rec.get("number"))
+        ),
         "goal": goal[:120],
         "applied": applied,
         "git": git_rec,
@@ -782,6 +799,23 @@ def tick() -> dict:
             tried=["localai-queue", "git push", "forgejo/wait"],
         )
         rec["ok"] = False
+        if rec["ping"].get("need"):
+            rec["workflow"] = launch_local_workflow(goal, "checks-failed")
+    elif pr_rec.get("error") and not pr_rec.get("number"):
+        rec["ping"] = maybe_ping_stall(
+            goal,
+            "pr-create failed",
+            "Forgejo pr-create failed twice; wrong repo or missing head?",
+            (
+                f"blocker: {pr_rec.get('error')}; "
+                "paths: scripts/csd-autodev-loop; tried: git push, pr-create"
+            ),
+            paths=["scripts/csd-autodev-loop"],
+            tried=["git push", "pr-create"],
+        )
+        rec["ok"] = False
+        if rec["ping"].get("need"):
+            rec["workflow"] = launch_local_workflow(goal, "pr-create-failed")
     OUT.mkdir(parents=True, exist_ok=True)
     dest = OUT / f"{int(time.time())}.json"
     slim = {k: rec.get(k) for k in rec if k != "text"}

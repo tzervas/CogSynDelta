@@ -67,3 +67,17 @@ def test_no_grok_scheduler_unit() -> None:
     escalate = ESCALATE.read_text(encoding="utf-8")
     assert "dry-run" in escalate
     assert "CSD_ESCALATE" in escalate
+
+
+
+def test_local_python_first_drive_workflow_exists() -> None:
+    """Fallback job is a Forgejo workflow, not hosted /csd-python-first-drive."""
+    wf = ROOT / ".github" / "workflows" / "csd-python-first-drive.yml"
+    text = wf.read_text(encoding="utf-8")
+    assert "workflow_dispatch" in text
+    assert "csd-autodev-loop --once" in text
+    assert "compute-cpu" in text
+    assert "host-homelab" in text
+    assert "CSD_IN_WORKFLOW" in text
+    assert "grok --print" not in text
+    assert "ubuntu-latest" not in text

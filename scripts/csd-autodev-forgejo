@@ -422,6 +422,46 @@ def cmd_merge_gate(ns: argparse.Namespace) -> int:  # noqa: PLR0911
     return 0 if merged else 1
 
 
+def cmd_workflow_dispatch(ns: argparse.Namespace) -> int:
+    """Dispatch a Forgejo Actions workflow. Never hosted Grok. Never GitHub."""
+    repo = repo_id(ns.repo)
+    wf = str(ns.workflow or "")
+    low = wf.lower()
+    if "github.com" in low or low.endswith(".rhai") or "grok" in low:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "http": 400,
+                    "error": "refusing hosted grok or GitHub workflow",
+                    "hosted_grok": False,
+                }
+            )
+        )
+        return 2
+    inputs: dict[str, str] = {}
+    for item in ns.inputs or []:
+        if "=" not in str(item):
+            continue
+        key, val = str(item).split("=", 1)
+        inputs[key] = val
+    quoted = urllib.parse.quote(wf, safe="._-")
+    path = f"/repos/{repo}/actions/workflows/{quoted}/dispatches"
+    code, body = api("POST", path, {"ref": ns.ref, "inputs": inputs})
+    ok = code in {200, 201, 204}
+    rec: dict = {
+        "http": code,
+        "ok": ok,
+        "workflow": wf,
+        "ref": ns.ref,
+        "hosted_grok": False,
+    }
+    if not ok:
+        rec["error"] = body if isinstance(body, (str, dict, list)) else str(body)
+    print(json.dumps(rec))
+    return 0 if ok else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -452,6 +492,11 @@ def main() -> int:
     p_mg.add_argument("repo")
     p_mg.add_argument("sha")
     p_mg.add_argument("number", type=int)
+    p_wd = sub.add_parser("workflow-dispatch")
+    p_wd.add_argument("repo")
+    p_wd.add_argument("workflow")
+    p_wd.add_argument("--ref", default="feat/agent-harness")
+    p_wd.add_argument("--input", action="append", default=[], dest="inputs")
     ns = ap.parse_args()
     dispatch = {
         "whoami": cmd_whoami,
@@ -461,6 +506,7 @@ def main() -> int:
         "comment": cmd_comment,
         "wait": cmd_wait,
         "merge-gate": cmd_merge_gate,
+        "workflow-dispatch": cmd_workflow_dispatch,
     }
     return dispatch[ns.cmd](ns)
 

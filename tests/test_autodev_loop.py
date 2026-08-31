@@ -182,3 +182,69 @@ def test_ti_ok_requires_live_and_guest_smi(
         encoding="utf-8",
     )
     assert mod.ti_ok() is False
+
+
+
+def test_repo_for_region_pretrain_is_cogsyndelta(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Region-pretrain PRs target CogSynDelta, never memory-gate."""
+    mod = load_loop(tmp_path, monkeypatch)
+    assert mod.repo_for("region-pretrain") == "CogSynDelta"
+    assert mod.repo_for("P1-region-pretrain") == "CogSynDelta"
+    assert mod.repo_for("P1-09") == "memory-gate"
+
+
+def test_land_git_skips_when_staged_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unrelated dirty files must not force a no-op commit."""
+    mod = load_loop(tmp_path, monkeypatch)
+    dest = tmp_path / "wt"
+    dest.mkdir()
+    monkeypatch.setattr(mod, "dest_worktree", lambda _g: dest)
+
+    def fake_git(args: list[str], cwd: Path) -> dict:
+        if args[:2] == ["rev-parse", "--abbrev-ref"]:
+            return {"ok": True, "stdout": "feat/agent-harness", "rc": 0}
+        if args[0] == "add":
+            return {"ok": True, "stdout": "", "rc": 0}
+        if args[:3] == ["diff", "--cached", "--name-only"]:
+            return {"ok": True, "stdout": "", "rc": 0}
+        if args[0] == "commit":
+            raise AssertionError("must not commit when staged empty")
+        if args[0] == "push":
+            raise AssertionError("must not push when staged empty")
+        return {"ok": True, "stdout": "", "rc": 0}
+
+    monkeypatch.setattr(mod, "git_cmd", fake_git)
+    rec = mod.land_git(
+        "region-pretrain",
+        {"ok": True, "path": "docs/program/GOAL-LOOP.md"},
+    )
+    assert rec["ok"] is True
+    assert rec["skipped"] == "clean"
+    assert rec["repo"] == "CogSynDelta"
+
+
+def test_launch_local_workflow_dispatches_not_grok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Queue-failed fallback is Forgejo csd-python-first-drive, not hosted Grok."""
+    mod = load_loop(tmp_path, monkeypatch)
+    seen: list[list[str]] = []
+
+    def fake_run(argv: list[str], **_k: object) -> tuple[int, str]:
+        seen.append(list(argv))
+        return 0, '{"ok": true, "http": 204}'
+
+    monkeypatch.setattr(mod, "_run", fake_run)
+    rec = mod.launch_local_workflow("region-pretrain", "queue-failed")
+    assert rec["ok"] is True
+    assert rec["hosted_grok"] is False
+    assert rec["workflow"] == "csd-python-first-drive.yml"
+    assert seen
+    flat = " ".join(str(a) for a in seen[0])
+    assert "workflow-dispatch" in flat
+    assert "csd-python-first-drive.yml" in flat
+    assert "grok" not in flat.lower()

@@ -1,0 +1,48 @@
+# Local Forgejo Python-first drive. Never hosted Grok. Never GitHub.com.
+# Autodev dispatches this when local/code queue cannot run a job.
+name: csd-python-first-drive
+
+on:
+  workflow_dispatch:
+    inputs:
+      goal:
+        description: Board id or region-pretrain
+        required: false
+        default: next
+      reason:
+        description: Why the 3090 queue could not run
+        required: false
+        default: queue-failed
+
+concurrency:
+  group: csd-python-first-drive
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  drive:
+    name: local python-first drive
+    runs-on: [self-hosted, linux, x64, podman, compute-cpu, host-homelab]
+    timeout-minutes: 25
+    env:
+      CSD_IN_WORKFLOW: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Refuse hosted Grok and GitHub.com
+        run: |
+          set -euo pipefail
+          echo "hosted_grok=false"
+          if [ "${{ github.server_url }}" = "https://github.com" ]; then
+            echo "never GitHub.com" >&2
+            exit 1
+          fi
+
+      - name: Autodev once
+        env:
+          CSD_IN_WORKFLOW: "1"
+        run: |
+          set -euo pipefail
+          python3 scripts/csd-autodev-loop --once

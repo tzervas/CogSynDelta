@@ -207,3 +207,66 @@ def test_merge_gate_refuses_develop_head(
     assert rc == 1
     assert rec["merged"] is False
     assert rec["state"] == "blocked"
+
+
+
+def test_workflow_dispatch_refuses_rhai(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hosted Grok .rhai skills are not Forgejo workflows."""
+    mod = load_fj()
+    monkeypatch.setattr(mod, "token", lambda: "x")
+    buf = StringIO()
+    with patch("sys.stdout", buf):
+        rc = mod.cmd_workflow_dispatch(
+            _ns(
+                repo="CogSynDelta",
+                workflow="csd-python-first-drive.rhai",
+                ref="feat/agent-harness",
+                inputs=["goal=P1-09"],
+            )
+        )
+    rec = json.loads(buf.getvalue())
+    assert rc == 2
+    assert rec["ok"] is False
+    assert rec["hosted_grok"] is False
+
+
+def test_workflow_dispatch_posts_local_yml(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """workflow-dispatch POSTs the local yml; never grok."""
+    mod = load_fj()
+    monkeypatch.setattr(mod, "token", lambda: "x")
+    called: dict[str, object] = {}
+
+    def api(method: str, path: str, body: dict | None = None) -> tuple[int, object]:
+        called["method"] = method
+        called["path"] = path
+        called["body"] = body
+        return 204, {}
+
+    monkeypatch.setattr(mod, "api", api)
+    buf = StringIO()
+    with patch("sys.stdout", buf):
+        rc = mod.cmd_workflow_dispatch(
+            _ns(
+                repo="CogSynDelta",
+                workflow="csd-python-first-drive.yml",
+                ref="feat/agent-harness",
+                inputs=["goal=region-pretrain", "reason=queue-failed"],
+            )
+        )
+    rec = json.loads(buf.getvalue())
+    assert rc == 0
+    assert rec["ok"] is True
+    assert rec["hosted_grok"] is False
+    assert called["method"] == "POST"
+    assert "csd-python-first-drive.yml" in str(called["path"])
+    body = called["body"]
+    assert isinstance(body, dict)
+    assert body.get("ref") == "feat/agent-harness"
+    assert body.get("inputs") == {
+        "goal": "region-pretrain",
+        "reason": "queue-failed",
+    }
