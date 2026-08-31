@@ -112,10 +112,12 @@ Worker package: [IMPLEMENTER-HANDOFF.md](IMPLEMENTER-HANDOFF.md).
 
 - **Phase 2**: wire completed Python memory-gate into CogSynDelta `memory/`.
   Keep PoC-1..3 green. Personas select basins.
-- **Phase 3**: region specialization + interconnect training off private HF
-  data; ephemeral vs persistent storage; eval/bench along the way. SLM/LLM/ML
-  internals in **one mind**. 5080 exclusive-seq only.
+- **Phase 3**: region specialization — train high-fidelity submodels, quantize
+  to lab VRAM, interconnect; eval/bench along the way. One mind. Prove Python
+  on **one GPU** (5080 train/eval; 3090 assist).
 - **Phase 4**: progressive Rust rewrite, dual-run vs Python.
+- **Phase 5 (experimental, later)**: split one CSD model across mismatched
+  3090+5080 as a pool. Do not start until Phase 3 one-GPU Python is proven.
 
 ## Allocation
 

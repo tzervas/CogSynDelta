@@ -10,15 +10,31 @@ Vault twin: `akula-csd-kb/Program/Self-Hosted-Drive-Targets.md`.
 ## What we are building
 
 One **mind** with specialized **regions**, not a swarm of agents. Regions are
-experts of one brain. Personas select basins. Memory-gate is the dynamic
-learning substrate they share.
+experts of one brain (MoE-adjacent submodels). Personas select basins.
+Memory-gate is the dynamic learning substrate they share.
+
+**Region specialization (Phase 3, not now):** each region is a submodel.
+Train it at high fidelity (large param count, large data) **then quantize**
+so its VRAM/latency sits at the measured performance/size balance on *this*
+lab. After every region and subregion is dialed, compose the full CogSynDelta
+stack: quantized regions + interconnect/gate + memory. Goal is
+**foundation-model quality, hardware-dialed residency** — not a 70B that
+cannot load. Same rule as the assist GPU matrix: pack what fits; never dual
+14B; never claim PoC ResidualMLP/LatentVAE already *is* those specialists.
+`STATUS.md` remains the only measured PoC. **Do not train CSD weights until
+`G-LIFE`.**
+
+**Split across mismatched GPUs (after one-GPU Python proof):** treating the
+3090 Ti + 5080 as one pool, routing shards of *one* mind, is an experimental
+follow-on. Prove the Python stack on **one GPU** first (Phase 1–3). Do not
+start pipeline-parallel / custom dispatch until that bar is green.
 
 The eventual stack is a **symphony**:
 
 | Layer | Role | Persistence |
 |---|---|---|
 | Small / specialized models (SLM, task heads) | Region specialists (code, retrieve, route, compress) | Checkpoints on private HF `tzervas/cogsyndelta` |
-| Larger LLMs | Occasional high-reasoning / orchestration assist | Hosted Grok is gatekeeper; 3090 keeps **one** LocalAI GGUF |
+| Larger LLMs | Occasional high-reasoning / orchestration assist | Hosted Grok is gatekeeper; 3090 `local/code` 32k + share-small leftover |
 | Classical ML / other internals | Routers, compressors, load-balance, eval probes | Code in git; weights only if measured |
 | Interconnect / gate | Softmax top-k + Switch aux (PoC-3). mHC later | Trained when 5080 exclusive-seq is free |
 | Dynamic memory | Python memory-gate: learn → retrieve → consolidate → persona | SQLite+vec local; Qdrant 1024-d Akula |
@@ -30,10 +46,13 @@ The eventual stack is a **symphony**:
 2. **Phase 2**: Wire that memory into CogSynDelta `memory/`. Keep PoC-1..3 green.
 3. **Phase 3 — this target**: Automate **region specialization** off Hugging Face
    data (copy public sets into private `tzervas/cogsyndelta-eval` when a row
-   needs them). Train interconnect. Offload storage. Eval/bench along the way.
-   5080 exclusive-seq only; never pause 3090 LocalAI for RAG; enqueue behind
-   Comfy/video.
+   needs them). Train high-fidelity regions, **quantize** to lab VRAM, train
+   interconnect. Offload storage. Eval/bench along the way. Prove the full
+   Python stack on **one GPU** (5080 exclusive-seq for train/eval; 3090 stays
+   assist). Never pause 3090 LocalAI for RAG.
 4. **Phase 4**: Rust rewrite after Python CSD is production-ready.
+5. **Phase 5 (experimental)**: pool mismatched GPUs (3090 Ti + 5080) for
+   split inference/training of one CSD mind. Not before Phase 3 one-GPU proof.
 
 ## Hardware and storage
 
@@ -43,8 +62,8 @@ The eventual stack is a **symphony**:
 | Private HF | Checkpoints, golden eval dumps | Download caches |
 | Qdrant `akula-csd-kb` 1024-d | Indexed experiment notes | CUDA index jobs |
 | Obsidian `akula-csd-kb` | Plans, handoffs, measured rows | Session chatter |
-| 3090 LocalAI GGUF | One loaded `local/code` | Dual-load 14B, RAG CUDA |
-| 5080 | Measured train/eval artifacts | Comfy/video timeshare jobs |
+| 3090 LocalAI GGUF | `local/code` Q4 native 32k (~16.5 GiB measured) + share-small leftover | Dual 14B |
+| 5080 | Measured train/eval; idle embed helper | Comfy (masked for autodev until unmask) |
 | `/tmp`, CI workdirs, failed runs | — | Delete after the log is in Forgejo |
 
 Never mix 384-d into shared Qdrant. Never write `tzervas-dev-kb` or

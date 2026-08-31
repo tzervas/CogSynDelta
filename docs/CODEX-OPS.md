@@ -1,6 +1,6 @@
 # Codex ops: GPUs, pause, Forgejo, Hugging Face
 
-Host agent on **akula-prime**. Two cards, no MIG. Timeslice is a **queue**, not extra VRAM. Parallelism is **across hosts**: 3090 text + 5080 media/train at the same time.
+Host agent on **akula-prime**. Two cards, no MIG. Timeslice is a **queue**, not extra VRAM. Parallelism is **across hosts** (3090 text + 5080 CUDA at once) **and share-small within a host** (leftover VRAM holds helpers, never a second 14B).
 
 Python-first. This file is how to use the lab, not a claim that CogSynDelta already trains at 14B.
 
@@ -8,8 +8,8 @@ Python-first. This file is how to use the lab, not a claim that CogSynDelta alre
 
 | Host | IP | GPU | Role for Codex |
 |---|---|---|---|
-| akula-prime | 192.168.1.98 | RTX 3090 Ti ~23028 MiB | **One** LocalAI GGUF (`local/code` for assist). Never two 14Bs. |
-| gpu5080 | 192.168.1.252 | RTX 5080 ~16303 MiB | Exclusive-seq: CogSynDelta CUDA train/eval, RAG **index**, Comfy. Never `compute-cpu`. |
+| akula-prime | 192.168.1.98 | RTX 3090 Ti ~23028 MiB | `local/code` Q4 32k resident (native ctx). Leftover VRAM: share-small helpers (embed/8B). Never two 14Bs. |
+| gpu5080 | 192.168.1.252 | RTX 5080 ~16303 MiB | Exclusive CUDA/index/eval; share-small embed when idle (`helper_cap` 6 GiB). Comfy masked for autodev until operator unmasks. |
 | homelab | 192.168.1.170 | none | Always-up UI + **Forgejo CPU Actions**. No GPU jobs. |
 
 Akula scripts live in `/home/kang/code/personal/tzervas/akula-ai-platform`. Prefix `AKULA=…` below.
@@ -56,7 +56,8 @@ Never leave LocalAI stopped. Never pause it for `csd-kb-index` (that is 5080).
 
 ### Load / swap a GGUF on the 3090
 
-One resident file. Pull then let LocalAI load the yaml `name:`:
+Resident pack is `local/code` at native 32k plus optional share-small helpers
+in leftover VRAM. Never a second 14B. Pull then let LocalAI load the yaml `name:`:
 
 ```bash
 cd "$AKULA"
@@ -65,7 +66,7 @@ cd "$AKULA"
 # POST /v1/chat/completions {"model":"local/code",…}  # loads, unloads previous
 ```
 
-Do not add a second `download_files` and dual-load. Uncensored aliases need `--yes` and are operator-selected.
+Do not dual-load two 14B `download_files`. 8B / embed helpers may share leftover VRAM. Uncensored 14B aliases need `--yes` and exclusive swap.
 
 ## 5080 — train, index, media (exclusive-seq)
 

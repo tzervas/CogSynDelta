@@ -21,7 +21,7 @@ Horizon rows stay **blocked** until Phase 1 exit. Not `STATUS.md`.
 | ID | Goal | Status | Unblock |
 |---|---|---|---|
 | G-CHROMA | Reintegrate Chroma | blocked | Named patched RC/stable in GHSA — gatekeeper WAN check |
-| G-TRAIN | Region specialization + interconnect train/eval | blocked | Phase 1 exit (`G-LIFE`). Then SELF-HOSTED-DRIVE-TARGETS |
+| G-TRAIN | Region specialization + interconnect train/eval | blocked | Phase 1 exit (`G-LIFE`). Train high-fid regions, quantize to lab VRAM, prove Python on one GPU. Split-across-3090+5080 is later (Phase 5). |
 
 ## Priority
 
