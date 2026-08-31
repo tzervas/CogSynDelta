@@ -21,6 +21,9 @@ def load_lab(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setenv("CSD_STEER", str(tmp_path / "csd-steer.json"))
     monkeypatch.setenv("CSD_AUTODEV_HEARTBEAT", str(tmp_path / "hb.json"))
     monkeypatch.setenv("CSD_GROK_NEED", str(tmp_path / "csd-need-grok.json"))
+    monkeypatch.setenv("CSD_AUTODEV_OUT", str(tmp_path / "autodev-out"))
+    monkeypatch.setenv("CSD_LOCALAI_QUEUE", str(tmp_path / "localai-queue"))
+    monkeypatch.setenv("CSD_ROUTER_STATE", str(tmp_path / "model-router-state.json"))
     monkeypatch.setenv("CSD_LAB_BIND", "192.168.1.98")
     vault = tmp_path / "csd-vault"
     (vault / "hf").mkdir(parents=True)
@@ -305,6 +308,8 @@ def test_api_goals_phase1_steer_heartbeat(tmp_path: Path, monkeypatch: pytest.Mo
     assert rec["heartbeat"]["identity"] == "autodev"
     assert rec["heartbeat"]["next_goal"] == "P1-09"
     assert rec["heartbeat"]["last"]["goal"] == "P1-09"
+    assert rec["heartbeat"]["last"]["ok"] is True
+    assert rec["heartbeat"]["last"]["error"] == ""
     assert rec["heartbeat"]["cluster"] == {}
     ids = [row["id"] for row in rec["phase1"]]
     assert "P1-08" in ids
@@ -391,10 +396,7 @@ def test_hf_autodev_refuses_operator_secrets(
     assert rec["vault"] == "refused-operator-vault"
 
 
-
-def test_grok_need_get_idle_and_post_caps(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_grok_need_get_idle_and_post_caps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """GET idle; POST need=true writes mailbox; transcripts dropped; 2 KiB cap."""
     mod = load_lab(tmp_path, monkeypatch)
     code, rec = mod.handle_lab("GET", "/api/grok-need", {})
@@ -427,9 +429,7 @@ def test_grok_need_get_idle_and_post_caps(
     code, rec = mod.handle_lab("GET", "/metrics", {})
     text = rec["exposition"]
     assert 'csd_need_grok{identity="autodev"} 1' in text
-    mtime_line = [
-        ln for ln in text.splitlines() if ln.startswith("csd_need_grok_mtime_seconds")
-    ]
+    mtime_line = [ln for ln in text.splitlines() if ln.startswith("csd_need_grok_mtime_seconds")]
     assert mtime_line
     assert float(mtime_line[0].rsplit(" ", 1)[1]) > 0
     code, rec = mod.handle_lab("POST", "/api/grok-need", {"need": False})
@@ -457,3 +457,267 @@ def test_grok_need_post_does_not_spawn_grok(
     assert code == 200
     assert rec["need"] is True
     assert rec["hosted_grok"] is False
+
+
+def test_live_feed_pool_combined_when_1080ti_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """combined_mib sums live catalog VRAM; never the 24+16 39331 default."""
+    mod = load_lab(tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "ssh_5080", lambda _cmd: "")
+    (tmp_path / "gpu-plan.json").write_text(
+        json.dumps({"pool": {"combined_mib": 39331, "usable_mib": 37795}}),
+        encoding="utf-8",
+    )
+    rec = mod.live_feed(
+        {
+            "prime_smi": "RTX 3090 Ti, 100, 22900, 0",
+            "gpu5080_smi": "RTX 5080, 10, 16200, 0",
+            "guest_smi": "NVIDIA GeForce GTX 1080 Ti, 12, 11200, 0",
+            "cluster": mod.cluster_snapshot(),
+        }
+    )
+    want = 23028 + 16303 + 11264
+    assert rec["pool"]["combined_mib"] == want
+    assert rec["pool"]["combined_mib"] >= 50000
+    assert rec["pool"]["combined_mib"] != 39331
+    assert rec["pool"]["usable_mib"] == 20480 + 14336 + 10240
+    assert rec["pool"]["live_1080ti"] is True
+    ids = [c["id"] for c in rec["pool"]["cards"]]
+    assert ids == ["akula-prime", "gpu5080", "gpu5080-1080ti"]
+    gibs = [c["gib"] for c in rec["pool"]["cards"]]
+    assert gibs == [22.5, 15.9, 11.0]
+    ti = rec["gpu5080_1080ti"]
+    assert ti["gpu"] == "GTX 1080 Ti Pascal sm_61"
+    assert "1080 Ti" in (ti.get("smi") or "")
+    assert ti["live"] is True
+    assert ti["guest_ip"] == "192.168.1.243"
+    assert ti["rag"] == "retrieve-index-light"
+    assert rec["prime"]["smi"].startswith("RTX 3090")
+    assert rec["gpu5080"]["smi"].startswith("RTX 5080")
+
+
+def test_live_feed_pool_excludes_1080ti_when_not_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """1080 Ti VRAM is omitted when catalog live is not true."""
+    mod = load_lab(tmp_path, monkeypatch)
+    cat = json.loads((ROOT / "config" / "model-router.json").read_text(encoding="utf-8"))
+    cat["hosts"]["gpu5080-1080ti"]["live"] = False
+    path = tmp_path / "model-router.json"
+    path.write_text(json.dumps(cat), encoding="utf-8")
+    mod.ROUTER_JSON = path
+    rec = mod.live_feed({})
+    assert rec["pool"]["combined_mib"] == 23028 + 16303
+    assert rec["pool"]["usable_mib"] == 20480 + 14336
+    assert rec["pool"]["live_1080ti"] is False
+    assert [c["id"] for c in rec["pool"]["cards"]] == ["akula-prime", "gpu5080"]
+
+
+def test_pool_tab_lists_three_cards_not_24_16(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pool HTML lists three cards + GiB and drops stale 24:16 copy."""
+    mod = load_lab(tmp_path, monkeypatch)
+    page = mod.PAGE
+    assert "id=c2" in page
+    assert "gpu5080_1080ti" in page
+    assert "Three hosts" in page
+    assert "p.cards" in page
+    assert "c.gib" in page
+    assert "24:16" not in page
+    assert "39331" not in page
+    assert "~40 GiB class" not in page
+    assert "cols3" in page
+
+
+def test_snapshot_status_feed_pool_includes_guest_smi(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GET /api/status path (snapshot) combined >= 50000 when 1080ti live."""
+    import urllib.error
+
+    mod = load_lab(tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "sh", lambda *_a, **_k: "RTX 3090 Ti, 100, 22900, 0")
+    monkeypatch.setattr(mod, "ssh_5080", lambda _cmd: "")
+    monkeypatch.setattr(
+        mod,
+        "ssh_guest",
+        lambda *_a, **_k: "NVIDIA GeForce GTX 1080 Ti, 12, 11200, 0",
+    )
+    monkeypatch.setattr(mod, "autodev_app", lambda: {"worker_live": False})
+
+    def _down(*_a: object, **_k: object) -> None:
+        raise urllib.error.URLError("lab-test")
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", _down)
+    rec = mod.snapshot()
+    pool = rec["feed"]["pool"]
+    assert pool["combined_mib"] >= 50000
+    assert pool["combined_mib"] == 23028 + 16303 + 11264
+    assert rec["guest_smi"].startswith("NVIDIA GeForce GTX 1080 Ti")
+    assert rec["feed"]["gpu5080_1080ti"]["smi"].startswith("NVIDIA GeForce GTX 1080 Ti")
+    assert rec["feed"]["gpu5080_1080ti"]["live"] is True
+
+
+def test_autodev_tab_streams_think_or_inflight_from_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Autodev pane uses splitThink + in-flight pre from queue/out, not ticks-only."""
+    mod = load_lab(tmp_path, monkeypatch)
+    qdir = tmp_path / "localai-queue"
+    qdir.mkdir()
+    (qdir / "job1.json").write_text(
+        json.dumps(
+            {
+                "id": "job1",
+                "status": "running",
+                "kind": "autodev",
+                "alias": "local/code",
+                "prompt": "implement region-pretrain LatentVAE WikiText-2",
+                "prio": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "autodev-out"
+    out.mkdir()
+    (out / "1.json").write_text(
+        json.dumps(
+            {
+                "goal": "region-pretrain",
+                "ok": False,
+                "pytest_rc": 1,
+                "text": "<think>need failing test first</think>patch tests/test_poc_region_pretrain.py",
+                "applied": {"ok": False, "path": "tests/test_poc_region_pretrain.py"},
+                "error": "required pytest red",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "hb.json").write_text(
+        json.dumps(
+            {
+                "t": time.time(),
+                "pid": 9,
+                "identity": "autodev",
+                "next_goal": "region-pretrain",
+                "last": {
+                    "ok": False,
+                    "goal": "region-pretrain",
+                    "error": "required pytest red",
+                    "pytest_rc": 1,
+                    "applied": {"path": "tests/test_poc_region_pretrain.py"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    rec = mod.autodev_app()
+    now = rec["now"]
+    assert now["phase"] == "in-flight"
+    assert "region-pretrain" in now["prompt"]
+    assert now["inflight"] == now["prompt"]
+    assert "<think>" in now["text"]
+    assert now["goal"] == "region-pretrain"
+    assert "tests/test_poc_region_pretrain.py" in now["files"]
+    assert now["pytest_rc"] == 1
+    assert now["ok"] is False
+    assert "pytest" in now["error"]
+    assert rec["heartbeat"]["last"]["goal"] == "region-pretrain"
+    assert rec["heartbeat"]["last"]["ok"] is False
+    assert rec["heartbeat"]["last"]["error"]
+    assert rec["queue_live"][0]["prompt"]
+    page = mod.PAGE
+    auto_html = page[page.index("id=auto") : page.index("id=todos")]
+    assert "id=anow" in auto_html
+    assert "id=ameta" in auto_html
+    assert "What the model is doing now" in auto_html
+    assert "Goals board stays on the Goals tab" in auto_html
+    assert "function renderAuto" in page
+    assert "splitThink(now.text" in page
+    assert "<h3>thinking</h3><pre>" in page
+    assert "<h3>in-flight</h3><pre>" in page
+    assert "setInterval(refresh,2000)" in page
+    assert "data-tab=todos" in page
+    assert "function loadGoals" in page
+    todos_html = page[page.index("id=todos") : page.index("id=chat")]
+    assert "/api/goals" in page
+    assert "PHASE-1 board" in todos_html
+    assert "iframe" not in todos_html
+
+
+def test_gpu_tab_5080_receipt_and_1080ti_thinking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GPUs tab keeps prime think; 5080 shows cuda receipt; 1080 Ti loaded/thinking."""
+    mod = load_lab(tmp_path, monkeypatch)
+    (tmp_path / "gpu-plan.json").write_text(
+        json.dumps(
+            {
+                "gpu5080": {
+                    "lock": "lock=1234",
+                    "comfy": "masked",
+                    "helper_ok": False,
+                    "gguf_count": 2,
+                    "role": "cuda-tests",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "model-router-state.json").write_text(
+        json.dumps(
+            {
+                "resident": {
+                    "embed-qwen3-0.6b": {
+                        "host": "gpu5080-1080ti",
+                        "until": time.time() + 3600,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    qdir = tmp_path / "localai-queue"
+    qdir.mkdir()
+    (qdir / "prime.json").write_text(
+        json.dumps(
+            {
+                "id": "prime",
+                "status": "running",
+                "kind": "autodev",
+                "alias": "local/code",
+                "prompt": "<think>slice</think>write failing test",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "ssh_5080", lambda _cmd: "")
+    rec = mod.live_feed(
+        {
+            "prime_smi": "RTX 3090 Ti, 100, 22900, 0",
+            "gpu5080_smi": "RTX 5080, 10, 16200, 0",
+            "gpu5080_lock": "1234",
+            "gpu5080_comfy": "masked",
+            "gpu5080_runner": "active",
+            "guest_smi": "NVIDIA GeForce GTX 1080 Ti, 12, 11200, 0",
+            "cluster": mod.cluster_snapshot(),
+        }
+    )
+    prime_th = rec["prime"]["thinking"]
+    assert prime_th["phase"] == "in-flight"
+    assert "failing test" in (prime_th.get("prompt") or "")
+    g = rec["gpu5080"]["thinking"]
+    assert g is not None
+    assert "lock=" in (g.get("prompt") or g.get("text") or "")
+    assert "comfy=masked" in (g.get("text") or g.get("prompt") or "")
+    assert g.get("goal") == "exclusive-cuda"
+    ti = rec["gpu5080_1080ti"]
+    assert any(x.get("alias") == "embed-qwen3-0.6b" for x in ti["loaded"])
+    tth = ti["thinking"]
+    assert tth is not None
+    assert "embed-qwen3-0.6b" in (tth.get("prompt") or tth.get("text") or "")
+    assert tth.get("goal") == "retrieve-index-light"
+    assert ti["live"] is True
+    assert ti["guest_ip"] == "192.168.1.243"

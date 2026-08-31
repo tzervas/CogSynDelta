@@ -8,6 +8,7 @@ required checks ran. Never poll hosted Grok. Ping mailbox on stall.
   ./scripts/csd-autodev-loop --once
   ./scripts/csd-autodev-loop --worker
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,9 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STEER = Path(os.environ.get("CSD_STEER", "/akula-data/cabal/csd-steer.json"))
 OUT = Path(os.environ.get("CSD_AUTODEV_OUT", "/akula-data/cabal/autodev-out"))
-HEART = Path(
-    os.environ.get("CSD_AUTODEV_HEARTBEAT", "/akula-data/cabal/autodev-heartbeat.json")
-)
+HEART = Path(os.environ.get("CSD_AUTODEV_HEARTBEAT", "/akula-data/cabal/autodev-heartbeat.json"))
 GROK_NEED = Path(os.environ.get("CSD_GROK_NEED", "/akula-data/cabal/csd-need-grok.json"))
 STALL = Path(os.environ.get("CSD_AUTODEV_STALL", "/akula-data/cabal/autodev-stall.json"))
 GPU_PLAN = Path(os.environ.get("CSD_GPU_PLAN", "/akula-data/cabal/gpu-plan.json"))
@@ -33,9 +32,7 @@ ROUTER = ROOT / "scripts/csd-model-router"
 GIT_CLI = ROOT / "scripts/csd-autodev-git"
 FORGEJO_CLI = ROOT / "scripts/csd-autodev-forgejo"
 GOALS = Path(os.environ.get("CSD_GOALS", str(ROOT / "docs/program/GOALS.md")))
-PHASE1 = Path(
-    os.environ.get("CSD_PHASE1_BOARD", str(ROOT / "docs/program/PHASE-1-TASK-BOARD.md"))
-)
+PHASE1 = Path(os.environ.get("CSD_PHASE1_BOARD", str(ROOT / "docs/program/PHASE-1-TASK-BOARD.md")))
 HAND = ROOT / "docs/program/IMPLEMENTER-HANDOFF.md"
 QD_PACK = ROOT / "docs/program/CONTEXT-PACK-G-QD.md"
 P108_PACK = ROOT / "docs/program/CONTEXT-PACK-P1-08.md"
@@ -293,9 +290,7 @@ def apply_http(payload: dict, worktree: str | None = None) -> dict:
 
     token = os.environ.get("CSD_APPLY_TOKEN", "")
     if not token:
-        tf = Path(
-            os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token")
-        )
+        tf = Path(os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token"))
         if tf.is_file():
             token = tf.read_text(encoding="utf-8").strip()
     wt = worktree or os.environ.get("CSD_APPLY_WORKTREE", "p1-09")
@@ -855,6 +850,8 @@ def tick() -> dict:
         "required_ran": bool(pr_rec.get("required_ran")),
         "required_succeeded": bool(pr_rec.get("required_succeeded")),
         "head": pr_rec.get("head") or git_rec.get("branch"),
+        "text": str(impl.get("text") or "")[:4000],
+        "rc": impl.get("rc"),
     }
     if pr_rec.get("merged") and pr_rec.get("required_ran"):
         rec["next_goal"] = advance_next_goal(goal)
@@ -889,9 +886,13 @@ def tick() -> dict:
         rec["ok"] = False
         if rec["ping"].get("need"):
             rec["workflow"] = launch_local_workflow(goal, "pr-create-failed")
+    if rec.get("required_succeeded") is True:
+        rec["pytest_rc"] = 0
+    elif rec.get("required_ran") is True:
+        rec["pytest_rc"] = 1
     OUT.mkdir(parents=True, exist_ok=True)
     dest = OUT / f"{int(time.time())}.json"
-    slim = {k: rec.get(k) for k in rec if k != "text"}
+    slim = {k: rec.get(k) for k in rec if k != "ping"}
     dest.write_text(json.dumps(slim, indent=2), encoding="utf-8")
     rec["out"] = str(dest)
     beat({"last": rec})
