@@ -30,8 +30,9 @@ Read `docs/program/IMPLEMENTER-HANDOFF.md` then `PYTHON-FIRST-PLAN.md` and
 - G-FLEET https://git.vectorweight.com/tzervas/memory-gate/pulls/5 — **merged** `7595bd53`. Python-only fleet-ci; no cargo jobs.
 - P1-04 https://git.vectorweight.com/tzervas/memory-gate/pulls/6 — **merged** `58934e6` (head `38156b3`). 15 jobs ran.
 - P1-03 https://git.vectorweight.com/tzervas/memory-gate/pulls/7 — **merged** `6c0c6fb5` (head `7bac0e3`).
+- P1-06 https://git.vectorweight.com/tzervas/memory-gate/pulls/8 — **merged** `a1f648d` (head `9c6c09d`). 15 jobs ran and succeeded; head deleted.
 
-Worktrees: `...-wt-p1-00`, `...-wt-p1-01`, `...-wt-chroma-cve`, `...-wt-p1-02`, `...-wt-fleet-py`, `...-wt-p1-04`. **Never** reset `.../python-ai/memory-gate` (`local/kang-main-wip`).
+Worktrees: `...-wt-p1-00`, `...-wt-p1-01`, `...-wt-chroma-cve`, `...-wt-p1-02`, `...-wt-fleet-py`, `...-wt-p1-04`, `...-wt-p1-06`. **Never** reset `.../python-ai/memory-gate` (`local/kang-main-wip`).
 
 ### Merge grant (operator 2026-08-31)
 
@@ -45,11 +46,11 @@ Do not merge until Forgejo required checks **ran and succeeded** on the new head
 
 ### Next closeable on this side
 
-1. Met: G-CI, G-SPEC, G-ERR, G-FLEET, G-STORE, G-RAG, G-GPU, G-CAP. P1-01 `91cc0f79`.
-2. **Next:** P1-06 SQLite (`G-SQL`). Drive workflows merge themselves when CI is honestly green.
+1. Met: G-CI, G-SPEC, G-ERR, G-FLEET, G-STORE, G-ACK, G-SQL, G-RAG, G-GPU, G-CAP. P1-06 `a1f648d`.
+2. **Next:** P1-07 Qdrant + Qwen3-1024 (`G-QD`). CPU tests fake/local; 5080 exclusive-seq only for embed measure.
 3. Autoloop: `/csd-goal-loop` + `/csd-python-first-drive` `id=next`. CI-wake, not 2h.
-3. **Chroma:** do **not** pin `1.5.10.dev266` / `latest`. SQLite+vec + Qdrant until a named patched RC/stable that GHSA lists. PR #3 stays unmerged while red.
-4. HF: private `tzervas/cogsyndelta-eval` only at P1-15.
+4. **Chroma:** do **not** pin `1.5.10.dev266` / `latest`. SQLite+vec + Qdrant until a named patched RC/stable that GHSA lists. PR #3 stays unmerged while red.
+5. HF: private `tzervas/cogsyndelta-eval` only at P1-15.
 
 Push/merge on Forgejo as `tzervas` via `secret exec TOKEN=git/cabal-forgejo-admin` +
 `git-askpass-token` (`credential.helper` disabled). Never GitHub bot push.

@@ -20,8 +20,8 @@ hook), not a 2h timer.
 | G-STORE | Store protocol + in-memory oracle | met | PR #6 `58934e6` | n/a | P1-04 |
 | G-RAG | `akula-csd-kb` 1024-d points > 0 | met | 83 points / 20 files on 5080. Never 3090 | n/a | vault |
 | G-ACK | Durable learn acknowledgement | met | PR #7 merged `6c0c6fb5`. Jobs ran (quality, security, fleet-ci python, tests, gitleaks, trivy, commitizen). | n/a | P1-03 |
-| G-SQL | SQLite+sqlite-vec durable store | open | **Next.** After G-ACK. | yes | P1-06 |
-| G-QD | Qdrant 1024-d Qwen3, fail-closed 384 | open | After G-STORE; 5080 for embed measure | CPU yes | P1-07 |
+| G-SQL | SQLite+sqlite-vec durable store | met | PR #8 merged `a1f648d` (head `9c6c09d`). 15 jobs ran (quality, security, fleet-ci python, unit/integration/regression, CI Complete, gitleaks, trivy, commitizen). | n/a | P1-06 |
+| G-QD | Qdrant 1024-d Qwen3, fail-closed 384 | open | **Next.** After G-STORE; 5080 for embed measure | CPU yes | P1-07 |
 | G-LIFE | learn → retrieve → consolidate → persona through restart | open | After G-SQL, G-QD, CLS, persona | later | P1-16 |
 
 ## Lab / ops (keep true)
@@ -43,5 +43,5 @@ hook), not a 2h timer.
 
 ## Priority
 
-`G-SQL` → `G-QD` → … → `G-LIFE`. Skip stalled. Never start
+`G-QD` → … → `G-LIFE`. Skip stalled. Never start
 `G-TRAIN` or `G-SPLIT` from an autoloop. Never reset `kang-main-wip`.
