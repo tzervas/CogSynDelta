@@ -39,20 +39,20 @@ dependencies = [
     "torchvision>=0.17.0,<1.0.0",
     "numpy>=1.26.0,<3.0.0",
     "pyyaml>=6.0.0,<7.0.0",
-    "fastapi>=0.110.0,<1.0.0",
+    "fastapi>=0.141.1,<1.0.0",
     "uvicorn[standard]>=0.27.0,<1.0.0",
     "pydantic>=2.6.0,<3.0.0",
     "python-multipart>=0.0.9,<1.0.0",
     "websockets>=12.0,<17.0",
     "httpx>=0.27.0,<1.0.0",
-    "aiohttp>=3.9.0,<4.0.0",
+    "aiohttp>=3.14.3,<4.0.0",
 ]
 
 [project.optional-dependencies]
 vision = [
     "opencv-python>=4.10.0,<5.0.0",
     "mss>=10.0.0,<11.0.0",
-    "pillow>=11.0.0,<13.0.0",
+    "pillow>=12.3.0,<13.0.0",
 ]
 audio = [
     "pyaudio>=0.2.14,<1.0.0",
@@ -122,6 +122,11 @@ link-mode = "hardlink"
 compile-bytecode = false
 default-groups = ["dev"]
 cache-keys = [{ file = "pyproject.toml" }, { file = "uv.lock" }]
+# Transitive floors for Trivy HIGH on uv.lock (pyasn1 via google-auth; starlette via FastAPI).
+constraint-dependencies = [
+    "pyasn1>=0.6.4",
+    "starlette>=1.3.1",
+]
 
 [[tool.uv.index]]
 name = "pypi"
