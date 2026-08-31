@@ -60,13 +60,10 @@ pick_p += "Read docs/program/IMPLEMENTER-HANDOFF.md first, then PYTHON-FIRST-PLA
 pick_p += "PHASE-1-TASK-BOARD.md, HANDOFF-NEXT.md, SELF-HOSTED-DRIVE-TARGETS.md.\n";
 pick_p += "Horizon training is NOT closeable until Phase 1 exit.\n";
 pick_p += "Requested id: " + raw_id + "\n";
-pick_p += "If id is next, pick the first board row whose Depends-on work is landed or\n";
-pick_p += "is ops that can proceed without a product-code PR. P1-01 docs may run with P1-00.\n";
-pick_p += "Product-code P1-02+ is NOT closeable until P1-00 has a real Forgejo run.\n";
-pick_p += "A real Forgejo run exists on memory-gate PR #1 (homelab-cpu); pytest ran on\n";
-pick_p += "a66f730 (8 failed / 121 passed). P1-02 is closeable. P1-01 spec lives on\n";
-pick_p += "PR #2 / memory-gate-wt-p1-01 (read-only). Do not set closeable=false just\n";
-pick_p += "because pytest/gitleaks/trivy-on-chroma are still red or P1-00 is unmerged.\n";
+pick_p += "If id is next, pick from GOALS.md / IMPLEMENTER-HANDOFF.md live rows.\n";
+pick_p += "As of 2026-08-31 next closeable is P1-03 durable learn (G-ACK), then P1-06.\n";
+pick_p += "P1-00..P1-02 and P1-04 and fleet-ci are merged. Do not merge chroma PR #3.\n";
+pick_p += "Do not set closeable=false just because an older handoff paragraph is stale.\n";
 pick_p += "Stay-open IDs (whole Phase 1, Phase 2, Rust rewrite) are not closeable.\n";
 pick_p += "Return id, closeable, dod (acceptance gate text), repo path, branch name,\n";
 pick_p += "optional existing worktree, and reason. Use grep/read_file/git.\n";

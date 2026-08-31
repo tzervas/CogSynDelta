@@ -20,10 +20,10 @@ Do not reconstruct the parent chat. Read these files with tools.
 
 | Actor | Job |
 |---|---|
-| Hosted Grok (this control plane) | Plans, ADRs, Forgejo as `tzervas`, WAN lookups, KB index enqueue, merge when legitimately green |
-| Self-hosted `local/code` (3090, one GGUF) | One failing test + one function. No WAN |
-| Autoloop `/csd-goal-loop` | While unmet goals: drive, stall→switch, all-blocked→gatekeeper or pause you |
-| Autoloop `/csd-python-first-drive` | One board ID per run (backup). Do not merge in the same run that just pushed |
+| Hosted Grok (this control plane) | Plans, ADRs, WAN, research feed, merge when legitimately green |
+| Self-hosted `local/code` (3090, 32k Q4 + share-small leftover) | One failing test + one function. No WAN |
+| Autoloop `/csd-goal-loop` | Drive GOALS.md; stall→switch; CI-wake not 2h timer |
+| Autoloop `/csd-python-first-drive` | One board ID per run. Merge only on later green CI |
 | Second Grok (akula-ai-platform) | WebUI/Comfy. Do not touch from CSD |
 
 Workflow host **cannot** spawn model slug `local/code` (only `grok-4.5` /
@@ -32,18 +32,17 @@ loaded anyway.
 
 ## Current closeable work (2026-08-31)
 
-Phase 1 only. Horizon training is **blocked** until `P1-16` lifecycle test is
-green.
+Phase 1 only. Horizon training is **blocked** until `P1-16` / `G-LIFE`.
 
 | ID | Repo / worktree | Notes |
 |---|---|---|
-| P1-00 | `python-ai/memory-gate-wt-p1-00` PR #1 | **Merged** `7c1cdeba`. Fail-closed CI on Forgejo `main`. |
-| P1-01 | `...-wt-p1-01` PR #2 | Docs contract. Unmerged (not green). |
-| P1-02 | `...-wt-p1-02` PR #4 | **Merged** `81af7f98`. Public errors + mapper. |
-| G-FLEET | `...-wt-fleet-py` PR #5 | **Merged** `7595bd53`. No cargo jobs on Python repo. |
-| P1-03 chroma | `...-wt-chroma-cve` PR #3 | Client-only refuse. Not a wheel patch. Red; do not merge. |
-| P1-04 | `...-wt-p1-04` PR #6 | Head `38156b3`. MemoryStore + in-memory oracle. Merge only if legitimately green. |
-| Next product | P1-06 SQLite after PR #6 merges | One change per PR |
+| P1-00 | PR #1 | **Merged** `7c1cdeba` |
+| P1-01 | PR #2 | **Merged** `91cc0f79` |
+| P1-02 | PR #4 | **Merged** `81af7f98` |
+| G-FLEET | PR #5 | **Merged** `7595bd53` |
+| P1-04 | PR #6 | **Merged** `58934e6` |
+| P1-03 chroma | PR #3 | Red. Not a wheel patch. Do not merge. |
+| **Next** | **P1-03 durable learn** (`G-ACK`) | Kill `create_task` fire-and-forget. New worktree off `forgejo/main`. Then P1-06 SQLite. |
 
 **Never** reset `python-ai/memory-gate` (`local/kang-main-wip` `691bb85`).
 Sibling worktrees from `forgejo/main`.
@@ -54,8 +53,9 @@ Sibling worktrees from `forgejo/main`.
 - Python-first. `memory-gate-rs` is reference until program Phase 3 exits.
 - Stores: SQLite+sqlite-vec local; Qdrant 1024-d Akula. No Chroma `1.5.10.dev*` /
   tag `latest`. Reintegrate only on a **named** patched RC/stable in GHSA.
-- GPU: 3090 = one LocalAI GGUF. 5080 = exclusive-seq; enqueue behind Comfy/video.
-  Never pause LocalAI for RAG. Never mix 384-d Qdrant.
+- GPU: 3090 `local/code` Q4 native 32k + share-small leftover. Never dual 14B.
+  5080 exclusive CUDA/index; Comfy masked for autodev. Never pause LocalAI for RAG.
+  Never mix 384-d Qdrant.
 - Git: Forgejo `tzervas/*` as `GIT_USERNAME=tzervas` + `git-askpass-token` +
   `credential.helper=` disabled. Never GitHub bot push.
 - Merge: required checks **ran and succeeded**. Skip / `|| true` / missing
@@ -90,4 +90,5 @@ Index (5080 timeshare, never 3090):
 ## Return shape
 
 Changed paths, command, result, PR URL, residual risk. No whole-repo dumps.
-If blocked (Comfy on 5080, WAN needed, not closeable), say so and stop.
+If blocked (WAN needed, not closeable), say so and stop. Comfy is masked;
+do not unmask. Do not start G-TRAIN.

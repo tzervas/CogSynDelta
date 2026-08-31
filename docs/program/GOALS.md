@@ -1,30 +1,45 @@
 # Goal ledger — CogSynDelta / memory-gate
 
-Living list for `/csd-goal-loop`. Update status when evidence exists.
-Horizon rows stay **blocked** until Phase 1 exit. Not `STATUS.md`.
+Living list for `/csd-goal-loop` and `/csd-python-first-drive`. Update when
+evidence exists. Horizon stays **blocked** until Phase 1 exit. Not `STATUS.md`.
+
+**Drive split:** hosted Grok = plan / WAN / merge-when-green / research feed.
+Workflow implement = `grok-4.6` (host cannot spawn `local/code`). Keep 3090
+`local/code` loaded anyway. Self-hosted does the function+test lift when a
+session can call it. Wake on Forgejo CI (`scripts/forgejo-pr-watch.py` + Stop
+hook), not a 2h timer.
 
 ## Active (Phase 1)
 
 | ID | Goal | Status | Blocker | Sandbox? | Refs |
 |---|---|---|---|---|---|
-| G-CI | Forgejo required checks **legitimately green** on memory-gate PR #1, then merge | met | Merged `500039e` as tzervas. Merge commit `7c1cdeba`. Jobs ran: quality, security, unit, integration, regression, gitleaks, trivy, fleet-ci python. Skips were rust-only `if:` (not fake green). | n/a | PR #1 |
-| G-ERR | Public `memory_gate.errors` in use; mapper at store/gateway or documented leftover closed | met | Merged as tzervas PR #4 `81af7f98`. Taxonomy + `raise_mapped` on store/gateway. | n/a | P1-02 |
-| G-FLEET | memory-gate `fleet-ci.yml` must not schedule cargo/rust jobs | met | Merged PR #5 `7595bd53` (head `7ecf2dc`). Python job **ran** (4m52s). No cargo job queued. `Cargo.toml` presence fails closed. Skip-if-rust was not kept. | n/a | fleet-ci.yml |
-| G-STORE | In-memory oracle + store protocol conformance | met | Merged PR #6 `58934e6` (head `38156b3`). Combined status success: 15 jobs ran (quality, security, tests, fleet-ci python, gitleaks, trivy, commitizen). | n/a | P1-04 |
-| G-SQL | Durable SQLite+sqlite-vec backend | open | After G-STORE (PR #6 merged). Next closeable. | yes | P1-06; SELF-HOSTED-DRIVE-TARGETS storage |
-| G-QD | Qdrant 1024-d Qwen3 binding, fail-closed 384 | open | After G-STORE; 5080 only for measure | CPU tests yes; 5080 CUDA ok (Comfy masked) | P1-07 |
-| G-LIFE | learn → retrieve → consolidate → persona through restart | open | After G-SQL, G-QD, CLS, persona | yes once deps met | P1-16 |
-| G-RAG | `akula-csd-kb` 1024-d points > 0 | met | 83 points / 20 files, 1024-d Qwen3-Embedding-0.6B on 5080 python3.13 (Comfy masked). Never 3090 | n/a | vault `akula-csd-kb` |
+| G-CI | Fail-closed Forgejo CI on memory-gate | met | PR #1 `7c1cdeba` | n/a | P1-00 |
+| G-SPEC | Lifecycle/data contract docs | met | PR #2 `91cc0f79` | n/a | P1-01 |
+| G-ERR | Public `memory_gate.errors` + mapper | met | PR #4 `81af7f98` | n/a | P1-02 |
+| G-FLEET | No cargo jobs on Python-only fleet-ci | met | PR #5 `7595bd53` | n/a | fleet-ci.yml |
+| G-STORE | Store protocol + in-memory oracle | met | PR #6 `58934e6` | n/a | P1-04 |
+| G-RAG | `akula-csd-kb` 1024-d points > 0 | met | 83 points / 20 files on 5080. Never 3090 | n/a | vault |
+| G-ACK | Durable learn acknowledgement | open | **Next.** Kill untracked `create_task` in `learn_from_interaction`; await persist or fail-closed receipt. Failing test first. | yes | P1-03 |
+| G-SQL | SQLite+sqlite-vec durable store | open | After G-ACK (board P1-06 still after P1-04; do ACK first — P0) | yes | P1-06 |
+| G-QD | Qdrant 1024-d Qwen3, fail-closed 384 | open | After G-STORE; 5080 for embed measure | CPU yes | P1-07 |
+| G-LIFE | learn → retrieve → consolidate → persona through restart | open | After G-SQL, G-QD, CLS, persona | later | P1-16 |
+
+## Lab / ops (keep true)
+
+| ID | Goal | Status | Notes |
+|---|---|---|---|
+| G-GPU | 3090 `local/code` 32k + 5080 autodev | met | 32k measured ~16570 used / 5993 free. Comfy masked. Share-small leftover. Never dual 14B. |
+| G-CAP | Safeguard budgets fit lab GPUs | met | 14 GiB default (5080 exclusive), 20 GiB ceiling (3090 Ti). 512 MiB output. 3600s GPU timeout. Caps, not PoC fill. |
 
 ## Blocked / horizon
 
 | ID | Goal | Status | Unblock |
 |---|---|---|---|
-| G-CHROMA | Reintegrate Chroma | blocked | Named patched RC/stable in GHSA — gatekeeper WAN check |
-| G-TRAIN | Region specialization + interconnect train/eval | blocked | Phase 1 exit (`G-LIFE`). Isolated `region-<id>` datasets then `common` for foundation. Bedrock then foundation HF. One-GPU Python first. Split-GPU is Phase 5. |
+| G-CHROMA | Reintegrate Chroma | blocked | Named patched RC/stable in GHSA. PR #3 stays red/unmerged. |
+| G-TRAIN | Region train → bedrock → foundation | blocked | After `G-LIFE`. Per-region `region-<id>` data, then `common` for overall. Two HF weight artifacts. One-GPU Python first. |
+| G-SPLIT | Pool 3090+5080 for one CSD mind | blocked | Phase 5. After Phase 3 one-GPU proof. |
 
 ## Priority
 
-`G-CI` → `G-ERR` → `G-FLEET` → `G-STORE` → `G-SQL` / `G-QD` → … → `G-LIFE`.
-P1-01 docs PR #2 restacked; merge when legitimately green. Skip stalled.
-Never start `G-TRAIN` from an autoloop.
+`G-ACK` → `G-SQL` → `G-QD` → … → `G-LIFE`. Skip stalled. Never start
+`G-TRAIN` or `G-SPLIT` from an autoloop. Never reset `kang-main-wip`.

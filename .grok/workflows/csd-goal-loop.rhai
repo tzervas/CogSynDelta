@@ -114,7 +114,7 @@ while round < 3 {
         impl_p += "Refs: " + as_str(pick.output.refs) + "\n";
         impl_p += "Repo: " + as_str(pick.output.repo) + " branch: " + as_str(pick.output.branch) + "\n";
         impl_p += "Worktree: " + as_str(pick.output.worktree) + "\n";
-        impl_p += "Sandbox only. No WAN. No pause LocalAI. No Comfy kill.\n";
+        impl_p += "Sandbox only. No WAN. No pause LocalAI. Comfy is masked; do not unmask.\n";
         impl_p += "Never reset kang-main-wip. One architecture change. Conventional commits.\n";
         impl_p += "Push Forgejo as tzervas + git-askpass, credential.helper disabled.\n";
         impl_p += "Merge only if required checks legitimately green (ran and succeeded).\n";

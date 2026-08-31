@@ -77,16 +77,13 @@ dependencies are hard sequencing gates.
 
 ## Current operational blockers
 
-- 5080 index launcher now enqueues on the remote timeshare and refuses 0-point success. Still
-  blocked on: remote Qwen3-1024 runtime, vault mount on gpu5080, Qdrant off loopback, ≥8192 MiB
-  free (do not kill healthy Comfy). Collection remains 1024-d / 0 points. Do not use the 3090
-  fallback.
-- Cabal-collective runners (`akula-prime-cpu`, `homelab-cpu`) are healthy but **out of scope** for
-  user `tzervas/*`. A tzervas-scoped runner **did** pick up PR #1 (`578c66b` honest red;
-  `1c22643` is the follow-up). Do not re-register the live cabal units.
-- P1-01 contract is on Forgejo PR #2. Do not start P1-02 product code until a tzervas-scoped
-  runner has produced a real (honest red or green) Forgejo run of P1-00.
-- Golden-recall corpora wait for P1-15: private HF `tzervas/cogsyndelta-eval`, if and when.
+- **Next closeable:** P1-03 durable learn (`G-ACK`). P1-00..P1-02, P1-04, fleet-ci **merged**.
+  Do not merge chroma PR #3. P1-06 SQLite after ACK.
+- G-RAG **met** (83 points, 1024-d). 5080 Comfy **masked** for autodev. Indexer + vault
+  sync + Qdrant reverse-tunnel exist; do not use 3090 for embeddings.
+- `homelab-cpu` id 5 already runs `tzervas/*`. Do not register a second runner.
+- Golden-recall corpora wait for P1-15: private HF `tzervas/cogsyndelta-eval`.
+- Horizon (bedrock/foundation/datasets/split-GPU): `SELF-HOSTED-DRIVE-TARGETS.md`. Do not train.
 
 ## Chroma CVE and reintegration (checked 2026-08-30)
 

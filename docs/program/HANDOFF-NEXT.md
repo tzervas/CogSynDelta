@@ -44,8 +44,9 @@ Do not merge until Forgejo required checks **ran and succeeded** on the new head
 
 ### Next closeable on this side
 
-1. G-CI / G-ERR / G-FLEET / G-STORE **met**. P1-01 merged `91cc0f79`.
-2. Autoloop: P1-06 SQLite (`G-SQL`). Wake on Forgejo PR/CI, not a 2h timer.
+1. Met: G-CI, G-SPEC, G-ERR, G-FLEET, G-STORE, G-RAG, G-GPU, G-CAP. P1-01 `91cc0f79`.
+2. **Next:** P1-03 durable learn (`G-ACK`). Then P1-06 SQLite (`G-SQL`).
+3. Autoloop: `/csd-goal-loop` + `/csd-python-first-drive` `id=next`. CI-wake, not 2h.
 3. **Chroma:** do **not** pin `1.5.10.dev266` / `latest`. SQLite+vec + Qdrant until a named patched RC/stable that GHSA lists. PR #3 stays unmerged while red.
 4. HF: private `tzervas/cogsyndelta-eval` only at P1-15.
 
