@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+"""Upsert CSD autodev overlay Tools into an Open WebUI sqlite DB.
+
+Matches akula-ai-platform scripts/webui-install-overlay format. Does not
+print valve tokens. Homelab: --db /data/akula/webui/data/webui.db while
+the container is stopped if you copy the db; live sqlite may be enough
+for Tools (no env change → no OWUI restart).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+FN_DIR = ROOT / "config/webui/overlay/functions"
+ADMIN_EMAIL_DEFAULT = "spooky_actual@proton.me"
+
+AUTODEV_SPECS = [
+    {
+        "name": "csd_autodev_git",
+        "description": "Lab JSON wrap of scripts/csd-autodev-git. TOKEN=git/autodev.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "args": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["args"],
+        },
+    },
+    {
+        "name": "csd_autodev_forgejo_whoami",
+        "description": "Forgejo whoami as autodev (not operator admin).",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "csd_autodev_forgejo_prs",
+        "description": "List Forgejo PRs for allowlisted tzervas repos. No GitHub.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+                "state": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+            "required": ["repo"],
+        },
+    },
+    {
+        "name": "csd_autodev_forgejo_pr_create",
+        "description": "Open a Forgejo PR as autodev.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+                "title": {"type": "string"},
+                "head": {"type": "string"},
+                "base": {"type": "string"},
+                "body": {"type": "string"},
+            },
+            "required": ["repo", "title", "head"],
+        },
+    },
+    {
+        "name": "csd_autodev_forgejo_status",
+        "description": "Combined Forgejo commit status.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+                "sha": {"type": "string"},
+            },
+            "required": ["repo", "sha"],
+        },
+    },
+    {
+        "name": "csd_autodev_forgejo_wait",
+        "description": "Poll combined status. Does not merge. Honest red stays red.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+                "sha": {"type": "string"},
+                "timeout": {"type": "integer"},
+                "poll": {"type": "integer"},
+            },
+            "required": ["repo", "sha"],
+        },
+    },
+    {
+        "name": "csd_autodev_forgejo_comment",
+        "description": "Comment on a Forgejo PR as autodev.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+                "number": {"type": "integer"},
+                "body": {"type": "string"},
+            },
+            "required": ["repo", "number", "body"],
+        },
+    },
+    {
+        "name": "csd_autodev_merge_gate",
+        "description": ("Merge-when-green gate. Skip/missing runner is not green. Does not merge."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+                "sha": {"type": "string"},
+                "number": {"type": "integer"},
+            },
+            "required": ["repo", "sha", "number"],
+        },
+    },
+    {
+        "name": "csd_autodev_loop",
+        "description": "HTTP wrap of csd-autodev-loop --once/--worker. Not provision.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "mode": {"type": "string", "enum": ["once", "worker"]},
+            },
+            "required": ["mode"],
+        },
+    },
+    {
+        "name": "csd_autodev_priority",
+        "description": "CSD_STEER autodev_priority on/off/status. Never pause LocalAI.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["on", "off", "status"]},
+            },
+            "required": ["action"],
+        },
+    },
+    {
+        "name": "csd_gpu_plan",
+        "description": "3090/5080 plan (or GET /api/status fallback). Observe lock only.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "gpu5080_lock_observe",
+        "description": "Observe gpu5080.lock + Comfy mask. Do not acquire/release.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "csd_lab_steer",
+        "description": "POST lab /api/steer (pause/note/next_goal/autodev_priority).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pause": {"type": "boolean"},
+                "note": {"type": "string"},
+                "next_goal": {"type": "string"},
+                "autodev_priority": {"type": "boolean"},
+            },
+        },
+    },
+    {
+        "name": "csd_lab_apply",
+        "description": "POST /api/apply Bearer csd-apply.token. No kang-main-wip.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "worktree": {"type": "string"},
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+            },
+            "required": ["worktree", "path", "content"],
+        },
+    },
+    {
+        "name": "akula_notes_sandbox",
+        "description": "Self-hosted JupyterLab REPL (notes.vectorweight.com/lab). LAN only.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+]
+
+
+def _read(name: str) -> str:
+    return (FN_DIR / name).read_text(encoding="utf-8")
+
+
+def _admin_id(cur: sqlite3.Cursor, email: str) -> str:
+    row = cur.execute(
+        "SELECT id FROM user WHERE email = ? AND role = 'admin' LIMIT 1", (email,)
+    ).fetchone()
+    if row:
+        return row[0]
+    row = cur.execute(
+        "SELECT id FROM user WHERE role = 'admin' ORDER BY created_at LIMIT 1"
+    ).fetchone()
+    if not row:
+        raise SystemExit("no admin user in webui.db")
+    return row[0]
+
+
+def upsert_tool(
+    cur: sqlite3.Cursor,
+    *,
+    tid: str,
+    user_id: str,
+    name: str,
+    content: str,
+    meta: dict,
+    valves: dict,
+    specs: list,
+    now: int,
+) -> None:
+    exists = cur.execute("SELECT id FROM tool WHERE id = ?", (tid,)).fetchone()
+    dumped = json.dumps(specs)
+    if exists:
+        cur.execute(
+            """
+            UPDATE tool
+            SET name=?, content=?, specs=?, meta=?, valves=?, updated_at=?
+            WHERE id=?
+            """,
+            (name, content, dumped, json.dumps(meta), json.dumps(valves), now, tid),
+        )
+        return
+    cur.execute(
+        """
+        INSERT INTO tool
+          (id, user_id, name, content, specs, meta, valves, updated_at, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)
+        """,
+        (tid, user_id, name, content, dumped, json.dumps(meta), json.dumps(valves), now, now),
+    )
+
+
+def install(db: Path, email: str, lab_base: str, apply_token: str) -> None:
+    conn = sqlite3.connect(str(db))
+    cur = conn.cursor()
+    admin = _admin_id(cur, email)
+    now = int(time.time())
+    upsert_tool(
+        cur,
+        tid="csd_autodev",
+        user_id=admin,
+        name="CSD autodev lab",
+        content=_read("csd_autodev.py"),
+        meta={
+            "description": "Lab :9118 git/forgejo/steer/apply/gpu. Identity autodev. No cloud.",
+        },
+        valves={
+            "lab_base": lab_base,
+            "apply_token": apply_token,
+            "timeout_s": 12.0,
+        },
+        specs=AUTODEV_SPECS,
+        now=now,
+    )
+    conn.commit()
+    conn.close()
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "db": str(db),
+                "admin": admin,
+                "tools": ["csd_autodev"],
+                "specs": [s["name"] for s in AUTODEV_SPECS],
+                "lab_base": lab_base,
+                "apply_token_set": bool(apply_token),
+                "restart_needed": False,
+                "notes": "Tools sqlite upsert; restart OWUI only if env changed",
+            }
+        )
+    )
+
+
+def main() -> int:
+    p = argparse.ArgumentParser()
+    p.add_argument("--db", type=Path, required=True)
+    p.add_argument("--email", default=ADMIN_EMAIL_DEFAULT)
+    p.add_argument("--lab-base", default="http://192.168.1.98:9118")
+    p.add_argument(
+        "--apply-token-file",
+        type=Path,
+        default=Path("/akula-data/cabal/csd-apply.token"),
+    )
+    p.add_argument("--fn-dir", type=Path, default=None)
+    args = p.parse_args()
+    if args.fn_dir is not None:
+        global FN_DIR
+        FN_DIR = args.fn_dir
+    token = ""
+    if args.apply_token_file.is_file():
+        token = args.apply_token_file.read_text(encoding="utf-8").strip()
+    install(args.db, args.email, args.lab_base, token)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

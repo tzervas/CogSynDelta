@@ -12,12 +12,18 @@ Usage:
 
 Never pauses LocalAI. Never dual 14B. UI tabs: live dual-host feed (loaded
 models only), pool, history, steer. No catalog dump on the feed tab.
+
+JSON routes wrap existing CLIs (also under /lab prefix). Never 0.0.0.0.
+Never widen apply allowlist. Never wrap csd-autodev-provision.
 """
+
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import os
+import re
 import subprocess
 import time
 import urllib.error
@@ -25,34 +31,39 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
-import hmac
 
 STEER = Path(os.environ.get("CSD_STEER", "/akula-data/cabal/csd-steer.json"))
 LOCALAI = os.environ.get("LOCALAI_URL", "http://127.0.0.1:8080")
 GPU5080 = os.environ.get("GPU5080_SSH", "gpu5080")
-ROUTER_STATE = Path(
-    os.environ.get("CSD_ROUTER_STATE", "/akula-data/cabal/model-router-state.json")
-)
+ROUTER_STATE = Path(os.environ.get("CSD_ROUTER_STATE", "/akula-data/cabal/model-router-state.json"))
 QUEUE_DIR = Path(os.environ.get("CSD_LOCALAI_QUEUE", "/akula-data/cabal/localai-queue"))
 AUTODEV_OUT = Path("/akula-data/cabal/autodev-out")
 GPU_PLAN = Path(os.environ.get("CSD_GPU_PLAN", "/akula-data/cabal/gpu-plan.json"))
 SESS_DIR = Path(os.environ.get("CSD_LAB_SESSIONS", "/akula-data/cabal/lab-sessions"))
 UPSTREAM = os.environ.get("CSD_UPSTREAM", "").rstrip("/")
-APPLY_TOKEN_FILE = Path(
-    os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token")
-)
+APPLY_TOKEN_FILE = Path(os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token"))
 WORKTREES = {
-    "p1-08": Path(
-        "/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-08"
-    ),
-    "p1-07": Path(
-        "/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-07"
-    ),
+    "p1-08": Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-08"),
+    "p1-07": Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-07"),
 }
 PROTECTED_WT = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
 ALLOW_PREFIXES = ("src/", "tests/", "docs/")
-GOALS = Path(__file__).resolve().parents[1] / "docs/program/GOALS.md"
-ROUTER_JSON = Path(__file__).resolve().parents[1] / "config/model-router.json"
+ROOT = Path(__file__).resolve().parents[1]
+GOALS = ROOT / "docs/program/GOALS.md"
+ROUTER_JSON = ROOT / "config/model-router.json"
+SCRIPTS = ROOT / "scripts"
+SECRET_BIN = os.environ.get("CSD_SECRET_BIN", "/home/kang/.local/bin/secret")
+HEARTBEAT = Path(
+    os.environ.get("CSD_AUTODEV_HEARTBEAT", "/akula-data/cabal/autodev-heartbeat.json")
+)
+GIT_CLI = SCRIPTS / "csd-autodev-git"
+FORGEJO_CLI = SCRIPTS / "csd-autodev-forgejo"
+LOOP_CLI = SCRIPTS / "csd-autodev-loop"
+PRIORITY_CLI = SCRIPTS / "csd-autodev-priority"
+GPU_PLAN_CLI = SCRIPTS / "csd-gpu-plan"
+PROTECTED_REFS = frozenset({"main", "staging", "develop", "dev"})
+FORGEJO_ALLOW = frozenset({"tzervas/CogSynDelta", "tzervas/memory-gate"})
+WAN_BINDS = frozenset({"0.0.0.0", "::", "[::]"})
 
 
 def sh(args: list[str], timeout: int = 20) -> str:
@@ -220,18 +231,14 @@ def snapshot() -> dict:
         ),
         "localai": lai,
         "models": models,
-        "localai_container": sh(
-            ["docker", "inspect", "-f", "{{.State.Status}}", "akula-localai"]
-        ),
+        "localai_container": sh(["docker", "inspect", "-f", "{{.State.Status}}", "akula-localai"]),
         "gpu5080_smi": ssh_5080(
             "nvidia-smi --query-gpu=name,memory.used,memory.free,utilization.gpu --format=csv,noheader"
         ),
         "gpu5080_lock": ssh_5080(
             "fuser /home/tzervas/akula-harness/state/gpu5080.lock 2>/dev/null || echo idle"
         ),
-        "gpu5080_runner": ssh_5080(
-            "systemctl --user is-active forgejo-runner-gpu-tzervas.service"
-        ),
+        "gpu5080_runner": ssh_5080("systemctl --user is-active forgejo-runner-gpu-tzervas.service"),
         "gpu5080_comfy": ssh_5080("systemctl is-enabled akula-comfyui.service 2>/dev/null || true"),
         "steer": steer,
         "note": "autodev webapp on code.vectorweight.com; chat on ai.vectorweight.com",
@@ -319,7 +326,14 @@ def print_snap(s: dict) -> None:
     print("loaded prime", [x.get("alias") for x in (feed.get("prime") or {}).get("loaded") or []])
     print("=== gpu5080 ===")
     print(s.get("gpu5080_smi"))
-    print("lock", s.get("gpu5080_lock"), "runner", s.get("gpu5080_runner"), "comfy", s.get("gpu5080_comfy"))
+    print(
+        "lock",
+        s.get("gpu5080_lock"),
+        "runner",
+        s.get("gpu5080_runner"),
+        "comfy",
+        s.get("gpu5080_comfy"),
+    )
     print("loaded 5080", [x.get("alias") for x in (feed.get("gpu5080") or {}).get("loaded") or []])
     print("=== steer ===")
     print(json.dumps(s.get("steer") or {}, indent=2))
@@ -377,7 +391,7 @@ def list_sessions() -> list[dict]:
 def load_session(sid: str) -> dict:
     """Load one historic session by id (chat-YYYY-MM-DD or autodev-TS)."""
     if sid.startswith("autodev-"):
-        path = AUTODEV_OUT / f"{sid[len('autodev-'):]}.json"
+        path = AUTODEV_OUT / f"{sid[len('autodev-') :]}.json"
         rec = _read_json(path)
         rec["id"] = sid
         rec["kind"] = "autodev"
@@ -448,6 +462,373 @@ def http_apply(worktree: str, rel: str, content: str) -> dict:
     return {"ok": True, "wrote": str(target)}
 
 
+def _scrub(text: str) -> str:
+    """Strip token-like assignments from CLI text. Never print secrets."""
+    return re.sub(
+        r"(?i)(token|bearer|authorization|api[_-]?key)\s*[:=]\s*\S+",
+        r"\1=<redacted>",
+        text,
+    )
+
+
+def _parse_last_json(text: str) -> dict:
+    """Parse the last JSON object from CLI stdout."""
+    blob = (text or "").strip()
+    if not blob:
+        return {}
+    start = blob.rfind("{")
+    if start >= 0:
+        try:
+            data = json.loads(blob[start:])
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+    for line in reversed(blob.splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return {}
+
+
+def _run_cli(argv: list[str], timeout: int = 90) -> tuple[int, str]:
+    p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+    out = _scrub((p.stdout or "").strip())
+    err = _scrub((p.stderr or "").strip())
+    text = out if out else err
+    return p.returncode, text[:8000]
+
+
+def _forgejo_argv(rest: list[str]) -> list[str]:
+    """autodev Forgejo CLI; TOKEN from env or CSD vault. Never operator admin."""
+    cli = str(FORGEJO_CLI)
+    if os.environ.get("TOKEN") or os.environ.get("FORGEJO_TOKEN"):
+        return [cli, *rest]
+    return [SECRET_BIN, "exec", "TOKEN=git/autodev", "--", cli, *rest]
+
+
+def _repo_ok(raw: str) -> str | None:
+    name = raw if "/" in raw else f"tzervas/{raw}"
+    if name not in FORGEJO_ALLOW:
+        return None
+    return name
+
+
+def _as_int(val: object, default: int, lo: int, hi: int) -> int:
+    try:
+        n = int(val)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        n = default
+    return max(lo, min(n, hi))
+
+
+def lab_git(args: list[object]) -> dict:
+    """JSON wrap of scripts/csd-autodev-git. Never GitHub. Never protected trunks."""
+    if not args or not all(isinstance(a, str) for a in args):
+        return {"ok": False, "rc": 2, "stdout": "args must be a string array"}
+    argv = [str(a) for a in args]
+    if any("github.com" in a.lower() for a in argv):
+        return {"ok": False, "rc": 2, "stdout": "never GitHub"}
+    if any(a == "-c" or a.startswith("--exec") or "credential" in a.lower() for a in argv):
+        return {"ok": False, "rc": 2, "stdout": "refusing git config/credential args"}
+    if argv[0] in {"push", "checkout", "switch", "merge", "rebase"}:
+        for a in argv[1:]:
+            for branch in PROTECTED_REFS:
+                if a == branch or a.endswith(f":{branch}") or a.endswith(f"/{branch}"):
+                    return {
+                        "ok": False,
+                        "rc": 2,
+                        "stdout": f"refusing {argv[0]} {branch}",
+                    }
+    try:
+        rc, text = _run_cli([str(GIT_CLI), *argv], timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "rc": 1, "stdout": str(exc)[:400]}
+    return {"ok": rc == 0, "rc": rc, "stdout": text}
+
+
+def lab_gpu(refresh: bool = False) -> dict:
+    """Wrap csd-gpu-plan. Prefer CSD_GPU_PLAN file to avoid extra SSH."""
+    if not refresh:
+        plan = _read_json(GPU_PLAN)
+        if plan.get("akula-prime") is not None and plan.get("gpu5080") is not None:
+            return plan
+    try:
+        rc, text = _run_cli([str(GPU_PLAN_CLI)], timeout=40)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+    data = _parse_last_json(text)
+    if data.get("akula-prime") is not None:
+        return data
+    plan = _read_json(GPU_PLAN)
+    if plan:
+        return plan
+    return {"ok": False, "error": text[:400], "rc": rc}
+
+
+def lab_gpu_lock() -> dict:
+    """Observe gpu5080.lock from the plan. Acquire/release is not here."""
+    plan = lab_gpu(refresh=False)
+    g = plan.get("gpu5080") if isinstance(plan.get("gpu5080"), dict) else {}
+    return {
+        "lock": str(g.get("lock") or "unknown"),
+        "comfy": str(g.get("comfy") or "unknown"),
+        "helper_ok": bool(g.get("helper_ok")),
+    }
+
+
+def lab_priority(action: str) -> dict:
+    """Wrap csd-autodev-priority on|off|status. Never pause 3090 LocalAI."""
+    if action not in {"on", "off", "status"}:
+        return {"ok": False, "error": "action must be on|off|status"}
+    try:
+        _rc, text = _run_cli([str(PRIORITY_CLI), action], timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+    steer: dict = {}
+    comfy = ""
+    webui = ""
+    for line in text.splitlines():
+        if line.startswith("steer="):
+            try:
+                parsed = json.loads(line[6:])
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                steer = parsed
+        elif line.startswith("comfy=") or line.startswith("comfy:"):
+            comfy = line.split(":", 1)[-1].split("=", 1)[-1].strip()
+        elif "webui" in line.lower():
+            webui = line.strip()
+    if not steer and STEER.is_file():
+        steer = _read_json(STEER)
+    return {"steer": steer, "comfy": comfy, "webui": webui}
+
+
+def lab_loop(mode: str) -> dict:
+    """Wrap csd-autodev-loop --once. Worker is systemd, not HTTP."""
+    if mode == "worker":
+        hb = _read_json(HEARTBEAT)
+        last = hb.get("last") if isinstance(hb.get("last"), dict) else {}
+        age = time.time() - float(hb.get("t") or 0) if hb.get("t") else None
+        live = bool(age is not None and age < 90)
+        return {
+            "ok": live,
+            "rc": 0 if live else 1,
+            "goal": str(last.get("goal") or ""),
+            "applied": last.get("applied") if isinstance(last.get("applied"), dict) else {},
+            "out": "",
+            "notes": ("worker is systemd csd-autodev-loop.service; HTTP does not spawn it"),
+        }
+    if mode != "once":
+        return {
+            "ok": False,
+            "rc": 2,
+            "goal": "",
+            "applied": {},
+            "out": "mode must be once|worker",
+        }
+    try:
+        rc, text = _run_cli([str(LOOP_CLI), "--once"], timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "rc": 1, "goal": "", "applied": {}, "out": str(exc)[:400]}
+    rec = _parse_last_json(text)
+    applied = rec.get("applied") if isinstance(rec.get("applied"), dict) else {}
+    return {
+        "ok": bool(rec.get("ok")) if rec else rc == 0,
+        "rc": rc,
+        "goal": str(rec.get("goal") or ""),
+        "applied": applied,
+        "out": str(rec.get("out") or text[:2000]),
+    }
+
+
+def lab_forgejo(cmd: str, payload: dict) -> dict:  # noqa: PLR0911
+    """JSON wrap of csd-autodev-forgejo. Allowlisted repos only."""
+    rest: list[str] = []
+    timeout = 90
+    if cmd == "whoami":
+        rest = ["whoami"]
+    elif cmd == "prs":
+        repo = str(payload.get("repo") or "")
+        if not _repo_ok(repo):
+            return {
+                "http": 400,
+                "repo": repo,
+                "pulls": [],
+                "error": "repo not allowlisted",
+            }
+        limit = _as_int(payload.get("limit"), 20, 1, 100)
+        rest = [
+            "prs",
+            repo,
+            "--state",
+            str(payload.get("state") or "open"),
+            "--limit",
+            str(limit),
+        ]
+    elif cmd == "pr-create":
+        repo = str(payload.get("repo") or "")
+        title = str(payload.get("title") or "")
+        head = str(payload.get("head") or "")
+        if not _repo_ok(repo) or not title or not head:
+            return {"http": 400, "error": "repo, title, head required"}
+        if head in PROTECTED_REFS:
+            return {"http": 400, "error": f"refusing head {head}"}
+        rest = [
+            "pr-create",
+            repo,
+            title,
+            head,
+            "--base",
+            str(payload.get("base") or "main"),
+            "--body",
+            str(payload.get("body") or ""),
+        ]
+    elif cmd == "status":
+        repo = str(payload.get("repo") or "")
+        sha = str(payload.get("sha") or "")
+        if not _repo_ok(repo) or not sha:
+            return {
+                "http": 400,
+                "state": "error",
+                "checks": [],
+                "error": "repo and sha required",
+            }
+        rest = ["status", repo, sha]
+    elif cmd == "wait":
+        repo = str(payload.get("repo") or "")
+        sha = str(payload.get("sha") or "")
+        if not _repo_ok(repo) or not sha:
+            return {"http": 400, "state": "error", "error": "repo and sha required"}
+        wait_t = _as_int(payload.get("timeout"), 1800, 1, 1800)
+        poll = _as_int(payload.get("poll"), 30, 1, 120)
+        rest = ["wait", repo, sha, "--timeout", str(wait_t), "--poll", str(poll)]
+        timeout = wait_t + poll + 15
+    elif cmd == "comment":
+        repo = str(payload.get("repo") or "")
+        body = str(payload.get("body") or "")
+        number = payload.get("number")
+        if not _repo_ok(repo) or not body or number is None:
+            return {"http": 400, "ok": False, "error": "repo, number, body required"}
+        rest = ["comment", repo, str(int(number)), body]
+    elif cmd == "merge-gate":
+        repo = str(payload.get("repo") or "")
+        sha = str(payload.get("sha") or "")
+        number = payload.get("number")
+        if not _repo_ok(repo) or not sha or number is None:
+            return {
+                "ok": False,
+                "state": "error",
+                "merged": False,
+                "required_ran": False,
+                "required_succeeded": False,
+                "notes": "repo, sha, number required",
+            }
+        rest = ["merge-gate", repo, sha, str(int(number))]
+        timeout = 120
+    else:
+        return {"ok": False, "error": f"unknown forgejo cmd {cmd}"}
+    try:
+        rc, text = _run_cli(_forgejo_argv(rest), timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "http": 0, "error": str(exc)[:200]}
+    rec = _parse_last_json(text)
+    if not rec:
+        rec = {"ok": rc == 0, "error": text[:400]}
+    rec.setdefault("ok", rc == 0)
+    return rec
+
+
+def _qs_payload(query: str) -> dict:
+    q = parse_qs(query)
+    out: dict = {}
+    for key, vals in q.items():
+        if not vals:
+            continue
+        out[key] = vals[0]
+    for key in ("limit", "number", "timeout", "poll"):
+        if key in out:
+            try:
+                out[key] = int(out[key])
+            except (TypeError, ValueError):
+                out.pop(key, None)
+    if "pause" in out:
+        out["pause"] = str(out["pause"]).lower() in {"1", "true", "yes"}
+    if "refresh" in out:
+        out["refresh"] = str(out["refresh"]).lower() in {"1", "true", "yes"}
+    if "autodev_priority" in out:
+        out["autodev_priority"] = str(out["autodev_priority"]).lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+    return out
+
+
+def handle_lab(method: str, path: str, payload: dict) -> tuple[int, dict] | None:  # noqa: PLR0911
+    """Lab JSON routes wrapping existing CLIs. None = not a wrap route."""
+    if len(path) > 1:
+        path = path.rstrip("/")
+    if path == "/api/gpu":
+        return 200, lab_gpu(refresh=bool(payload.get("refresh")))
+    if path == "/api/gpu/lock":
+        return 200, lab_gpu_lock()
+    if path == "/api/git":
+        if method != "POST":
+            return 405, {"ok": False, "rc": 405, "stdout": "POST args"}
+        args = payload.get("args") if isinstance(payload.get("args"), list) else []
+        return 200, lab_git(args)
+    if path == "/api/loop":
+        if method != "POST":
+            return 405, {"ok": False, "rc": 405, "out": "POST mode"}
+        return 200, lab_loop(str(payload.get("mode") or ""))
+    if path == "/api/priority":
+        return 200, lab_priority(str(payload.get("action") or "status"))
+    if path == "/api/steer" and method == "GET":
+        return 200, _read_json(STEER)
+    if path == "/api/forgejo/whoami":
+        return 200, lab_forgejo("whoami", payload)
+    if path == "/api/forgejo/prs":
+        return 200, lab_forgejo("prs", payload)
+    if path == "/api/forgejo/pr-create":
+        if method != "POST":
+            return 405, {"http": 405, "error": "POST"}
+        return 200, lab_forgejo("pr-create", payload)
+    if path == "/api/forgejo/status":
+        return 200, lab_forgejo("status", payload)
+    if path == "/api/forgejo/wait":
+        return 200, lab_forgejo("wait", payload)
+    if path == "/api/forgejo/comment":
+        if method != "POST":
+            return 405, {"http": 405, "ok": False}
+        return 200, lab_forgejo("comment", payload)
+    if path == "/api/forgejo/merge-gate":
+        if method != "POST":
+            return 405, {
+                "ok": False,
+                "state": "error",
+                "merged": False,
+                "notes": "POST",
+            }
+        return 200, lab_forgejo("merge-gate", payload)
+    return None
+
+
+def lab_bind() -> str:
+    """LAN bind only. Why: never expose the lab agent on WAN 0.0.0.0."""
+    bind = os.environ.get("CSD_LAB_BIND", "192.168.1.98")
+    if bind in WAN_BINDS:
+        raise SystemExit("refusing WAN bind 0.0.0.0")
+    return bind
+
+
 def spawn_alias(alias: str, why: str) -> dict:
     """Stand a catalog alias on 3090 or 5080 without dual 14B."""
     router = Path(__file__).resolve().parents[1] / "scripts/csd-model-router"
@@ -463,6 +844,26 @@ def spawn_alias(alias: str, why: str) -> dict:
     except json.JSONDecodeError:
         rec = {"ok": False, "error": (p.stdout or p.stderr or "")[:400]}
     rec["rc"] = p.returncode
+    return rec
+
+
+def comfy_tool(cmd: str, payload: dict | None = None) -> dict:
+    """Lab JSON wrap of scripts/csd-comfy. Fail-closed when masked."""
+    script = Path(__file__).resolve().parent / "csd-comfy"
+    p = subprocess.run(
+        [str(script), cmd],
+        input=json.dumps(payload or {}),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=45,
+    )
+    try:
+        rec = json.loads(p.stdout or "{}")
+    except json.JSONDecodeError:
+        rec = {"ok": False, "notes": (p.stderr or p.stdout or "bad json")[:400]}
+    if not isinstance(rec, dict):
+        return {"ok": False, "notes": "bad json"}
     return rec
 
 
@@ -527,7 +928,7 @@ def serve(port: int) -> None:
             self.end_headers()
             self.wfile.write(raw)
 
-        def do_GET(self) -> None:
+        def do_GET(self) -> None:  # noqa: PLR0911
             path = urlparse(self.path).path
             if path in ("/", "/lab", "/lab/"):
                 body = PAGE.encode()
@@ -566,6 +967,23 @@ def serve(port: int) -> None:
                 self.end_headers()
                 self.wfile.write(raw)
                 return
+            if apipath.startswith("/api/comfy/list-workflows"):
+                q = parse_qs(parsed.query)
+                src = (q.get("source") or ["catalog"])[0]
+                rec = comfy_tool("list-workflows", {"source": src})
+                self._send(200, json.dumps(rec).encode())
+                return
+            if apipath.startswith("/api/comfy/prompt-status"):
+                q = parse_qs(parsed.query)
+                pid = (q.get("prompt_id") or [""])[0]
+                rec = comfy_tool("prompt-status", {"prompt_id": pid})
+                self._send(200, json.dumps(rec).encode())
+                return
+            hit = handle_lab("GET", apipath, _qs_payload(parsed.query))
+            if hit is not None:
+                code, rec = hit
+                self._send(code, json.dumps(rec).encode())
+                return
             self.send_error(404)
 
         def do_POST(self) -> None:
@@ -594,13 +1012,32 @@ def serve(port: int) -> None:
                 raw = json.dumps(rec).encode()
                 self._send(200 if rec.get("ok") else 400, raw)
                 return
+            if not isinstance(payload, dict):
+                payload = {}
+            hit = handle_lab("POST", postpath, payload)
+            if hit is not None:
+                code, rec = hit
+                self._send(code, json.dumps(rec).encode())
+                return
             if postpath == "/api/steer":
                 raw = json.dumps(write_steer(**payload)).encode()
             elif postpath == "/api/spawn":
-                raw = json.dumps(spawn_alias(str(payload.get("alias") or "local/code"), str(payload.get("why") or "lab"))).encode()
+                raw = json.dumps(
+                    spawn_alias(
+                        str(payload.get("alias") or "local/code"), str(payload.get("why") or "lab")
+                    )
+                ).encode()
             elif postpath == "/api/chat":
                 text = chat(str(payload.get("prompt") or ""))
                 raw = json.dumps({"content": text}).encode()
+            elif postpath == "/api/comfy/list-workflows":
+                raw = json.dumps(comfy_tool("list-workflows", payload)).encode()
+            elif postpath == "/api/comfy/queue-prompt":
+                raw = json.dumps(comfy_tool("queue-prompt", payload)).encode()
+            elif postpath == "/api/comfy/prompt-status":
+                raw = json.dumps(comfy_tool("prompt-status", payload)).encode()
+            elif postpath == "/api/comfy/flux-klein-4b":
+                raw = json.dumps(comfy_tool("flux-klein-4b", payload)).encode()
             else:
                 self.send_error(404)
                 return
@@ -610,7 +1047,7 @@ def serve(port: int) -> None:
             self.end_headers()
             self.wfile.write(raw)
 
-    bind = os.environ.get("CSD_LAB_BIND", "192.168.1.98")
+    bind = lab_bind()
     httpd = ThreadingHTTPServer((bind, port), H)
     print(f"csd-lab-console http://{bind}:{port}/lab")
     httpd.serve_forever()

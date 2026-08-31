@@ -1,0 +1,19 @@
+{
+  "schema": "csd-webui-overlay/v1",
+  "purpose": "Open WebUI Tools that call CSD lab :9118 (or documented fallbacks). No cloud engines.",
+  "import": "scripts/csd-webui-install-overlay --db /data/akula/webui/data/webui.db (homelab). Do not duplicate ai.vectorweight.com at code.vectorweight.com.",
+  "lab": {
+    "base": "http://192.168.1.98:9118",
+    "homelab_proxy": "http://192.168.1.170:9118/lab",
+    "never": ["0.0.0.0", "api.openai.com", "github.com"]
+  },
+  "skip_existing_io": ["gap_search", "akula_audio_pipelines"],
+  "functions": [
+    {
+      "file": "functions/csd_autodev.py",
+      "class": "Tools",
+      "id": "csd_autodev",
+      "what": "Autodev git/forgejo/loop/priority, GPU plan/lock observe, lab steer/apply, notes sandbox. Lab JSON only. Identity autodev. Never GitHub."
+    }
+  ]
+}

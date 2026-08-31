@@ -153,8 +153,10 @@ schedule `sm_120` on Ampere/Pascal, or treat MPS as a security boundary
 
 ## G-1080 — 1080 Ti in the 5080 box (operator hardware)
 
-Catalog stub: `config/model-router.json` `future_hosts.gpu5080-1080ti`.
-Not in `hosts` until `nvidia-smi` lists it.
+Catalog stub: `config/model-router.json` `future_hosts.gpu5080-1080ti`
+(`live: false`, `installed: false`). Not in `hosts`. Router must ignore
+`future_hosts` for scheduling until `nvidia-smi` on gpu5080 lists the
+card and the stub is promoted with `live: true`.
 
 | Field | Value |
 |---|---|
@@ -171,9 +173,10 @@ If case thermals are bad: optional dedicated loop on the 1080 Ti only
 (pump + 360 rad in the top of that chassis, block, tubes; no reservoir
 required). Do not plan a 1080 Ti loop until factory air is measured.
 
-**Software role after install:** overflow for tiny/legacy GGUF and
-low-stakes encode; never autodev 14B; never sm_120 CUDA; tag-routed
-only. Combined pool becomes ~24 + 16 + 11 GiB **only** for workloads
+**Software role after install:** `retrieve-index-light` (RAG retrieve/
+index, keyword-cpu assist, small embed, light GGUF). Never autodev 14B;
+never sm_120 CUDA; tag-routed only. Combined pool becomes ~24 + 16 +
+11 GiB **only** for workloads
 that can use Pascal + Ampere + Blackwell together (llama.cpp CUDA built
 for all three, or CPU-side gather). Heterogeneous three-way tensor split
 is optional and later than two-way 3090+5080.

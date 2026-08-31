@@ -1,0 +1,12 @@
+# Root notification policy. Replaces the Grafana policy tree on provision.
+# Group by taxonomy keys so one mail per (group, host), not per series.
+apiVersion: 1
+policies:
+  - orgId: 1
+    receiver: maintainers-email
+    group_by:
+      - group
+      - host
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h

@@ -188,9 +188,38 @@ def test_1080ti_is_future_not_live() -> None:
     cat = json.loads((ROOT / "config" / "model-router.json").read_text())
     assert "gpu5080-1080ti" not in cat["hosts"]
     stub = cat["future_hosts"]["gpu5080-1080ti"]
+    assert stub["live"] is False
     assert stub["installed"] is False
+    assert stub["role"] == "retrieve-index-light"
     assert stub["sm"] == "6.1"
     assert "sm_120" in stub["lacks"]
+    assert "fp8" in stub["lacks"]
+    assert "fp4" in stub["lacks"]
+    assert "live=false" in stub["note"]
+
+
+def test_1080ti_never_scheduled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    r = load_router(tmp_path, monkeypatch)
+    assert "gpu5080-1080ti" not in r.schedulable_hosts()
+    inventory = inv_idle()
+    sneak = {
+        "host_pref": ["gpu5080-1080ti", "gpu5080"],
+        "fits_5080": True,
+        "needs_caps": [],
+        "prefer_caps": [],
+    }
+    assert r.place_host(sneak, inventory) == "gpu5080"
+    only_stub = {
+        "host_pref": ["gpu5080-1080ti"],
+        "fits_5080": True,
+        "needs_caps": [],
+        "prefer_caps": [],
+    }
+    assert r.place_host(only_stub, inventory) == "reject"
+    embed = r.catalog()["aliases"]["embed-qwen3-0.6b"]
+    assert r.place_host(embed, inventory) == "gpu5080"
+    cuda = r.catalog()["aliases"]["cuda-eval"]
+    assert r.place_host(cuda, inventory) == "gpu5080"
 
 
 def test_embed_prefers_5080_caps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

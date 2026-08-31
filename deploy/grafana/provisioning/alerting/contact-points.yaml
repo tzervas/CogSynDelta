@@ -1,0 +1,13 @@
+# Grafana unified alerting contact point. Receiver name is the routing key.
+# SMTP is send-only on 172.30.0.1:25 (see unifi-grafana.container.d/smtp.conf).
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: maintainers-email
+    receivers:
+      - uid: ffwuumyqq14owd
+        type: email
+        disableResolveMessage: false
+        settings:
+          addresses: maintainers@vectorweight.com
+          singleEmail: true

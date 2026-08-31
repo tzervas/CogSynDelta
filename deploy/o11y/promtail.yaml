@@ -1,0 +1,223 @@
+# Promtail — UniFi security-net jobs (unchanged) plus CSD journald mapping.
+# Install: /data/unifi-security/deploy/config/promtail.yaml
+# Journal mounts: unifi-promtail.container.d/journald.conf
+# Do not label Suricata/Zeek with CSD keys (different cardinality).
+# Drop unmapped units so journald cannot explode Loki streams.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    batchwait: 1s
+    batchsize: 1048576
+    timeout: 10s
+
+scrape_configs:
+  - job_name: suricata
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: suricata
+          __path__: /var/log/suricata/eve.json
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            event_type: event_type
+            src_ip: src_ip
+            src_port: src_port
+            dest_ip: dest_ip
+            dest_port: dest_port
+            proto: proto
+            alert_signature: alert.signature
+            alert_severity: alert.severity
+            alert_category: alert.category
+            http_hostname: http.hostname
+            http_url: http.url
+            dns_query: dns.query
+            tls_sni: tls.sni
+            flow_bytes_toserver: flow.bytes_toserver
+            flow_bytes_toclient: flow.bytes_toclient
+      - labels:
+          event_type:
+          proto:
+          alert_severity:
+          alert_category:
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      - output:
+          source: alert_signature
+
+  - job_name: zeek_conn
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: zeek
+          log_type: conn
+          __path__: /var/log/zeek/current/conn.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<ts>\d+\.\d+)\t(?P<uid>\S+)\t(?P<orig_h>\S+)\t(?P<orig_p>\d+)\t(?P<resp_h>\S+)\t(?P<resp_p>\d+)\t(?P<proto>\S+)\t(?P<service>\S+)\t(?P<duration>\S+)\t(?P<orig_bytes>\S+)\t(?P<resp_bytes>\S+)'
+      - labels:
+          proto:
+          service:
+
+  - job_name: zeek_dns
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: zeek
+          log_type: dns
+          __path__: /var/log/zeek/current/dns.log
+
+  - job_name: zeek_http
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: zeek
+          log_type: http
+          __path__: /var/log/zeek/current/http.log
+
+  - job_name: zeek_ssl
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: zeek
+          log_type: ssl
+          __path__: /var/log/zeek/current/ssl.log
+
+  - job_name: zeek_notice
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: zeek
+          log_type: notice
+          __path__: /var/log/zeek/current/notice.log
+
+  - job_name: unifi_syslog
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: unifi
+          __path__: /var/log/syslog-ng/unifi/*.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\w+\s+\d+\s+\d+:\d+:\d+)\s+(?P<host>\S+)\s+(?P<program>\S+):\s+(?P<message>.*)$'
+      - labels:
+          program:
+          host:
+
+  # Homelab journald only. Prime/5080 journals are not mounted here.
+  - job_name: systemd-journal
+    journal:
+      max_age: 12h
+      path: /var/log/journal
+      labels:
+        job: systemd-journal
+        host: homelab
+    relabel_configs:
+      - source_labels: ['__journal__systemd_unit']
+        target_label: unit
+      - source_labels: ['__journal__systemd_user_unit']
+        regex: '.+'
+        target_label: unit
+      - source_labels: [unit]
+        target_label: service
+    pipeline_stages:
+      - match:
+          selector: '{unit!~"csd-lab-console\\.service|csd-lab-console\\.homelab\\.service|csd-openai-gateway\\.service|csd-openai-gateway\\.homelab\\.service|csd-autodev-loop\\.service|forgejo-runner-cpu\\.service|postfix\\.service|unifi-grafana\\.service|unifi-loki\\.service|unifi-victoria\\.service|unifi-promtail\\.service|unifi-opensearch\\.service|akula-jaeger\\.service|akula-otel\\.service|akula-open-webui\\.service|akula-status-aggregator\\.service"}'
+          action: drop
+      - match:
+          selector: '{unit=~"csd-lab-console\\.service|csd-lab-console\\.homelab\\.service"}'
+          stages:
+            - static_labels:
+                env: lab
+                ns: csd
+                kind: ui
+                group: csd-autodev
+                path: lab.csd.ui
+      - match:
+          selector: '{unit=~"csd-openai-gateway\\.service|csd-openai-gateway\\.homelab\\.service"}'
+          stages:
+            - static_labels:
+                env: lab
+                ns: csd
+                kind: gateway
+                group: csd-autodev
+                path: lab.csd.gateway
+      - match:
+          selector: '{unit="csd-autodev-loop.service"}'
+          stages:
+            - static_labels:
+                env: lab
+                ns: csd
+                kind: api
+                group: csd-autodev
+                path: lab.csd.api
+      - match:
+          selector: '{unit="forgejo-runner-cpu.service"}'
+          stages:
+            - static_labels:
+                env: ci
+                ns: runner
+                kind: runner
+                group: forgejo-ci
+                path: ci.homelab.runner
+      - match:
+          selector: '{unit="akula-open-webui.service"}'
+          stages:
+            - static_labels:
+                env: prod-intent
+                ns: webui
+                kind: ui
+                group: akula-chat
+                path: prod-intent.webui.ui
+      - match:
+          selector: '{unit="postfix.service"}'
+          stages:
+            - static_labels:
+                env: prod-intent
+                ns: mail
+                kind: mta
+                group: grafana-stack
+                path: prod-intent.mail.mta
+      - match:
+          selector: '{unit="unifi-grafana.service"}'
+          stages:
+            - static_labels:
+                env: prod-intent
+                ns: o11y
+                kind: ui
+                group: grafana-stack
+                path: prod-intent.o11y.ui
+      - match:
+          selector: '{unit="akula-jaeger.service"}'
+          stages:
+            - static_labels:
+                env: prod-intent
+                ns: o11y
+                kind: ui
+                group: grafana-stack
+                path: prod-intent.o11y.ui
+      - match:
+          selector: '{unit=~"unifi-loki\\.service|unifi-victoria\\.service|unifi-promtail\\.service|unifi-opensearch\\.service|akula-otel\\.service|akula-status-aggregator\\.service"}'
+          stages:
+            - static_labels:
+                env: prod-intent
+                ns: o11y
+                kind: api
+                group: grafana-stack
+                path: prod-intent.o11y.api

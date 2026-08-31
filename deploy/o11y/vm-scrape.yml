@@ -1,0 +1,75 @@
+# VictoriaMetrics promscrape — existing Akula jobs plus CSD taxonomy labels.
+# Install: /etc/akula/vm-scrape.yml (mounted read-only into unifi-victoria).
+# LAN targets only. Never WAN. Never Tempo. Do not add jobs that are not live.
+#
+# Live jobs (VM label job/values, 2026-08-31): akula-health, akula-node.
+# NVIDIA is akula_gpu_* on those jobs (health :9108 + nvidia-smi textfile),
+# not a DCGM/nvidia_smi job. Alloy is not on homelab.
+#
+# host is taxonomy short form (prime|gpu5080). Keep existing role/gpu.
+# Do not set path on akula-node: node_exporter already exports path= mountpoint.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 8s
+
+scrape_configs:
+  - job_name: akula-health
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["192.168.1.98:9108"]
+        labels:
+          host: prime
+          role: prime
+          gpu: rtx3090ti
+          env: lab
+          ns: csd
+          service: akula-health-exporter
+          kind: gpu
+          group: csd-autodev
+          path: lab.csd.gpu
+      - targets: ["192.168.1.252:9108"]
+        labels:
+          host: gpu5080
+          role: media
+          gpu: rtx5080
+          env: lab
+          ns: csd
+          service: akula-health-exporter
+          kind: gpu
+          group: csd-autodev
+          path: lab.csd.gpu
+    relabel_configs:
+      - source_labels: [host]
+        regex: akula-prime
+        replacement: prime
+        target_label: host
+
+  - job_name: akula-node
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["192.168.1.98:9100"]
+        labels:
+          host: prime
+          role: prime
+          env: lab
+          ns: csd
+          service: prometheus-node-exporter
+          kind: api
+          group: csd-autodev
+      - targets: ["192.168.1.252:9100"]
+        labels:
+          host: gpu5080
+          role: media
+          env: lab
+          ns: csd
+          service: prometheus-node-exporter
+          kind: api
+          group: csd-autodev
+    relabel_configs:
+      - source_labels: [host]
+        regex: akula-prime
+        replacement: prime
+        target_label: host
+    # Taxonomy path omitted: colliding with node_filesystem path would drop
+    # mountpoints and explode cardinality.

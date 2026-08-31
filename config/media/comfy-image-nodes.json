@@ -1,0 +1,39 @@
+[
+  {
+    "type": "prompt",
+    "key": "text",
+    "node_ids": [
+      "5"
+    ]
+  },
+  {
+    "type": "width",
+    "key": "width",
+    "node_ids": [
+      "4",
+      "10"
+    ]
+  },
+  {
+    "type": "height",
+    "key": "height",
+    "node_ids": [
+      "4",
+      "10"
+    ]
+  },
+  {
+    "type": "steps",
+    "key": "steps",
+    "node_ids": [
+      "10"
+    ]
+  },
+  {
+    "type": "seed",
+    "key": "noise_seed",
+    "node_ids": [
+      "8"
+    ]
+  }
+]
