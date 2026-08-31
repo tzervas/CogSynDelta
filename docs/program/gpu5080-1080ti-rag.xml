@@ -1,38 +1,23 @@
 <?xml version="1.0"?>
 <!--
-  gpu5080 1080 Ti RAG guest stub (not a disk image).
+  gpu5080 1080 Ti RAG guest (live 2026-08-31).
   Host: 192.168.1.251 (enp5s0). Do not use 192.168.1.252.
 
   Passthrough ONLY:
     0000:06:00.0  NVIDIA GP102 GTX 1080 Ti  [10de:1b06]  IOMMU group 18
     0000:06:00.1  GP102 HDMI audio          [10de:10ef]  IOMMU group 18
   NEVER:
-    0000:01:00.0  RTX 5080 [10de:2c02]  IOMMU group 15  (host nvidia 610 / gpu-5080.yml)
+    0000:01:00.0  RTX 5080 [10de:2c02]  IOMMU group 15  (host nvidia 610)
     0000:01:00.1  5080 HD audio [10de:22e9]
 
-  Guest NVIDIA: Pascal-capable proprietary (R535 / R550 / last R570). NOT host 610.
-  Role: retrieve / index / light embed / llama.cpp sm_61. Not 14B, not vLLM, not PoC CUDA.
-  Factory eco PL in guest after bind:
-    nvidia-smi -pl "$(nvidia-smi --query-gpu=power.default_limit --format=csv,noheader,nounits)"
-  Do not flash an OC BIOS. Do not pause 3090 LocalAI. Do not unmask Comfy.
-
-  Guest stealth (required when the VM binds the GPU):
-    same cabal-stealth-leds oneshot as the host, never OpenRGB --server
-    (CVE-2026-59682 / 59683). GPULogoBrightness=0 at boot. Host stealth
-    is not enough — the guest Pascal driver re-lights the GeForce logo.
-
-  Disk: placeholder. Do NOT use /models (live: md127[/models-hdd]) as guest root.
-  RAG HDD later: mechanical RAID virtiofs/9p only — not the 5080 NVMe OS layout.
-  Network: lan-enp5s0 macvtap (192.168.1.x DHCP/static) + libvirt default NAT
-    (192.168.122.0/24 host-only). Guest OpenAI listen on the LAN IP only.
-    Never bind 0.0.0.0 WAN.
-
-  Host packages (Debian trixie, installed 2026-08-31, no reboot):
-    qemu-system-x86 qemu-utils ovmf libvirt-daemon-system virtinst
-    /usr/bin/qemu-system-x86_64 10.0.11; /usr/share/OVMF/OVMF_CODE_4M.fd
-  Canonical git: CogSynDelta deploy/gpu5080/libvirt/gpu5080-1080ti-rag.xml
-  Host working copy (not a git remote): /home/tzervas/akula-harness/config/qemu/
-  Do not virsh define until a dedicated qcow2 exists (not /models).
+  Guest NVIDIA: Tesla 535.274.02 proprietary (Pascal). NOT host 610, NOT nvidia-open.
+  Secure Boot OFF (OVMF_CODE_4M.fd) so DKMS MOK can load nvidia.ko.
+  Role: retrieve / index / light embed. Not 14B, not vLLM, not PoC CUDA.
+  Factory eco PL in guest: nvidia-smi -pl at power.default_limit (250 W).
+  Guest stealth: cabal-stealth-leds oneshot, never OpenRGB --server.
+  Disk: /var/lib/libvirt/images/gpu5080-1080ti-rag.qcow2 on NVMe root LV.
+        Do NOT use /models (md127[/models-hdd]) as guest root.
+  SSH: tzervas@192.168.1.243 (LAN macvtap 52:54:00:10:80:71). Alias gpu5080-1080ti.
 -->
 <domain type='kvm'>
   <name>gpu5080-1080ti-rag</name>
@@ -41,10 +26,14 @@
   <memory unit='KiB'>8388608</memory>
   <currentMemory unit='KiB'>8388608</currentMemory>
   <vcpu placement='static'>4</vcpu>
-  <os>
-    <type arch='x86_64' machine='q35'>hvm</type>
-    <loader readonly='yes' type='pflash'>/usr/share/OVMF/OVMF_CODE_4M.fd</loader>
-    <nvram>/var/lib/libvirt/qemu/nvram/gpu5080-1080ti-rag_VARS.fd</nvram>
+  <os firmware='efi'>
+    <type arch='x86_64' machine='pc-q35-10.0'>hvm</type>
+    <firmware>
+      <feature enabled='no' name='enrolled-keys'/>
+      <feature enabled='no' name='secure-boot'/>
+    </firmware>
+    <loader readonly='yes' type='pflash' format='raw'>/usr/share/OVMF/OVMF_CODE_4M.fd</loader>
+    <nvram template='/usr/share/OVMF/OVMF_VARS_4M.fd' templateFormat='raw' format='raw'>/var/lib/libvirt/qemu/nvram/gpu5080-1080ti-rag_VARS.fd</nvram>
     <boot dev='hd'/>
   </os>
   <features>
@@ -53,12 +42,9 @@
     <kvm>
       <hidden state='on'/>
     </kvm>
-    <vmport state='off'/>
-    <ioapic driver='kvm'/>
+    <smm state='on'/>
   </features>
-  <cpu mode='host-passthrough' check='none'>
-    <topology sockets='1' dies='1' cores='4' threads='1'/>
-  </cpu>
+  <cpu mode='host-passthrough' check='none' migratable='on'/>
   <clock offset='utc'>
     <timer name='rtc' tickpolicy='catchup'/>
     <timer name='pit' tickpolicy='delay'/>
@@ -69,30 +55,41 @@
   <on_crash>destroy</on_crash>
   <devices>
     <emulator>/usr/bin/qemu-system-x86_64</emulator>
-    <!-- Placeholder; do not point at /models (sda2). Create a dedicated qcow2 later. -->
     <disk type='file' device='disk'>
-      <driver name='qcow2' type='qcow2'/>
+      <driver name='qemu' type='qcow2' cache='none' discard='unmap'/>
       <source file='/var/lib/libvirt/images/gpu5080-1080ti-rag.qcow2'/>
       <target dev='vda' bus='virtio'/>
     </disk>
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='/var/lib/libvirt/images/gpu5080-1080ti-rag-cidata.iso'/>
+      <target dev='sda' bus='sata'/>
+      <readonly/>
+    </disk>
+    <controller type='usb' index='0' model='qemu-xhci' ports='15'/>
     <controller type='pci' index='0' model='pcie-root'/>
     <controller type='pci' index='1' model='pcie-root-port'/>
-    <!-- LAN: macvtap enp5s0 so Caddy/gateway/model-router reach 192.168.1.x -->
-    <interface type='network'>
-      <source network='lan-enp5s0'/>
+    <interface type='direct'>
+      <mac address='52:54:00:10:80:71'/>
+      <source dev='enp5s0' mode='bridge'/>
       <model type='virtio'/>
     </interface>
-    <!-- Host reachability while macvtap hides the host from the guest. -->
     <interface type='network'>
+      <mac address='52:54:00:10:80:72'/>
       <source network='default'/>
       <model type='virtio'/>
     </interface>
     <serial type='pty'>
-      <target port='0'/>
+      <target type='isa-serial' port='0'>
+        <model name='isa-serial'/>
+      </target>
     </serial>
     <console type='pty'>
       <target type='serial' port='0'/>
     </console>
+    <channel type='unix'>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+    </channel>
     <input type='tablet' bus='usb'/>
     <graphics type='vnc' port='-1' autoport='yes' listen='127.0.0.1'>
       <listen type='address' address='127.0.0.1'/>
@@ -100,21 +97,17 @@
     <video>
       <model type='vga' vram='16384' heads='1' primary='yes'/>
     </video>
-    <!-- 1080 Ti GPU — IOMMU group 18 -->
     <hostdev mode='subsystem' type='pci' managed='yes'>
       <driver name='vfio'/>
       <source>
         <address domain='0x0000' bus='0x06' slot='0x00' function='0x0'/>
       </source>
-      <address type='pci' domain='0x0000' bus='0x01' slot='0x00' function='0x0'/>
     </hostdev>
-    <!-- 1080 Ti HDMI audio — same IOMMU group; do not leave on host snd_hda_intel -->
     <hostdev mode='subsystem' type='pci' managed='yes'>
       <driver name='vfio'/>
       <source>
         <address domain='0x0000' bus='0x06' slot='0x00' function='0x1'/>
       </source>
-      <address type='pci' domain='0x0000' bus='0x01' slot='0x00' function='0x1'/>
     </hostdev>
     <memballoon model='virtio'/>
     <rng model='virtio'>

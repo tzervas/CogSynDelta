@@ -209,11 +209,11 @@ def test_cluster_snapshot_includes_1080ti_guest_ip(
     assert g["host"] == "gpu5080"
     assert g["host_ip"] == "192.168.1.251"
     assert "guest_ip" in g
-    assert g["guest_ip"] is None
-    assert g["live"] is False
+    assert g["guest_ip"] == "192.168.1.243"
+    assert g["live"] is True
     assert g["group"] == "akula-rag"
     assert g["path"] == "lab.gpu5080.index.1080ti"
-    assert "5080-embed" in g["rag"]
+    assert g["rag"] == "retrieve-index-light"
 
 
 def test_cluster_snapshot_parses_guest_ip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -222,7 +222,7 @@ def test_cluster_snapshot_parses_guest_ip(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(mod, "ssh_5080", lambda _cmd: " vnet0  ipv4  192.168.1.187/24")
     rec = mod.cluster_snapshot()
     assert rec["gpu5080_1080ti"]["guest_ip"] == "192.168.1.187"
-    assert rec["gpu5080_1080ti"]["live"] is False
+    assert rec["gpu5080_1080ti"]["live"] is True
 
 
 def test_steer_post_next_goal_not_p1_08(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

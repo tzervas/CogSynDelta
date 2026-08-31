@@ -36,6 +36,22 @@ SCHEMA = 39
 PLUGIN = "11.4.0"
 OUT_DIR = Path(__file__).resolve().parent / "dashboards"
 REQUIRED_VARS = ("env", "host", "ns", "group", "service", "path")
+# Catalog values that must exist as Grafana filters even with no Prom series.
+CATALOG_VAR_EXTRAS: dict[str, tuple[str, ...]] = {
+    "group": ("akula-rag",),
+    "host": ("gpu5080",),
+    "ns": ("index",),
+    "path": ("lab.gpu5080.index.1080ti",),
+}
+CATALOG_CONSTANTS: tuple[tuple[str, str], ...] = (
+    ("catalog_group_akula_rag", "akula-rag"),
+    ("catalog_host_gpu5080", "gpu5080"),
+    ("catalog_path_1080ti", "lab.gpu5080.index.1080ti"),
+)
+AKULA_RAG_DASH_URL = (
+    "/d/csd-gpus?var-group=akula-rag&var-host=gpu5080"
+    "&var-path=lab.gpu5080.index.1080ti&var-ns=index"
+)
 
 TAX_SEL = (
     'env=~"$env", host=~"$host", ns=~"$ns", '
@@ -133,7 +149,10 @@ def taxonomy_vars(ds_type: str, ds_uid: str) -> list[dict[str, Any]]:
 
     Returns:
         Templating list. includeAll uses .* so Loki/VM both match when All
-        is selected. Values come from labels, never from IP lists.
+        is selected. Values come from labels, never from IP lists. Catalog
+        extras (group=akula-rag, host=gpu5080, path=lab.gpu5080.index.1080ti)
+        are options + hidden constants so the path exists without invented
+        Prom series.
     """
     ds = ds_ref(ds_type, ds_uid)
     out: list[dict[str, Any]] = [
@@ -163,9 +182,11 @@ def taxonomy_vars(ds_type: str, ds_uid: str) -> list[dict[str, Any]]:
             query = f'label_values({{{name}!=""}}, {name})'
         else:
             query = f'label_values({{{name}=~".+"}}, {name})'
+        extras = CATALOG_VAR_EXTRAS.get(name, ())
         out.append(
             {
                 "allValue": ".*",
+                "allowCustomValue": True,
                 "current": {"selected": True, "text": "All", "value": "$__all"},
                 "datasource": ds,
                 "definition": query,
@@ -173,12 +194,26 @@ def taxonomy_vars(ds_type: str, ds_uid: str) -> list[dict[str, Any]]:
                 "label": name,
                 "multi": True,
                 "name": name,
+                "options": [
+                    {"selected": False, "text": val, "value": val} for val in extras
+                ],
                 "query": query,
                 "refresh": 2,
                 "regex": "",
                 "skipUrlSync": False,
                 "sort": 1,
                 "type": "query",
+            }
+        )
+    for cname, cval in CATALOG_CONSTANTS:
+        out.append(
+            {
+                "current": {"selected": True, "text": cval, "value": cval},
+                "hide": 2,
+                "name": cname,
+                "query": cval,
+                "skipUrlSync": True,
+                "type": "constant",
             }
         )
     return out
@@ -758,7 +793,18 @@ def dashboard_shell(
                 "tags": ["csd-investigate"],
                 "title": "CSD lab",
                 "type": "dashboards",
-            }
+            },
+            {
+                "asDropdown": False,
+                "icon": "dashboard",
+                "includeVars": False,
+                "keepTime": True,
+                "tags": [],
+                "targetBlank": False,
+                "title": "akula-rag host=gpu5080",
+                "type": "link",
+                "url": AKULA_RAG_DASH_URL,
+            },
         ],
         "liveNow": False,
         "panels": panels,
@@ -928,7 +974,9 @@ def dash_gpus() -> dict[str, Any]:
         "akula-prime or gpu5080 on the exporter; taxonomy host=prime also "
         "matches via akula-$host. 3090 LocalAI must stay loaded. Comfy is "
         "masked — `akula_backend_up{backend=\"comfy\"}` is shown only as "
-        "the live 0, not an SLO to unmask."
+        "the live 0, not an SLO to unmask. Catalog path (guest nvidia-smi lists "
+        "GTX 1080 Ti; no guest Prom series yet): group=akula-rag host=gpu5080 "
+        "path=lab.gpu5080.index.1080ti. Do not invent 1080 Ti panels."
     )
     panels = [
         text_panel(1, "How to read", note, 0, h=3),

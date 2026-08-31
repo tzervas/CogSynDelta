@@ -18,6 +18,17 @@
       ],
       "title": "CSD lab",
       "type": "dashboards"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "akula-rag host=gpu5080",
+      "type": "link",
+      "url": "/d/csd-gpus?var-group=akula-rag&var-host=gpu5080&var-path=lab.gpu5080.index.1080ti&var-ns=index"
     }
   ],
   "liveNow": false,
@@ -31,7 +42,7 @@
       },
       "id": 1,
       "options": {
-        "content": "Series are `akula_gpu_*` (not nvidia_* / DCGM). Host label is akula-prime or gpu5080 on the exporter; taxonomy host=prime also matches via akula-$host. 3090 LocalAI must stay loaded. Comfy is masked \u2014 `akula_backend_up{backend=\"comfy\"}` is shown only as the live 0, not an SLO to unmask.",
+        "content": "Series are `akula_gpu_*` (not nvidia_* / DCGM). Host label is akula-prime or gpu5080 on the exporter; taxonomy host=prime also matches via akula-$host. 3090 LocalAI must stay loaded. Comfy is masked \u2014 `akula_backend_up{backend=\"comfy\"}` is shown only as the live 0, not an SLO to unmask. Catalog path (guest nvidia-smi lists GTX 1080 Ti; no guest Prom series yet): group=akula-rag host=gpu5080 path=lab.gpu5080.index.1080ti. Do not invent 1080 Ti panels.",
         "mode": "markdown"
       },
       "pluginVersion": "11.4.0",
@@ -909,6 +920,7 @@
       },
       {
         "allValue": ".*",
+        "allowCustomValue": true,
         "current": {
           "selected": true,
           "text": "All",
@@ -923,6 +935,7 @@
         "label": "env",
         "multi": true,
         "name": "env",
+        "options": [],
         "query": "label_values({env!=\"\"}, env)",
         "refresh": 2,
         "regex": "",
@@ -932,6 +945,7 @@
       },
       {
         "allValue": ".*",
+        "allowCustomValue": true,
         "current": {
           "selected": true,
           "text": "All",
@@ -946,6 +960,13 @@
         "label": "host",
         "multi": true,
         "name": "host",
+        "options": [
+          {
+            "selected": false,
+            "text": "gpu5080",
+            "value": "gpu5080"
+          }
+        ],
         "query": "label_values({host!=\"\"}, host)",
         "refresh": 2,
         "regex": "",
@@ -955,6 +976,7 @@
       },
       {
         "allValue": ".*",
+        "allowCustomValue": true,
         "current": {
           "selected": true,
           "text": "All",
@@ -969,6 +991,13 @@
         "label": "ns",
         "multi": true,
         "name": "ns",
+        "options": [
+          {
+            "selected": false,
+            "text": "index",
+            "value": "index"
+          }
+        ],
         "query": "label_values({ns!=\"\"}, ns)",
         "refresh": 2,
         "regex": "",
@@ -978,6 +1007,7 @@
       },
       {
         "allValue": ".*",
+        "allowCustomValue": true,
         "current": {
           "selected": true,
           "text": "All",
@@ -992,6 +1022,13 @@
         "label": "group",
         "multi": true,
         "name": "group",
+        "options": [
+          {
+            "selected": false,
+            "text": "akula-rag",
+            "value": "akula-rag"
+          }
+        ],
         "query": "label_values({group!=\"\"}, group)",
         "refresh": 2,
         "regex": "",
@@ -1001,6 +1038,7 @@
       },
       {
         "allValue": ".*",
+        "allowCustomValue": true,
         "current": {
           "selected": true,
           "text": "All",
@@ -1015,6 +1053,7 @@
         "label": "service",
         "multi": true,
         "name": "service",
+        "options": [],
         "query": "label_values({service!=\"\"}, service)",
         "refresh": 2,
         "regex": "",
@@ -1024,6 +1063,7 @@
       },
       {
         "allValue": ".*",
+        "allowCustomValue": true,
         "current": {
           "selected": true,
           "text": "All",
@@ -1038,12 +1078,55 @@
         "label": "path",
         "multi": true,
         "name": "path",
+        "options": [
+          {
+            "selected": false,
+            "text": "lab.gpu5080.index.1080ti",
+            "value": "lab.gpu5080.index.1080ti"
+          }
+        ],
         "query": "label_values({path!=\"\"}, path)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "akula-rag",
+          "value": "akula-rag"
+        },
+        "hide": 2,
+        "name": "catalog_group_akula_rag",
+        "query": "akula-rag",
+        "skipUrlSync": true,
+        "type": "constant"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "gpu5080",
+          "value": "gpu5080"
+        },
+        "hide": 2,
+        "name": "catalog_host_gpu5080",
+        "query": "gpu5080",
+        "skipUrlSync": true,
+        "type": "constant"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "lab.gpu5080.index.1080ti",
+          "value": "lab.gpu5080.index.1080ti"
+        },
+        "hide": 2,
+        "name": "catalog_path_1080ti",
+        "query": "lab.gpu5080.index.1080ti",
+        "skipUrlSync": true,
+        "type": "constant"
       }
     ]
   },

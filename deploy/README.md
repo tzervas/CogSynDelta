@@ -15,8 +15,9 @@ working copy, **not** a Forgejo remote. Canonical git is this repo.
 
 Hard rules: never bind `0.0.0.0` on WAN, never VFIO the RTX 5080,
 never unmask Comfy from autodev, never dump vault tokens into these
-files. `config/model-router.json` `future_hosts.gpu5080-1080ti` stays
-`live: false` until a guest (or host) `nvidia-smi` lists the 1080 Ti.
+files. Guest `nvidia-smi` lists GTX 1080 Ti (`tzervas@192.168.1.243`);
+router `hosts.gpu5080-1080ti` is `live: true` role retrieve-index-light.
+SSH: [gpu5080/guest/README.md](gpu5080/guest/README.md).
 
 ## Homelab (Grafana + o11y)
 
@@ -152,21 +153,21 @@ RAID / `/models` — **notes only**, do not rewrite the live array:
 - Preserve `/models` (bind of `/bulk/models-hdd`). Do not steal that
   mount for a guest root. Do not install git `mdadm.conf` over live.
 
-### Not live — do not apply yet
+### 1080 Ti guest (live 2026-08-31)
 
-| File | Why it stays off |
+Domain `gpu5080-1080ti-rag` running, virsh autostart on. Disk on NVMe
+`/var/lib/libvirt/images/` (not `/models`). Guest Tesla 535 proprietary
+lists **GTX 1080 Ti** `GPU-4df3ba11-fd12-3550-bb97-ad00b0b00569`.
+SSH `tzervas@192.168.1.243` — [gpu5080/guest/README.md](gpu5080/guest/README.md).
+
+| File | Status |
 |---|---|
-| [gpu5080/libvirt/gpu5080-1080ti-rag.xml](gpu5080/libvirt/gpu5080-1080ti-rag.xml) | Domain **defined** + virsh autostart. Guest CUDA UUID still missing (`live: false`). |
+| [gpu5080/libvirt/gpu5080-1080ti-rag.xml](gpu5080/libvirt/gpu5080-1080ti-rag.xml) | Live domain (VFIO `06:00.0/1` only) |
 | [gpu5080/guest/](gpu5080/guest/) stealth oneshot + cloud-init | Guest-only. Do not copy onto the **host**. |
-| [gpu5080/podman/](gpu5080/podman/) `*.disabled` | Host CDI `nvidia.com/gpu=0` **is the 5080**. 1080 Ti is vfio-pci, not in `nvidia-smi` |
+| [gpu5080/podman/](gpu5080/podman/) `*.disabled` | Host CDI `nvidia.com/gpu=0` **is the 5080**. Do not apply on host. |
 
-Domain `gpu5080-1080ti-rag` is defined with a dedicated qcow2 (not `/models`)
-and virsh autostart. Do not autostart a domain that is not defined.
-qemu/ovmf/libvirt are on gpu5080 (`qemu-system-x86_64`,
-`/usr/share/OVMF/OVMF_CODE_4M.fd`).
 Do not copy `*.container.disabled` onto `/etc/containers/systemd/` on
-the **host**. Guest CDI/quadlet only after that kernel's `nvidia-smi -L`
-lists Pascal.
+the **host**. Do not VFIO `01:00.0`.
 
 ## akula-prime (3090 LocalAI)
 

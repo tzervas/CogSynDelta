@@ -52,7 +52,7 @@ trap 'docker start akula-localai' EXIT
 # … CSD train/eval on 3090 …
 ```
 
-Never leave LocalAI stopped. Never pause it for `csd-kb-index` (that is 5080).
+Never leave LocalAI stopped. Never pause it for `csd-kb-index` (that is the 1080 Ti guest).
 
 ### Load / swap a GGUF on the 3090
 
@@ -68,7 +68,7 @@ cd "$AKULA"
 
 Do not dual-load two 14B `download_files`. 8B / embed helpers may share leftover VRAM. Uncensored 14B aliases need `--yes` and exclusive swap.
 
-## 5080 — train, index, media (exclusive-seq)
+## 5080 — train, CUDA CI, media (exclusive-seq)
 
 Never stop LocalAI on prime from 5080 jobs.
 
@@ -78,28 +78,18 @@ AKULA=/home/kang/code/personal/tzervas/akula-ai-platform
 "$AKULA/scripts/with-gpu-5080" --mode exclusive-seq -- \
   bash -lc 'cd /path/to/CogSynDelta && uv run python -m cogsyndelta.poc.cli train --device cuda --steps 20'
 
-# RAG / CSD vault index (this repo) — enqueues on 5080 local timeshare state via SSH.
-# Does not SSH prime-only venv paths. Does not pause 3090 LocalAI.
-# Operator grant 2026-08-31: Comfy may be stopped/masked so autodev owns the 5080.
+# RAG / CSD vault index (this repo) — prefers 1080 Ti guest 192.168.1.243.
+# Does not take gpu5080.lock. Does not pause 3090 LocalAI. 5080 stays CUDA CI.
 ./scripts/csd-kb-index
-
-# Equivalent manual enqueue (must target 5080 state, not prime /akula-data/cabal/…):
-ssh -o BatchMode=yes gpu5080 \
-  env AKULA_TIMESHARE=/home/tzervas/akula-harness/state/gpu-timeshare.json \
-  python3 /home/tzervas/akula-harness/scripts/gpu-timeshare \
-  enqueue --kind rag-index --subject csd-kb --host gpu5080
-ssh -o BatchMode=yes gpu5080 \
-  env AKULA_TIMESHARE=/home/tzervas/akula-harness/state/gpu-timeshare.json \
-  python3 /home/tzervas/akula-harness/scripts/gpu-timeshare status
 ```
 
 Prime `gpu-timeshare` state (`/akula-data/cabal/gpu-timeshare.json`) is **not** the 5080 worker queue. The 5080 timer uses `AKULA_TIMESHARE=/home/tzervas/akula-harness/state/gpu-timeshare.json`. Enqueue there, or the job never claims.
 
 `share-small` only if `nvidia-smi` free ≥ 8192 MiB and the helper is ≤ ~6 GiB. Otherwise refuse (exit 3). No MIG.
 
-**Maximal leverage:** Codex infers on 3090 (`local/code`) **while** a 5080 job trains or indexes. That is the parallelism. Do not run Comfy and CSD CUDA on the 5080 at once.
+**Maximal leverage:** Codex infers on 3090 (`local/code`) **while** a 5080 job trains (RAG index is 1080 Ti). That is the parallelism. Do not run Comfy and CSD CUDA on the 5080 at once.
 
-**Autodev GPU grant (2026-08-31):** both cards dedicated to loops. Keep LocalAI on the 3090. On gpu5080: `sudo systemctl stop akula-comfyui.service && sudo systemctl mask akula-comfyui.service`. Unmask only when the operator returns the card to media. Reindex needs: indexer + CUDA python on 5080, vault sync, Qdrant reachable from 5080 (SSH reverse tunnel to prime loopback `:6333`).
+**Autodev GPU grant (2026-08-31):** both cards dedicated to loops. Keep LocalAI on the 3090. On gpu5080: `sudo systemctl stop akula-comfyui.service && sudo systemctl mask akula-comfyui.service`. Unmask only when the operator returns the card to media. Reindex needs: indexer + Pascal CUDA python on the 1080 Ti guest, vault sync, Qdrant reachable from `192.168.1.243`.
 
 ## Homelab + Forgejo CPU
 
@@ -248,7 +238,7 @@ After upload, check the Hub **model page** renders: pipeline widget (if tag is s
 |---|---|---|
 | Codex code assist | 3090 LocalAI | `local/code`, leave it loaded |
 | CSD `train`/`route` CUDA | 5080 | `with-gpu-5080 --mode exclusive-seq` |
-| CSD vault reindex | 5080 | `./scripts/csd-kb-index` |
+| CSD vault reindex | 1080 Ti guest | `./scripts/csd-kb-index` (not 5080 lock) |
 | Keyword RAG | CPU | `:8091` / `:8092`, never pause 3090 |
 | pytest / ruff / uv | homelab or prime CPU | Forgejo Actions `compute-cpu` |
 | Comfy still running | 5080 busy | enqueue timeshare; do not kill unless exclusive-seq |

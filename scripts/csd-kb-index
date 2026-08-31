@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
-# Enqueue akula-csd-kb CUDA reindex on gpu5080 timeshare. Never pause LocalAI on the 3090.
+# Prefer 1080 Ti VFIO guest for akula-csd-kb reindex. Never pause 3090 LocalAI.
+# Never take gpu5080.lock / 5080 exclusive-seq (CUDA CI stays on the 5080).
 #
-# Does NOT run embeddings itself. Does NOT SSH prime-only venv paths to 5080.
-# Does NOT claim reindex success — check Qdrant points_count after the worker finishes.
+# Does NOT run embeddings itself. Does NOT claim reindex success —
+# check Qdrant points_count after a guest worker finishes.
 set -euo pipefail
 
 AKULA="${AKULA_ROOT:-/home/kang/code/personal/tzervas/akula-ai-platform}"
 VAULT="${CSD_VAULT:-/akula-data/obsidian/akula-csd-kb}"
 COLL="${CSD_COLLECTION:-akula-csd-kb}"
 QDRANT="${QDRANT_URL:-http://127.0.0.1:6333}"
-HOST="${CSD_INDEX_HOST:-gpu5080}"
+HOST="${CSD_INDEX_HOST:-gpu5080-1080ti}"
 SUBJECT="${CSD_TIMESHARE_SUBJECT:-csd-kb}"
-# 5080 worker reads its own state file (not prime /akula-data/cabal/gpu-timeshare.json).
+GUEST_SSH="${CSD_INDEX_SSH:-gpu5080-1080ti}"
+GUEST_IP="${CSD_INDEX_IP:-192.168.1.243}"
+# Guest-local timeshare if present; never the 5080 host lock path by default.
 REMOTE_STATE="${CSD_TIMESHARE_STATE:-/home/tzervas/akula-harness/state/gpu-timeshare.json}"
 REMOTE_TS="${CSD_TIMESHARE_BIN:-/home/tzervas/akula-harness/scripts/gpu-timeshare}"
 
 mkdir -p "$VAULT"
 
-echo "csd-kb-index: vault=$VAULT collection=$COLL host=$HOST (timeshare enqueue, never 3090)" >&2
+echo "csd-kb-index: vault=$VAULT collection=$COLL host=$HOST (prefer 1080 Ti guest, never 3090, never 5080 lock)" >&2
 
 # Local Qdrant shape check on prime (loopback). Fail closed on wrong dimension.
 coll_json="$(curl -fsS "$QDRANT/collections/$COLL" 2>/dev/null || true)"
@@ -40,15 +43,16 @@ if size != 1024:
     sys.exit(3)
 PY
 
-# Enqueue onto the 5080 worker queue via SSH. Never pass prime-only absolute venv paths.
-enqueue_json="$(
-  ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" \
+enqueue_on() {
+  local ssh_host="$1"
+  local queue_host="$2"
+  ssh -o BatchMode=yes -o ConnectTimeout=15 "$ssh_host" \
     env AKULA_TIMESHARE="$REMOTE_STATE" \
-    python3 "$REMOTE_TS" enqueue --kind rag-index --subject "$SUBJECT" --host "$HOST"
-)"
-echo "csd-kb-index: enqueue $enqueue_json" >&2
+    python3 "$REMOTE_TS" enqueue --kind rag-index --subject "$SUBJECT" --host "$queue_host"
+}
 
-python3 - "$enqueue_json" <<'PY'
+accept_enqueue() {
+  python3 - "$1" <<'PY'
 import json, sys
 d = json.loads(sys.argv[1])
 if not d.get("ok"):
@@ -56,14 +60,58 @@ if not d.get("ok"):
     sys.exit(4)
 print(f"csd-kb-index: queued id={d.get('id')} dedup={d.get('dedup', False)}")
 PY
+}
 
-cat >&2 <<EOF
-csd-kb-index: enqueued behind Comfy/exclusive-seq on $HOST.
+case "$HOST" in
+  gpu5080-1080ti|gpu5080-1080ti-rag|"$GUEST_IP")
+    smi="$(ssh -o BatchMode=yes -o ConnectTimeout=15 "$GUEST_SSH" nvidia-smi -L 2>/dev/null || true)"
+    echo "csd-kb-index: guest smi: ${smi:-<empty>}" >&2
+    if ! grep -q "1080 Ti" <<<"$smi"; then
+      echo "csd-kb-index: guest nvidia-smi did not list 1080 Ti; not stealing 5080 exclusive-seq" >&2
+      exit 5
+    fi
+    echo "csd-kb-index: retrieve-index-light endpoint $GUEST_IP (LAN only)" >&2
+    if ssh -o BatchMode=yes -o ConnectTimeout=15 "$GUEST_SSH" test -x "$REMOTE_TS" 2>/dev/null; then
+      enqueue_json="$(enqueue_on "$GUEST_SSH" "gpu5080-1080ti")"
+      echo "csd-kb-index: enqueue $enqueue_json" >&2
+      accept_enqueue "$enqueue_json"
+    else
+      echo "csd-kb-index: guest has no timeshare worker yet; catalog prefers 1080 Ti (not gpu5080.lock)" >&2
+      echo "csd-kb-index: queued id=none (guest-prefer, no 5080 enqueue)"
+    fi
+    cat >&2 <<EOF
+csd-kb-index: 1080 Ti guest $GUEST_IP UUID GPU-4df3ba11-fd12-3550-bb97-ad00b0b00569.
   Remaining before points_count > 0 (operator):
-  1) Deploy index_vault_qdrant.py + CUDA torch/transformers/qdrant_client venv on $HOST
-  2) Mount or sync vault $VAULT onto $HOST (not present today)
-  3) Expose Qdrant beyond 127.0.0.1 on prime, or tunnel, so $HOST can upsert
-  4) Free ≥8192 MiB on $HOST (do not stop healthy Comfy from this script)
+  1) Deploy index_vault_qdrant.py + Pascal CUDA torch/transformers/qdrant_client on the guest
+  2) Mount or sync vault $VAULT onto the guest (do not wipe host /models)
+  3) Expose Qdrant beyond 127.0.0.1 on prime, or tunnel, so the guest can upsert
+  Never use 3090 LocalAI as an embedding fallback.
+  Never enqueue gpu5080 timeshare from this default path (5080 is CUDA CI).
+  Verify: curl -fsS $QDRANT/collections/$COLL | python3 -c 'import sys,json; r=json.load(sys.stdin)["result"]; print(r["points_count"], r["config"]["params"]["vectors"]["size"])'
+EOF
+    ;;
+  gpu5080)
+    if [[ "${CSD_INDEX_ALLOW_5080:-}" != "1" ]]; then
+      echo "csd-kb-index: refusing HOST=gpu5080 (5080 is CUDA CI exclusive-seq)." >&2
+      echo "csd-kb-index: default is gpu5080-1080ti. Set CSD_INDEX_ALLOW_5080=1 to override." >&2
+      exit 6
+    fi
+    enqueue_json="$(enqueue_on "gpu5080" "gpu5080")"
+    echo "csd-kb-index: enqueue $enqueue_json" >&2
+    accept_enqueue "$enqueue_json"
+    cat >&2 <<EOF
+csd-kb-index: OVERRIDE enqueue on gpu5080 timeshare (CSD_INDEX_ALLOW_5080=1).
+  Remaining before points_count > 0 (operator):
+  1) Deploy index_vault_qdrant.py + CUDA torch/transformers/qdrant_client venv on gpu5080
+  2) Mount or sync vault $VAULT onto gpu5080 (not present today)
+  3) Expose Qdrant beyond 127.0.0.1 on prime, or tunnel, so gpu5080 can upsert
+  4) Free ≥8192 MiB on gpu5080 (do not stop healthy Comfy from this script)
   Never use 3090 LocalAI as an embedding fallback.
   Verify: curl -fsS $QDRANT/collections/$COLL | python3 -c 'import sys,json; r=json.load(sys.stdin)["result"]; print(r["points_count"], r["config"]["params"]["vectors"]["size"])'
 EOF
+    ;;
+  *)
+    echo "csd-kb-index: unknown CSD_INDEX_HOST=$HOST (want gpu5080-1080ti)" >&2
+    exit 7
+    ;;
+esac

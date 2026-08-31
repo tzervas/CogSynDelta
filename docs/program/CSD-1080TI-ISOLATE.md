@@ -156,7 +156,7 @@ Persist (ids are 1080 Ti only):
 | `/etc/systemd/system/cabal-stealth-leds.service` | enabled host stealth oneshot |
 | `/etc/fstab` UUID `d942aafc-…` `/bulk` | `nofail`; md127 RAID0 |
 | libvirt `default` + `lan-enp5s0` | autostart; macvtap `enp5s0` |
-| `gpu5080-1080ti-rag` domain | defined, running, virsh autostart enable; `guest_ip` unset |
+| `gpu5080-1080ti-rag` domain | defined, running, virsh autostart; guest_ip `192.168.1.243` |
 
 Git CaC (same files): `deploy/gpu5080/`. Re-apply from
 [deploy/README.md](../../deploy/README.md) if the host drifts.
@@ -181,7 +181,7 @@ Guest **must** run stealth-leds (OpenRGB oneshot, never `--server`) and
 Pascal bind — the GeForce logo comes back. XML stub comments that
 requirement. Guest stealth is cloud-init/oneshot inside the VM, not on the host.
 
-`live: false` until the **guest** `nvidia-smi` lists the 1080 Ti.
+`live: true`: guest `nvidia-smi` lists GTX 1080 Ti `GPU-4df3ba11-fd12-3550-bb97-ad00b0b00569` (Tesla 535.274.02, PL 250 W).
 
 ## Host vs guest
 
@@ -275,19 +275,12 @@ split a dense 14B onto Pascal.
 3. VFIO bind of `06:00.0` (+ group audio). 5080 remains on host
    `nvidia`. **Done** 2026-08-31 (live bind + persist; no reboot;
    re-verified `lspci -k` `vfio-pci`).
-4. Guest: install qemu/libvirt/ovmf, define
-   [gpu5080-1080ti-rag.xml](gpu5080-1080ti-rag.xml), Pascal driver,
-   llama.cpp/embed, factory eco PL, guest stealth-leds oneshot, RAG
-   HDD mount only. Preserve `/models`. qemu/ovmf **Done** 2026-08-31
-   (no reboot; `qemu-system-x86_64` + `OVMF_CODE_4M.fd`; VFIO still
-   `06:00.0`). **Not this run:** `virsh define` / qcow2 / Pascal bind
-   (placeholder disk; do not steal `/models`).
-5. Only after guest bind: optional guest container with **that UUID**.
-   Then promote `future_hosts.gpu5080-1080ti` per
-   [CSD-1080TI-RAG.md](CSD-1080TI-RAG.md).
-
-Until `nvidia-smi` on gpu5080 (or the guest) lists the 1080 Ti, keep
-`live: false`. Observe only.
+4. Guest: qemu/libvirt/ovmf, [gpu5080-1080ti-rag.xml](gpu5080-1080ti-rag.xml),
+   Tesla 535 proprietary, factory eco PL 250 W, stealth-leds oneshot,
+   `GPULogoBrightness=0`. Preserve `/models`. **Done** 2026-08-31
+   (`tzervas@192.168.1.243`, guest smi lists 1080 Ti).
+5. Promoted `hosts.gpu5080-1080ti` `live: true` role retrieve-index-light
+   per [CSD-1080TI-RAG.md](CSD-1080TI-RAG.md). 5080 stays CUDA CI.
 
 ## References
 

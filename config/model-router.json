@@ -67,25 +67,23 @@
       ],
       "prefer_jobs": [
         "cuda-tests",
-        "embed",
-        "rag-index",
+        "train",
+        "triton",
         "qdrant-measure",
         "gpu-ci"
       ],
       "needs_lock": "gpu5080",
       "host_ip": "192.168.1.251",
       "listen": "lan-only"
-    }
-  },
-  "future_hosts": {
+    },
     "gpu5080-1080ti": {
       "gpu": "GTX 1080 Ti",
       "arch": "pascal",
       "sm": "6.1",
       "vram_mib": 11264,
       "safeguard_mib": 10240,
-      "live": false,
-      "installed": false,
+      "live": true,
+      "installed": true,
       "role": "retrieve-index-light",
       "caps": [
         "pascal",
@@ -118,9 +116,15 @@
       "guest_ip": "192.168.1.243",
       "libvirt_net": "lan-enp5s0",
       "listen": "lan-only",
-      "note": "live=false: keep this id in future_hosts only. Router must ignore future_hosts for scheduling. GTX 1080 Ti is seated at PCI 06:00.0 (EVGA GP102, Pascal sm_61 ~11GiB GDDR5X, factory cooler) on the RTX 5080 box 192.168.1.251 but bound vfio-pci. Host nvidia-smi -L lists only RTX 5080 GPU-087267a6-14fb-0af3-da30-9a1a18523106 (open nvidia.ko 610 has no Pascal GSP). Domain gpu5080-1080ti-rag is defined (qcow2 + cidata) with virsh autostart; guest_ip 192.168.1.243 (enlan0 DHCP lan-enp5s0 macvtap; host cannot ARP). live=false until guest nvidia-smi lists Pascal. LAN path lan-enp5s0 macvtap on enp5s0. When promoted, OpenAI listen on the guest 192.168.1.x only \u2014 never 0.0.0.0 WAN. Not a 5080 substitute: no PoC CUDA, FP8/FP4, dual-14B, or exclusive-seq. Role when promoted: RAG retrieve/index, keyword-cpu assist, small embed, light GGUF. Promote to hosts only after guest or host nvidia-smi lists the 1080 Ti UUID."
+      "note": "live=true: guest nvidia-smi lists GTX 1080 Ti GPU-4df3ba11-fd12-3550-bb97-ad00b0b00569 (Tesla 535.274.02 proprietary, Pascal sm_61, factory PL 250 W). VFIO 06:00.0/1 IOMMU 18 on gpu5080 192.168.1.251; RTX 5080 stays host nvidia 610 at 01:00.0. Endpoint http://192.168.1.243 (enlan0 LAN macvtap) \u2014 never 0.0.0.0 WAN. Role retrieve-index-light / RAG only. csd-kb-index and retrieve prefer this guest; do not take gpu5080.lock. Not a 5080 substitute: no PoC CUDA, FP8/FP4, dual-14B, or exclusive-seq. 5080 remains CUDA CI.",
+      "endpoint": "http://192.168.1.243",
+      "uuid": "GPU-4df3ba11-fd12-3550-bb97-ad00b0b00569",
+      "driver": "535.274.02",
+      "libvirt_domain": "gpu5080-1080ti-rag",
+      "pci": "06:00.0"
     }
   },
+  "future_hosts": {},
   "runtimes": {
     "llama.cpp": {
       "formats": [
@@ -450,7 +454,7 @@
       "share": {
         "akula-prime": "leftover",
         "gpu5080": "share-small",
-        "gpu5080-1080ti": "when-live"
+        "gpu5080-1080ti": "retrieve-index-light"
       },
       "fits_1080ti": true
     },
@@ -481,7 +485,7 @@
       "share": {
         "akula-prime": "leftover",
         "gpu5080": "share-small",
-        "gpu5080-1080ti": "when-live"
+        "gpu5080-1080ti": "retrieve-index-light"
       },
       "fits_1080ti": true
     },
@@ -505,19 +509,18 @@
       "fits_5080": true,
       "fits_prime": true,
       "exclusive_with": [],
-      "needs_lock": "gpu5080",
       "needs_caps": [
         "fp16"
       ],
       "prefer_caps": [
-        "sm_120",
-        "cuda-eval",
-        "embed"
+        "embed",
+        "fp16",
+        "pascal"
       ],
       "share": {
         "akula-prime": "leftover",
         "gpu5080": "share-small",
-        "gpu5080-1080ti": "when-live"
+        "gpu5080-1080ti": "retrieve-index-light"
       },
       "fits_1080ti": true
     },

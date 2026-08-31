@@ -215,7 +215,10 @@ def cluster_snapshot() -> dict:
     none). Do not invent `.252` or mark live without nvidia-smi / domifaddr.
     """
     cat = _read_json(ROUTER_JSON)
-    stub = (cat.get("future_hosts") or {}).get("gpu5080-1080ti")
+    hosts = cat.get("hosts") or {}
+    stub = hosts.get("gpu5080-1080ti")
+    if not isinstance(stub, dict):
+        stub = (cat.get("future_hosts") or {}).get("gpu5080-1080ti")
     if not isinstance(stub, dict):
         stub = {}
     raw = ssh_5080("virsh domifaddr gpu5080-1080ti-rag 2>/dev/null || true")
@@ -225,9 +228,11 @@ def cluster_snapshot() -> dict:
         if ip not in {GPU5080_IP, "192.168.1.255", "192.168.1.0"}:
             guest_ip = ip
             break
-    live = bool(stub.get("live")) and guest_ip is not None
+    catalog_guest = stub.get("guest_ip")
+    if guest_ip is None and isinstance(catalog_guest, str) and catalog_guest.strip():
+        guest_ip = catalog_guest.strip()
+    live = bool(stub.get("live"))
     rag = "retrieve-index-light" if live else "5080-embed-or-prime until live=true"
-    hosts = cat.get("hosts") or {}
     prime_spec = hosts.get("akula-prime") if isinstance(hosts.get("akula-prime"), dict) else {}
     gpu_spec = hosts.get("gpu5080") if isinstance(hosts.get("gpu5080"), dict) else {}
     backends = [

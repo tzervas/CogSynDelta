@@ -67,7 +67,7 @@ Read `STATUS.md` before README. `docs/HANDOFF-ARCHITECTURE.md` is unvetted ChatG
 
 - **RO:** operator `tzervas-dev-kb`, model `akula-model-kb`, shared Cabal segments. MCP + `:8091` keyword-cpu.
 - **RW process memory:** `akula-gap-kb` (`:8092` / MCP). Not chat RAG.
-- **RW + reindex (Codex/Grok experiment plane):** `akula-csd-kb`. `./scripts/csd-kb-setup` then `./scripts/csd-kb-index` (5080 exclusive-seq, **never pause 3090 LocalAI**).
+- **RW + reindex (Codex/Grok experiment plane):** `akula-csd-kb`. `./scripts/csd-kb-setup` then `./scripts/csd-kb-index` (prefer 1080 Ti guest; 5080 CUDA CI; **never pause 3090 LocalAI**).
 - Never write operator or model vaults. Never mix 384-d collections.
 
 ### Code Review Rules

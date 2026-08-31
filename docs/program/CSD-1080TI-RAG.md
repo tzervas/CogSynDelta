@@ -1,9 +1,8 @@
-# 1080 Ti RAG host — future third GPU
+# 1080 Ti RAG host — live retrieve-index-light guest
 
-Not `STATUS.md`. Not live. Catalog stub only until `nvidia-smi` on
-**gpu5080** (host or VFIO guest) lists the card. Router must ignore
-`future_hosts` until promoted. Autodev must not start `G-1080` and
-must not power off the host.
+Not `STATUS.md`. Guest `nvidia-smi` lists the GTX 1080 Ti. Catalog
+`hosts.gpu5080-1080ti` is `live: true`. Autodev must not start `G-1080`
+and must not power off the host.
 
 Identity: **autodev**. Branch: `feat/agent-harness` (never `main` /
 `staging` / `develop` / `dev`).
@@ -26,22 +25,20 @@ Driver split and sandbox: [CSD-1080TI-ISOLATE.md](CSD-1080TI-ISOLATE.md)
 
 ## Catalog
 
-`config/model-router.json` `future_hosts` id **`gpu5080-1080ti`**.
-Stay in `future_hosts` (`live: false`, `installed: false`) until
-`nvidia-smi` on gpu5080 (host or VFIO guest) lists the 1080 Ti UUID.
-The card **is seated** at PCI `06:00.0` (`vfio-pci`) as of
-2026-08-31T20:25:07Z; host `nvidia-smi -L` is still RTX 5080 only.
-Then promote to `hosts` with role retrieve-index-light and set
-`live: true`. Router scheduling reads `hosts` only.
+`config/model-router.json` `hosts` id **`gpu5080-1080ti`**.
+Promoted 2026-08-31 after guest `nvidia-smi -L` listed
+`GPU-4df3ba11-fd12-3550-bb97-ad00b0b00569`. Host `nvidia-smi -L` is
+still RTX 5080 only (VFIO). Router scheduling reads `hosts` only.
 
 | Field | Value |
 |---|---|
-| future_hosts id | `gpu5080-1080ti` |
-| live | `false` (matches host `nvidia-smi -L`; router ignores for scheduling) |
-| installed | `false` (seated + vfio-pci; no CUDA UUID yet) |
-| role | `retrieve-index-light` (when promoted) |
+| hosts id | `gpu5080-1080ti` |
+| live | `true` (matches guest `nvidia-smi -L`) |
+| installed | `true` (guest Tesla 535.274.02, UUID listed) |
+| role | `retrieve-index-light` |
 | host | `gpu5080` |
-| IP (LAN) | `192.168.1.251` (router static; was `.252`) |
+| guest IP / endpoint | `192.168.1.243` / `http://192.168.1.243` (LAN only) |
+| IP (LAN host) | `192.168.1.251` (router static; was `.252`) |
 | Box | Same workstation as the RTX 5080 |
 | PCI | **`06:00.0`** (below the 5080; 5080 keeps the primary x16) |
 | GPU | GTX 1080 Ti (EVGA reference / factory cooler first) |
@@ -96,21 +93,20 @@ a 1080 Ti loop until factory air is measured. Preserve `/models`
 (bind of `/bulk/models-hdd` on md127 RAID0). Do not wipe NVMe OS.
 Do not reshape the healthy RAID0 that already uses both 3 TB HDDs.
 
-Host verify (2026-08-31T20:25:07Z, SSH `tzervas@192.168.1.251`):
-`nvidia-smi -L` lists **only** RTX 5080
-`GPU-087267a6-14fb-0af3-da30-9a1a18523106` (P8, 0 % util, 12.5 W).
-`lspci -k` shows `06:00.0`/`06:00.1` **vfio-pci** (EVGA GP102).
-No qemu/OVMF/`virsh`. Catalog stays `live: false` until the **guest**
-lists the 1080 Ti. RAID `md127` `gpu5080:bulk` UUID
-`8d85a4cc:d1690f1e:5b147e0f:767d6d3e` is healthy RAID0 both 3 TB
-HDDs, mounted `/bulk`. Bench CUDA on Pascal did **not** run
-([CSD-1080TI-BENCH.md](CSD-1080TI-BENCH.md)).
+Host verify (2026-08-31T20:58:23Z):
+host `nvidia-smi -L` lists **only** RTX 5080
+`GPU-087267a6-14fb-0af3-da30-9a1a18523106` (P8). `lspci -k` shows
+`06:00.0`/`06:00.1` **vfio-pci**. Guest `tzervas@192.168.1.243`
+`nvidia-smi -L` lists GTX 1080 Ti
+`GPU-4df3ba11-fd12-3550-bb97-ad00b0b00569` (Tesla 535.274.02, PL 250 W).
+Domain `gpu5080-1080ti-rag` running, virsh autostart. RAID `md127`
+`/models` still mounted. Comfy masked. 5080 stays host nvidia 610.
 
 ## Labels (o11y)
 
-Device-qualified path. `host` stays **`gpu5080`** (the machine). Do
-not emit a live host value `gpu5080-1080ti` until `nvidia-smi` lists
-the card.
+Device-qualified path. `host` stays **`gpu5080`** (the machine).
+Guest endpoint is `192.168.1.243`; do not scrape guest Prom until an
+exporter exists.
 
 | Key | Value |
 |---|---|
@@ -126,28 +122,24 @@ Tuple: `env=lab host=gpu5080 ns=index kind=gpu group=akula-rag path=lab.gpu5080.
 Qdrant collection remains `akula-csd-kb` at **1024** dimensions.
 Never mix 384-d collections.
 
-## Promote (operator, not autodev)
+## Promote (done 2026-08-31)
 
-1. Card seated. Factory cooler. Host stays up (no remote power-off).
-2. Confirm PCI **`06:00.0`** is the 1080 Ti. `nvidia-smi` on gpu5080
-   lists RTX 5080 **and** GTX 1080 Ti (or the guest lists the 1080 Ti
-   after VFIO).
-3. VFIO `06:00.0` only per [CSD-1080TI-ISOLATE.md](CSD-1080TI-ISOLATE.md).
-   5080 remains on the host driver.
-4. Promote `future_hosts.gpu5080-1080ti` → `hosts` with
-   retrieve-index-light. Wire index to the 1080 Ti UUID **after** bind
-   (guest, or host-fallback UUID-only container). Not `--gpus all`.
-5. Stamp the labels above. 5080 exclusive-seq unchanged. 3090 LocalAI
-   unchanged. Comfy stays masked unless the operator unmasks.
+1. Card seated. Factory cooler. Host stays up. **Done.**
+2. PCI **`06:00.0`** is the 1080 Ti. Guest `nvidia-smi` lists UUID.
+   **Done.**
+3. VFIO `06:00.0` only. 5080 remains host nvidia 610. **Done.**
+4. Promoted `hosts.gpu5080-1080ti` retrieve-index-light `live: true`.
+   Endpoint `http://192.168.1.243`. Index prefers the guest. **Done.**
+5. Labels above. 5080 exclusive-seq CUDA CI unchanged. 3090 LocalAI
+   unchanged. Comfy stays masked.
 
-Until then: observe only. JSON + this doc must both show `live: false`.
-`ok` is that match against `nvidia-smi -L` (5080 only → `live: false`).
-Do not set `live: true` for lspci-only / vfio-pci without a UUID.
+JSON + this doc both show `live: true`. `ok` is that match against
+**guest** `nvidia-smi -L` (1080 Ti listed → `live: true`).
 
 ## References
 
 - Isolate / VFIO: [CSD-1080TI-ISOLATE.md](CSD-1080TI-ISOLATE.md)
-- Router stub: `config/model-router.json` `future_hosts.gpu5080-1080ti`
+- Router: `config/model-router.json` `hosts.gpu5080-1080ti`
 - ADR-0016 consumer GPU share · [GPU-SHARE.md](GPU-SHARE.md) (`G-1080`)
 - Placement: [CODEX-OPS.md](../CODEX-OPS.md) · [WHO-RUNS-WHAT.md](WHO-RUNS-WHAT.md)
-- Index script today: `scripts/csd-kb-index` (`CSD_INDEX_HOST` default `gpu5080`)
+- Index script: `scripts/csd-kb-index` (`CSD_INDEX_HOST` default `gpu5080-1080ti`)

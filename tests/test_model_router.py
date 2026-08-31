@@ -184,23 +184,35 @@ def test_never_dual_14b(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     assert classes.count("14b") == 1
 
 
-def test_1080ti_is_future_not_live() -> None:
+def test_1080ti_is_live_retrieve_index() -> None:
     cat = json.loads((ROOT / "config" / "model-router.json").read_text())
-    assert "gpu5080-1080ti" not in cat["hosts"]
-    stub = cat["future_hosts"]["gpu5080-1080ti"]
-    assert stub["live"] is False
-    assert stub["installed"] is False
-    assert stub["role"] == "retrieve-index-light"
-    assert stub["sm"] == "6.1"
-    assert "sm_120" in stub["lacks"]
-    assert "fp8" in stub["lacks"]
-    assert "fp4" in stub["lacks"]
-    assert "live=false" in stub["note"]
+    assert "gpu5080-1080ti" not in (cat.get("future_hosts") or {})
+    host = cat["hosts"]["gpu5080-1080ti"]
+    assert host["live"] is True
+    assert host["installed"] is True
+    assert host["role"] == "retrieve-index-light"
+    assert host["sm"] == "6.1"
+    assert host["endpoint"] == "http://192.168.1.243"
+    assert host["guest_ip"] == "192.168.1.243"
+    assert host["uuid"].startswith("GPU-4df3ba11")
+    assert "sm_120" in host["lacks"]
+    assert "fp8" in host["lacks"]
+    assert "fp4" in host["lacks"]
+    assert "live=true" in host["note"]
+    assert cat["hosts"]["gpu5080"]["prefer_jobs"] == [
+        "cuda-tests",
+        "train",
+        "triton",
+        "qdrant-measure",
+        "gpu-ci",
+    ]
 
 
-def test_1080ti_never_scheduled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_1080ti_scheduled_for_rag_not_cuda(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     r = load_router(tmp_path, monkeypatch)
-    assert "gpu5080-1080ti" not in r.schedulable_hosts()
+    assert "gpu5080-1080ti" in r.schedulable_hosts()
     inventory = inv_idle()
     sneak = {
         "host_pref": ["gpu5080-1080ti", "gpu5080"],
@@ -208,27 +220,29 @@ def test_1080ti_never_scheduled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         "needs_caps": [],
         "prefer_caps": [],
     }
-    assert r.place_host(sneak, inventory) == "gpu5080"
-    only_stub = {
+    assert r.place_host(sneak, inventory) == "gpu5080-1080ti"
+    only_ti = {
         "host_pref": ["gpu5080-1080ti"],
         "fits_5080": True,
         "needs_caps": [],
         "prefer_caps": [],
     }
-    assert r.place_host(only_stub, inventory) == "reject"
+    assert r.place_host(only_ti, inventory) == "gpu5080-1080ti"
     embed = r.catalog()["aliases"]["embed-qwen3-0.6b"]
-    assert r.place_host(embed, inventory) == "gpu5080"
+    assert r.place_host(embed, inventory) == "gpu5080-1080ti"
     cuda = r.catalog()["aliases"]["cuda-eval"]
     assert r.place_host(cuda, inventory) == "gpu5080"
 
 
-def test_embed_prefers_5080_caps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_embed_prefers_1080ti_guest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     r = load_router(tmp_path, monkeypatch)
     spec = r.catalog()["aliases"]["embed-qwen3-0.6b"]
     inventory = inv_idle(helper_ok=True)
-    assert r.place_host(spec, inventory) == "gpu5080"
-    assert r.prefer_score(spec, "gpu5080", inventory) > r.prefer_score(
-        spec, "akula-prime", inventory
+    assert r.place_host(spec, inventory) == "gpu5080-1080ti"
+    assert r.prefer_score(spec, "gpu5080-1080ti", inventory) >= r.prefer_score(
+        spec, "gpu5080", inventory
     )
 
 
@@ -250,56 +264,43 @@ def test_helper_aliases_list_multiple_hosts() -> None:
     assert "akula-prime" in embed["host_pref"]
     assert "retrieve" in embed["jobs"]
     assert "rag-index" in embed["jobs"]
+    assert "needs_lock" not in embed
     eight = cat["aliases"]["local/uncensored-fast"]
     for host in ("akula-prime", "gpu5080", "gpu5080-1080ti"):
         assert host in eight["host_pref"]
         assert host in cat["aliases"]["local/vision"]["host_pref"]
     assert eight["share"]["akula-prime"] == "leftover"
     assert eight["share"]["gpu5080"] == "share-small"
-    assert eight["share"]["gpu5080-1080ti"] == "when-live"
+    assert eight["share"]["gpu5080-1080ti"] == "retrieve-index-light"
 
 
-def test_rag_index_falls_back_to_5080_when_1080ti_not_live(
+def test_rag_index_prefers_1080ti_guest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     r = load_router(tmp_path, monkeypatch)
     assert r.job_to_alias("rag-index") == "embed-qwen3-0.6b"
+    assert r.job_to_alias("retrieve") == "embed-qwen3-0.6b"
     rec = r.pick_alias("embed-qwen3-0.6b", inventory=inv_idle())
     assert rec["ok"] is True
-    assert rec["host"] == "gpu5080"
+    assert rec["host"] == "gpu5080-1080ti"
     assert rec["host_pref"][0] == "gpu5080-1080ti"
 
 
-def test_embed_prefers_1080ti_when_promoted(
+def test_embed_keeps_5080_cuda_eval_on_5080(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cat = json.loads((ROOT / "config" / "model-router.json").read_text())
-    stub = cat["future_hosts"].pop("gpu5080-1080ti")
-    stub["live"] = True
-    stub["installed"] = True
-    cat["hosts"]["gpu5080-1080ti"] = stub
-    path = tmp_path / "catalog.json"
-    path.write_text(json.dumps(cat), encoding="utf-8")
-    monkeypatch.setenv("CSD_ROUTER_CATALOG", str(path))
-    monkeypatch.setenv("CSD_ROUTER_STATE", str(tmp_path / "state.json"))
-    monkeypatch.setenv("CSD_GPU_PLAN", str(tmp_path / "gpu-plan.json"))
-    loader = importlib.machinery.SourceFileLoader("csd_model_router_live", str(SCRIPT))
-    spec = importlib.util.spec_from_loader("csd_model_router_live", loader)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    loader.exec_module(mod)
-    mod.reset_catalog()
+    r = load_router(tmp_path, monkeypatch)
     inventory = inv_idle()
     inventory["gpu5080-1080ti"] = {
         "used_mib": 10,
         "free_mib": 11000,
         "total_mib": 11264,
     }
-    rec = mod.pick_alias("embed-qwen3-0.6b", inventory=inventory)
+    rec = r.pick_alias("embed-qwen3-0.6b", inventory=inventory)
     assert rec["ok"] is True
     assert rec["host"] == "gpu5080-1080ti"
-    cuda = mod.catalog()["aliases"]["cuda-eval"]
-    assert mod.place_host(cuda, inventory) == "gpu5080"
+    cuda = r.catalog()["aliases"]["cuda-eval"]
+    assert r.place_host(cuda, inventory) == "gpu5080"
 
 
 def test_pick_refuses_oom_and_exclusive_seq(
@@ -309,6 +310,13 @@ def test_pick_refuses_oom_and_exclusive_seq(
     busy = inv_idle(helper_ok=False)
     busy["gpu5080"]["lock"] = "1234"
     embed = r.catalog()["aliases"]["embed-qwen3-0.6b"]
+    # RAG stays on the 1080 Ti guest; does not take gpu5080.lock.
+    assert r.place_host(embed, busy) == "gpu5080-1080ti"
+    busy["gpu5080-1080ti"] = {
+        "used_mib": 11000,
+        "free_mib": 100,
+        "total_mib": 11264,
+    }
     # Leftover on 3090 still FITs embed (~4000 of ~6494).
     assert r.place_host(embed, busy) == "akula-prime"
     busy["akula-prime"]["free_mib"] = 100
@@ -323,7 +331,9 @@ def test_pick_refuses_oom_and_exclusive_seq(
     assert rec14["host"] == "akula-prime"
 
 
-def test_cluster_backends_three_hosts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cluster_backends_three_hosts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     r = load_router(tmp_path, monkeypatch)
     rec = r.cluster_backends()
     ids = [b["id"] for b in rec["backends"]]
@@ -335,4 +345,11 @@ def test_cluster_backends_three_hosts(tmp_path: Path, monkeypatch: pytest.Monkey
     live = {b["id"]: b["live"] for b in rec["backends"]}
     assert live["akula-prime"] is True
     assert live["gpu5080"] is True
-    assert live["gpu5080-1080ti"] is False
+    assert live["gpu5080-1080ti"] is True
+
+
+def test_csd_kb_index_defaults_to_1080ti_guest() -> None:
+    text = (ROOT / "scripts" / "csd-kb-index").read_text()
+    assert "CSD_INDEX_HOST:-gpu5080-1080ti" in text
+    assert "gpu5080.lock" in text
+    assert "CSD_INDEX_ALLOW_5080" in text

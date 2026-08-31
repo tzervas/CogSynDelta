@@ -11,7 +11,7 @@ if [[ ! -f "$VAULT/README.md" ]]; then
     '' \
     'CogSynDelta experiment vault. Host agents (Grok, Codex) may write here.' \
     'Not tzervas-dev-kb. Not akula-model-kb. 1024-d Qwen3 collection `akula-csd-kb`.' \
-    'Index: CogSynDelta `./scripts/csd-kb-index` (enqueue rag-index on gpu5080 timeshare; never pause 3090 LocalAI).' \
+    'Index: CogSynDelta `./scripts/csd-kb-index` (prefer 1080 Ti guest retrieve-index-light; never 5080 lock; never pause 3090 LocalAI).' \
     > "$VAULT/README.md"
 fi
 code=$(curl -sS -o /tmp/akula-csd-coll.json -w '%{http_code}' "$QDRANT/collections/$COLL" || true)

@@ -92,10 +92,9 @@ def load_inventory() -> dict[str, Any]:
 def schedulable_hosts() -> set[str]:
     """Host ids the router may pick.
 
-    Why: future_hosts (gpu5080-1080ti) is a catalog stub with live=false.
-    The GTX 1080 Ti is not seated. Scheduling it would invent a Pascal
-    device or steal 5080 exclusive-seq for RAG/index. Promote to hosts
-    only after nvidia-smi on gpu5080 lists the card.
+    Why: future_hosts stay unschedulable. gpu5080-1080ti is live in hosts
+    after guest nvidia-smi listed Pascal. RAG retrieve-index-light uses
+    that guest; 5080 exclusive-seq stays CUDA CI.
     """
     cat = catalog()
     future = set((cat.get("future_hosts") or {}).keys())
@@ -373,10 +372,11 @@ def place_host(
 ) -> str:
     """Pick a host from host_pref, or reject on caps / OOM / exclusive-seq.
 
-    host_pref order wins so RAG retrieve-index can prefer gpu5080-1080ti
-    when live and fall back to 5080 embed. prefer_caps is a tiebreaker.
-    future_hosts are never scheduled. 5080 lock busy skips helpers and
-    colliding CUDA on that card only; leftover 3090 may still FIT.
+    host_pref order wins so RAG retrieve-index prefers gpu5080-1080ti
+    (live guest) and falls back to 5080 embed only if the guest is down.
+    prefer_caps is a tiebreaker. future_hosts are never scheduled.
+    5080 lock busy skips CUDA/helpers on that card only; 1080 Ti RAG
+    and leftover 3090 may still FIT.
     """
     prefs = list(spec.get("host_pref") or ["akula-prime"])
     if spec.get("pool_ok") and not spec.get("fits_prime") and not spec.get("fits_5080"):
@@ -419,7 +419,7 @@ def pick_alias(
     """Dry-run placement without mutating router state.
 
     Why: autodev must refuse a pick that OOMs or collides with exclusive-seq
-    before request loads weights. 1080 Ti is skipped until live=true.
+    before request loads weights. 1080 Ti RAG is live; CUDA stays on 5080.
     """
     cat = catalog()
     spec = (cat.get("aliases") or {}).get(alias)
@@ -631,8 +631,8 @@ def pack_helpers(
 ) -> dict[str, Any]:
     """Fill leftover VRAM with helpers that fit, without dual 14B or OOM.
 
-    Why: autodev should stand up embed/8B in free space instead of
-    leaving the 5080 idle while the 3090 holds only local/code.
+    Why: autodev should stand up embed/8B in free space. Embed/RAG
+    prefers the 1080 Ti guest; 5080 stays CUDA CI exclusive-seq.
     """
     now = time.time() if now is None else now
     inv = inventory if inventory is not None else load_inventory()
@@ -646,7 +646,7 @@ def pack_helpers(
     prime_free = int(prime.get("free_mib") or 0)
     gpu_free = int(node.get("free_mib") or 0)
     aliases = cat.get("aliases") or {}
-    # Prefer 5080 for embed (Blackwell/CUDA), 3090 leftover for tiny GGUF.
+    # Prefer 1080 Ti guest for embed/RAG; 3090 leftover for tiny GGUF.
     order = ["embed-qwen3-0.6b", "local/uncensored-fast"]
     st = load_state()
     for name in order:
@@ -657,6 +657,10 @@ def pack_helpers(
             continue
         if name in (st.get("resident") or {}):
             continue
+        if host == "gpu5080-1080ti":
+            ti = inv.get("gpu5080-1080ti") or {}
+            if "free_mib" in ti and int(ti.get("free_mib") or 0) < vram + 512:
+                continue
         if host == "gpu5080":
             if not node.get("helper_ok") or lock_busy(node):
                 # Fallback: 3090 leftover if caps allow and it fits.
@@ -692,8 +696,8 @@ def job_to_alias(job: str) -> str:
 def cluster_backends(cat: dict[str, Any] | None = None) -> dict[str, Any]:
     """Three-backend cluster snapshot (3090 + 5080 + 1080 Ti).
 
-    Why: lab /api/status must list all cards even when the Pascal guest
-    is not live. Grafana groups stay akula-rag / csd-autodev.
+    Why: lab /api/status lists 3090 + 5080 + live 1080 Ti guest.
+    Grafana groups stay akula-rag / csd-autodev.
     """
     cat = cat if cat is not None else catalog()
     backends: list[dict[str, Any]] = []

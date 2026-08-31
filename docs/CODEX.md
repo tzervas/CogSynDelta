@@ -35,7 +35,7 @@ Keyword retrieve on `:8091` / `:8092` is CPU. Vector **index** of `akula-csd-kb`
 
 ```bash
 ./scripts/csd-kb-setup
-./scripts/csd-kb-index          # 5080 exclusive-seq; never pause 3090 LocalAI
+./scripts/csd-kb-index          # 1080 Ti guest; never 5080 lock; never pause 3090 LocalAI
 # or from akula-ai-platform: make index-gap-kb
 ```
 

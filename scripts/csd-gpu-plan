@@ -98,11 +98,52 @@ def smi_5080() -> dict:
     }
 
 
+
+def smi_1080ti() -> dict:
+    """Guest Pascal RAG card. Never the 5080 lock."""
+    p = subprocess.run(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=8",
+            "gpu5080-1080ti",
+            (
+                "nvidia-smi --query-gpu=name,uuid,memory.used,memory.free,"
+                "memory.total,power.limit --format=csv,noheader,nounits"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    parts = [x.strip() for x in (p.stdout or "").split(",")]
+    if len(parts) < 6:
+        return {"error": (p.stderr or p.stdout)[:200], "live": False}
+    used, free, total = (int(float(parts[i])) for i in (2, 3, 4))
+    return {
+        "name": parts[0],
+        "uuid": parts[1],
+        "used_mib": used,
+        "free_mib": free,
+        "total_mib": total,
+        "power_limit_w": parts[5],
+        "arch": "pascal",
+        "sm": "6.1",
+        "role": "retrieve-index-light",
+        "endpoint": "http://192.168.1.243",
+        "live": True,
+        "never": ["gpu5080.lock", "exclusive-seq", "PoC CUDA", "unmask Comfy"],
+    }
+
+
 def main() -> int:
     plan = {
         "autodev_priority": True,
         "akula-prime": smi_local(),
         "gpu5080": smi_5080(),
+        "gpu5080-1080ti": smi_1080ti(),
         "webui_host": "homelab",
         "text_implementer": "local/code via csd-localai-queue",
         "hosted_grok": "plan/unblock/safety only",

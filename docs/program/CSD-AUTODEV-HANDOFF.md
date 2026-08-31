@@ -23,12 +23,12 @@ required Forgejo checks **ran and succeeded** (skip / `|| true` /
 | Box | IP | Job |
 |---|---|---|
 | 3090 (akula-prime) | `192.168.1.98` | `local/code` implementer. LocalAI stays loaded. |
-| 5080 (gpu5080) | **`192.168.1.251`** (never `.252`) | Exclusive CUDA / CI / index. Comfy masked. |
-| 1080 Ti guest | VFIO `06:00.0` on gpu5080 | RAG retrieve/index/light **only if** guest `nvidia-smi` lists Pascal. |
+| 5080 (gpu5080) | **`192.168.1.251`** (never `.252`) | Exclusive CUDA / CI. Comfy masked. |
+| 1080 Ti guest | `192.168.1.243` VFIO `06:00.0` | RAG retrieve-index-light (`live=true`). |
 
-Guest is **not live** (no `virsh` domain, no guest IP, host smi is 5080-only).
-Still run autodev on **3090 + 5080**. RAG stays **5080-embed or prime** until
-`future_hosts.gpu5080-1080ti.live=true`. Do not start `G-1080`.
+Guest **is live**: `hosts.gpu5080-1080ti` `live=true`, endpoint
+`http://192.168.1.243`. Autodev stays on **3090**. CUDA CI stays on **5080**.
+`csd-kb-index` / retrieve prefer the 1080 Ti guest (not `gpu5080.lock`).
 
 ## Next closeable (not P1-08)
 
