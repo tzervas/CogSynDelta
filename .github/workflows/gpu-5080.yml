@@ -21,7 +21,17 @@ jobs:
     runs-on: [self-hosted, linux, x64, gpu, 5080, host-gpu5080]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      # gpu5080 runner has no node; actions/checkout@v4 dies in 1s.
+      - name: Checkout without node
+        env:
+          REPO_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git -c http.extraHeader="AUTHORIZATION: bearer ${REPO_TOKEN}" \
+            fetch --depth 1 origin "${GITHUB_SHA}"
+          git checkout --force FETCH_HEAD
       - name: Exclusive 5080 + CUDA tests
         run: |
           set -euo pipefail
