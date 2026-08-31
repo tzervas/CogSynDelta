@@ -22,8 +22,10 @@ while unmet goals remain AND not forced-stop:
       if truly unsafe or needs the operator: pause and inform the operator
 ```
 
-Run via `/csd-goal-loop`. Bounded: a few increments per run; the 2h scheduler
-is the backup sequence. Resume a paused run after the gatekeeper answers.
+Run via `/csd-goal-loop`. Bounded: a few increments per run. Wake on Forgejo
+PR/CI transitions (`scripts/forgejo-pr-watch.py` + Stop hook
+`scripts/hooks/grok-pr-action-stop.sh`), not a 2h timer. Resume a paused run
+after the gatekeeper answers.
 
 ## Sandbox (may proceed without the operator)
 
