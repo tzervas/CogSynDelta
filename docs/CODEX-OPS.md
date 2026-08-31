@@ -136,10 +136,16 @@ secret exec TOKEN=git/cabal-forgejo-admin -- \
 Day-to-day after that: `git remote add forgejo https://git.vectorweight.com/tzervas/CogSynDelta.git` and `git push -u forgejo HEAD`. PRs/issues/Actions on git.vectorweight.com. `secret exec TOKEN=git/cabal-forgejo-agent` — never argv.
 
 ```yaml
-# .github/workflows stay canonical (Forgejo runs them). Never add .forgejo/workflows/.
+# CPU tests (homelab): never GPU
 runs-on: [self-hosted, linux, x64, podman, compute-cpu, host-homelab]
-# Never: gpu, 5080, ubuntu-latest, bare self-hosted
+# GPU tests (5080, queued via gpu5080.lock vs timeshare):
+runs-on: [self-hosted, linux, x64, gpu, 5080, host-gpu5080]
+# Never: ubuntu-latest, bare self-hosted, compute-cpu on the 5080
 ```
+
+Offline packages (homelab, LAN): `/data/pypi-offline` and Forgejo Packages
+(`has_packages` on tzervas repos). `UV_FIND_LINKS` / `UV_NO_NETWORK=1` for
+5080 sandbox. CUDA torch stays the 5080 Comfy image, not a PyPI CUDA wheel.
 
 No required reviews on these tzervas repos. Self-review COMMENT + honestly green CI. Never APPROVE as Cabal.
 

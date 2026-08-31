@@ -28,8 +28,10 @@ hook), not a 2h timer.
 
 | ID | Goal | Status | Notes |
 |---|---|---|---|
-| G-GPU | 3090 `local/code` 32k + 5080 autodev | met | 32k measured ~16570 used / 5993 free. Comfy masked. Share-small leftover. Never dual 14B. |
-| G-CAP | Safeguard budgets fit lab GPUs | met | 14 GiB default (5080 exclusive), 20 GiB ceiling (3090 Ti). 512 MiB output. 3600s GPU timeout. Caps, not PoC fill. |
+| G-GPU | 3090 `local/code` 32k + 5080 autodev | met | 32k ~16570 used / 5993 free. Comfy masked. Share-small leftover. Never dual 14B. |
+| G-CAP | Safeguard budgets fit lab GPUs | met | 14 GiB default (5080), 20 GiB ceiling (3090 Ti). |
+| G-GPUCI | 5080 Forgejo GPU runner + lock queue | open | Runner `gpu5080-tzervas` labels gpu/5080/host-gpu5080. `gpu5080.lock` vs timeshare. Workflow `.github/workflows/gpu-5080.yml`. |
+| G-WHEEL | Homelab offline PyPI (+ crates dir) | open | `/data/pypi-offline` (24 wheels starter). No WAN on 5080. CUDA torch = Comfy image. |
 
 ## Blocked / horizon
 

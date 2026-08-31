@@ -58,8 +58,11 @@ Sibling worktrees from `forgejo/main`.
   Never mix 384-d Qdrant.
 - Git: Forgejo `tzervas/*` as `GIT_USERNAME=tzervas` + `git-askpass-token` +
   `credential.helper=` disabled. Never GitHub bot push.
+- Branches: cut from `main`. After merge, delete the head. Keep only `main`,
+  `release/*`, tags, and `local/kang-main-wip`. Drop Jules/Copilot heads.
+  Merge API: `delete_branch_after_merge=true`.
 - Merge: required checks **ran and succeeded**. Skip / `|| true` / missing
-  runner is not green.
+  runner is not green. Workflows merge themselves; do not wait on chat.
 - WAN: workers deny. Gatekeeper may fetch chroma GHSA, PyPI, HF.
 
 ## Commands

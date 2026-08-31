@@ -167,8 +167,9 @@ while round < 3 {
                     mer_p += "Poll combined status until success or ~20 minutes.\n";
                     mer_p += "Merge only if required jobs RAN and succeeded. Skip/pending/red is not green.\n";
                     mer_p += "Never merge Jules/develop/GitHub bots or chroma PR #3.\n";
-                    mer_p += "secret exec TOKEN=git/cabal-forgejo-admin. POST merge Do=merge chore(merge): title.\n";
-                    mer_p += "Return merged, reason, evidence, merge_sha.\n";
+                    mer_p += "secret exec TOKEN=git/cabal-forgejo-admin. POST merge Do=merge,\n";
+                    mer_p += "chore(merge): title, delete_branch_after_merge=true unless main/release/*.\n";
+                    mer_p += "Never delete kang-main-wip. Return merged, reason, evidence, merge_sha.\n";
                     let mer = agent(mer_p, #{
                         label: "merge-when-green",
                         capability_mode: "all",

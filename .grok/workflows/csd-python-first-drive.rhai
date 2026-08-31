@@ -194,8 +194,10 @@ if accepted && pru != "" {
     mer_p += "Skip, || true, cancelled, pending, missing runner, or failure is NOT green.\n";
     mer_p += "Honest red: do not merge; set merged=false and quote the red job.\n";
     mer_p += "Never merge Jules/develop/GitHub bots or chroma PR #3.\n";
-    mer_p += "Merge POST /api/v1/repos/tzervas/memory-gate/pulls/{n}/merge as tzervas\n";
-    mer_p += "with Do=merge and chore(merge): title. Return merged, reason, evidence, merge_sha.\n";
+    mer_p += "Merge POST .../pulls/{n}/merge as tzervas with Do=merge, chore(merge): title,\n";
+    mer_p += "and delete_branch_after_merge=true unless the head is main/master/release/*.\n";
+    mer_p += "Branches are ephemeral off main. Keep only main, release/*, and tags.\n";
+    mer_p += "Never delete local/kang-main-wip. Return merged, reason, evidence, merge_sha.\n";
     let mer = agent(mer_p, #{
         label: "merge-when-green",
         capability_mode: "all",

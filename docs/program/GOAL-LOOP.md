@@ -32,8 +32,11 @@ after the gatekeeper answers.
 Lab only: Forgejo `tzervas/*`, localhost Qdrant/LocalAI, `akula-csd-kb` reads,
 homelab CPU CI, sibling git worktrees, `uv`/`pytest`/`ruff` on the worktree.
 Workflows **wait on Forgejo CI and merge themselves** when required jobs **ran
-and succeeded**. Do not wait for this chat. Do not schedule cargo jobs on Python-only repos (no `if: rust` skip
-theatre). If `Cargo.toml` appears later, fail closed and add a real rust job.
+and succeeded**, then **delete the PR head** (`delete_branch_after_merge`)
+unless it is `main` / `release/*`. Keep `local/kang-main-wip`. Drop Jules and
+Copilot branches. Do not wait for this chat. Do not schedule cargo jobs on
+Python-only repos (no `if: rust` skip theatre). If `Cargo.toml` appears later,
+fail closed and add a real rust job.
 
 **Not sandbox** (gatekeeper or operator): WAN/GitHub/PyPI/HF downloads, pause
 3090 LocalAI, git history rewrite, merge of red checks, writes to
