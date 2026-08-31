@@ -9,7 +9,7 @@ Python-first. This file is how to use the lab, not a claim that CogSynDelta alre
 | Host | IP | GPU | Role for Codex |
 |---|---|---|---|
 | akula-prime | 192.168.1.98 | RTX 3090 Ti ~23028 MiB | `local/code` Q4 32k resident (native ctx). Leftover VRAM: share-small helpers (embed/8B). Never two 14Bs. |
-| gpu5080 | 192.168.1.252 | RTX 5080 ~16303 MiB | Exclusive CUDA/index/eval; share-small embed when idle (`helper_cap` 6 GiB). Comfy masked for autodev until operator unmasks. |
+| gpu5080 | 192.168.1.251 | RTX 5080 ~16303 MiB | Exclusive CUDA/index/eval; share-small embed when idle (`helper_cap` 6 GiB). Comfy masked for autodev until operator unmasks. Static DHCP .251 (was .252). |
 | homelab | 192.168.1.170 | none | Always-up UI + **Forgejo CPU Actions**. No GPU jobs. |
 
 Akula scripts live in `/home/kang/code/personal/tzervas/akula-ai-platform`. Prefix `AKULA=…` below.

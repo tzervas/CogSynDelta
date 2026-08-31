@@ -8,11 +8,15 @@ host to seat hardware.
 Identity: **autodev**. Branch: `feat/agent-harness` (never `main` /
 `staging` / `develop` / `dev`).
 
+Driver split and sandbox: [CSD-1080TI-ISOLATE.md](CSD-1080TI-ISOLATE.md)
+(VFIO `06:00.0` only; 5080 stays host).
+
 ## Hard rules
 
 - Do **not** power off gpu5080 from this path.
 - Do **not** unmask Comfy.
 - Do **not** pause 3090 LocalAI.
+- Do **not** VFIO the RTX 5080.
 - Do **not** treat the 1080 Ti as a 5080 substitute for PoC CUDA,
   FP8/FP4, dual-14B, or exclusive-seq train/eval.
 - Never bind `0.0.0.0` on WAN.
@@ -35,9 +39,9 @@ and set `live: true`. Router scheduling reads `hosts` only.
 | installed | `false` |
 | role | `retrieve-index-light` (when promoted) |
 | host | `gpu5080` |
-| IP (LAN) | `192.168.1.252` |
+| IP (LAN) | `192.168.1.251` (router static; was `.252`) |
 | Box | Same workstation as the RTX 5080 |
-| PCI | Below the 5080 (lower slot; 5080 keeps the primary x16) |
+| PCI | **`06:00.0`** (below the 5080; 5080 keeps the primary x16) |
 | GPU | GTX 1080 Ti (EVGA reference / factory cooler first) |
 | Arch / SM | Pascal `sm_61` |
 | VRAM | ~11 GiB GDDR5X (`vram_mib` 11264, `safeguard_mib` 10240) |
@@ -67,20 +71,31 @@ stop LocalAI for RAG. Do not steal 5080 exclusive-seq VRAM for index.
 
 ## Isolation
 
-Same box, two devices. **No MIG** (GeForce; none of 3090 / 5080 /
-1080 Ti implement MIG). Do not share VRAM with 5080 jobs.
+Same box, two devices. **No MIG**. Do not share VRAM with 5080 jobs.
+
+**Driver split is VFIO, not a container.** Blackwell 610 (host 5080)
+and a Pascal driver cannot share one `nvidia.ko`. Docker/Podman GPU
+passthrough uses the host module. Decision:
+[CSD-1080TI-ISOLATE.md](CSD-1080TI-ISOLATE.md).
 
 | Mechanism | Policy |
 |---|---|
-| `CUDA_VISIBLE_DEVICES` | Separate from 5080 exclusive-seq. RAG/index process sees **only** the 1080 Ti. Train/eval/Comfy sees **only** the 5080. |
+| VFIO | Bind **`06:00.0`** (1080 Ti) only. 5080 stays host `nvidia.ko` for CUDA CI / `gpu-5080.yml`. Guest: older Pascal driver, llama.cpp/embed. |
+| CDI / UUID container | Only **after** host or guest actually binds the 1080 Ti. UUID only; no 5080. Not a second driver. |
+| `CUDA_VISIBLE_DEVICES` | Process visibility only. Does not split kernel modules. |
 | MIG | Do not call MIG APIs. Do not claim MIG. |
 | VRAM | Do not share VRAM with 5080 jobs. No CUDA IPC / MPS across the two cards for this role. |
 | Lock | 5080 `gpu5080.lock` / exclusive-seq stays the 5080. 1080 Ti RAG must not take that lock to “borrow” the 5080. |
 | Router | Ignore `future_hosts.gpu5080-1080ti` while `live: false`. Never schedule `sm_120` or FP8/FP4 on Pascal. |
 
 Pin by PCI / UUID after `nvidia-smi -L`, not by assuming index 0 is
-the 5080. Factory cooler first; do not plan a 1080 Ti loop until
-factory air is measured.
+the 5080. Factory cooler first; factory eco PL when bound. Do not plan
+a 1080 Ti loop until factory air is measured. Preserve `/models` on
+`sda2` if touching disks.
+
+Host verify (2026-08-31T20:03:42Z): `nvidia-smi -L` lists **only** the
+RTX 5080; `lspci -k` shows `06:00.0`/`06:00.1` **vfio-pci**. Catalog
+stays `live: false` until the **guest** lists the 1080 Ti.
 
 ## Labels (o11y)
 
@@ -105,11 +120,14 @@ Never mix 384-d collections.
 ## Promote (operator, not autodev)
 
 1. Card seated. Factory cooler. Host stays up (no remote power-off).
-2. `nvidia-smi` on gpu5080 lists RTX 5080 **and** GTX 1080 Ti.
-3. Record PCI / UUID. 1080 Ti is the device **below** the 5080.
+2. Confirm PCI **`06:00.0`** is the 1080 Ti. `nvidia-smi` on gpu5080
+   lists RTX 5080 **and** GTX 1080 Ti (or the guest lists the 1080 Ti
+   after VFIO).
+3. VFIO `06:00.0` only per [CSD-1080TI-ISOLATE.md](CSD-1080TI-ISOLATE.md).
+   5080 remains on the host driver.
 4. Promote `future_hosts.gpu5080-1080ti` → `hosts` with
-   retrieve-index-light. Wire `csd-kb-index` host/device override to
-   that UUID via `CUDA_VISIBLE_DEVICES`.
+   retrieve-index-light. Wire index to the 1080 Ti UUID **after** bind
+   (guest, or host-fallback UUID-only container). Not `--gpus all`.
 5. Stamp the labels above. 5080 exclusive-seq unchanged. 3090 LocalAI
    unchanged. Comfy stays masked unless the operator unmasks.
 
@@ -118,6 +136,7 @@ Until then: observe only. JSON + this doc must both show `live: false`.
 
 ## References
 
+- Isolate / VFIO: [CSD-1080TI-ISOLATE.md](CSD-1080TI-ISOLATE.md)
 - Router stub: `config/model-router.json` `future_hosts.gpu5080-1080ti`
 - ADR-0016 consumer GPU share · [GPU-SHARE.md](GPU-SHARE.md) (`G-1080`)
 - Placement: [CODEX-OPS.md](../CODEX-OPS.md) · [WHO-RUNS-WHAT.md](WHO-RUNS-WHAT.md)
