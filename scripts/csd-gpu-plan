@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Plan 3090/5080 splits for autodev. Never dual 14B. Never OOM on purpose."""
+# ruff: noqa: S607
 from __future__ import annotations
 
 import json
@@ -31,6 +32,17 @@ def smi_local() -> dict:
         "free_mib": free,
         "total_mib": total,
         "role": "local/code",
+        "arch": "ampere",
+        "sm": "8.6",
+        "caps": [
+            "gguf-infer",
+            "high-vram",
+            "localai",
+            "ampere",
+            "sm_86",
+            "fp16",
+            "decode-tight",
+        ],
         "second_14b": False,
         "share_small": free >= 4096,
         "share_small_job": "embed-0.6B" if free >= 4096 else None,
@@ -49,7 +61,8 @@ def smi_5080() -> dict:
             "nvidia-smi --query-gpu=name,memory.used,memory.free,memory.total "
             "--format=csv,noheader,nounits; "
             "systemctl is-enabled akula-comfyui.service 2>/dev/null; "
-            "fuser /home/tzervas/akula-harness/state/gpu5080.lock 2>/dev/null || echo lock=idle",
+            "fuser /home/tzervas/akula-harness/state/gpu5080.lock 2>/dev/null || echo lock=idle; "
+            "ls /models/localai/*.gguf 2>/dev/null | wc -l",
         ],
         capture_output=True,
         text=True,
@@ -61,8 +74,12 @@ def smi_5080() -> dict:
         return {"error": (p.stderr or p.stdout)[:200]}
     used, free, total = (int(float(parts[i])) for i in (1, 2, 3))
     comfy = lines[1] if len(lines) > 1 else "?"
-    lock = lines[-1] if len(lines) > 2 else "?"
+    lock = lines[2] if len(lines) > 2 else "?"
     helper = free >= 6144 and "masked" in comfy and "idle" in lock
+    try:
+        gguf_count = int((lines[3] if len(lines) > 3 else "0").strip() or "0")
+    except ValueError:
+        gguf_count = 0
     return {
         "name": parts[0],
         "used_mib": used,
@@ -70,6 +87,10 @@ def smi_5080() -> dict:
         "total_mib": total,
         "comfy": comfy,
         "lock": lock,
+        "gguf_count": gguf_count,
+        "arch": "blackwell",
+        "sm": "12.0",
+        "caps": ["cuda-eval", "sm_120", "fp8", "fp4", "embed", "gpu-ci", "blackwell"],
         "role": "cuda-tests" if not helper else "cuda-or-helper",
         "helper_ok": helper,
         "helper": "Qwen3-Embedding-0.6B in Comfy python3.13" if helper else None,
@@ -85,6 +106,12 @@ def main() -> int:
         "webui_host": "homelab",
         "text_implementer": "local/code via csd-localai-queue",
         "hosted_grok": "plan/unblock/safety only",
+        "pool": {
+            "combined_mib": 39331,
+            "usable_mib": 39331 - 1536,
+            "enabled": False,
+            "backend": "llama.cpp-rpc",
+        },
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")

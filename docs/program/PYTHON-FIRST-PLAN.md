@@ -118,6 +118,9 @@ Worker package: [IMPLEMENTER-HANDOFF.md](IMPLEMENTER-HANDOFF.md).
 - **Phase 4**: progressive Rust rewrite, dual-run vs Python.
 - **Phase 5 (experimental, later)**: split one CSD model across mismatched
   3090+5080 as a pool. Do not start until Phase 3 one-GPU Python is proven.
+- **Lab horizon (not Phase 5)**: `G-SHARE` MIG-like slots on GeForce +
+  optional 1080 Ti node. See [GPU-SHARE.md](GPU-SHARE.md). Do not start
+  from Phase 1 autoloops.
 
 ## Allocation
 

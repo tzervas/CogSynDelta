@@ -1,0 +1,18 @@
+[Unit]
+Description=CSD lab webapp on homelab (UI; GPU APIs proxied to prime)
+After=default.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kang/code/personal/tzervas/CogSynDelta
+Environment=CSD_LAB_BIND=192.168.1.170
+Environment=CSD_UPSTREAM=http://192.168.1.98:9118
+# UI only; GPU APIs proxied to prime. No LocalAI key required.
+ExecStart=/usr/bin/python3 /home/kang/code/personal/tzervas/CogSynDelta/scripts/csd-lab-console --http 9118
+Restart=always
+RestartSec=3
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

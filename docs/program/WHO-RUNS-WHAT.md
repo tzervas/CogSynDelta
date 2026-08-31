@@ -5,17 +5,19 @@ Living visibility for the operator. Not `STATUS.md`.
 ## Intent
 
 Drive CogSynDelta / memory-gate **maximally on self-hosted models**. Hosted
-Grok is the control plane: plans, WAN, merge policy, research feed.
+Grok is the control plane: plans, WAN, merge policy, research feed,
+context packs. It does **not** implement.
 
 ## What actually runs today (2026-08-31)
 
 | Path | Where | Model | Why |
 |---|---|---|---|
 | This Grok TUI | akula-prime session | Hosted grok-4.6 | Control plane. You are here. |
-| `/csd-autodev-loop` | akula-prime | **local/code via queue** | Default implementer. No hosted Grok tokens |
+| `/csd-autodev-loop` | akula-prime | **local/code via queue** | Default implementer. Router packs helpers. No hosted Grok tokens |
 | `/csd-python-first-drive` | Grok Build | **do not use for implement** | Burns hosted quota; host cannot spawn `local/code` |
-| 3090 LocalAI `local/code` | akula-prime `:8080` | Qwen2.5-Coder-14B Q4 **32k** | Resident assist (~16.5 GiB). Chat via Open WebUI / lab console |
-| 5080 | gpu5080 | **no LLM** (Comfy masked) | Exclusive CUDA/index/GPU CI. Not a second 14B |
+| 3090 LocalAI `local/code` | akula-prime `:8080` | Qwen2.5-Coder-14B Q4 **32k** | Resident assist (~16.5 GiB). Chat via Open WebUI / lab **Live feed** |
+| 5080 | gpu5080 | helpers / CUDA (Comfy masked) | Exclusive CUDA/index/GPU CI. Share-small embed when lock idle. Not a second 14B |
+| `csd-model-router` | both | placement + migrate | Caps: Ampere vs Blackwell. Stage A live; Stage B pool parked |
 | Homelab `homelab-cpu` | 192.168.1.170 | none | Forgejo CPU Actions |
 | `gpu5080-tzervas` | gpu5080 | none | Forgejo GPU Actions, queued on `gpu5080.lock` |
 
@@ -28,8 +30,11 @@ generation goes through** `./scripts/csd-localai-queue` → 3090 `local/code`
 
 ## Operator UI
 
-- Chat: https://code.vectorweight.com (homelab Open WebUI → 3090 `:8080`)
-- Lab/steer: https://code.vectorweight.com/lab (`csd-lab-console`)
+- Chat: https://ai.vectorweight.com (existing Open WebUI → 3090 LocalAI
+  `:8080` / `:8079`; Comfy/media via that instance). Do **not** run a
+  second WebUI on `code.vectorweight.com`.
+- Lab: https://code.vectorweight.com — **Live feed** (3090+5080 loaded
+  models), **Pool**, **History**, **Steer**. `/chat` redirects to AI WebUI.
 - Autodev priority: `./scripts/csd-autodev-priority on` (Comfy masked; prime WebUI off)
 
 ## How to invert it (self-hosted lift)

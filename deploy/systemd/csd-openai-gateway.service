@@ -1,0 +1,17 @@
+[Unit]
+Description=CSD OpenAI gateway (3090+5080 router for Open WebUI)
+After=default.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kang/code/personal/tzervas/CogSynDelta
+Environment=SECRET_VAULT=/akula-data/cabal/csd-vault
+Environment=SOPS_AGE_KEY_FILE=/akula-data/cabal/csd-vault/age.txt
+ExecStart=/home/kang/.local/bin/secret exec LOCALAI_API_KEY=gpu/localai-api-key -- /usr/bin/python3 /home/kang/code/personal/tzervas/CogSynDelta/scripts/csd-openai-gateway --port 9120
+Restart=always
+RestartSec=3
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

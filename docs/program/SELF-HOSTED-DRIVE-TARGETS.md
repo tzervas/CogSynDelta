@@ -103,6 +103,9 @@ The eventual stack is a **symphony**:
 4. **Phase 4**: Rust rewrite after Python CSD is production-ready.
 5. **Phase 5 (experimental)**: pool mismatched GPUs (3090 Ti + 5080) for
    split inference/training of one CSD mind. Not before Phase 3 one-GPU proof.
+6. **Lab horizon**: interned micro-specialists (`G-SHARE`, up to 256
+   that fit) and optional 1080 Ti in the 5080 box (`G-1080`).
+   [GPU-SHARE.md](GPU-SHARE.md). Not Phase 1.
 
 ## Hardware and storage
 

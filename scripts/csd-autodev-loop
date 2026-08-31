@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -18,10 +19,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STEER = Path("/akula-data/cabal/csd-steer.json")
 OUT = Path("/akula-data/cabal/autodev-out")
+HEART = Path("/akula-data/cabal/autodev-heartbeat.json")
 QUEUE = ROOT / "scripts/csd-localai-queue"
 PLAN = ROOT / "scripts/csd-gpu-plan"
+ROUTER = ROOT / "scripts/csd-model-router"
 GOALS = ROOT / "docs/program/GOALS.md"
 HAND = ROOT / "docs/program/IMPLEMENTER-HANDOFF.md"
+POOL = ROOT / "docs/program/GPU-POOL.md"
+QD_PACK = ROOT / "docs/program/CONTEXT-PACK-G-QD.md"
+MG_WT = Path(
+    os.environ.get(
+        "CSD_AUTODEV_WT",
+        "/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-08",
+    )
+)
+P108_PACK = ROOT / "docs/program/CONTEXT-PACK-P1-08.md"
+PROTECTED = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
+ALLOW_PREFIXES = ("src/", "tests/", "docs/")
 
 
 def steered_pause() -> bool:
@@ -34,31 +48,149 @@ def steered_pause() -> bool:
 
 
 def next_open_goal() -> str:
+    if STEER.is_file():
+        try:
+            nxt = str(json.loads(STEER.read_text()).get("next_goal") or "").strip()
+        except json.JSONDecodeError:
+            nxt = ""
+        if nxt:
+            return nxt
     for line in GOALS.read_text(encoding="utf-8").splitlines():
         if "| G-TRAIN" in line or "| G-SPLIT" in line or "| G-CHROMA" in line:
+            continue
+        if "| G-POOL" in line or "| G-GPUCI" in line or "| G-WHEEL" in line:
+            continue
+        if "| G-SHARE" in line or "| G-1080" in line or "| G-LIFE" in line:
             continue
         if "| G-" in line and "| open |" in line:
             return line
     return ""
 
 
+def _router(*args: str) -> None:
+    subprocess.run([str(ROUTER), *args], check=False, cwd=ROOT)
+
+
+def apply_http(payload: dict) -> dict:
+    """POST allowlisted file to prime agent. No SSH."""
+    import urllib.error
+    import urllib.request
+
+    token = os.environ.get("CSD_APPLY_TOKEN", "")
+    if not token:
+        tf = Path(os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token"))
+        if tf.is_file():
+            token = tf.read_text(encoding="utf-8").strip()
+    wt = os.environ.get("CSD_APPLY_WORKTREE", "p1-08")
+    body = json.dumps(
+        {
+            "worktree": wt,
+            "path": payload.get("path"),
+            "content": payload.get("content"),
+        }
+    ).encode()
+    url = os.environ["CSD_APPLY_URL"].rstrip("/") + "/api/apply"
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        return {"ok": False, "error": exc.read().decode()[:300]}
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+
+
+def extract_json(text: str) -> dict:
+    """Parse the first JSON object from a model reply."""
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def apply_proposal(payload: dict, dest: Path) -> dict:
+    """Write one relative path into the memory-gate worktree.
+
+    Why: autodev must land slices without touching kang-main-wip.
+    Homelab dispatch uses CSD_APPLY_URL (HTTP bearer), not SSH.
+    """
+    rel = str(payload.get("path") or "").lstrip("/")
+    if dest.resolve() == PROTECTED.resolve():
+        return {"ok": False, "error": "refusing kang-main-wip"}
+    if not rel or payload.get("content") is None:
+        return {"ok": True, "skipped": payload.get("note") or "no-file"}
+    if ".." in Path(rel).parts or not rel.startswith(ALLOW_PREFIXES):
+        return {"ok": False, "error": f"path not allowed: {rel}"}
+    deny = {
+        "src/memory_policy.py",
+        "src/tiered_memory_policy.py",
+        "tests/test_tiered_memory_policy.py",
+    }
+    if rel in deny:
+        return {"ok": False, "error": f"stale path: {rel}"}
+    content = str(payload.get("content") or "")
+    if "\x00" in content:
+        return {"ok": False, "error": "nul in content"}
+    if "def test_" in content and "assert" not in content and "pytest.raises" not in content:
+        return {"ok": False, "error": "test has no assert; refusing pass stubs"}
+    url = os.environ.get("CSD_APPLY_URL", "").rstrip("/")
+    if url:
+        return apply_http(payload)
+    target = (dest / rel).resolve()
+    if dest.resolve() not in target.parents and target != dest.resolve():
+        return {"ok": False, "error": "escaped worktree"}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(str(payload.get("content")), encoding="utf-8")
+    return {"ok": True, "wrote": str(target)}
+
+
+def beat(extra: dict | None = None) -> None:
+    HEART.parent.mkdir(parents=True, exist_ok=True)
+    rec = {"t": time.time(), "pid": os.getpid(), "wt": str(MG_WT)}
+    if extra:
+        rec.update(extra)
+    HEART.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+
+
 def tick() -> dict:
+    beat()
     subprocess.run([str(PLAN)], check=False, cwd=ROOT)
+    _router("request", "--alias", "local/code", "--why", "autodev", "--ttl", "3600", "--noping")
+    _router("pack")
     if steered_pause():
         return {"ok": True, "skipped": "steer.pause"}
     goal = next_open_goal()
     if not goal:
         return {"ok": True, "skipped": "no open goal"}
+    slice_pack = ""
+    if "G-QD" in goal and QD_PACK.is_file():
+        slice_pack = QD_PACK.read_text(encoding="utf-8")[:2500]
+    elif "P1-08" in goal and P108_PACK.is_file():
+        slice_pack = P108_PACK.read_text(encoding="utf-8")[:3500]
     brief = (
         "You are local/code on a 3090. One architecture change. No WAN.\n"
-        "Never reset kang-main-wip. Never G-TRAIN. Never dual 14B.\n"
-        "Propose ONE python file (path relative to memory-gate worktree) and "
-        "its full contents as JSON {\"path\": \"...\", \"content\": \"...\"}.\n"
-        f"Open goal row:\n{goal}\n\n"
-        "Handoff (trim):\n"
-        + HAND.read_text(encoding="utf-8")[:4000]
-        + "\nGOALS excerpt:\n"
-        + GOALS.read_text(encoding="utf-8")[:3000]
+        "Hosted Grok is planner only. Never reset kang-main-wip.\n"
+        "Never G-TRAIN, G-SPLIT, G-SHARE, G-1080. Never dual 14B.\n"
+        f"Worktree: {MG_WT}. JSON only "
+        '{"path": "src|tests|docs/...", "content": "..."}. '
+        "Do not wait-ci unless the slice pack says CI is in flight.\n"
+        f"Open goal:\n{goal}\n\n"
+        + (f"Slice pack:\n{slice_pack}\n" if slice_pack else "")
+        + "Handoff (trim):\n"
+        + HAND.read_text(encoding="utf-8")[:1800]
     )
     p = subprocess.run(
         [str(QUEUE), "complete", "--kind", "autodev", "--prompt", brief, "--timeout", "240"],
@@ -68,16 +200,23 @@ def tick() -> dict:
         check=False,
     )
     text = (p.stdout or p.stderr or "")[:8000]
+    applied = apply_proposal(extract_json(text), MG_WT)
     OUT.mkdir(parents=True, exist_ok=True)
     rec = {
         "goal": goal.strip(),
         "rc": p.returncode,
         "text": text,
+        "applied": applied,
         "t": time.time(),
     }
     dest = OUT / f"{int(time.time())}.json"
     dest.write_text(json.dumps(rec, indent=2), encoding="utf-8")
-    return {"ok": p.returncode == 0, "out": str(dest), "goal": goal[:120]}
+    return {
+        "ok": p.returncode == 0 and bool(applied.get("ok")),
+        "out": str(dest),
+        "goal": goal[:120],
+        "applied": applied,
+    }
 
 
 def main() -> int:
@@ -87,7 +226,9 @@ def main() -> int:
     args = ap.parse_args()
     if args.worker:
         while True:
-            print(json.dumps(tick()), flush=True)
+            rec = tick()
+            beat({"last": rec})
+            print(json.dumps(rec), flush=True)
             time.sleep(30)
     print(json.dumps(tick()))
     return 0

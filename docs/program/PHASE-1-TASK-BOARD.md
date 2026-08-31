@@ -77,8 +77,8 @@ dependencies are hard sequencing gates.
 
 ## Current operational blockers
 
-- **Next closeable:** P1-07 Qdrant + Qwen3-1024 (`G-QD`). P1-00..P1-04, P1-06, fleet-ci **merged**.
-  Do not merge chroma PR #3.
+- **Next closeable:** P1-08 bounded tiered store (`feat/tiered-memory-policy`).
+  P1-00..P1-04, P1-06, P1-07 / G-QD **merged**. Do not merge chroma PR #3.
 - G-RAG **met** (83 points, 1024-d). 5080 Comfy **masked** for autodev. Indexer + vault
   sync + Qdrant reverse-tunnel exist; do not use 3090 for embeddings.
 - `homelab-cpu` id 5 already runs `tzervas/*`. Do not register a second runner.

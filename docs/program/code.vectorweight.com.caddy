@@ -1,23 +1,16 @@
-# Append to /data/ingress/caddy/Caddyfile on homelab, then reload Caddy.
-# Chat = same Open WebUI as ai.vectorweight.com (LocalAI local/code).
-# /lab = csd-lab-console on akula-prime (GPU lock, steer, snapshot).
+# Homelab Caddy: CSD lab harness only.
+# Chat/Open WebUI stays https://ai.vectorweight.com (existing instance).
+# GPU backends: akula-prime :8080 LocalAI, gpu5080 CUDA/helpers.
 
 https://code.vectorweight.com {
   import tls_vectorweight
   encode gzip
-  handle /lab* {
-    reverse_proxy 192.168.1.98:9118 {
-      header_up Host {host}
-      header_up X-Forwarded-Proto {scheme}
-      fail_duration 10s
-    }
+  handle /chat* {
+    redir https://ai.vectorweight.com{uri} 302
   }
-  reverse_proxy akula-open-webui:8080 {
+  reverse_proxy 192.168.1.98:9118 {
     header_up Host {host}
-    header_up X-Forwarded-Host {host}
     header_up X-Forwarded-Proto {scheme}
-    header_up X-Forwarded-For {remote_host}
-    flush_interval -1
     fail_duration 10s
   }
 }

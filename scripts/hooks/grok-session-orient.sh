@@ -30,5 +30,12 @@ echo_msg "behind origin/main=$behind_main"
 echo_msg "truth: STATUS.md > pyproject description > src/cogsyndelta/poc > ADRs > README"
 echo_msg "skills: /csd-context /code-thropology   workflow: /csd-code-thropology"
 echo_msg "GPU: 3090 one GGUF LocalAI; 5080 exclusive PoC CUDA; do not pause LocalAI"
+echo_msg "lab: https://code.vectorweight.com  chat: https://ai.vectorweight.com"
+echo_msg "spawn: scripts/csd-model-router pack | request --alias … (never dual 14B)"
+if [[ -x "$root/scripts/csd-model-router" ]]; then
+  "$root/scripts/csd-gpu-plan" >/dev/null 2>&1 || true
+  "$root/scripts/csd-model-router" pack >/dev/null 2>&1 || true
+  echo_msg "router pack ran"
+fi
 echo_msg "vault: Projects/Repositories/GitHub/tzervas/CogSynDelta/CogSynDelta.md"
 exit 0

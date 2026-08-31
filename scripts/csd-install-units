@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Install durable user systemd units. Prime: lab+gateway+autodev.
+# Homelab: gateway forward-only (Open WebUI). Never Environment= API keys.
+set -euo pipefail
+role="${1:-prime}"
+repo="$(cd "$(dirname "$0")/.." && pwd)"
+unitdir="${HOME}/.config/systemd/user"
+mkdir -p "$unitdir"
+case "$role" in
+  prime)
+    cp -f "$repo/deploy/systemd/csd-lab-console.service" \
+          "$repo/deploy/systemd/csd-openai-gateway.service" \
+          "$repo/deploy/systemd/csd-autodev-loop.service" \
+          "$repo/deploy/systemd/csd-lab.target" \
+          "$unitdir/"
+    systemctl --user daemon-reload
+    systemctl --user enable --now csd-lab-console.service \
+      csd-openai-gateway.service csd-autodev-loop.service csd-lab.target
+    systemctl --user --no-pager --full status csd-lab-console.service \
+      csd-openai-gateway.service csd-autodev-loop.service | sed -n '1,80p'
+    ;;
+  homelab)
+    cp -f "$repo/deploy/systemd/csd-openai-gateway.homelab.service" \
+      "$unitdir/csd-openai-gateway.service"
+    cp -f "$repo/deploy/systemd/csd-lab-console.homelab.service" \
+      "$unitdir/csd-lab-console.service"
+    systemctl --user daemon-reload
+    systemctl --user enable --now csd-lab-console.service csd-openai-gateway.service
+    systemctl --user --no-pager --full status csd-lab-console.service \
+      csd-openai-gateway.service | sed -n '1,80p'
+    ;;
+  *)
+    echo "usage: csd-install-units prime|homelab" >&2
+    exit 2
+    ;;
+esac

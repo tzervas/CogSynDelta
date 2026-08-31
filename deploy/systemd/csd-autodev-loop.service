@@ -1,0 +1,26 @@
+[Unit]
+Description=CSD self-hosted autodev worker (3090 local/code)
+After=default.target network-online.target csd-openai-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kang/code/personal/tzervas/CogSynDelta
+Environment=CSD_AUTODEV_WT=/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-08
+Environment=SECRET_VAULT=/akula-data/cabal/csd-vault
+Environment=SOPS_AGE_KEY_FILE=/akula-data/cabal/csd-vault/age.txt
+Environment=GIT_USERNAME=autodev
+Environment=GIT_AUTHOR_NAME=autodev
+Environment=GIT_AUTHOR_EMAIL=autodev@vectorweight.com
+Environment=GIT_COMMITTER_NAME=autodev
+Environment=GIT_COMMITTER_EMAIL=autodev@vectorweight.com
+Environment=GIT_ASKPASS=/home/kang/code/personal/tzervas/akula-ai-platform/scripts/git-askpass-token
+Environment=GIT_TERMINAL_PROMPT=0
+# Token + LocalAI key from CSD vault only. Identity is autodev, not tzervas.
+ExecStart=/home/kang/.local/bin/secret exec LOCALAI_API_KEY=gpu/localai-api-key TOKEN=git/autodev -- /usr/bin/python3 /home/kang/code/personal/tzervas/CogSynDelta/scripts/csd-autodev-loop --worker
+Restart=always
+RestartSec=5
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

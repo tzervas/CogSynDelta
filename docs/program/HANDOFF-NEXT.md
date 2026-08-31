@@ -47,10 +47,11 @@ Do not merge until Forgejo required checks **ran and succeeded** on the new head
 ### Next closeable on this side
 
 1. Met: G-CI, G-SPEC, G-ERR, G-FLEET, G-STORE, G-ACK, G-SQL, G-RAG, G-GPU, G-CAP. P1-06 `a1f648d`.
-2. **Next:** P1-07 Qdrant + Qwen3-1024 (`G-QD`). CPU tests fake/local; 5080 exclusive-seq only for embed measure.
-3. Autoloop: `/csd-goal-loop` + `/csd-python-first-drive` `id=next`. CI-wake, not 2h.
+2. **Met:** P1-07 / `G-QD` PR #9 merged `a823268` (head `5546ad7`, 15 jobs ran).
+   **Next product:** P1-08 bounded tiered store (`feat/tiered-memory-policy`). Not G-LIFE yet.
+3. Autoloop: `scripts/csd-autodev-loop --worker` (self-hosted). Do **not** `/csd-python-first-drive` for implement. Lab tabs: feed + pool. `G-POOL` Stage A is the router; Stage B RPC stays off. `G-SHARE` / `G-1080` are horizon only (`docs/program/GPU-SHARE.md`).
 4. **Chroma:** do **not** pin `1.5.10.dev266` / `latest`. SQLite+vec + Qdrant until a named patched RC/stable that GHSA lists. PR #3 stays unmerged while red.
 5. HF: private `tzervas/cogsyndelta-eval` only at P1-15.
 
-Push/merge on Forgejo as `tzervas` via `secret exec TOKEN=git/cabal-forgejo-admin` +
-`git-askpass-token` (`credential.helper` disabled). Never GitHub bot push.
+Push on Forgejo as **`autodev`** via `./scripts/csd-autodev-git`.
+Operator admin stays in `~/.secrets`. Never GitHub bot push.

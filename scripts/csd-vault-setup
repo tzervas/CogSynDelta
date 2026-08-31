@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Create a CSD-only SOPS/age vault. Never copies workstation-wide secrets.
+# Allowlist: gpu/localai-api-key, csd/apply-token, git/autodev (via
+# csd-autodev-provision). No git/cabal-forgejo-admin.
+set -euo pipefail
+VAULT="${CSD_VAULT:-/akula-data/cabal/csd-vault}"
+AGE="${SOPS_AGE_KEY_FILE_CSD:-$VAULT/age.txt}"
+OP_SECRET="${HOME}/.local/bin/secret"
+[ -x "$OP_SECRET" ] || OP_SECRET="$(command -v secret)"
+mkdir -p "$VAULT/gpu" "$VAULT/csd" "$VAULT/git" "$VAULT/hf"
+chmod 700 "$VAULT"
+if [ ! -s "$AGE" ]; then
+  age-keygen -o "$AGE" >/dev/null
+  chmod 600 "$AGE"
+  echo "csd-vault: generated age key $AGE" >&2
+fi
+pub="$(age-keygen -y "$AGE")"
+cat > "$VAULT/.sops.yaml" <<EOF
+creation_rules:
+  - path_regex: .*
+    age: $pub
+EOF
+chmod 600 "$VAULT/.sops.yaml"
+# Seed only allowlisted keys from the *operator* vault (do not export
+# SECRET_VAULT globally — that would hide operator keys from `get`).
+OP_VAULT="${HOME}/.secrets"
+OP_AGE="${HOME}/.config/sops/age/keys.txt"
+if [ ! -s "$VAULT/gpu/localai-api-key.enc" ]; then
+  SECRET_VAULT="$OP_VAULT" SOPS_AGE_KEY_FILE="$OP_AGE" "$OP_SECRET" get gpu/localai-api-key \
+    | SECRET_VAULT="$VAULT" SOPS_AGE_KEY_FILE="$AGE" "$OP_SECRET" set gpu/localai-api-key
+fi
+if [ -s /akula-data/cabal/csd-apply.token ] && [ ! -s "$VAULT/csd/apply-token.enc" ]; then
+  cat /akula-data/cabal/csd-apply.token \
+    | SECRET_VAULT="$VAULT" SOPS_AGE_KEY_FILE="$AGE" "$OP_SECRET" set csd/apply-token
+fi
+if [ ! -s "$VAULT/git/autodev.enc" ]; then
+  echo "csd-vault: git/autodev missing — run: secret exec TOKEN=git/cabal-forgejo-admin -- ./scripts/csd-autodev-provision" >&2
+fi
+echo "csd-vault: ready $VAULT (scoped; operator git/cabal-forgejo-admin is NOT here)" >&2
+SECRET_VAULT="$VAULT" SOPS_AGE_KEY_FILE="$AGE" "$OP_SECRET" ls
