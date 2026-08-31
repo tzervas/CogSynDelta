@@ -82,9 +82,8 @@ dependencies are hard sequencing gates.
   free (do not kill healthy Comfy). Collection remains 1024-d / 0 points. Do not use the 3090
   fallback.
 - Cabal-collective runners (`akula-prime-cpu`, `homelab-cpu`) are healthy but **out of scope** for
-  user `tzervas/*`. P1-00 YAML is fail-closed on `ci/forgejo-cpu-fail-closed` (Forgejo PR #1);
-  checks stay waiting until a **second** runner is registered to user `tzervas` (preferred:
-  `tzervas-homelab-cpu`). Do not re-register the live cabal units.
+  user `tzervas/*`. A tzervas-scoped runner **did** pick up PR #1 (`578c66b` honest red;
+  `1c22643` is the follow-up). Do not re-register the live cabal units.
 - P1-01 contract is on Forgejo PR #2. Do not start P1-02 product code until a tzervas-scoped
   runner has produced a real (honest red or green) Forgejo run of P1-00.
 - Golden-recall corpora wait for P1-15: private HF `tzervas/cogsyndelta-eval`, if and when.

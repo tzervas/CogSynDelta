@@ -7,7 +7,7 @@ Horizon rows stay **blocked** until Phase 1 exit. Not `STATUS.md`.
 
 | ID | Goal | Status | Blocker | Sandbox? | Refs |
 |---|---|---|---|---|---|
-| G-CI | Forgejo required checks **legitimately green** on memory-gate PR #1, then merge | open | Wait for run on `578c66b`; merge only if jobs ran and succeeded | wait+merge is sandbox after green | HANDOFF-NEXT; PR #1 |
+| G-CI | Forgejo required checks **legitimately green** on memory-gate PR #1, then merge | open | Head `1c22643` pushed. `578c66b` was honest red (gitleaks dummy keys, integration cov 85% on empty marker, Safety `--ignore CVE-*` ignored nothing). Remaining: Safety onnxruntime 1.22.0 (chromadb transitive; 1.24+ needs WAN lock). Do not merge red. | wait+merge is sandbox after green; onnxruntime bump is WAN | HANDOFF-NEXT; PR #1 |
 | G-ERR | Public `memory_gate.errors` in use; mapper at store/gateway or documented leftover closed | open | PR #4 unmerged; mapper not at call sites | yes (code) | P1-02; spec FR-010 |
 | G-STORE | In-memory oracle + store protocol conformance | open | After typed errors | yes | P1-04 |
 | G-SQL | Durable SQLite+sqlite-vec backend | open | After G-STORE | yes | P1-06; SELF-HOSTED-DRIVE-TARGETS storage |

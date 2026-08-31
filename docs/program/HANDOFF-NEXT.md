@@ -23,7 +23,7 @@ Read `docs/program/IMPLEMENTER-HANDOFF.md` then `PYTHON-FIRST-PLAN.md` and
 
 ### Open Forgejo PRs (memory-gate, not merged)
 
-- P1-00 https://git.vectorweight.com/tzervas/memory-gate/pulls/1 — `ci/forgejo-cpu-fail-closed`. Local pytest **134 passed / 1 gpu deselected** after await-learn + ruff 0.16.5 + cryptography 50.0.1 + current-tree gitleaks + chroma `.trivyignore`. Push and wait Forgejo; merge only if **legitimately green**.
+- P1-00 https://git.vectorweight.com/tzervas/memory-gate/pulls/1 — `ci/forgejo-cpu-fail-closed` @ `1c22643`. `578c66b` ran honest red. Local: unit 124 + integration 5 + regression 5; gitleaks clean with `.gitleaks.toml`; setuptools 84.0.0 offline. Safety still red on onnxruntime 1.22.0 (no 1.24 wheel in cache). Merge only if **legitimately green**.
 - P1-01 https://git.vectorweight.com/tzervas/memory-gate/pulls/2 — `docs/memory-lifecycle-contract` @ `7b5c877`. Docs only.
 - P1-03 chroma mitigation https://git.vectorweight.com/tzervas/memory-gate/pulls/3 — `fix/chroma-cve-client-only` @ `1b07c56`. Client-only refuse. **Not** an upstream wheel patch.
 - P1-02 https://git.vectorweight.com/tzervas/memory-gate/pulls/4 — `feat/public-error-contract` @ `52e8aac`. Types + `raise_mapped` self-chain fix. **Not merged**: Forgejo 1 ok / 14 fail (not legitimately green). Uncommitted mapper wiring may be in-flight on the p1-02 worktree (`csd-goal-loop`). Local main `691bb85` untouched.
@@ -42,7 +42,7 @@ Do not merge until Forgejo required checks **ran and succeeded** on the new head
 
 ### Next closeable on this side
 
-1. Push P1-00 await-learn/CI pins; wait legitimately green Forgejo; then merge PR #1.
+1. Wait Forgejo on `1c22643`. If only Safety/onnxruntime 1.22.0 is red: WAN lock bump to ≥1.24.1 (not sandbox). Merge PR #1 only if **legitimately green**.
 2. Autoloop: `/csd-drive-bootstrap` then `/csd-python-first-drive` `id=next`.
 2. **Chroma:** do **not** pin `1.5.10.dev266` / `latest`. SQLite+vec + Qdrant until a named patched RC/stable that GHSA lists.
 3. 5080 index: still **1024-d / 0 points**. Do not kill Comfy. Do not pause 3090 LocalAI.
