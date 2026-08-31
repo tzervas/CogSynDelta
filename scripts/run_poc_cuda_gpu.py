@@ -40,7 +40,7 @@ def main() -> int:
         try:
             fn()
             rec["ok"] = True
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             failed += 1
             rec["error"] = str(exc)
             rec["tb"] = traceback.format_exc()[-1500:]

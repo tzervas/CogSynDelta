@@ -15,7 +15,12 @@ from pathlib import Path
 
 BASE = os.environ.get("CSD_FORGEJO_URL", "https://git.vectorweight.com").rstrip("/")
 REPOS = os.environ.get("CSD_WATCH_REPOS", "tzervas/memory-gate,tzervas/CogSynDelta")
-STATE = Path(os.environ.get("CSD_WATCH_STATE", "/tmp/csd-forgejo-pr-watch.json"))
+STATE = Path(
+    os.environ.get(
+        "CSD_WATCH_STATE",
+        str(Path.home() / ".cache" / "csd-forgejo-pr-watch.json"),
+    )
+)
 SLEEP = int(os.environ.get("CSD_WATCH_SLEEP_S", "30"))
 
 

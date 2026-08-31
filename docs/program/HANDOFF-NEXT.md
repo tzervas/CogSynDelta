@@ -60,3 +60,10 @@ WebUI self-host close (Comfy image/edit, Piper/whisper, artifacts/functions):
 `/akula-webui-selfhost` `args.apply=true`. Unmask 5080 Comfy only with
 `args.comfy=true` when `gpu5080.lock` is idle. Leftover ops:
 `/csd-ops-remain` `args.track=p1-08|pr-ci|hf`.
+
+Grafana dashboards/playlists/library panels/alerts:
+`/csd-grafana-o11y` then `args.apply=true` to provision (no Tempo).
+
+Autodev Forgejo tools:
+`/csd-autodev-forgejo-tools` `args.apply=true`. Git: `./scripts/csd-autodev-git`.
+API: `./scripts/csd-autodev-forgejo`. Identity **autodev** only.
