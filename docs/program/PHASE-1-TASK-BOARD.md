@@ -26,7 +26,7 @@ green. GitHub remains a read-only operator mirror.
 | `P1-02` | `P1-01` | **Implement typed public errors** — `feat/public-error-contract` | Stable public exception types cover validation, dimension/model mismatch, unavailable backend, timeout, cancellation, durability failure, and consolidation failure. Backend-specific exceptions are chained but never leak as the public contract; exhaustive tests prove each mapping. | `local/code`: one error type + one mapping test per slice; high-reasoning API review. |
 | `P1-03` | `P1-02` | **Make gateway writes and lifecycle durable** — `fix/gateway-durable-lifecycle` | A failing test first demonstrates lost/unobserved `create_task`; repaired learn awaits commit or returns an explicit awaited receipt. `start`, `stop`, `drain`, and `flush` have typed cancellation/failure behavior; bounded backpressure and shutdown/restart tests pass. Rewrite the three async benchmarks to await real operations and eliminate all eight baseline unawaited-coroutine warnings. | `local/code` on 3090: one failing test + one function slice; high-reasoning lifecycle review. LocalAI stays resident. |
 | `P1-04` | `P1-03` | **Complete store protocol and in-memory oracle** — `feat/store-conformance-contract` | Typed store protocol covers put/get/query/delete/enumerate/count/clear and required metadata; a backend-neutral conformance suite passes against deterministic in-memory storage, including domain isolation and idempotent keys. | `local/code`: one protocol/test slice at a time; high-reasoning contract review. |
-| `P1-05` | `P1-04` | **Adjudicate Chroma backend** — `test/chroma-conformance` | Run the common contract and close/reopen/restart suite against Chroma. Retain it only if clean; otherwise remove it and its dependency in this PR with a migration note. No backend may remain nominally supported without conformance evidence. | `local/code` test slices; high-reasoning keep/drop review. CPU only. |
+| `P1-05` | `P1-04` | **Adjudicate Chroma backend** — `test/chroma-conformance` | Default: **drop** the Chroma extra unless a **named** patched upstream RC/stable exists (see reintegration below) **and** the common contract plus close/reopen/restart suite is clean on embedded client-only. Do not enable `HttpClient`/server mode. If conformance needs a server, remove Chroma and its dependency in this PR with a migration note. Nightly `1.5.10.dev*` / floating tag `latest` is not a patch. | `local/code` test slices; high-reasoning keep/drop review. CPU only. |
 | `P1-06` | `P1-04` | **Add durable SQLite backend** — `feat/sqlite-durable-store` | Full conformance suite passes; acknowledged rows survive close/reopen and process-style restart; migrations are versioned; interruption cannot leave a reported-success write absent; CPU-only CI is sufficient. | `local/code` implementation slices; homelab CPU integration. |
 | `P1-07` | `P1-04` | **Add Qdrant backend and Qwen3-1024 binding** — `feat/qdrant-qwen3-1024` | Separate test collection uses the selected pinned Qwen3 revision at 1024 dimensions; stable model id, dimension, metric, and namespace are stored and validated before mutation; 384↔1024 and model-id mismatch tests fail closed; shared operator/model KBs are never written. | High-reasoning schema/ADR; Medium model with 5080 `exclusive-seq` only for embedding measurement; CPU tests use a fake/local service. |
 | `P1-08` | `P1-06`, `P1-07` | **Add bounded tiered store policy** — `feat/tiered-memory-policy` | Policy tests prove RAM→durable spill, promotion, eviction, pruning, restart recovery, and explicit residency metadata without pretending to own llama.cpp KV bytes. Backend failures never discard the only durable copy. | `local/code` policy slices; high-reasoning safety review. No Rust implementation. |
@@ -84,3 +84,31 @@ dependencies are hard sequencing gates.
 - P1-01 contract is on Forgejo PR #2. Do not start P1-02 product code until a tzervas-scoped
   runner has produced a real (honest red or green) Forgejo run of P1-00.
 - Golden-recall corpora wait for P1-15: private HF `tzervas/cogsyndelta-eval`, if and when.
+
+## Chroma CVE and reintegration (checked 2026-08-30)
+
+CVE-2026-45829 / [GHSA-f4j7-r4q5-qw2c](https://github.com/advisories/GHSA-f4j7-r4q5-qw2c) is
+**unpatched** on every published wheel (`chromadb` ≥ 1.0.0, ≤ 1.5.9). Bumping PyPI does nothing.
+
+Official GitHub releases ([chroma-core/chroma](https://github.com/chroma-core/chroma/releases)):
+
+| Cut | Status |
+|---|---|
+| Stable `1.5.9` (2026-05-05) | Latest GitHub **and** PyPI. Still in the GHSA range. |
+| Pre-release tag `latest` = `1.5.10.dev266` (built 2026-08-29 from `main`) | Nightly, **not** a named RC. Do not pin. |
+| Tags `1.5.10`, `1.5.10rc1` | Absent. |
+| GHSA patched versions | **None.** |
+| [PR #7237](https://github.com/chroma-core/chroma/pull/7237) | Merged to `main` 2026-07-07. Blocks `trust_remote_code` in ST/HF-sparse **kwargs** only. |
+| [PR #7439](https://github.com/chroma-core/chroma/pull/7439) | **Open.** Client embedding-function poisoning. |
+| [Issue #6717](https://github.com/chroma-core/chroma/issues/6717) | **Open.** Zero closing PRs. |
+
+`1.5.10.dev266` has #7237 and not #7439. That is not a CVE close.
+
+**Until a named patched RC/stable:** SQLite+sqlite-vec locally (`P1-06`), Qdrant for Akula
+(`P1-07`), client-only refuse on memory-gate PR #3. Reintegrate Chroma as an interim GitHub
+pin **only if** all of: named PEP 440 tag (not `.devN` / `latest`); GHSA lists that version as
+patched (or equivalent vendor advisory); #7439 or equivalent is in the tag; #6717 closed or
+vendor states both server and client RCE are fixed; refuse tests still pass and `HttpClient`
+stays refused until the advisory is green. Then roll that pin until the same cut is on PyPI.
+
+CVE-patched ≠ contract-conformant. `P1-05` still drops Chroma if the suite is unclean.

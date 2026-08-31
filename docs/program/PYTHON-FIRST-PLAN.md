@@ -92,6 +92,12 @@ dependencies are hard gates. Do not start product-code PRs until `P1-00`
 has produced a real failing-when-broken Forgejo run. Docs/ADR (`P1-01`) may
 land in parallel.
 
+Chroma is unpatched through PyPI/GitHub `1.5.9`. There is no named GitHub RC
+(checked 2026-08-30); nightly `1.5.10.dev266` is not a patch. Phase 1 stores are
+SQLite+sqlite-vec (local) and Qdrant (Akula). Reintegrate Chroma only after a
+named patched RC/stable that GHSA lists; then roll that pin until PyPI ships the
+same cut. See [PHASE-1-TASK-BOARD.md](PHASE-1-TASK-BOARD.md).
+
 ## Later gates (do not start)
 
 - **Phase 2**: wire completed Python memory-gate into CogSynDelta `memory/`.
