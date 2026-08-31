@@ -242,6 +242,33 @@ def test_steer_post_next_goal_not_p1_08(tmp_path: Path, monkeypatch: pytest.Monk
     assert rec["next_goal"] == "P1-09"
 
 
+def test_steer_post_region_pretrain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /api/steer writes next_goal region-pretrain (one live PoC region)."""
+    mod = load_lab(tmp_path, monkeypatch)
+    code, rec = mod.handle_lab(
+        "POST",
+        "/api/steer",
+        {
+            "next_goal": "region-pretrain",
+            "pause": False,
+            "note": "LatentVAE WikiText-2 train; failing test first",
+        },
+    )
+    assert code == 200
+    assert rec["next_goal"] == "region-pretrain"
+    got = json.loads((tmp_path / "csd-steer.json").read_text(encoding="utf-8"))
+    assert got["next_goal"] == "region-pretrain"
+    assert "region-pretrain" in got["next_goal"]
+    code, rec = mod.handle_lab("GET", "/api/steer", {})
+    assert code == 200
+    assert rec["next_goal"] == "region-pretrain"
+    code, goals = mod.handle_lab("GET", "/api/goals", {})
+    assert code == 200
+    assert goals["next_goal"] == "region-pretrain"
+    assert any(row["id"] == "region-pretrain" for row in goals["todos"])
+    assert mod.WORKTREES["region-pretrain"] == mod.ROOT
+
+
 def test_api_goals_phase1_steer_heartbeat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """GET /api/goals returns PHASE-1 board, next_goal, heartbeat, notes."""
     mod = load_lab(tmp_path, monkeypatch)
@@ -287,10 +314,12 @@ def test_api_goals_phase1_steer_heartbeat(tmp_path: Path, monkeypatch: pytest.Mo
     assert rec["hf"]["gap"] == "mint HF"
     assert rec["hf"]["never_copy"] == "gpu/huggingface-token"
     assert "tzervas/cogsyndelta-tiny" in rec["hf"]["repos"]
+    assert "tzervas/cogsyndelta-region-stream_vae-tiny" in rec["hf"]["repos"]
     assert rec["scale_ladder"]["ok"] is True
     assert rec["scale_ladder"]["any_green"] is False
     sizes = [row["size"] for row in rec["scale_ladder"]["rungs"]]
-    assert sizes == ["tiny", "small", "medium"]
+    assert sizes[0] == "region_pretrain"
+    assert sizes == ["region_pretrain", "router", "tiny_mind", "small", "medium"]
     assert all(row.get("green") is False for row in rec["scale_ladder"]["rungs"])
 
 
@@ -322,9 +351,11 @@ def test_metrics_scale_ladder_gauge_stays_zero(
     assert code == 200
     text = rec["exposition"]
     assert "csd_scale_ladder_rung_green" in text
-    assert 'rung="0",size="tiny"} 0' in text
-    assert 'rung="1",size="small"} 0' in text
-    assert 'rung="2",size="medium"} 0' in text
+    assert 'rung="0",size="region_pretrain"} 0' in text
+    assert 'rung="1",size="router"} 0' in text
+    assert 'rung="2",size="tiny_mind"} 0' in text
+    assert 'rung="3",size="small"} 0' in text
+    assert 'rung="4",size="medium"} 0' in text
     assert "} 1" not in text
 
 

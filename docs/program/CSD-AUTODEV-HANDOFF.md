@@ -30,22 +30,23 @@ Guest **is live**: `hosts.gpu5080-1080ti` `live=true`, endpoint
 `http://192.168.1.243`. Autodev stays on **3090**. CUDA CI stays on **5080**.
 `csd-kb-index` / retrieve prefer the 1080 Ti guest (not `gpu5080.lock`).
 
-## Next closeable (not P1-08)
+## Next closeable (not P1-08, not 14B)
 
 P1-00..P1-04, P1-06, P1-07 / G-QD, and **P1-08** are **merged**. P1-08
 (`feat/tiered-memory-policy`) landed Forgejo memory-gate PR #11
 `2c11c3f` (head `43272f7`) 2026-08-31T17:17:11Z. Do not steer autodev
 back to P1-08.
 
-**Steer `next_goal`: `P1-09`** — retrieval and domain isolation
-(`feat/gateway-retrieve-domain`). Depends only on P1-04 (met). Closeable
-now that P1-08 is on `main`.
+**Steer `next_goal`: `region-pretrain`** — PRETRAIN one existing region
+(LatentVAE) on `Salesforce/wikitext` `wikitext-2-raw-v1` **train**,
+failing pytest first. Not whole-model 14B. Not `G-TRAIN`. P1-09 remains
+on the Phase 1 board and is **not** this steer.
 
-Remaining Phase 1 after P1-08:
+Remaining Phase 1 after P1-08 (parked while region-pretrain is steered):
 
 | ID | Depends | Notes |
 |---|---|---|
-| **P1-09** | P1-04 | **Next closeable.** Gateway retrieve + mandatory/global domain. |
+| **P1-09** | P1-04 | Parked. Gateway retrieve + mandatory/global domain. |
 | P1-05 | P1-04 | Chroma adjudicate. PR #3 stays unmerged/red. Not this steer. |
 | P1-10 | P1-03, P1-09 | Metrics after durable retrieve exists. |
 | P1-11 | P1-08, P1-09 | Fast CLS after both P1-08 and P1-09. |
@@ -58,20 +59,20 @@ Remaining Phase 1 after P1-08:
 
 ## How autodev implements
 
-1. Cut `feat/gateway-retrieve-domain` from Forgejo `main` into
-   `/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-09`.
-   Never touch `python-ai/memory-gate` (`local/kang-main-wip`).
-2. `CSD_AUTODEV_WT` that worktree. Apply allowlist: `src/` `tests/` `docs/`.
-3. One failing pytest + one function per tick (`local/code` via
-   `./scripts/csd-autodev-loop --worker` → `csd-localai-queue`).
-4. Push as autodev: `./scripts/csd-autodev-git push forgejo HEAD:<branch>`.
+1. Stay on CogSynDelta `feat/agent-harness`. Never touch
+   `python-ai/memory-gate` (`local/kang-main-wip`). Do not copy CSD docs
+   into `memory-gate-wt-p1-09`.
+2. `CSD_AUTODEV_WT` this repo. Apply allowlist: `src/` `tests/` `docs/`.
+   Pack: [CONTEXT-PACK-REGION-PRETRAIN.md](CONTEXT-PACK-REGION-PRETRAIN.md).
+3. One failing pytest this tick (`tests/test_poc_region_pretrain.py`) via
+   `./scripts/csd-autodev-loop --worker` → `csd-localai-queue` (`local/code`).
+4. Push as autodev: `./scripts/csd-autodev-git push forgejo HEAD:feat/agent-harness`.
 5. PR / status / merge-gate: `./scripts/csd-autodev-forgejo`. Workflows merge
    themselves when required jobs **ran and succeeded**, then delete the head
    unless `main` / `release/*`. Keep `local/kang-main-wip`.
 
-P1-09 DoD: gateway retrieve uses the typed store protocol and typed errors;
-domain is mandatory or explicitly global; identical text in different domains
-cannot cross; ranking/limits are deterministic on the in-memory oracle.
+Region-pretrain DoD: LatentVAE last_loss < first_loss over ≥20 CPU steps
+on WikiText-2-raw **train** (not synthetic `torch.rand`). Not 14B.
 
 CogSynDelta `feat/agent-harness` PR #3 stays **open** while required checks
 include skipped Security/Pre-commit/fleet-ci python jobs. Combined
@@ -83,15 +84,15 @@ File: `/akula-data/cabal/csd-steer.json` (`CSD_STEER`). Lab:
 `POST /api/steer` on `http://192.168.1.98:9118` (LAN bind, not WAN).
 
 ```bash
-./scripts/csd-lab-console --steer-next P1-09
+./scripts/csd-lab-console --steer-next region-pretrain
 # or
 curl -sS -X POST http://192.168.1.98:9118/api/steer \
   -H 'Content-Type: application/json' \
-  -d '{"next_goal":"P1-09","pause":false}'
+  -d '{"next_goal":"region-pretrain","pause":false}'
 ```
 
-`ok` for this handoff is that file/API `next_goal` is the next P1 (**P1-09**,
-not P1-08).
+`ok` for this handoff is that file/API `next_goal` mentions
+**region-pretrain** (one existing region, not P1-08, not 14B).
 
 ## Cluster snapshot / Grafana
 

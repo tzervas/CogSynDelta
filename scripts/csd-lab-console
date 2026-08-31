@@ -9,7 +9,7 @@ Usage:
   ./scripts/csd-lab-console --steer pause
   ./scripts/csd-lab-console --steer resume
   ./scripts/csd-lab-console --steer-note 'hold G-SQL'
-  ./scripts/csd-lab-console --steer-next P1-09
+  ./scripts/csd-lab-console --steer-next region-pretrain
 
 Never pauses LocalAI. Never dual 14B. UI tabs: live dual-host feed (loaded
 models only), pool, history, steer, Goals/Todos. No catalog dump on the feed
@@ -52,6 +52,8 @@ WORKTREES = {
 PROTECTED_WT = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
 ALLOW_PREFIXES = ("src/", "tests/", "docs/")
 ROOT = Path(__file__).resolve().parents[1]
+WORKTREES["region-pretrain"] = ROOT
+WORKTREES["agent-harness"] = ROOT
 GOALS = ROOT / "docs/program/GOALS.md"
 PHASE1 = Path(os.environ.get("CSD_PHASE1_BOARD", str(ROOT / "docs/program/PHASE-1-TASK-BOARD.md")))
 ROUTER_JSON = ROOT / "config/model-router.json"
@@ -992,12 +994,16 @@ def hf_autodev_gap() -> dict:
         "mint": HF_MINT,
         "never_copy": "gpu/huggingface-token",
         "repos": [
+            "tzervas/cogsyndelta-region-stream_vae-tiny",
+            "tzervas/cogsyndelta-region-residual_mlp-tiny",
+            "tzervas/cogsyndelta-region-route-tiny",
             "tzervas/cogsyndelta-tiny",
             "tzervas/cogsyndelta-small",
             "tzervas/cogsyndelta-medium",
         ],
         "publish": (
-            "private tzervas/cogsyndelta-<size> only after mint and a "
+            "private tzervas/cogsyndelta-region-<name>-<size> then "
+            "tzervas/cogsyndelta-<size> only after mint and a "
             "green receipt in benchmark_results/scale_ladder.json"
         ),
     }
@@ -1053,6 +1059,28 @@ def lab_goals() -> dict:
     board_text = PHASE1.read_text(encoding="utf-8") if PHASE1.is_file() else ""
     phase1 = _parse_phase1_board(board_text, next_goal)
     todos = [row for row in phase1 if row.get("status") in {"next", "open"}]
+    ng = next_goal.lower()
+    if "region-pretrain" in ng or ("region" in ng and "pretrain" in ng):
+        todos.insert(
+            0,
+            {
+                "id": "region-pretrain",
+                "depends": "PoC-1",
+                "title": (
+                    "PRETRAIN LatentVAE on WikiText-2 train "
+                    "(failing test first)"
+                ),
+                "branch": "feat/agent-harness",
+                "acceptance": (
+                    "last_loss < first_loss on Salesforce/wikitext "
+                    "wikitext-2-raw-v1 train"
+                ),
+                "allocation": (
+                    "3090 local/code; 5080 tiny CUDA later; 1080 Ti RAG"
+                ),
+                "status": "next",
+            },
+        )
     hb = _read_json(HEARTBEAT)
     last = hb.get("last") if isinstance(hb.get("last"), dict) else {}
     age = None

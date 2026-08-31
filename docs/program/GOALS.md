@@ -24,6 +24,7 @@ CUDA/tests/helpers behind the lock. WebUIs on homelab. Stop hosted
 | G-SQL | SQLite+sqlite-vec durable store | met | PR #8 merged `a1f648d` (head `9c6c09d`). 15 jobs ran (quality, security, fleet-ci python, unit/integration/regression, CI Complete, gitleaks, trivy, commitizen). | n/a | P1-06 |
 | G-QD | Qdrant 1024-d Qwen3, fail-closed 384 | met | PR #9 merged `a823268` (head `5546ad7`). 15 jobs ran (quality, security, fleet-ci python, unit/integration/regression, CI Complete, gitleaks, trivy, commitizen). | n/a | P1-07 |
 | G-LIFE | learn → retrieve → consolidate → persona through restart | open | After G-SQL, G-QD, CLS, persona | later | P1-16 |
+| G-REGION | Region-pretrain one live PoC region (LatentVAE) on WikiText-2 train | open | Failing pytest first. Not 14B. Not G-TRAIN. | yes | PoC-1 |
 
 ## Lab / ops (keep true)
 
@@ -34,7 +35,7 @@ CUDA/tests/helpers behind the lock. WebUIs on homelab. Stop hosted
 | G-GPUCI | 5080 Forgejo GPU runner + lock queue | open | Runner `gpu5080-tzervas` labels gpu/5080/host-gpu5080. `gpu5080.lock` vs timeshare. Workflow `.github/workflows/gpu-5080.yml`. |
 | G-WHEEL | Homelab offline PyPI (+ crates dir) | open | `/data/pypi-offline` (24 wheels starter). No WAN on 5080. CUDA torch = Comfy image. |
 | G-POOL | LAN pool 3090+5080 inference (~40 GiB) | open | Stage A live. Stage B: large **MoE** / `pool/large` via mixed llama.cpp+vLLM+bitnet-cpp after images/GGUFs. Later: many small CSD region models (`G-SHARE`). Not `G-SPLIT`. |
-| G-SCALE | Tiny CPU → small 5080 → medium when measured | open | Doc `CSD-SCALE-LADDER.md`. Grafana sat only if `scale_ladder.json` `green=true`. `hf/autodev` missing → **mint HF**. Never copy `gpu/huggingface-token`. |
+| G-SCALE | R0 region-pretrain → R1 router → R2 tiny mind → R3+ size | open | Doc `CSD-SCALE-LADDER.md`. First rung is one specialist. Grafana sat only if `scale_ladder.json` `green=true` (new STATUS/pytest/CUDA receipt). `hf/autodev` missing → **mint HF**. Never copy `gpu/huggingface-token`. |
 
 ## Blocked / horizon
 
@@ -48,7 +49,9 @@ CUDA/tests/helpers behind the lock. WebUIs on homelab. Stop hosted
 
 ## Priority
 
-`G-QD` met. P1-08 merged `2c11c3f` (PR #11). Next closeable: P1-09
-retrieve/domain (not `G-LIFE` yet). Skip stalled. Never start
-`G-TRAIN`, `G-SPLIT`, `G-SHARE`, or `G-1080` from an autoloop.
+`G-QD` met. P1-08 merged `2c11c3f` (PR #11). Next closeable:
+**region-pretrain** (G-REGION / LatentVAE on WikiText-2 train).
+P1-09 is parked, not this steer. Skip stalled. Never start
+`G-TRAIN` (bedrock/foundation/14B), `G-SPLIT`, `G-SHARE` from an
+autoloop. 1080 Ti guest is live for retrieve-index-light only.
 Never reset `kang-main-wip`.

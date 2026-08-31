@@ -48,8 +48,9 @@ Do not merge until Forgejo required checks **ran and succeeded** on the new head
 
 1. Met: G-CI, G-SPEC, G-ERR, G-FLEET, G-STORE, G-ACK, G-SQL, G-RAG, G-GPU, G-CAP. P1-06 `a1f648d`.
 2. **Met:** P1-07 / `G-QD` PR #9 merged `a823268`. **Met:** P1-08 PR #11
-   merged `2c11c3f` (head `43272f7`). **Next product:** P1-09 retrieve/domain
-   (`feat/gateway-retrieve-domain`). Not G-LIFE yet.
+   merged `2c11c3f` (head `43272f7`). **Next product:** **region-pretrain**
+   LatentVAE on WikiText-2-raw train (failing test first). Not 14B.
+   P1-09 parked. Not G-LIFE / G-TRAIN.
 3. Autoloop: `scripts/csd-autodev-loop --worker` (self-hosted). Do **not** `/csd-python-first-drive` for implement. Lab tabs: feed + pool. `G-POOL` Stage A is the router; Stage B RPC stays off. `G-SHARE` / `G-1080` are horizon only (`docs/program/GPU-SHARE.md`).
 4. **Chroma:** do **not** pin `1.5.10.dev266` / `latest`. SQLite+vec + Qdrant until a named patched RC/stable that GHSA lists. PR #3 stays unmerged while red.
 5. HF: private `tzervas/cogsyndelta-eval` only at P1-15.

@@ -10,7 +10,7 @@ implements. Hosted Grok researches. Never GitHub bot push. Branch
 `feat/agent-harness`. Never dual 14B.
 
 Catalog of public sets: [CSD-REGION-DATASETS.md](CSD-REGION-DATASETS.md).
-Scale after assembly: [CSD-SCALE-LADDER.md](CSD-SCALE-LADDER.md).
+Ladder starts at region-pretrain: [CSD-SCALE-LADDER.md](CSD-SCALE-LADDER.md).
 
 ## Why this file exists
 
@@ -55,27 +55,30 @@ Pile / FineWeb) is curriculum step 4, not step 1.
 
 Mandatory order. Do **not** skip (1). Do **not** start at (4).
 
-1. **Per-region pretrain** — each specialist fits **only** its own
+1. **R0 per-region pretrain** — each specialist fits **only** its own
    `pretrain` split until it can do its job (isolated; others frozen or
    absent). PoC stand-in today: `python -m cogsyndelta.poc.cli train`
-   (LatentVAE) on synthetic tokens. Real public splits wait for Phase 3.
-2. **Router** — train `SoftmaxRouter` (+ Switch aux) so regions activate
-   **selectively** on a tagged mix donated from those pretrained
-   catalogs. PoC stand-in: `train-route` on synthetic. Idle experts skip
-   `activate()`.
-3. **Assembled whole-model** — only then joint train of regions + gate
-   on the tagged mix. Not a 14B. Not C4 Switch pretrain.
-4. **Scale** — tiny (CPU) → small (5080 CUDA) → medium when measured.
-   Private Hub `tzervas/cogsyndelta-<size>` **when** `hf/autodev` exists.
+   (LatentVAE) on synthetic tokens. First public split: WikiText-2-raw **train** (region-pretrain now).
+2. **R1 router** — train `SoftmaxRouter` (+ Switch aux) so regions
+   activate **selectively**. Frozen regions first (`--gate-only`), then
+   joint. Tagged mix donated from those pretrained catalogs. PoC
+   stand-in: `train-route` on synthetic. Idle experts skip `activate()`.
+   Interconnect / mHC is later.
+3. **R2 assembled whole-model** — only then joint train of regions +
+   gate on the tagged mix (tiny whole-mind). Not a 14B. Not C4 Switch
+   pretrain.
+4. **R3+ scale** — larger param counts after the tiny assembled mind.
+   Private Hub `tzervas/cogsyndelta-region-<name>-<size>` **then**
+   `tzervas/cogsyndelta-<size>` **when** `hf/autodev` exists.
    See [CSD-SCALE-LADDER.md](CSD-SCALE-LADDER.md).
 
 ## Lab placement (do not fight the pool)
 
 | Work | Where |
 |---|---|
-| Autodev implement / P1-09 | 3090 `local/code` (`192.168.1.98`). LocalAI stays loaded. Never dual 14B |
+| Autodev implement / region-pretrain | 3090 `local/code` (`192.168.1.98`). LocalAI stays loaded. Never dual 14B |
 | Tiny CUDA / later region smoke | 5080 `192.168.1.251` exclusive-seq. Comfy stays masked |
-| Retrieve-index-light / RAG | 1080 Ti guest `192.168.1.243` **if** guest `nvidia-smi` lists the card. No train / PoC CUDA on Pascal |
+| Retrieve-index-light / RAG | 1080 Ti guest `192.168.1.243` **live** (`nvidia-smi` GTX 1080 Ti). No train / PoC CUDA on Pascal |
 
 ## Hugging Face (`hf/autodev`)
 
@@ -98,9 +101,11 @@ URLs.
 
 ## Next closeable increment (autodev)
 
-**Still `P1-09`** on memory-gate (`feat/gateway-retrieve-domain`), not a
-CSD region fit and not a 14B. After P1-09: one router-or-region unit
-test on a tagged batch of 8 (CPU). 5080 only if CUDA is required.
+**`region-pretrain`:** one existing region (LatentVAE) on
+`Salesforce/wikitext` `wikitext-2-raw-v1` **train**, failing pytest
+first. Pack: [CONTEXT-PACK-REGION-PRETRAIN.md](CONTEXT-PACK-REGION-PRETRAIN.md).
+Not a 14B. Not `G-TRAIN`. P1-09 stays on the Phase 1 board but is not
+this steer. 5080 only if tiny CUDA is required later.
 
-Horizon training remains blocked until `G-LIFE`. This file is a map,
-not a green light.
+`G-TRAIN` bedrock/foundation remains blocked until `G-LIFE`. This file
+is a map. One-region public-split pretrain is the closeable slice.

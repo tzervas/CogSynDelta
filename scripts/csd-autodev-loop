@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Self-hosted autodev tick: 3090 local/code, no hosted Grok.
 
-Reads GOALS.md + IMPLEMENTER-HANDOFF, packs a brief, queues LocalAI.
-Does not start G-TRAIN. Honors csd-steer.json pause.
+Pick next_goal from CSD_STEER / PHASE-1, implement via LocalAI queue,
+land with csd-autodev-git + csd-autodev-forgejo, merge-gate only when
+required checks ran. Never poll hosted Grok. Ping mailbox on stall.
 
   ./scripts/csd-autodev-loop --once
   ./scripts/csd-autodev-loop --worker
@@ -12,63 +13,189 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-STEER = Path("/akula-data/cabal/csd-steer.json")
-OUT = Path("/akula-data/cabal/autodev-out")
-HEART = Path("/akula-data/cabal/autodev-heartbeat.json")
+STEER = Path(os.environ.get("CSD_STEER", "/akula-data/cabal/csd-steer.json"))
+OUT = Path(os.environ.get("CSD_AUTODEV_OUT", "/akula-data/cabal/autodev-out"))
+HEART = Path(
+    os.environ.get("CSD_AUTODEV_HEARTBEAT", "/akula-data/cabal/autodev-heartbeat.json")
+)
+GROK_NEED = Path(os.environ.get("CSD_GROK_NEED", "/akula-data/cabal/csd-need-grok.json"))
+STALL = Path(os.environ.get("CSD_AUTODEV_STALL", "/akula-data/cabal/autodev-stall.json"))
+GPU_PLAN = Path(os.environ.get("CSD_GPU_PLAN", "/akula-data/cabal/gpu-plan.json"))
 QUEUE = ROOT / "scripts/csd-localai-queue"
 PLAN = ROOT / "scripts/csd-gpu-plan"
 ROUTER = ROOT / "scripts/csd-model-router"
-GOALS = ROOT / "docs/program/GOALS.md"
+GIT_CLI = ROOT / "scripts/csd-autodev-git"
+FORGEJO_CLI = ROOT / "scripts/csd-autodev-forgejo"
+GOALS = Path(os.environ.get("CSD_GOALS", str(ROOT / "docs/program/GOALS.md")))
+PHASE1 = Path(
+    os.environ.get("CSD_PHASE1_BOARD", str(ROOT / "docs/program/PHASE-1-TASK-BOARD.md"))
+)
 HAND = ROOT / "docs/program/IMPLEMENTER-HANDOFF.md"
-POOL = ROOT / "docs/program/GPU-POOL.md"
 QD_PACK = ROOT / "docs/program/CONTEXT-PACK-G-QD.md"
+P108_PACK = ROOT / "docs/program/CONTEXT-PACK-P1-08.md"
 MG_WT = Path(
     os.environ.get(
         "CSD_AUTODEV_WT",
         "/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-09",
     )
 )
-P108_PACK = ROOT / "docs/program/CONTEXT-PACK-P1-08.md"
 PROTECTED = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
 ALLOW_PREFIXES = ("src/", "tests/", "docs/")
+PROTECTED_REFS = frozenset({"main", "staging", "develop", "dev"})
+HORIZON = ("G-TRAIN", "G-SPLIT", "G-CHROMA", "G-SHARE", "G-1080", "G-LIFE")
+OPS_SKIP = ("G-POOL", "G-GPUCI", "G-WHEEL")
+BLOCKED_P1 = frozenset({"P1-05"})
+LOCAL_WF = "csd-python-first-drive.yml"
+PING_MAX = 2048
+STALL_N = 2
+IDENTITY = "autodev"
+
+
+def _read_json(path: Path) -> dict:
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _run(
+    argv: list[str],
+    *,
+    cwd: Path | None = None,
+    timeout: int = 90,
+    input_text: str | None = None,
+) -> tuple[int, str]:
+    """Run a local CLI. Never spawn hosted grok or GitHub remotes."""
+    if any(a == "grok" or str(a).endswith("/grok") for a in argv):
+        return 2, "refusing hosted grok"
+    if any("github.com" in str(a).lower() for a in argv):
+        return 2, "never GitHub"
+    p = subprocess.run(
+        argv,
+        cwd=str(cwd or ROOT),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+        input=input_text,
+    )
+    return p.returncode, ((p.stdout or "") + (p.stderr or "")).strip()[:8000]
 
 
 def steered_pause() -> bool:
-    if not STEER.is_file():
-        return False
     try:
-        return bool(json.loads(STEER.read_text()).get("pause"))
-    except json.JSONDecodeError:
+        return bool(_read_json(STEER).get("pause"))
+    except Exception:
         return False
+
+
+def goal_id(raw: str) -> str:
+    """Short board id (P1-09 / G-QD) from a steer or table line."""
+    hit = re.search(r"P1-\d+", raw)
+    if hit:
+        return hit.group(0)
+    hit = re.search(r"G-[A-Z0-9]+", raw)
+    return hit.group(0) if hit else raw.strip()[:80]
+
+
+def _merged_p1_ids(text: str) -> set[str]:
+    found: set[str] = set()
+    for line in text.splitlines():
+        idx = line.lower().find("merged")
+        if idx < 0:
+            if "| met |" not in line:
+                continue
+            hit = re.search(r"P1-\d+", line)
+            if hit:
+                found.add(hit.group(0))
+            continue
+        prefix = line[:idx]
+        for match in re.finditer(r"P1-(\d+)\.\.P1-(\d+)", prefix):
+            start, end = int(match.group(1)), int(match.group(2))
+            for i in range(start, end + 1):
+                found.add(f"P1-{i:02d}")
+        for match in re.finditer(r"P1-\d+", prefix):
+            found.add(match.group(0))
+    return found
+
+
+def phase1_open_ids() -> list[str]:
+    """Ordered PHASE-1 ids that are not merged or blocked."""
+    board = PHASE1.read_text(encoding="utf-8") if PHASE1.is_file() else ""
+    goals = GOALS.read_text(encoding="utf-8") if GOALS.is_file() else ""
+    merged = _merged_p1_ids(board) | _merged_p1_ids(goals)
+    ids: list[str] = []
+    for line in board.splitlines():
+        match = re.match(r"^\|\s*`(P1-\d+)`\s*\|", line)
+        if not match:
+            continue
+        pid = match.group(1)
+        if pid in BLOCKED_P1 or pid in merged:
+            continue
+        ids.append(pid)
+    return ids
 
 
 def next_open_goal() -> str:
-    if STEER.is_file():
-        try:
-            nxt = str(json.loads(STEER.read_text()).get("next_goal") or "").strip()
-        except json.JSONDecodeError:
-            nxt = ""
-        if nxt:
-            return nxt
+    """Pick STEER next_goal, else first open PHASE-1 id, else GOALS.md."""
+    nxt = str(_read_json(STEER).get("next_goal") or "").strip()
+    if nxt:
+        return nxt
+    open_ids = phase1_open_ids()
+    if open_ids:
+        return open_ids[0]
+    if not GOALS.is_file():
+        return ""
     for line in GOALS.read_text(encoding="utf-8").splitlines():
-        if "| G-TRAIN" in line or "| G-SPLIT" in line or "| G-CHROMA" in line:
-            continue
-        if "| G-POOL" in line or "| G-GPUCI" in line or "| G-WHEEL" in line:
-            continue
-        if "| G-SHARE" in line or "| G-1080" in line or "| G-LIFE" in line:
+        if any(tag in line for tag in (*HORIZON, *OPS_SKIP)):
             continue
         if "| G-" in line and "| open |" in line:
             return line
     return ""
 
 
+def write_steer_next(nxt: str) -> dict:
+    cur = _read_json(STEER)
+    cur["next_goal"] = nxt
+    STEER.parent.mkdir(parents=True, exist_ok=True)
+    STEER.write_text(json.dumps(cur, indent=2) + "\n", encoding="utf-8")
+    return cur
+
+
+def advance_next_goal(current: str) -> str:
+    """Move STEER to the next open PHASE-1 id after a green merge."""
+    cur = goal_id(current)
+    rest = [pid for pid in phase1_open_ids() if pid != cur]
+    nxt = rest[0] if rest else ""
+    if nxt:
+        write_steer_next(nxt)
+    return nxt
+
+
+def ti_ok() -> bool:
+    """1080 Ti only when catalog live=true and guest smi is live."""
+    cat = _read_json(ROOT / "config" / "model-router.json")
+    spec = (cat.get("hosts") or {}).get("gpu5080-1080ti") or {}
+    if spec.get("live") is not True:
+        return False
+    node = _read_json(GPU_PLAN).get("gpu5080-1080ti") or {}
+    if not isinstance(node, dict) or node.get("live") is not True:
+        return False
+    name = str(node.get("name") or "")
+    return (not name) or ("1080" in name)
+
+
 def _router(*args: str) -> None:
-    subprocess.run([str(ROUTER), *args], check=False, cwd=ROOT)
+    _run([str(ROUTER), *args], timeout=60)
 
 
 def apply_http(payload: dict) -> dict:
@@ -78,7 +205,9 @@ def apply_http(payload: dict) -> dict:
 
     token = os.environ.get("CSD_APPLY_TOKEN", "")
     if not token:
-        tf = Path(os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token"))
+        tf = Path(
+            os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token")
+        )
         if tf.is_file():
             token = tf.read_text(encoding="utf-8").strip()
     wt = os.environ.get("CSD_APPLY_WORKTREE", "p1-09")
@@ -154,7 +283,7 @@ def apply_proposal(payload: dict, dest: Path) -> dict:
         return {"ok": False, "error": "escaped worktree"}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(str(payload.get("content")), encoding="utf-8")
-    return {"ok": True, "wrote": str(target)}
+    return {"ok": True, "wrote": str(target), "path": rel}
 
 
 def beat(extra: dict | None = None) -> None:
@@ -165,16 +294,345 @@ def beat(extra: dict | None = None) -> None:
     HEART.write_text(json.dumps(rec) + "\n", encoding="utf-8")
 
 
-def tick() -> dict:
-    beat()
-    subprocess.run([str(PLAN)], check=False, cwd=ROOT)
-    _router("request", "--alias", "local/code", "--why", "autodev", "--ttl", "3600", "--noping")
-    _router("pack")
-    if steered_pause():
-        return {"ok": True, "skipped": "steer.pause"}
-    goal = next_open_goal()
-    if not goal:
-        return {"ok": True, "skipped": "no open goal"}
+def ensure_idle_ping() -> None:
+    """Create the mailbox so GET /api/grok-need always has a file."""
+    if GROK_NEED.is_file():
+        return
+    GROK_NEED.parent.mkdir(parents=True, exist_ok=True)
+    GROK_NEED.write_text(json.dumps({"need": False}) + "\n", encoding="utf-8")
+
+
+def cap_ping(rec: dict) -> dict:
+    """Keep ping JSON at or under 2 KiB. Drop dumps, never transcripts."""
+    drop = {
+        "text",
+        "transcript",
+        "stdout",
+        "stderr",
+        "journal",
+        "log",
+        "autodev-out",
+        "reply",
+    }
+    out = {k: v for k, v in rec.items() if k not in drop}
+    out["identity"] = IDENTITY
+    raw = json.dumps(out, separators=(",", ":")).encode()
+    if len(raw) <= PING_MAX:
+        return out
+    out.pop("tried", None)
+    raw = json.dumps(out, separators=(",", ":")).encode()
+    if len(raw) <= PING_MAX:
+        return out
+    out.pop("paths", None)
+    evidence = str(out.get("evidence") or "")
+    while len(json.dumps(out, separators=(",", ":")).encode()) > PING_MAX:
+        if len(evidence) > 40:
+            evidence = evidence[: max(40, len(evidence) // 2)]
+            out["evidence"] = evidence
+            continue
+        q = str(out.get("question") or "")
+        if len(q) > 40:
+            out["question"] = q[:40]
+            continue
+        break
+    return out
+
+
+def ping_fingerprint(goal: str, blocker: str, question: str) -> str:
+    return f"{goal_id(goal)}|{blocker}|{question[:120]}"
+
+
+def write_need_grok(
+    *,
+    question: str,
+    evidence: str,
+    goal: str,
+    blocker: str = "",
+    paths: list[str] | None = None,
+    tried: list[str] | None = None,
+) -> dict:
+    """Write the operator-wakes mailbox. Never spawn grok or attach dumps."""
+    ensure_idle_ping()
+    fp = ping_fingerprint(goal, blocker, question)
+    cur = _read_json(GROK_NEED)
+    if cur.get("need") is True and cur.get("fp") == fp:
+        return cur
+    rec = cap_ping(
+        {
+            "need": True,
+            "identity": IDENTITY,
+            "goal": goal_id(goal),
+            "question": question[:400],
+            "evidence": evidence[:800],
+            "blocker": blocker[:200],
+            "paths": (paths or [])[:8],
+            "tried": (tried or [])[:8],
+            "t": int(time.time()),
+            "fp": fp,
+        }
+    )
+    GROK_NEED.parent.mkdir(parents=True, exist_ok=True)
+    GROK_NEED.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    return rec
+
+
+def note_stall(fingerprint: str) -> int:
+    rec = _read_json(STALL)
+    counts = rec.get("counts") if isinstance(rec.get("counts"), dict) else {}
+    n = int(counts.get(fingerprint) or 0) + 1
+    counts[fingerprint] = n
+    rec["counts"] = counts
+    rec["t"] = time.time()
+    STALL.parent.mkdir(parents=True, exist_ok=True)
+    STALL.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    return n
+
+
+def maybe_ping_stall(
+    goal: str,
+    blocker: str,
+    question: str,
+    evidence: str,
+    *,
+    paths: list[str] | None = None,
+    tried: list[str] | None = None,
+) -> dict:
+    n = note_stall(ping_fingerprint(goal, blocker, question))
+    if n < STALL_N:
+        return {"need": False, "n": n}
+    return write_need_grok(
+        question=question,
+        evidence=evidence,
+        goal=goal,
+        blocker=blocker,
+        paths=paths,
+        tried=tried,
+    )
+
+
+def launch_local_workflow(goal: str, reason: str) -> dict:
+    """Dispatch Forgejo workflow csd-python-first-drive. Never hosted Grok."""
+    if os.environ.get("CSD_IN_WORKFLOW") == "1":
+        return {"ok": False, "skipped": "nested-workflow", "workflow": LOCAL_WF}
+    ref = os.environ.get("CSD_AUTODEV_REF", "feat/agent-harness")
+    rc, text = _run(
+        [
+            str(FORGEJO_CLI),
+            "workflow-dispatch",
+            "CogSynDelta",
+            LOCAL_WF,
+            "--ref",
+            ref,
+            "--input",
+            f"goal={goal_id(goal)}",
+            "--input",
+            f"reason={reason[:80]}",
+        ],
+        timeout=45,
+    )
+    rec: dict = {}
+    try:
+        rec = json.loads(text) if text.startswith("{") else {}
+    except json.JSONDecodeError:
+        rec = {}
+    rec.setdefault("ok", rc == 0)
+    rec["rc"] = rc
+    rec["workflow"] = LOCAL_WF
+    rec["hosted_grok"] = False
+    if not rec.get("ok"):
+        ping = write_need_grok(
+            question="Local workflow-dispatch failed; is homelab-cpu registered?",
+            evidence=f"blocker: missing runner or workflow; paths: .github/workflows/{LOCAL_WF}; tried: {reason}",
+            goal=goal,
+            blocker="runner missing",
+            paths=[f".github/workflows/{LOCAL_WF}"],
+            tried=["workflow-dispatch", reason],
+        )
+        rec["ping"] = ping
+    return rec
+
+
+def git_cmd(args: list[str], cwd: Path) -> dict:
+    """Git as identity autodev. Never GitHub. Never protected trunks."""
+    if any("github.com" in a.lower() for a in args):
+        return {"ok": False, "error": "never GitHub", "stdout": "never GitHub"}
+    if args and args[0] in {"push", "checkout", "switch", "merge", "rebase"}:
+        for a in args[1:]:
+            for branch in PROTECTED_REFS:
+                if a == branch or a.endswith(f":{branch}") or a.endswith(f"/{branch}"):
+                    return {"ok": False, "error": f"refusing {args[0]} {branch}"}
+    rc, text = _run([str(GIT_CLI), *args], cwd=cwd, timeout=120)
+    return {"ok": rc == 0, "rc": rc, "stdout": text}
+
+
+def forgejo_cmd(args: list[str], timeout: int = 90) -> dict:
+    rc, text = _run([str(FORGEJO_CLI), *args], timeout=timeout)
+    rec: dict = {}
+    start = text.find("{")
+    if start >= 0:
+        try:
+            rec = json.loads(text[start:])
+        except json.JSONDecodeError:
+            rec = {}
+    if not isinstance(rec, dict):
+        rec = {}
+    rec.setdefault("ok", rc == 0)
+    rec["rc"] = rc
+    return rec
+
+
+def current_branch(cwd: Path) -> str:
+    rec = git_cmd(["rev-parse", "--abbrev-ref", "HEAD"], cwd)
+    return str(rec.get("stdout") or "").strip()
+
+
+def current_sha(cwd: Path) -> str:
+    rec = git_cmd(["rev-parse", "HEAD"], cwd)
+    return str(rec.get("stdout") or "").strip()
+
+
+def land_git(goal: str, applied: dict) -> dict:
+    """Commit and push the applied slice as autodev. Never GitHub."""
+    if applied.get("skipped") or not applied.get("ok"):
+        return {"ok": True, "skipped": applied.get("skipped") or "apply-not-ok"}
+    rel = str(applied.get("path") or "")
+    cwd = MG_WT
+    if not cwd.is_dir():
+        return {"ok": False, "error": "worktree missing"}
+    branch = current_branch(cwd)
+    if branch in PROTECTED_REFS:
+        return {"ok": False, "error": f"refusing push {branch}"}
+    if rel:
+        add = git_cmd(["add", "--", rel], cwd)
+        if not add.get("ok"):
+            return {"ok": False, "error": add.get("stdout") or "git add failed"}
+    porcelain = git_cmd(["status", "--porcelain"], cwd)
+    if not str(porcelain.get("stdout") or "").strip():
+        return {"ok": True, "skipped": "clean", "branch": branch}
+    msg = f"feat(memory): {goal_id(goal)} autodev slice"
+    commit = git_cmd(["commit", "-m", msg], cwd)
+    if not commit.get("ok"):
+        return {"ok": False, "error": commit.get("stdout") or "commit failed"}
+    sha = current_sha(cwd)
+    push = git_cmd(["push", "forgejo", f"HEAD:{branch}"], cwd)
+    if not push.get("ok"):
+        return {
+            "ok": False,
+            "error": push.get("error") or push.get("stdout") or "push failed",
+            "branch": branch,
+            "sha": sha,
+        }
+    return {"ok": True, "branch": branch, "sha": sha, "repo": "memory-gate"}
+
+
+def existing_pr(repo: str, head: str) -> int | None:
+    rec = forgejo_cmd(["prs", repo, "--state", "open", "--limit", "20"])
+    for row in rec.get("pulls") or []:
+        if isinstance(row, dict) and str(row.get("head") or "") == head:
+            try:
+                return int(row.get("number"))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def land_pr(goal: str, git_rec: dict) -> dict:
+    """PR / wait / merge-gate. Merge only when required checks ran."""
+    if git_rec.get("skipped") or not git_rec.get("ok"):
+        return {"ok": bool(git_rec.get("ok")), "skipped": git_rec.get("skipped")}
+    repo = str(git_rec.get("repo") or "memory-gate")
+    head = str(git_rec.get("branch") or "")
+    sha = str(git_rec.get("sha") or "")
+    if not head or not sha:
+        return {"ok": False, "error": "missing branch/sha"}
+    number = existing_pr(repo, head)
+    if number is None:
+        created = forgejo_cmd(
+            [
+                "pr-create",
+                repo,
+                f"feat(memory): {goal_id(goal)}",
+                head,
+                "--base",
+                "main",
+                "--body",
+                f"Autodev {goal_id(goal)}. Merge-gate only when checks ran.",
+            ]
+        )
+        try:
+            number = int(created.get("number") or 0) or None
+        except (TypeError, ValueError):
+            number = None
+        if number is None:
+            return {"ok": False, "error": created.get("error") or "pr-create failed"}
+    wait_s = int(os.environ.get("CSD_AUTODEV_WAIT", "90"))
+    wait_rec = forgejo_cmd(
+        ["wait", repo, sha, "--timeout", str(wait_s), "--poll", "5"],
+        timeout=wait_s + 20,
+    )
+    state = str(wait_rec.get("state") or "")
+    out = {
+        "ok": False,
+        "repo": repo,
+        "head": head,
+        "sha": sha,
+        "number": number,
+        "wait": wait_rec,
+        "merged": False,
+        "required_ran": False,
+        "required_succeeded": False,
+    }
+    if state != "success":
+        out["notes"] = f"wait state={state}; not merge-gate"
+        return out
+    gate = forgejo_cmd(["merge-gate", repo, sha, str(number)], timeout=120)
+    out["gate"] = gate
+    out["required_ran"] = bool(gate.get("required_ran"))
+    out["required_succeeded"] = bool(gate.get("required_succeeded"))
+    out["merged"] = bool(gate.get("merged"))
+    out["ok"] = bool(gate.get("ok") and gate.get("merged"))
+    out["notes"] = str(gate.get("notes") or "")
+    return out
+
+
+def follow_pr(last: dict) -> dict:
+    """Resume wait/merge-gate for an in-flight PR. Does not implement."""
+    repo = str(last.get("repo") or "memory-gate")
+    sha = str(last.get("sha") or "")
+    number = last.get("number")
+    if not sha or number is None:
+        return {"ok": False, "skipped": "no in-flight pr"}
+    st = forgejo_cmd(["status", repo, sha])
+    state = str(st.get("state") or "")
+    if state != "success":
+        return {
+            "ok": False,
+            "waiting": state in {"pending", "timeout", ""},
+            "failed": state in {"failure", "error"},
+            "state": state,
+            "repo": repo,
+            "sha": sha,
+            "number": number,
+            "goal": last.get("goal"),
+            "status": st,
+        }
+    gate = forgejo_cmd(["merge-gate", repo, sha, str(int(number))], timeout=120)
+    return {
+        "ok": bool(gate.get("ok") and gate.get("merged")),
+        "merged": bool(gate.get("merged")),
+        "required_ran": bool(gate.get("required_ran")),
+        "required_succeeded": bool(gate.get("required_succeeded")),
+        "repo": repo,
+        "sha": sha,
+        "number": number,
+        "goal": last.get("goal"),
+        "gate": gate,
+        "notes": str(gate.get("notes") or ""),
+    }
+
+
+def implement(goal: str) -> dict:
+    """One local/code slice. No WAN. No hosted Grok."""
     slice_pack = ""
     if "G-QD" in goal and QD_PACK.is_file():
         slice_pack = QD_PACK.read_text(encoding="utf-8")[:2500]
@@ -190,33 +648,99 @@ def tick() -> dict:
         f"Open goal:\n{goal}\n\n"
         + (f"Slice pack:\n{slice_pack}\n" if slice_pack else "")
         + "Handoff (trim):\n"
-        + HAND.read_text(encoding="utf-8")[:1800]
+        + (HAND.read_text(encoding="utf-8")[:1800] if HAND.is_file() else "")
     )
-    p = subprocess.run(
+    rc, text = _run(
         [str(QUEUE), "complete", "--kind", "autodev", "--prompt", brief, "--timeout", "240"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+        timeout=260,
     )
-    text = (p.stdout or p.stderr or "")[:8000]
-    applied = apply_proposal(extract_json(text), MG_WT)
-    OUT.mkdir(parents=True, exist_ok=True)
+    return {"rc": rc, "text": text[:8000]}
+
+
+def tick() -> dict:
+    """One autodev cycle: pick, implement or wait, land, merge-when-green."""
+    ensure_idle_ping()
+    beat()
+    _run([str(PLAN)], timeout=40)
+    _router("request", "--alias", "local/code", "--why", "autodev", "--ttl", "3600", "--noping")
+    _router("pack")
+    if steered_pause():
+        return {"ok": True, "skipped": "steer.pause"}
+    last = _read_json(HEART).get("last") if isinstance(_read_json(HEART).get("last"), dict) else {}
+    if last.get("number") and last.get("sha") and not last.get("merged"):
+        rec = follow_pr(last)
+        rec["goal"] = str(last.get("goal") or next_open_goal())
+        rec["ti"] = ti_ok()
+        if rec.get("merged") and rec.get("required_ran"):
+            rec["next_goal"] = advance_next_goal(str(rec.get("goal") or ""))
+        elif rec.get("failed"):
+            rec["ping"] = maybe_ping_stall(
+                str(rec.get("goal") or ""),
+                "required pytest red",
+                "Forgejo required checks failed twice; contract or runner?",
+                f"blocker: CI {rec.get('state')}; paths: scripts/csd-autodev-loop; tried: wait, merge-gate",
+                paths=["scripts/csd-autodev-loop"],
+                tried=["forgejo/status", "forgejo/wait", "merge-gate"],
+            )
+        beat({"last": rec})
+        return rec
+    goal = next_open_goal()
+    if not goal:
+        return {"ok": True, "skipped": "no open goal"}
+    impl = implement(goal)
+    if impl.get("rc") != 0:
+        wf = launch_local_workflow(goal, "queue-failed")
+        rec = {
+            "ok": False,
+            "goal": goal[:120],
+            "skipped": "queue-failed",
+            "workflow": wf,
+            "ti": ti_ok(),
+        }
+        beat({"last": rec})
+        return rec
+    applied = apply_proposal(extract_json(str(impl.get("text") or "")), MG_WT)
+    git_rec = land_git(goal, applied)
+    pr_rec = land_pr(goal, git_rec)
     rec = {
-        "goal": goal.strip(),
-        "rc": p.returncode,
-        "text": text,
-        "applied": applied,
-        "t": time.time(),
-    }
-    dest = OUT / f"{int(time.time())}.json"
-    dest.write_text(json.dumps(rec, indent=2), encoding="utf-8")
-    return {
-        "ok": p.returncode == 0 and bool(applied.get("ok")),
-        "out": str(dest),
+        "ok": bool(applied.get("ok")) and bool(git_rec.get("ok") or git_rec.get("skipped")),
         "goal": goal[:120],
         "applied": applied,
+        "git": git_rec,
+        "pr": pr_rec,
+        "ti": ti_ok(),
+        "t": time.time(),
+        "repo": pr_rec.get("repo") or git_rec.get("repo"),
+        "sha": pr_rec.get("sha") or git_rec.get("sha"),
+        "number": pr_rec.get("number"),
+        "merged": bool(pr_rec.get("merged")),
+        "required_ran": bool(pr_rec.get("required_ran")),
+        "required_succeeded": bool(pr_rec.get("required_succeeded")),
+        "head": pr_rec.get("head") or git_rec.get("branch"),
     }
+    if pr_rec.get("merged") and pr_rec.get("required_ran"):
+        rec["next_goal"] = advance_next_goal(goal)
+        rec["ok"] = True
+    elif pr_rec.get("wait") and str((pr_rec.get("wait") or {}).get("state") or "") in {
+        "failure",
+        "error",
+    }:
+        rec["ping"] = maybe_ping_stall(
+            goal,
+            "required pytest red",
+            "Forgejo required checks failed; is the oracle contract wrong?",
+            f"blocker: wait state; paths: {applied.get('path') or ''}; tried: local pytest, forgejo wait",
+            paths=[str(applied.get("path") or "")],
+            tried=["localai-queue", "git push", "forgejo/wait"],
+        )
+        rec["ok"] = False
+    OUT.mkdir(parents=True, exist_ok=True)
+    dest = OUT / f"{int(time.time())}.json"
+    slim = {k: rec.get(k) for k in rec if k != "text"}
+    dest.write_text(json.dumps(slim, indent=2), encoding="utf-8")
+    rec["out"] = str(dest)
+    beat({"last": rec})
+    return rec
 
 
 def main() -> int:

@@ -77,8 +77,9 @@ dependencies are hard sequencing gates.
 
 ## Current operational blockers
 
-- **Next closeable:** P1-09 retrieval and domain isolation (`feat/gateway-retrieve-domain`).
-  P1-00..P1-04, P1-06, P1-07 / G-QD, **P1-08** merged (`2c11c3f`). Do not merge chroma PR #3.
+- **CSD next closeable:** region-pretrain (LatentVAE / WikiText-2 train).
+  P1-09 stays on this board (parked). P1-00..P1-04, P1-06, P1-07 / G-QD,
+  **P1-08** merged (`2c11c3f`). Do not merge chroma PR #3 (skip-theatre).
 - G-RAG **met** (83 points, 1024-d). 5080 Comfy **masked** for autodev. Indexer + vault
   sync + Qdrant reverse-tunnel exist; do not use 3090 for embeddings.
 - `homelab-cpu` id 5 already runs `tzervas/*`. Do not register a second runner.

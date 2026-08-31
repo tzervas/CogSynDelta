@@ -36,7 +36,8 @@ https://code.vectorweight.com (Open WebUI → loaded 3090 alias) and `/lab`.
 
 ## Current closeable work (2026-08-31)
 
-Phase 1 only. Horizon training is **blocked** until `P1-16` / `G-LIFE`.
+CSD **region-pretrain** (one live PoC region). `G-TRAIN` bedrock /
+foundation / 14B stays **blocked** until `P1-16` / `G-LIFE`.
 
 | ID | Repo / worktree | Notes |
 |---|---|---|
@@ -50,7 +51,8 @@ Phase 1 only. Horizon training is **blocked** until `P1-16` / `G-LIFE`.
 | P1-06 | PR #8 | **Merged** `a1f648d` (head `9c6c09d`) |
 | P1-07 | PR #9 | **Merged** `a823268` (head `5546ad7`). |
 | P1-08 | PR #11 | **Merged** `2c11c3f` (head `43272f7`). |
-| P1-09 | `memory-gate-wt-p1-09` | `feat/gateway-retrieve-domain`. One failing pytest + one function. |
+| **region-pretrain** | CogSynDelta `feat/agent-harness` | LatentVAE on WikiText-2-raw **train**. Failing pytest first. |
+| P1-09 | `memory-gate-wt-p1-09` | Parked. `feat/gateway-retrieve-domain`. |
 
 **Never** reset `python-ai/memory-gate` (`local/kang-main-wip` `691bb85`).
 Sibling worktrees from `forgejo/main`.
