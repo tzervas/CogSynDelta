@@ -8,6 +8,9 @@ Official Python-first plan and Phase 0/1 ledgers. Start at
 - Autodev vs hosted Grok: [CSD-AUTODEV-HANDOFF.md](CSD-AUTODEV-HANDOFF.md)
 - Goal loop: [GOAL-LOOP.md](GOAL-LOOP.md) · ledger [GOALS.md](GOALS.md)
 - Horizon (not measured): [SELF-HOSTED-DRIVE-TARGETS.md](SELF-HOSTED-DRIVE-TARGETS.md)
+- Scale ladder (tiny CPU → small 5080 → medium when measured): [CSD-SCALE-LADDER.md](CSD-SCALE-LADDER.md)
+- Brain regions (live PoC vs intended; pretrain-before-assembly): [CSD-BRAIN-REGIONS.md](CSD-BRAIN-REGIONS.md)
+- Tiny region experts (public sets, no train yet): [CSD-REGION-DATASETS.md](CSD-REGION-DATASETS.md)
 - GPU placement / ~40 GiB pool: [GPU-POOL.md](GPU-POOL.md) · ADR-0015
 - GPU share / interned micro-specialists / 1080 Ti: [GPU-SHARE.md](GPU-SHARE.md) · ADR-0016 (horizon)
 - Factory GPU eco (default clocks/PL, persistence): [CSD-GPU-ECO.md](CSD-GPU-ECO.md)

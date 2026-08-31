@@ -33,6 +33,10 @@ console passwords, GPG, Cloudflare, GitHub rescue, WebUI secret key,
 | Open WebUI | human operator | `ai.vectorweight.com` |
 | HF | `hf/autodev` | **not minted.** Hugging Face has no API to create a fine-grained write token. Operator: huggingface.co/settings/tokens → fine-grained write on `tzervas/cogsyndelta*` only → `printf '%s' 'hf_…' \| SECRET_VAULT=/akula-data/cabal/csd-vault SOPS_AGE_KEY_FILE=$SECRET_VAULT/age.txt secret set hf/autodev`. Never copy `gpu/huggingface-token`. |
 
+Checked 2026-08-31: CSD vault `secret ls` is `csd/apply-token`,
+`git/autodev`, `gpu/localai-api-key` only. `hf/` dir exists empty.
+Mint remains operator-only as above. Never copy `gpu/huggingface-token`.
+
 Git as the bot: `./scripts/csd-autodev-git push forgejo HEAD:<branch>`.
 Author/committer are `autodev <autodev@vectorweight.com>`.
 

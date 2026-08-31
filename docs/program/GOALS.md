@@ -34,6 +34,7 @@ CUDA/tests/helpers behind the lock. WebUIs on homelab. Stop hosted
 | G-GPUCI | 5080 Forgejo GPU runner + lock queue | open | Runner `gpu5080-tzervas` labels gpu/5080/host-gpu5080. `gpu5080.lock` vs timeshare. Workflow `.github/workflows/gpu-5080.yml`. |
 | G-WHEEL | Homelab offline PyPI (+ crates dir) | open | `/data/pypi-offline` (24 wheels starter). No WAN on 5080. CUDA torch = Comfy image. |
 | G-POOL | LAN pool 3090+5080 inference (~40 GiB) | open | Stage A live. Stage B: large **MoE** / `pool/large` via mixed llama.cpp+vLLM+bitnet-cpp after images/GGUFs. Later: many small CSD region models (`G-SHARE`). Not `G-SPLIT`. |
+| G-SCALE | Tiny CPU → small 5080 → medium when measured | open | Doc `CSD-SCALE-LADDER.md`. Grafana sat only if `scale_ladder.json` `green=true`. `hf/autodev` missing → **mint HF**. Never copy `gpu/huggingface-token`. |
 
 ## Blocked / horizon
 

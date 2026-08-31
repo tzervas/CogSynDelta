@@ -38,7 +38,10 @@
     "private": true,
     "models": [
       {"id": "tzervas/cogsyndelta", "role": "foundation weights when trained", "upload": "not-yet"},
-      {"id": "tzervas/cogsyndelta-bedrock", "role": "region specialists", "upload": "not-yet"}
+      {"id": "tzervas/cogsyndelta-bedrock", "role": "region specialists", "upload": "not-yet"},
+      {"id": "tzervas/cogsyndelta-tiny", "role": "rung 0 CPU PoC", "upload": "blocked-hf-autodev"},
+      {"id": "tzervas/cogsyndelta-small", "role": "rung 1 5080 CUDA", "upload": "blocked-hf-autodev"},
+      {"id": "tzervas/cogsyndelta-medium", "role": "rung 2 larger when measured", "upload": "blocked-hf-autodev"}
     ],
     "datasets": [
       {"id": "tzervas/cogsyndelta-data", "role": "train configs common / region-*", "upload": "when-recipe-exists"},

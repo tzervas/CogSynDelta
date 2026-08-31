@@ -21,6 +21,10 @@ def load_lab(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setenv("CSD_STEER", str(tmp_path / "csd-steer.json"))
     monkeypatch.setenv("CSD_AUTODEV_HEARTBEAT", str(tmp_path / "hb.json"))
     monkeypatch.setenv("CSD_LAB_BIND", "192.168.1.98")
+    vault = tmp_path / "csd-vault"
+    (vault / "hf").mkdir(parents=True)
+    monkeypatch.setenv("CSD_VAULT", str(vault))
+    monkeypatch.delenv("SECRET_VAULT", raising=False)
     monkeypatch.delenv("TOKEN", raising=False)
     monkeypatch.delenv("FORGEJO_TOKEN", raising=False)
     loader = importlib.machinery.SourceFileLoader("csd_lab_console", str(SCRIPT))
@@ -236,3 +240,113 @@ def test_steer_post_next_goal_not_p1_08(tmp_path: Path, monkeypatch: pytest.Monk
     code, rec = mod.handle_lab("GET", "/api/steer", {})
     assert code == 200
     assert rec["next_goal"] == "P1-09"
+
+
+def test_api_goals_phase1_steer_heartbeat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """GET /api/goals returns PHASE-1 board, next_goal, heartbeat, notes."""
+    mod = load_lab(tmp_path, monkeypatch)
+    (tmp_path / "csd-steer.json").write_text(
+        json.dumps(
+            {
+                "pause": False,
+                "next_goal": "P1-09",
+                "note": "retrieve domain isolation",
+                "reasoning": "P1-08 merged; next closeable is P1-09",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "hb.json").write_text(
+        json.dumps(
+            {
+                "t": time.time(),
+                "pid": 1,
+                "wt": str(tmp_path / "p1-09"),
+                "last": {"ok": True, "goal": "P1-09", "applied": {"ok": True}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    code, rec = mod.handle_lab("GET", "/api/goals", {})
+    assert code == 200
+    assert rec["ok"] is True
+    assert rec["next_goal"] == "P1-09"
+    assert rec["notes"] == "retrieve domain isolation"
+    assert "P1-09" in rec["reasoning"]
+    assert rec["heartbeat"]["live"] is True
+    assert rec["heartbeat"]["last"]["goal"] == "P1-09"
+    ids = [row["id"] for row in rec["phase1"]]
+    assert "P1-08" in ids
+    assert "P1-09" in ids
+    by_id = {row["id"]: row for row in rec["phase1"]}
+    assert by_id["P1-09"]["status"] == "next"
+    assert by_id["P1-08"]["status"] == "done"
+    assert by_id["P1-05"]["status"] == "blocked"
+    assert any(t["id"] == "P1-09" for t in rec["todos"])
+    assert rec["hf"]["autodev"] is False
+    assert rec["hf"]["gap"] == "mint HF"
+    assert rec["hf"]["never_copy"] == "gpu/huggingface-token"
+    assert "tzervas/cogsyndelta-tiny" in rec["hf"]["repos"]
+    assert rec["scale_ladder"]["ok"] is True
+    assert rec["scale_ladder"]["any_green"] is False
+    sizes = [row["size"] for row in rec["scale_ladder"]["rungs"]]
+    assert sizes == ["tiny", "small", "medium"]
+    assert all(row.get("green") is False for row in rec["scale_ladder"]["rungs"])
+
+
+def test_goals_tab_renders_from_api_goals_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Goals/Todos tab fetches /api/goals and does not iframe Open WebUI."""
+    mod = load_lab(tmp_path, monkeypatch)
+    page = mod.PAGE
+    assert "data-tab=todos" in page
+    assert "/api/goals" in page
+    assert "function loadGoals" in page or "async function loadGoals" in page
+    assert "renderGoals" in page
+    todos_start = page.index("id=todos")
+    chat_start = page.index("id=chat")
+    todos_html = page[todos_start:chat_start]
+    assert "ai.vectorweight.com" not in todos_html
+    assert "iframe" not in todos_html
+    assert "id=gladder" in todos_html
+    assert "scale_ladder" in page
+
+
+def test_metrics_scale_ladder_gauge_stays_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GET /metrics gauge is 0 while scale_ladder.json green is false."""
+    mod = load_lab(tmp_path, monkeypatch)
+    code, rec = mod.handle_lab("GET", "/metrics", {})
+    assert code == 200
+    text = rec["exposition"]
+    assert "csd_scale_ladder_rung_green" in text
+    assert 'rung="0",size="tiny"} 0' in text
+    assert 'rung="1",size="small"} 0' in text
+    assert 'rung="2",size="medium"} 0' in text
+    assert "} 1" not in text
+
+
+def test_hf_autodev_present_when_file_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """hf/autodev file in CSD vault clears the mint-HF gap."""
+    mod = load_lab(tmp_path, monkeypatch)
+    vault = tmp_path / "csd-vault"
+    (vault / "hf" / "autodev").write_text("placeholder-not-a-token\n", encoding="utf-8")
+    rec = mod.hf_autodev_gap()
+    assert rec["autodev"] is True
+    assert rec["gap"] is None
+
+
+def test_hf_autodev_refuses_operator_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Never treat ~/.secrets as the CSD vault."""
+    mod = load_lab(tmp_path, monkeypatch)
+    monkeypatch.setenv("CSD_VAULT", str(Path.home() / ".secrets"))
+    rec = mod.hf_autodev_gap()
+    assert rec["autodev"] is False
+    assert rec["gap"] == "mint HF"
+    assert rec["vault"] == "refused-operator-vault"

@@ -12,7 +12,8 @@ Usage:
   ./scripts/csd-lab-console --steer-next P1-09
 
 Never pauses LocalAI. Never dual 14B. UI tabs: live dual-host feed (loaded
-models only), pool, history, steer. No catalog dump on the feed tab.
+models only), pool, history, steer, Goals/Todos. No catalog dump on the feed
+tab. Goals tab reads GET /api/goals (not Open WebUI).
 
 JSON routes wrap existing CLIs (also under /lab prefix). Never 0.0.0.0.
 Never widen apply allowlist. Never wrap csd-autodev-provision.
@@ -52,11 +53,26 @@ PROTECTED_WT = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
 ALLOW_PREFIXES = ("src/", "tests/", "docs/")
 ROOT = Path(__file__).resolve().parents[1]
 GOALS = ROOT / "docs/program/GOALS.md"
+PHASE1 = Path(os.environ.get("CSD_PHASE1_BOARD", str(ROOT / "docs/program/PHASE-1-TASK-BOARD.md")))
 ROUTER_JSON = ROOT / "config/model-router.json"
 SCRIPTS = ROOT / "scripts"
 SECRET_BIN = os.environ.get("CSD_SECRET_BIN", "/home/kang/.local/bin/secret")
 HEARTBEAT = Path(
     os.environ.get("CSD_AUTODEV_HEARTBEAT", "/akula-data/cabal/autodev-heartbeat.json")
+)
+SCALE_LADDER = Path(
+    os.environ.get(
+        "CSD_SCALE_LADDER",
+        str(ROOT / "benchmark_results" / "scale_ladder.json"),
+    )
+)
+OPERATOR_SECRETS = Path.home() / ".secrets"
+HF_MINT = (
+    "huggingface.co/settings/tokens → fine-grained write on "
+    "tzervas/cogsyndelta* only → printf '%s' 'hf_…' | "
+    "SECRET_VAULT=/akula-data/cabal/csd-vault "
+    "SOPS_AGE_KEY_FILE=$SECRET_VAULT/age.txt secret set hf/autodev. "
+    "Never copy gpu/huggingface-token."
 )
 GIT_CLI = SCRIPTS / "csd-autodev-git"
 FORGEJO_CLI = SCRIPTS / "csd-autodev-forgejo"
@@ -404,7 +420,7 @@ def autodev_app() -> dict:
         }
         for name, spec in (cat.get("runtimes") or {}).items()
     }
-    hb = _read_json(Path("/akula-data/cabal/autodev-heartbeat.json"))
+    hb = _read_json(HEARTBEAT)
     age = time.time() - float(hb.get("t") or 0) if hb else None
     return {
         "queue_live": live,
@@ -875,6 +891,206 @@ def _qs_payload(query: str) -> dict:
     return out
 
 
+def _merged_p1_ids(text: str) -> set[str]:
+    """IDs listed as merged in the Phase 1 board or GOALS.md."""
+    found: set[str] = set()
+    for line in text.splitlines():
+        idx = line.lower().find("merged")
+        if idx < 0:
+            continue
+        prefix = line[:idx]
+        for match in re.finditer(r"P1-(\d+)\.\.P1-(\d+)", prefix):
+            start, end = int(match.group(1)), int(match.group(2))
+            for i in range(start, end + 1):
+                found.add(f"P1-{i:02d}")
+        for match in re.finditer(r"P1-\d+", prefix):
+            found.add(match.group(0))
+    return found
+
+
+def _parse_phase1_board(text: str, next_goal: str) -> list[dict]:
+    """Parse PHASE-1-TASK-BOARD.md sequenced rows into JSON."""
+    merged = _merged_p1_ids(text)
+    goals_text = GOALS.read_text(encoding="utf-8") if GOALS.is_file() else ""
+    if goals_text:
+        merged |= _merged_p1_ids(goals_text)
+        for line in goals_text.splitlines():
+            if "| met |" not in line:
+                continue
+            hit = re.search(r"P1-\d+", line)
+            if hit:
+                merged.add(hit.group(0))
+    blocked = {"P1-05"}
+    nxt = (next_goal or "").strip()
+    rows: list[dict] = []
+    for line in text.splitlines():
+        match = re.match(
+            r"^\|\s*`(P1-\d+)`\s*\|\s*([^|]*)\|\s*([^|]*)\|\s*([^|]*)\|\s*([^|]*)\|",
+            line,
+        )
+        if not match:
+            continue
+        pid, depends, title, gate, alloc = (g.strip() for g in match.groups())
+        if pid in blocked:
+            status = "blocked"
+        elif nxt and (pid == nxt or nxt.startswith(pid)):
+            status = "next"
+        elif pid in merged:
+            status = "done"
+        else:
+            status = "open"
+        branch = ""
+        bm = re.search(r"`([^`]+)`\s*$", title)
+        if not bm:
+            bm = re.search(r"—\s*`([^`]+)`", title)
+        if bm:
+            branch = bm.group(1)
+        rows.append(
+            {
+                "id": pid,
+                "depends": depends,
+                "title": title,
+                "branch": branch,
+                "acceptance": gate[:400],
+                "allocation": alloc[:240],
+                "status": status,
+            }
+        )
+    return rows
+
+
+def csd_vault_path() -> Path:
+    """CSD vault only. Never the operator ~/.secrets or model vaults."""
+    raw = os.environ.get("CSD_VAULT") or os.environ.get("SECRET_VAULT")
+    path = Path(raw) if raw else Path("/akula-data/cabal/csd-vault")
+    return path
+
+
+def hf_autodev_gap() -> dict:
+    """Live presence of hf/autodev without reading token bytes.
+
+    Why: goals API must report mint HF when the CSD vault name is missing.
+    Never copy gpu/huggingface-token. Never walk operator secrets.
+
+    Returns:
+        Dict with autodev bool, gap, mint steps, and private repo names.
+    """
+    vault = csd_vault_path()
+    refused = vault.resolve() == OPERATOR_SECRETS.resolve()
+    present = False
+    if not refused and vault.is_dir():
+        hf_dir = vault / "hf"
+        if hf_dir.is_dir():
+            present = any(
+                p.is_file() and p.stat().st_size > 0 and p.name.startswith("autodev")
+                for p in hf_dir.iterdir()
+            )
+    return {
+        "autodev": present,
+        "gap": None if present else "mint HF",
+        "vault": "refused-operator-vault" if refused else str(vault),
+        "mint": HF_MINT,
+        "never_copy": "gpu/huggingface-token",
+        "repos": [
+            "tzervas/cogsyndelta-tiny",
+            "tzervas/cogsyndelta-small",
+            "tzervas/cogsyndelta-medium",
+        ],
+        "publish": (
+            "private tzervas/cogsyndelta-<size> only after mint and a "
+            "green receipt in benchmark_results/scale_ladder.json"
+        ),
+    }
+
+
+def load_scale_ladder() -> dict:
+    """Receipt file for ladder rungs. green=true is a Grafana sat only."""
+    path = Path(os.environ.get("CSD_SCALE_LADDER") or str(SCALE_LADDER))
+    rec = _read_json(path)
+    rungs = rec.get("rungs") if isinstance(rec.get("rungs"), list) else []
+    return {
+        "ok": bool(rungs),
+        "path": str(path),
+        "schema": rec.get("schema"),
+        "doc": rec.get("doc") or "docs/program/CSD-SCALE-LADDER.md",
+        "grafana_sat": rec.get("grafana_sat") if isinstance(rec.get("grafana_sat"), dict) else {},
+        "rungs": rungs,
+        "any_green": any(bool(row.get("green")) for row in rungs if isinstance(row, dict)),
+    }
+
+
+def scale_ladder_prom() -> str:
+    """Prometheus exposition from scale_ladder.json. 1 only if green is true."""
+    rec = load_scale_ladder()
+    lines = [
+        "# HELP csd_scale_ladder_rung_green 1 when scale_ladder.json green is true",
+        "# TYPE csd_scale_ladder_rung_green gauge",
+    ]
+    for row in rec.get("rungs") or []:
+        if not isinstance(row, dict):
+            continue
+        n = int(row.get("n") or 0)
+        size = re.sub(r"[^a-z0-9_]+", "", str(row.get("size") or "unknown").lower())
+        val = 1 if row.get("green") is True else 0
+        lines.append(f'csd_scale_ladder_rung_green{{rung="{n}",size="{size}"}} {val}')
+    return "\n".join(lines) + "\n"
+
+
+def lab_goals() -> dict:
+    """PHASE-1 board plus steer next_goal and autodev heartbeat.
+
+    Why: the lab Goals/Todos tab must render from GET /api/goals JSON, not
+    a second Open WebUI. Steer note/reasoning stay in CSD_STEER.
+
+    Returns:
+        Dict with ok, next_goal, steer, notes, reasoning, heartbeat, phase1,
+        todos, scale_ladder, and hf (honest mint-HF gap when unminted).
+    """
+    steer = _read_json(STEER)
+    next_goal = str(steer.get("next_goal") or "").strip()
+    notes = str(steer.get("note") or steer.get("notes") or "")
+    reasoning = str(steer.get("reasoning") or notes)
+    board_text = PHASE1.read_text(encoding="utf-8") if PHASE1.is_file() else ""
+    phase1 = _parse_phase1_board(board_text, next_goal)
+    todos = [row for row in phase1 if row.get("status") in {"next", "open"}]
+    hb = _read_json(HEARTBEAT)
+    last = hb.get("last") if isinstance(hb.get("last"), dict) else {}
+    age = None
+    if hb.get("t"):
+        age = time.time() - float(hb.get("t") or 0)
+    heartbeat = {
+        "t": hb.get("t"),
+        "pid": hb.get("pid"),
+        "wt": hb.get("wt"),
+        "age_s": age,
+        "live": bool(age is not None and age < 90),
+        "last": {
+            "ok": last.get("ok"),
+            "goal": str(last.get("goal") or "")[:240],
+            "applied": last.get("applied") if isinstance(last.get("applied"), dict) else {},
+            "skipped": last.get("skipped"),
+        },
+    }
+    return {
+        "ok": bool(phase1),
+        "next_goal": next_goal,
+        "steer": steer,
+        "notes": notes,
+        "reasoning": reasoning,
+        "heartbeat": heartbeat,
+        "phase1": phase1,
+        "todos": todos,
+        "source": {
+            "board": "docs/program/PHASE-1-TASK-BOARD.md",
+            "steer": str(STEER),
+            "heartbeat": str(HEARTBEAT),
+            "scale_ladder": "docs/program/CSD-SCALE-LADDER.md",
+        },
+        "scale_ladder": load_scale_ladder(),
+        "hf": hf_autodev_gap(),
+    }
+
+
 def handle_lab(method: str, path: str, payload: dict) -> tuple[int, dict] | None:  # noqa: PLR0911
     """Lab JSON routes wrapping existing CLIs. None = not a wrap route."""
     if len(path) > 1:
@@ -900,6 +1116,10 @@ def handle_lab(method: str, path: str, payload: dict) -> tuple[int, dict] | None
         if method == "POST":
             return 200, write_steer(**payload)
         return 405, {"ok": False, "error": "GET or POST"}
+    if path == "/api/goals":
+        return 200, lab_goals()
+    if path == "/metrics":
+        return 200, {"ok": True, "exposition": scale_ladder_prom()}
     if path == "/api/forgejo/whoami":
         return 200, lab_forgejo("whoami", payload)
     if path == "/api/forgejo/prs":
@@ -1037,7 +1257,7 @@ def serve(port: int) -> None:
 
         def do_GET(self) -> None:  # noqa: PLR0911
             path = urlparse(self.path).path
-            if path in ("/", "/lab", "/lab/"):
+            if path in ("/", "/lab", "/lab/", "/goals", "/lab/goals", "/todos", "/lab/todos"):
                 body = PAGE.encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1047,6 +1267,13 @@ def serve(port: int) -> None:
                 return
             parsed = urlparse(self.path)
             apipath = parsed.path[4:] if parsed.path.startswith("/lab/") else parsed.path
+            if apipath in ("/metrics", "/api/metrics"):
+                self._send(
+                    200,
+                    scale_ladder_prom().encode(),
+                    "text/plain; version=0.0.4; charset=utf-8",
+                )
+                return
             if UPSTREAM and apipath.startswith("/api/"):
                 qs = parsed.path + (("?" + parsed.query) if parsed.query else "")
                 extra = {}
@@ -1178,6 +1405,11 @@ pre{background:#000;padding:.7rem;overflow:auto;max-height:22rem;white-space:pre
 .muted{color:#888;font-size:.85rem}
 .bar{height:10px;background:#333;margin:.4rem 0 1rem;border-radius:2px;overflow:hidden}
 .bar>i{display:block;height:10px;background:#6c8}
+table.board{width:100%;border-collapse:collapse;font-size:.85rem}
+table.board th,table.board td{border:1px solid #333;padding:.25rem .4rem;text-align:left;vertical-align:top}
+table.board .st-next{background:#243}
+table.board .st-done{color:#888}
+table.board .st-blocked{color:#a66}
 button,textarea{font:inherit}textarea{width:100%;background:#000;color:#ddd;border:1px solid #444}
 </style>
 <header>
@@ -1185,6 +1417,7 @@ button,textarea{font:inherit}textarea{width:100%;background:#000;color:#ddd;bord
   <nav class=tabs>
     <button class=on data-tab=feed>GPUs</button>
     <button data-tab=auto>Autodev</button>
+    <button data-tab=todos>Goals</button>
     <button data-tab=chat>Chat</button>
     <button data-tab=pool>Pool</button>
     <button data-tab=spawn>Spawn</button>
@@ -1207,6 +1440,18 @@ button,textarea{font:inherit}textarea{width:100%;background:#000;color:#ddd;bord
     <div class=card><h2>ticks</h2><pre id=ticks></pre></div>
   </div>
   <div class=card><h2>goals</h2><pre id=goals></pre></div>
+</section>
+<section class=pane id=todos>
+  <p class=muted>PHASE-1 board from GET /api/goals. Not a second Open WebUI
+  (human chat stays the Chat tab).</p>
+  <div class=card><h2>next_goal</h2><pre id=gnext></pre></div>
+  <div class=cols>
+    <div class=card><h2>heartbeat</h2><pre id=ghb></pre></div>
+    <div class=card><h2>notes / reasoning</h2><pre id=gnotes></pre></div>
+  </div>
+  <div class=card><h2>todos</h2><pre id=gtodos></pre></div>
+  <div class=card><h2>scale ladder / HF</h2><pre id=gladder></pre></div>
+  <div class=card><h2>PHASE-1</h2><div id=gboard class=muted>loading…</div></div>
 </section>
 <section class=pane id=chat>
   <p class=muted>Composed with existing Open WebUI (3090 LocalAI + Comfy). Autodev queue still has priority.</p>
@@ -1248,7 +1493,7 @@ function tab(id){
   document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on', p.id===id));
   document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===id));
 }
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{tab(b.dataset.tab); if(b.dataset.tab==='hist') loadHist();});
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{tab(b.dataset.tab); if(b.dataset.tab==='hist') loadHist(); if(b.dataset.tab==='todos') loadGoals();});
 function esc(s){return String(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 function splitThink(t){
   t=t||'';
@@ -1304,9 +1549,26 @@ async function spawnNow(){
   document.getElementById('so').textContent=JSON.stringify(await r.json(),null,2);
   refresh();
 }
+function renderGoals(g){
+  const hb=g.heartbeat||{};
+  document.getElementById('gnext').textContent=(g.next_goal||'')+' · pause '+String(!!((g.steer||{}).pause));
+  document.getElementById('ghb').textContent=JSON.stringify({t:hb.t,pid:hb.pid,wt:hb.wt,age_s:hb.age_s,live:hb.live,last:hb.last},null,2);
+  document.getElementById('gnotes').textContent=String(g.reasoning||g.notes||'');
+  document.getElementById('gtodos').textContent=JSON.stringify(g.todos||[],null,2);
+  document.getElementById('gladder').textContent=JSON.stringify({hf:g.hf,scale_ladder:g.scale_ladder},null,2);
+  const rows=g.phase1||[];
+  const head='<table class=board><thead><tr><th>id</th><th>status</th><th>title</th><th>depends</th></tr></thead><tbody>';
+  const body=rows.map(r=>'<tr class="st-'+esc(r.status)+'"><td>'+esc(r.id)+'</td><td>'+esc(r.status)+'</td><td>'+esc(r.title)+'</td><td>'+esc(r.depends)+'</td></tr>').join('');
+  document.getElementById('gboard').innerHTML=head+body+'</tbody></table>';
+}
+async function loadGoals(){
+  const r=await fetch(BASE+'/api/goals');
+  renderGoals(await r.json());
+}
 async function refresh(){
   const r=await fetch(BASE+'/api/status'); const d=await r.json();
   render(d);
+  if(document.getElementById('todos') && document.getElementById('todos').classList.contains('on')) loadGoals();
 }
 async function steer(body){
   await fetch(BASE+'/api/steer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -1331,7 +1593,7 @@ async function go(){
   const d=await r.json();
   document.getElementById('c').textContent=d.content||JSON.stringify(d);
 }
-refresh(); setInterval(refresh,2000);
+if(location.hash==='#todos'||location.hash==='#goals'||location.pathname.indexOf('goals')>=0||location.pathname.indexOf('todos')>=0) tab('todos'); refresh(); if(document.getElementById('todos')&&document.getElementById('todos').classList.contains('on')) loadGoals(); setInterval(refresh,2000);
 </script>
 """
 
