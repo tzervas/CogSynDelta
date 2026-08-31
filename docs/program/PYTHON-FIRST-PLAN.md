@@ -27,7 +27,13 @@ directory are what agents implement against.
   independent agent or MoE expert.
 - Python-first. `memory-gate-rs` is read-only until program Phase 3 exits.
 - One architecture change per Forgejo PR. Conventional Commits.
-- Self-review COMMENT; merge only on honestly green Forgejo checks.
+- Self-review COMMENT. **Grok and self-hosted `local/code` may merge their own
+  Forgejo PRs** (`tzervas/CogSynDelta`, `tzervas/memory-gate`) when required
+  checks are **legitimately green** and the board-row bar is met. Skip,
+  `|| true`, `continue-on-error`, fallback `echo`, or a missing runner is
+  **not** green. Honest red is not mergeable. Never merge Jules / Copilot /
+  `develop` sediment or GitHub.com bots. Never merge GitHub.com without the
+  operator.
 - Never bot-push GitHub.com. Never write `tzervas-dev-kb` or `akula-model-kb`.
 - Never pause 3090 LocalAI for RAG search. Never mix 384-d into shared Qdrant.
 - Shared Akula Qdrant is pinned Qwen3-Embedding-0.6B at **1024** dimensions.

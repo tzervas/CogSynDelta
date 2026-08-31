@@ -14,8 +14,11 @@ including durable restart behavior. Then stop and re-plan Phase 2. Do not add Ru
 CogSynDelta early, or market pruning as CLS.
 
 Every row below is one architecture change and one Forgejo PR. Branch from the current Forgejo
-`main`, use Conventional Commits, self-review, and merge only when required Forgejo checks are truly
-green. GitHub remains a read-only operator mirror.
+`main`, use Conventional Commits, self-review. **Grok / self-hosted AI merge their own PR**
+when required Forgejo checks are **legitimately green** (jobs actually ran and succeeded) and
+the row DoD is met. A skip, `|| true`, `continue-on-error`, fallback `echo`, or missing runner
+is not green; honest red is not mergeable. Do not merge Jules/`develop`/GitHub bot heads.
+GitHub remains a read-only operator mirror.
 
 ## Sequenced board
 
@@ -69,7 +72,8 @@ dependencies are hard sequencing gates.
 5. No Rust feature work before **program Phase 3** exits—that is, after CogSynDelta Python is
    production-ready, not merely after this Phase 1 board. `feat/hypha-kv-tiers` is reference only.
 6. A green check obtained through skip, `|| true`, `continue-on-error`, fallback `echo`, or missing
-   runner is not green.
+   runner is not green. Grok/self-hosted AI merge their own Forgejo PR only when required checks
+   are **legitimately green** under this definition. Honest red is not mergeable.
 
 ## Current operational blockers
 

@@ -55,7 +55,11 @@ Copy tables from `config/clients/grok.toml.example` into `~/.grok/config.toml` b
 - Conventional commits. Google-style docstrings. `uv`, not pip.
 - GPU: 3090 = one LocalAI GGUF. 5080 = exclusive PoC CUDA. Keyword-cpu retrieve.
 - Vault writes: `/update-kb` only after durable findings. Never mix operator/model KBs.
-- Never merge GitHub.com without the operator.
+- Forgejo: Grok and self-hosted `local/code` **may merge their own**
+  `tzervas/CogSynDelta` / `tzervas/memory-gate` PRs when required checks are
+  **legitimately green** (ran and succeeded; skip/`|| true`/missing runner is
+  not green) and the board-row bar is met. Never merge Jules/`develop`/GitHub
+  bots. Never merge GitHub.com without the operator.
 
 Related: memory-gate predecessor (Python), memory-gate-rs successor. Overlap is research (VSA/compression), not a shared impl.
 

@@ -27,15 +27,25 @@ Read `docs/program/PYTHON-FIRST-PLAN.md` then `PHASE-1-TASK-BOARD.md`.
 - P1-03 chroma mitigation https://git.vectorweight.com/tzervas/memory-gate/pulls/3 — `fix/chroma-cve-client-only` @ `1b07c56`. Client-only refuse. **Not** an upstream wheel patch.
 - P1-02 https://git.vectorweight.com/tzervas/memory-gate/pulls/4 — `feat/public-error-contract` @ `90a37ce`. `memory_gate.errors` + nine named types + `map_backend_error`. **60** public-error tests passed. Mapper **not** wired into gateway/store raise sites yet (VectorStore* still leak there). Local main `691bb85` untouched.
 
-Worktrees: `.../python-ai/memory-gate-wt-p1-00`, `...-wt-p1-01`, `...-wt-chroma-cve`. **Never** reset `.../python-ai/memory-gate` (`local/kang-main-wip`).
+Worktrees: `...-wt-p1-00`, `...-wt-p1-01`, `...-wt-chroma-cve`, `...-wt-p1-02`. **Never** reset `.../python-ai/memory-gate` (`local/kang-main-wip`).
+
+### Merge grant (operator 2026-08-31)
+
+Grok and self-hosted `local/code` **may merge their own** Forgejo PRs when required
+checks are **legitimately green** (jobs ran and succeeded) and the row bar is met.
+Skip / `|| true` / `continue-on-error` / fallback `echo` / missing runner is **not**
+green. Honest red is not mergeable. Never merge Jules/`develop`/GitHub bots.
+Never merge GitHub.com without the operator.
+
+**None of PR #1–#4 are legitimately green today** (pytest unawaited, gitleaks history,
+trivy chromadb 1.5.9). Do not merge them.
 
 ### Next closeable on this side
 
-1. **Ruff as a tool, not a hope.** CSD already uses `uvx ruff@PIN`. Memory-gate `lint.yml` / `fleet-ci.yml` still `uv run ruff` after `uv sync`. Pin `RUFF_VERSION` and `uvx ruff@…` so a missing project extra cannot hide the binary. Keep fail-closed (no `|| true`).
-2. Read job logs for P1-00 12s code-quality fail vs 3m12s fleet-ci python fail; fix install vs findings separately.
-3. Do not start P1-02 product errors until P1-00 has an honest Forgejo result you can explain (red is OK).
-4. **Chroma:** do **not** pin GitHub nightly `1.5.10.dev266` / tag `latest`. No named RC exists (checked 2026-08-30). Keep SQLite+vec + Qdrant; reintegrate only on a named patched RC/stable that GHSA lists. Criteria: `PHASE-1-TASK-BOARD.md` and memory-gate `SECURITY.md`.
-5. 5080 index: launcher enqueues; collection still **1024-d / 0 points**. Do not kill Comfy. Do not pause 3090 LocalAI.
-6. HF: private `tzervas/cogsyndelta-eval` only at P1-15.
+1. P1-03 durable `learn` / unawaited coroutines (pytest reds are the honest leftover).
+2. **Chroma:** do **not** pin `1.5.10.dev266` / `latest`. SQLite+vec + Qdrant until a named patched RC/stable that GHSA lists.
+3. 5080 index: still **1024-d / 0 points**. Do not kill Comfy. Do not pause 3090 LocalAI.
+4. HF: private `tzervas/cogsyndelta-eval` only at P1-15.
 
-Push CSD/memory-gate with `secret exec TOKEN=git/cabal-forgejo-admin` + `akula-ai-platform/scripts/git-askpass-token`, `GIT_USERNAME=tzervas`. Never GitHub bot push.
+Push/merge on Forgejo as `tzervas` via `secret exec TOKEN=git/cabal-forgejo-admin` +
+`git-askpass-token` (`credential.helper` disabled). Never GitHub bot push.

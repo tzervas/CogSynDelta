@@ -90,7 +90,12 @@ if pick.output.closeable == false {
 
 phase("Implement");
 let impl_p = "";
-impl_p += "Implement exactly one closeable Python-first increment. Do not merge.\n";
+impl_p += "Implement exactly one closeable Python-first increment.\n";
+impl_p += "Do not merge in the same run that just pushed (checks will not be green yet).\n";
+impl_p += "On a later increment, merge OUR Forgejo PR only if required checks are\n";
+impl_p += "legitimately green: jobs actually ran and succeeded. Skip, || true,\n";
+impl_p += "continue-on-error, fallback echo, or a missing runner is NOT green.\n";
+impl_p += "Honest red is not mergeable. Never merge Jules/develop/GitHub bot PRs.\n";
 impl_p += "ID: " + pick.output.id + "\n";
 impl_p += "DoD: " + pick.output.dod + "\n";
 impl_p += "Repo: " + pick.output.repo + "\n";
@@ -117,7 +122,8 @@ impl_p += "python-ai/memory-gate-wt-p1-01/specs/memory-lifecycle-contract/spec.m
 impl_p += "(Public error taxonomy). Add memory_gate.errors with MemoryGateError and\n";
 impl_p += "the nine named types. Map VectorStoreError/Init/Operation as __cause__.\n";
 impl_p += "Tests per type. Do not swallow asyncio.CancelledError. No product lifecycle.\n";
-impl_p += "Do not reset kang-main-wip. Do not merge. P1-00 honest pytest reds stay.\n";
+impl_p += "Do not reset kang-main-wip. P1-00 honest pytest reds stay. Do not merge P1-02\n";
+impl_p += "until required checks are legitimately green.\n";
 impl_p += "If ID is ops-index: repair csd-kb-index remote path; enqueue behind Comfy.\n";
 impl_p += "If ID is ops-runner: discover and restore the Forgejo CPU runner; do not fake green.\n";
 impl_p += "Commit on the feature branch. Push to forgejo as GIT_USERNAME=tzervas with\n";
