@@ -62,6 +62,22 @@ SECRET_BIN = os.environ.get("CSD_SECRET_BIN", "/home/kang/.local/bin/secret")
 HEARTBEAT = Path(
     os.environ.get("CSD_AUTODEV_HEARTBEAT", "/akula-data/cabal/autodev-heartbeat.json")
 )
+GROK_NEED = Path(
+    os.environ.get("CSD_GROK_NEED", "/akula-data/cabal/csd-need-grok.json")
+)
+PING_MAX = 2048
+PING_DROP = frozenset(
+    {
+        "text",
+        "transcript",
+        "stdout",
+        "stderr",
+        "journal",
+        "log",
+        "autodev-out",
+        "reply",
+    }
+)
 SCALE_LADDER = Path(
     os.environ.get(
         "CSD_SCALE_LADDER",
@@ -1042,6 +1058,110 @@ def scale_ladder_prom() -> str:
     return "\n".join(lines) + "\n"
 
 
+def need_grok_path() -> Path:
+    """Return the ping mailbox path (CSD_GROK_NEED)."""
+    return Path(os.environ.get("CSD_GROK_NEED", str(GROK_NEED)))
+
+
+def cap_need_grok(rec: dict) -> dict:
+    """Keep ping JSON at or under 2 KiB. Drop dumps, never transcripts."""
+    out = {k: v for k, v in rec.items() if k not in PING_DROP}
+    out["identity"] = "autodev"
+    if out.get("need") is not True:
+        return {"need": False}
+    raw = json.dumps(out, separators=(",", ":")).encode()
+    if len(raw) <= PING_MAX:
+        return out
+    out.pop("tried", None)
+    raw = json.dumps(out, separators=(",", ":")).encode()
+    if len(raw) <= PING_MAX:
+        return out
+    out.pop("paths", None)
+    evidence = str(out.get("evidence") or "")
+    while len(json.dumps(out, separators=(",", ":")).encode()) > PING_MAX:
+        if len(evidence) > 40:
+            evidence = evidence[: max(40, len(evidence) // 2)]
+            out["evidence"] = evidence
+            continue
+        q = str(out.get("question") or "")
+        if len(q) > 40:
+            out["question"] = q[:40]
+            continue
+        break
+    return out
+
+
+def load_need_grok() -> dict:
+    """Read ping mailbox plus file mtime. Missing file is need=false."""
+    path = need_grok_path()
+    rec = _read_json(path)
+    mtime = path.stat().st_mtime if path.is_file() else 0.0
+    return {
+        "ok": True,
+        "need": rec.get("need") is True,
+        "identity": rec.get("identity") or "autodev",
+        "question": rec.get("question") or "",
+        "evidence": rec.get("evidence") or "",
+        "goal": rec.get("goal") or "",
+        "blocker": rec.get("blocker") or "",
+        "paths": rec.get("paths") if isinstance(rec.get("paths"), list) else [],
+        "tried": rec.get("tried") if isinstance(rec.get("tried"), list) else [],
+        "t": rec.get("t"),
+        "mtime": mtime,
+        "path": str(path),
+        "hosted_grok": False,
+    }
+
+
+def write_need_grok_mailbox(payload: dict) -> dict:
+    """Write/merge ping mailbox. Never spawn grok. Cap 2 KiB.
+
+    Why: GET/POST /api/grok-need only rewrite the file. Hosted Grok wakes
+    when the operator opens a session after need=true.
+    """
+    path = need_grok_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if payload.get("need") is not True:
+        rec: dict = {"need": False}
+        path.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+        rec.update({"ok": True, "mtime": path.stat().st_mtime, "hosted_grok": False})
+        return rec
+    cur = _read_json(path)
+    merged = {**cur, **payload, "need": True, "identity": "autodev"}
+    if not merged.get("t"):
+        merged["t"] = int(time.time())
+    rec = cap_need_grok(merged)
+    path.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    rec["ok"] = True
+    rec["mtime"] = path.stat().st_mtime
+    rec["hosted_grok"] = False
+    return rec
+
+
+def need_grok_prom() -> str:
+    """Prometheus gauges from mailbox JSON and file mtime.
+
+    Why: Grafana pages maintainers@ once when need=true. Mtime changes only
+    when the file is rewritten, so loop ticks do not re-fire the alert.
+    """
+    rec = load_need_grok()
+    need = 1 if rec.get("need") is True else 0
+    mtime = int(rec.get("mtime") or 0)
+    return (
+        "# HELP csd_need_grok 1 when csd-need-grok.json need is true\n"
+        "# TYPE csd_need_grok gauge\n"
+        f'csd_need_grok{{identity="autodev"}} {need}\n'
+        "# HELP csd_need_grok_mtime_seconds Unix mtime of the ping mailbox\n"
+        "# TYPE csd_need_grok_mtime_seconds gauge\n"
+        f"csd_need_grok_mtime_seconds {mtime}\n"
+    )
+
+
+def lab_metrics() -> str:
+    """Lab /metrics: scale ladder plus need_grok. Never hosted Grok."""
+    return scale_ladder_prom() + need_grok_prom()
+
+
 def lab_goals() -> dict:
     """PHASE-1 board plus steer next_goal and autodev heartbeat.
 
@@ -1116,6 +1236,7 @@ def lab_goals() -> dict:
         },
         "scale_ladder": load_scale_ladder(),
         "hf": hf_autodev_gap(),
+        "grok_need": load_need_grok(),
     }
 
 
@@ -1146,8 +1267,14 @@ def handle_lab(method: str, path: str, payload: dict) -> tuple[int, dict] | None
         return 405, {"ok": False, "error": "GET or POST"}
     if path == "/api/goals":
         return 200, lab_goals()
+    if path in ("/api/grok-need", "/api/need-grok"):
+        if method == "GET":
+            return 200, load_need_grok()
+        if method == "POST":
+            return 200, write_need_grok_mailbox(payload)
+        return 405, {"ok": False, "error": "GET or POST", "hosted_grok": False}
     if path == "/metrics":
-        return 200, {"ok": True, "exposition": scale_ladder_prom()}
+        return 200, {"ok": True, "exposition": lab_metrics()}
     if path == "/api/forgejo/whoami":
         return 200, lab_forgejo("whoami", payload)
     if path == "/api/forgejo/prs":
@@ -1298,7 +1425,7 @@ def serve(port: int) -> None:
             if apipath in ("/metrics", "/api/metrics"):
                 self._send(
                     200,
-                    scale_ladder_prom().encode(),
+                    lab_metrics().encode(),
                     "text/plain; version=0.0.4; charset=utf-8",
                 )
                 return
@@ -1478,6 +1605,7 @@ button,textarea{font:inherit}textarea{width:100%;background:#000;color:#ddd;bord
     <div class=card><h2>notes / reasoning</h2><pre id=gnotes></pre></div>
   </div>
   <div class=card><h2>todos</h2><pre id=gtodos></pre></div>
+  <div class=card><h2>grok ping</h2><pre id=gping></pre></div>
   <div class=card><h2>scale ladder / HF</h2><pre id=gladder></pre></div>
   <div class=card><h2>PHASE-1</h2><div id=gboard class=muted>loading…</div></div>
 </section>
@@ -1583,6 +1711,8 @@ function renderGoals(g){
   document.getElementById('ghb').textContent=JSON.stringify({t:hb.t,pid:hb.pid,wt:hb.wt,age_s:hb.age_s,live:hb.live,last:hb.last},null,2);
   document.getElementById('gnotes').textContent=String(g.reasoning||g.notes||'');
   document.getElementById('gtodos').textContent=JSON.stringify(g.todos||[],null,2);
+  const ping=g.grok_need||{};
+  document.getElementById('gping').textContent=JSON.stringify({need:ping.need,question:ping.question,goal:ping.goal,mtime:ping.mtime},null,2);
   document.getElementById('gladder').textContent=JSON.stringify({hf:g.hf,scale_ladder:g.scale_ladder},null,2);
   const rows=g.phase1||[];
   const head='<table class=board><thead><tr><th>id</th><th>status</th><th>title</th><th>depends</th></tr></thead><tbody>';

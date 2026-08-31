@@ -21,6 +21,7 @@ Live rules (only if the Prom series exist):
 - `CSDDiskLow` — gpu5080 root `< 10%` via `last_over_time(node_filesystem_*[7d])`
 - `CSDGPULockStale` — `akula_timeshare_busy{host="gpu5080"} == 1` for 2h
 - `CSDScaleLadderRungGreen` — `csd_scale_ladder_rung_green == 1` (from `benchmark_results/scale_ladder.json` / lab `/metrics`; `noDataState: OK`; all rungs `green: false` today — not a fake sat)
+- `CSDNeedGrok` — `csd_need_grok == 1` (from `/akula-data/cabal/csd-need-grok.json` / lab `/metrics` + mtime; `for: 2m`; `noDataState: OK`; pages `maintainers-email` once per firing, not per loop tick; does **not** call hosted Grok)
 
 Not provisioned (no Prom series): postfix deferred, Forgejo runner offline.
 `up{group,ns,host}` is scraped from security-net and is currently `0` (LAN

@@ -110,3 +110,21 @@ scrape_configs:
     # RAID live mount on gpu5080 is /bulk (md127 RAID0 both 3 TB, UUID
     # 8d85a4cc:d1690f1e:5b147e0f:767d6d3e). Do not invent a
     # node_filesystem PromQL panel for it here.
+
+  # Live lab exporter on prime :9118 (csd-lab-console.service).
+  # Gauges: csd_need_grok + csd_need_grok_mtime_seconds + scale ladder.
+  # Do not poll hosted Grok. Do not add WAN targets.
+  - job_name: csd-lab
+    metrics_path: /metrics
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["192.168.1.98:9118"]
+        labels:
+          host: prime
+          role: prime
+          env: lab
+          ns: csd
+          service: csd-lab-console
+          kind: api
+          group: csd-autodev
+          path: lab.csd.ping

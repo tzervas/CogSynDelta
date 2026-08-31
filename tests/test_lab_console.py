@@ -20,6 +20,7 @@ def load_lab(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setenv("CSD_GPU_PLAN", str(tmp_path / "gpu-plan.json"))
     monkeypatch.setenv("CSD_STEER", str(tmp_path / "csd-steer.json"))
     monkeypatch.setenv("CSD_AUTODEV_HEARTBEAT", str(tmp_path / "hb.json"))
+    monkeypatch.setenv("CSD_GROK_NEED", str(tmp_path / "csd-need-grok.json"))
     monkeypatch.setenv("CSD_LAB_BIND", "192.168.1.98")
     vault = tmp_path / "csd-vault"
     (vault / "hf").mkdir(parents=True)
@@ -339,7 +340,9 @@ def test_goals_tab_renders_from_api_goals_json(
     assert "ai.vectorweight.com" not in todos_html
     assert "iframe" not in todos_html
     assert "id=gladder" in todos_html
+    assert "id=gping" in todos_html
     assert "scale_ladder" in page
+    assert "grok_need" in page or "gping" in page
 
 
 def test_metrics_scale_ladder_gauge_stays_zero(
@@ -356,7 +359,9 @@ def test_metrics_scale_ladder_gauge_stays_zero(
     assert 'rung="2",size="tiny_mind"} 0' in text
     assert 'rung="3",size="small"} 0' in text
     assert 'rung="4",size="medium"} 0' in text
-    assert "} 1" not in text
+    assert 'csd_need_grok{identity="autodev"} 0' in text
+    assert 'csd_need_grok{identity="autodev"} 1' not in text
+    assert "csd_need_grok_mtime_seconds" in text
 
 
 def test_hf_autodev_present_when_file_exists(
@@ -381,3 +386,71 @@ def test_hf_autodev_refuses_operator_secrets(
     assert rec["autodev"] is False
     assert rec["gap"] == "mint HF"
     assert rec["vault"] == "refused-operator-vault"
+
+
+
+def test_grok_need_get_idle_and_post_caps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GET idle; POST need=true writes mailbox; transcripts dropped; 2 KiB cap."""
+    mod = load_lab(tmp_path, monkeypatch)
+    code, rec = mod.handle_lab("GET", "/api/grok-need", {})
+    assert code == 200
+    assert rec["need"] is False
+    assert rec["hosted_grok"] is False
+    assert rec["identity"] == "autodev"
+    code, rec = mod.handle_lab(
+        "POST",
+        "/api/grok-need",
+        {
+            "need": True,
+            "question": "Forgejo required pytest failed twice?",
+            "evidence": "blocker: CI red; paths: tests/test_x.py; tried: wait x2",
+            "goal": "P1-09",
+            "transcript": "never dump a chat",
+            "stdout": "pytest spew",
+        },
+    )
+    assert code == 200
+    assert rec["need"] is True
+    assert rec["identity"] == "autodev"
+    assert rec["hosted_grok"] is False
+    assert "transcript" not in rec
+    assert "stdout" not in rec
+    raw = (tmp_path / "csd-need-grok.json").read_bytes()
+    assert len(raw) <= 2048
+    code, rec = mod.handle_lab("GET", "/api/goals", {})
+    assert rec["grok_need"]["need"] is True
+    code, rec = mod.handle_lab("GET", "/metrics", {})
+    text = rec["exposition"]
+    assert 'csd_need_grok{identity="autodev"} 1' in text
+    mtime_line = [
+        ln for ln in text.splitlines() if ln.startswith("csd_need_grok_mtime_seconds")
+    ]
+    assert mtime_line
+    assert float(mtime_line[0].rsplit(" ", 1)[1]) > 0
+    code, rec = mod.handle_lab("POST", "/api/grok-need", {"need": False})
+    assert rec["need"] is False
+    code, rec = mod.handle_lab("GET", "/metrics", {})
+    assert 'csd_need_grok{identity="autodev"} 0' in rec["exposition"]
+
+
+def test_grok_need_post_does_not_spawn_grok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mailbox write must not call hosted grok or GitHub."""
+    mod = load_lab(tmp_path, monkeypatch)
+
+    def boom(*_a: object, **_k: object) -> tuple[int, str]:
+        raise AssertionError("grok-need must not spawn CLI")
+
+    monkeypatch.setattr(mod, "_run_cli", boom)
+    monkeypatch.setattr(mod, "sh", boom)
+    code, rec = mod.handle_lab(
+        "POST",
+        "/api/grok-need",
+        {"need": True, "question": "HF mint?", "evidence": "empty", "goal": "P1-15"},
+    )
+    assert code == 200
+    assert rec["need"] is True
+    assert rec["hosted_grok"] is False

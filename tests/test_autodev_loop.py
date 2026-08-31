@@ -16,6 +16,9 @@ SCRIPT = ROOT / "scripts" / "csd-autodev-loop"
 def load_loop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     """Import csd-autodev-loop with isolated steer path."""
     monkeypatch.setenv("CSD_AUTODEV_WT", str(tmp_path / "memory-gate-wt-p1-09"))
+    monkeypatch.setenv("CSD_GROK_NEED", str(tmp_path / "csd-need-grok.json"))
+    monkeypatch.setenv("CSD_AUTODEV_STALL", str(tmp_path / "autodev-stall.json"))
+    monkeypatch.setenv("CSD_GPU_PLAN", str(tmp_path / "gpu-plan.json"))
     loader = importlib.machinery.SourceFileLoader("csd_autodev_loop", str(SCRIPT))
     spec = importlib.util.spec_from_loader("csd_autodev_loop", loader)
     assert spec is not None
@@ -62,3 +65,120 @@ def test_next_open_goal_reads_steer_region_pretrain(
     mod.STEER = steer
     assert mod.next_open_goal() == "region-pretrain"
     assert mod.is_region_pretrain(mod.next_open_goal()) is True
+
+
+
+def test_cap_ping_drops_transcripts_and_stays_under_2kib(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ping JSON is identity autodev, no dumps, at most 2048 bytes."""
+    mod = load_loop(tmp_path, monkeypatch)
+    rec = mod.cap_ping(
+        {
+            "need": True,
+            "question": "x" * 400,
+            "evidence": "y" * 800,
+            "transcript": "secret chat",
+            "stdout": "pytest dump",
+            "tried": ["a"] * 40,
+            "paths": ["src/x.py"] * 40,
+        }
+    )
+    assert rec["identity"] == "autodev"
+    assert "transcript" not in rec
+    assert "stdout" not in rec
+    raw = __import__("json").dumps(rec, separators=(",", ":")).encode()
+    assert len(raw) <= 2048
+
+
+def test_write_need_grok_fingerprint_does_not_rewrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same stall fingerprint must not rewrite the mailbox (no tick mail)."""
+    mod = load_loop(tmp_path, monkeypatch)
+    mod.GROK_NEED = tmp_path / "csd-need-grok.json"
+    first = mod.write_need_grok(
+        question="CI red twice?",
+        evidence="blocker: pytest; paths: tests/t.py; tried: wait",
+        goal="P1-09",
+        blocker="required pytest red",
+        paths=["tests/t.py"],
+        tried=["wait"],
+    )
+    blob1 = mod.GROK_NEED.read_bytes()
+    second = mod.write_need_grok(
+        question="CI red twice?",
+        evidence="blocker: pytest; paths: tests/t.py; tried: wait",
+        goal="P1-09",
+        blocker="required pytest red",
+        paths=["tests/t.py"],
+        tried=["wait"],
+    )
+    blob2 = mod.GROK_NEED.read_bytes()
+    assert first["need"] is True
+    assert second["fp"] == first["fp"]
+    assert blob2 == blob1
+
+
+def test_maybe_ping_stall_waits_for_n_equals_two(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """First failure is not a ping; second same fingerprint sets need=true."""
+    mod = load_loop(tmp_path, monkeypatch)
+    mod.GROK_NEED = tmp_path / "csd-need-grok.json"
+    mod.STALL = tmp_path / "autodev-stall.json"
+    first = mod.maybe_ping_stall(
+        "P1-09",
+        "required pytest red",
+        "contract or runner?",
+        "blocker: CI; paths: scripts/csd-autodev-loop; tried: wait",
+        paths=["scripts/csd-autodev-loop"],
+        tried=["wait"],
+    )
+    assert first["need"] is False
+    assert first["n"] == 1
+    second = mod.maybe_ping_stall(
+        "P1-09",
+        "required pytest red",
+        "contract or runner?",
+        "blocker: CI; paths: scripts/csd-autodev-loop; tried: wait",
+        paths=["scripts/csd-autodev-loop"],
+        tried=["wait"],
+    )
+    assert second["need"] is True
+    assert second["identity"] == "autodev"
+
+
+def test_run_refuses_hosted_grok_and_github(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Loop never spawns grok or GitHub remotes."""
+    mod = load_loop(tmp_path, monkeypatch)
+    rc, text = mod._run(["grok", "--print"])
+    assert rc == 2
+    assert "refusing hosted grok" in text
+    rc, text = mod._run(["git", "push", "https://github.com/tzervas/CogSynDelta.git"])
+    assert rc == 2
+    assert "never GitHub" in text
+
+
+def test_ti_ok_requires_live_and_guest_smi(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """1080 Ti only when catalog live=true and guest smi lists 1080."""
+    mod = load_loop(tmp_path, monkeypatch)
+    plan = tmp_path / "gpu-plan.json"
+    mod.GPU_PLAN = plan
+    plan.write_text("{}", encoding="utf-8")
+    assert mod.ti_ok() is False
+    plan.write_text(
+        '{"gpu5080-1080ti": {"live": true, "name": "NVIDIA GeForce GTX 1080 Ti"}}',
+        encoding="utf-8",
+    )
+    # catalog in-repo currently live=true; both gates must pass
+    assert mod.ti_ok() is True
+    plan.write_text(
+        '{"gpu5080-1080ti": {"live": true, "name": "NVIDIA GeForce RTX 5080"}}',
+        encoding="utf-8",
+    )
+    assert mod.ti_ok() is False

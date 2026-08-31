@@ -21,7 +21,7 @@ both 3 TB) is a taxonomy annotation, not a `path` label on `akula-node`.
 
 | Piece | Homelab path | Notes |
 |---|---|---|
-| VictoriaMetrics scrape | `/etc/akula/vm-scrape.yml` | jobs `akula-health` (`:9108`), `akula-node` (`:9100`); gpu5080 **`.251`**; `akula-rag` relabel if 1080 Ti `name` |
+| VictoriaMetrics scrape | `/etc/akula/vm-scrape.yml` | jobs `akula-health` (`:9108`), `akula-node` (`:9100`), `csd-lab` (prime `:9118` need_grok); gpu5080 **`.251`**; `akula-rag` relabel if 1080 Ti `name` |
 | NVIDIA | same jobs | series `akula_gpu_*`, not `nvidia_*` / DCGM |
 | Promtail | `/data/unifi-security/deploy/config/promtail.yaml` | Suricata/Zeek/UniFi syslog only until this overlay |
 | Loki | `/data/unifi-security/deploy/config/loki.yaml` | unchanged; labels come from Promtail |

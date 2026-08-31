@@ -386,3 +386,97 @@ groups:
               maxDataPoints: 43200
               refId: C
               type: threshold
+
+      - uid: csd-need-grok
+        title: CSDNeedGrok
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        annotations:
+          summary: Autodev ping mailbox need=true (operator should open Grok).
+          description: >-
+            csd_need_grok == 1 identity={{ $labels.identity }}
+            host={{ $labels.host }} group={{ $labels.group }}.
+            Source /akula-data/cabal/csd-need-grok.json via lab GET /metrics
+            (mtime gauge csd_need_grok_mtime_seconds). Do not poll hosted Grok.
+            Do not fire on autodev loop ticks. Contact maintainers-email.
+        labels:
+          group: csd-autodev
+          ns: csd
+          host: prime
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: P4169E866C3094E38
+            model:
+              datasource:
+                type: prometheus
+                uid: P4169E866C3094E38
+              expr: |
+                label_replace(
+                  label_replace(
+                    csd_need_grok == 1,
+                    "group", "csd-autodev", "__name__", ".+"
+                  ),
+                  "ns", "csd", "__name__", ".+"
+                )
+              instant: true
+              intervalMs: 1000
+              legendFormat: ""
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: []
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
