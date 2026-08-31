@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""Monitor and steer lab GPUs + LocalAI from this machine.
+
+Usage:
+  ./scripts/csd-lab-console              # one snapshot
+  ./scripts/csd-lab-console --watch
+  ./scripts/csd-lab-console --http 9118  # dashboard (code.vectorweight.com/lab)
+  ./scripts/csd-lab-console --chat 'ping'
+  ./scripts/csd-lab-console --steer pause
+  ./scripts/csd-lab-console --steer resume
+  ./scripts/csd-lab-console --steer-note 'hold G-SQL'
+
+Never pauses LocalAI. Never dual 14B. 5080 has no text LLM while Comfy is masked.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import time
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+STEER = Path(os.environ.get("CSD_STEER", "/akula-data/cabal/csd-steer.json"))
+LOCALAI = os.environ.get("LOCALAI_URL", "http://127.0.0.1:8080")
+GPU5080 = os.environ.get("GPU5080_SSH", "gpu5080")
+
+
+def sh(args: list[str], timeout: int = 20) -> str:
+    p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+    return (p.stdout or p.stderr or "").strip()
+
+
+def ssh_5080(cmd: str) -> str:
+    return sh(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", GPU5080, cmd])
+
+
+def localai_key() -> str:
+    return os.environ.get("LOCALAI_API_KEY") or os.environ.get("API_KEY") or ""
+
+
+def snapshot() -> dict:
+    steer = {}
+    if STEER.is_file():
+        try:
+            steer = json.loads(STEER.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            steer = {"error": "invalid json"}
+    models: list[str] = []
+    lai = "down"
+    try:
+        req = urllib.request.Request(
+            f"{LOCALAI}/v1/models",
+            headers={"Authorization": f"Bearer {localai_key()}"} if localai_key() else {},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.load(resp)
+        models = [m.get("id") for m in (data.get("data") or []) if m.get("id")]
+        lai = "ok"
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        lai = "unreachable"
+    return {
+        "prime_smi": sh(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.used,memory.free,utilization.gpu",
+                "--format=csv,noheader",
+            ]
+        ),
+        "localai": lai,
+        "models": models,
+        "localai_container": sh(
+            ["docker", "inspect", "-f", "{{.State.Status}}", "akula-localai"]
+        ),
+        "gpu5080_smi": ssh_5080(
+            "nvidia-smi --query-gpu=name,memory.used,memory.free,utilization.gpu --format=csv,noheader"
+        ),
+        "gpu5080_lock": ssh_5080(
+            "fuser /home/tzervas/akula-harness/state/gpu5080.lock 2>/dev/null || echo idle"
+        ),
+        "gpu5080_runner": ssh_5080(
+            "systemctl --user is-active forgejo-runner-gpu-tzervas.service"
+        ),
+        "gpu5080_comfy": ssh_5080("systemctl is-enabled akula-comfyui.service 2>/dev/null || true"),
+        "steer": steer,
+        "note": "3090=local/code 32k; 5080=CUDA/CI not a text LLM",
+    }
+
+
+def print_snap(s: dict) -> None:
+    print("=== akula-prime 3090 ===")
+    print(s.get("prime_smi"))
+    print("localai", s.get("localai_container"), s.get("localai"), "models", s.get("models"))
+    print("=== gpu5080 ===")
+    print(s.get("gpu5080_smi"))
+    print("lock", s.get("gpu5080_lock"), "runner", s.get("gpu5080_runner"), "comfy", s.get("gpu5080_comfy"))
+    print("=== steer ===")
+    print(json.dumps(s.get("steer") or {}, indent=2))
+    print(s.get("note"))
+
+
+def write_steer(**fields: object) -> dict:
+    cur: dict = {}
+    if STEER.is_file():
+        try:
+            cur = json.loads(STEER.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            cur = {}
+    cur.update({k: v for k, v in fields.items() if v is not None})
+    STEER.parent.mkdir(parents=True, exist_ok=True)
+    STEER.write_text(json.dumps(cur, indent=2) + "\n", encoding="utf-8")
+    return cur
+
+
+def chat(prompt: str) -> str:
+    body = json.dumps(
+        {
+            "model": "local/code",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 512,
+            "temperature": 0.2,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        f"{LOCALAI}/v1/chat/completions",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            **({"Authorization": f"Bearer {localai_key()}"} if localai_key() else {}),
+        },
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.load(resp)
+    return str(((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+
+
+def serve(port: int) -> None:
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, fmt: str, *args: object) -> None:
+            return
+
+        def do_GET(self) -> None:  # noqa: N802
+            if self.path in ("/", "/lab", "/lab/"):
+                body = PAGE.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if self.path.startswith("/api/status"):
+                raw = json.dumps(snapshot()).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+            self.send_error(404)
+
+        def do_POST(self) -> None:  # noqa: N802
+            n = int(self.headers.get("Content-Length") or "0")
+            payload = json.loads(self.rfile.read(n) or b"{}")
+            if self.path == "/api/steer":
+                raw = json.dumps(write_steer(**payload)).encode()
+            elif self.path == "/api/chat":
+                text = chat(str(payload.get("prompt") or ""))
+                raw = json.dumps({"content": text}).encode()
+            else:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+    bind = os.environ.get("CSD_LAB_BIND", "192.168.1.98")
+    httpd = ThreadingHTTPServer((bind, port), H)
+    print(f"csd-lab-console http://{bind}:{port}/lab")
+    httpd.serve_forever()
+
+
+PAGE = """<!doctype html><meta charset=utf-8><title>CSD lab</title>
+<style>body{font:14px/1.4 system-ui,sans-serif;max-width:900px;margin:1rem auto;background:#111;color:#ddd}
+pre{background:#000;padding:1rem;overflow:auto}button,input,textarea{font:inherit}</style>
+<h1>Self-hosted lab</h1>
+<p>3090 <code>local/code</code> · 5080 CUDA/CI · hosted Grok still runs /csd-* workflows</p>
+<pre id=s>loading…</pre>
+<p><button onclick="steer({pause:true})">pause loops</button>
+<button onclick="steer({pause:false})">resume</button></p>
+<p><textarea id=n cols=60 rows=2 placeholder="steer note"></textarea>
+<button onclick="steer({note:document.getElementById('n').value})">set note</button></p>
+<p><textarea id=p cols=60 rows=3 placeholder="chat local/code"></textarea>
+<button onclick="go()">send</button></p>
+<pre id=c></pre>
+<script>
+async function refresh(){
+  const r=await fetch('/api/status'); const d=await r.json();
+  document.getElementById('s').textContent=JSON.stringify(d,null,2);
+}
+async function steer(body){
+  await fetch('/api/steer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  refresh();
+}
+async function go(){
+  const prompt=document.getElementById('p').value;
+  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
+  const d=await r.json();
+  document.getElementById('c').textContent=d.content||JSON.stringify(d);
+}
+refresh(); setInterval(refresh,5000);
+</script>
+"""
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--watch", action="store_true")
+    ap.add_argument("--http", type=int, metavar="PORT")
+    ap.add_argument("--chat")
+    ap.add_argument("--steer", choices=["pause", "resume"])
+    ap.add_argument("--steer-note")
+    args = ap.parse_args()
+    if args.steer:
+        print(json.dumps(write_steer(pause=args.steer == "pause"), indent=2))
+        return 0
+    if args.steer_note is not None:
+        print(json.dumps(write_steer(note=args.steer_note), indent=2))
+        return 0
+    if args.chat:
+        print(chat(args.chat))
+        return 0
+    if args.http:
+        serve(args.http)
+        return 0
+    if args.watch:
+        while True:
+            print("\033[2J\033[H", end="")
+            print_snap(snapshot())
+            time.sleep(5)
+    print_snap(snapshot())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

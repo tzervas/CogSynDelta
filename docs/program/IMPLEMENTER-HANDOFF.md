@@ -27,8 +27,10 @@ Do not reconstruct the parent chat. Read these files with tools.
 | Second Grok (akula-ai-platform) | WebUI/Comfy. Do not touch from CSD |
 
 Workflow host **cannot** spawn model slug `local/code` (only `grok-4.5` /
-`grok-4.6`). Implement steps use `grok-4.6` until that changes. Keep LocalAI
-loaded anyway.
+`grok-4.6`). Implement steps still use **hosted grok-4.6**. Keep LocalAI
+loaded. Visibility + steer: `docs/program/WHO-RUNS-WHAT.md` and
+`./scripts/csd-lab-console`. Chat UI: https://code.vectorweight.com (Open WebUI
+→ `local/code`) and `/lab` for GPU/lock/steer.
 
 ## Current closeable work (2026-08-31)
 
