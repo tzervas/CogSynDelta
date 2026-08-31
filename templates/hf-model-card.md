@@ -38,7 +38,17 @@ model-index:
 
 # {model_id}
 
-Private CogSynDelta checkpoint family (`tzervas/cogsyndelta`).
+Private CogSynDelta checkpoint family.
+
+Name the **training stage** on every card. Horizon (no weights today):
+
+| Stage | Meaning | Repo when it exists |
+|---|---|---|
+| Bedrock | Subregions trained and quantized; no overall unison pretrain | `tzervas/cogsyndelta-bedrock` |
+| Foundation | Bedrock + overall pretrain on the full intended corpus | `tzervas/cogsyndelta` |
+
+Do not label a bedrock dump as foundation. Downstream quantize / train /
+fine-tune starts from one of these two, not from an unlabeled mix.
 
 **Code (deep git tree):** [git.vectorweight.com/tzervas/CogSynDelta](https://git.vectorweight.com/tzervas/CogSynDelta)
 **Memory backend (Python):** [tzervas/memory-gate](https://git.vectorweight.com/tzervas/memory-gate)

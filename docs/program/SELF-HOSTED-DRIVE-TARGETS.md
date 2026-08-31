@@ -24,6 +24,35 @@ cannot load. Same rule as the assist GPU matrix: pack what fits; never dual
 `STATUS.md` remains the only measured PoC. **Do not train CSD weights until
 `G-LIFE`.**
 
+**Phased training (Phase 3, not now):** regions must work before the whole
+mind can be trained as one.
+
+1. **Per-region data.** Each subregion gets its own dataset(s) aimed at its
+   job (route, compress, retrieve, code, …). Do not mix the full corpus into
+   a region that has not yet learned that job.
+2. **Region train → quantize.** Train that submodel at high fidelity, then
+   dial quant so it fits this lab without becoming junk. Repeat until every
+   intended region/subregion has a measured functional bar.
+3. **Bedrock assemble.** Compose the quantized regions + gate **without**
+   overall pretrain. This is the **bedrock** artifact: specialists exist;
+   they have not yet been trained to work in unison on the full corpus.
+4. **Foundation pretrain.** Only then train the **overarching** model on the
+   full intended datasets (interconnect + joint behavior). This is the
+   **foundation** artifact: post-subregion training.
+5. **Downstream.** Others (and later us) may quantize, continue-train, or
+   fine-tune from either artifact. Cards must say which.
+
+Private HF (when a real checkpoint exists — none today):
+
+| Artifact | Meaning | Suggested id |
+|---|---|---|
+| Bedrock | Regions trained + quantized; no overall unison train | `tzervas/cogsyndelta-bedrock` |
+| Foundation | Bedrock + overall pretrain on the full corpus | `tzervas/cogsyndelta` |
+| Eval / region corpora | Pinned data revisions, not weights | `tzervas/cogsyndelta-eval` (+ per-region subsets) |
+
+Do not publish a foundation card that is only bedrock. Do not train this
+pass. `STATUS.md` is still PoC-only.
+
 **Split across mismatched GPUs (after one-GPU Python proof):** treating the
 3090 Ti + 5080 as one pool, routing shards of *one* mind, is an experimental
 follow-on. Prove the Python stack on **one GPU** first (Phase 1–3). Do not
@@ -44,12 +73,12 @@ The eventual stack is a **symphony**:
 1. **Now — Phase 1**: Python `memory-gate` board `P1-00`…`P1-17`. Honest CI.
    SQLite+vec + Qdrant. No Chroma nightly. Merge only **legitimately green**.
 2. **Phase 2**: Wire that memory into CogSynDelta `memory/`. Keep PoC-1..3 green.
-3. **Phase 3 — this target**: Automate **region specialization** off Hugging Face
-   data (copy public sets into private `tzervas/cogsyndelta-eval` when a row
-   needs them). Train high-fidelity regions, **quantize** to lab VRAM, train
-   interconnect. Offload storage. Eval/bench along the way. Prove the full
-   Python stack on **one GPU** (5080 exclusive-seq for train/eval; 3090 stays
-   assist). Never pause 3090 LocalAI for RAG.
+3. **Phase 3 — this target**: Per-region datasets → train/quantize each
+   specialist → **bedrock** assemble → **foundation** overall pretrain on the
+   full corpus. Copy public sets into private `tzervas/cogsyndelta-eval` when
+   a row needs them. Two HF weight artifacts, not one muddy checkpoint.
+   Prove Python on **one GPU** (5080 train/eval; 3090 assist). Never pause
+   3090 LocalAI for RAG.
 4. **Phase 4**: Rust rewrite after Python CSD is production-ready.
 5. **Phase 5 (experimental)**: pool mismatched GPUs (3090 Ti + 5080) for
    split inference/training of one CSD mind. Not before Phase 3 one-GPU proof.
