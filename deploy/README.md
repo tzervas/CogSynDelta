@@ -110,9 +110,11 @@ sudo systemctl enable vfio-bind-1080ti.service
 RAID / `/models` — **notes only**, do not rewrite the live array:
 
 - [gpu5080/storage/fstab.notes.md](gpu5080/storage/fstab.notes.md)
-- [gpu5080/storage/mdadm.conf](gpu5080/storage/mdadm.conf) (`gpu5080:bulk`,
-  degraded `[2/1] [_U]`, read-only, live mount `/mnt/bulk-old`)
-- Preserve `/models` on `sda2`. Do not steal that mount for a guest root.
+- [gpu5080/storage/mdadm.conf](gpu5080/storage/mdadm.conf) (git copy still
+  has the old raid1 UUID; **live** is RAID0 UUID
+  `8d85a4cc:d1690f1e:5b147e0f:767d6d3e`, both 3 TB, `/bulk`)
+- Preserve `/models` (bind of `/bulk/models-hdd`). Do not steal that
+  mount for a guest root. Do not install git `mdadm.conf` over live.
 
 ### Not live — do not apply yet
 

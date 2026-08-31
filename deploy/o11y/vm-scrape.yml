@@ -11,9 +11,9 @@
 # Do not set path on akula-node: node_exporter already exports path= mountpoint.
 #
 # 1080 Ti RAG (group=akula-rag, ns=index, path=lab.gpu5080.index.1080ti):
-# not a separate scrape target. nvidia-smi on gpu5080 is 5080-only (lspci
-# 06:00.0 unbound). metric_relabel stamps taxonomy if name matches 1080 Ti.
-# Do not invent PromQL for that card until those series exist.
+# not a separate scrape target. nvidia-smi on gpu5080 is 5080-only
+# (06:00.0 vfio-pci; no guest smi). metric_relabel stamps taxonomy if
+# name matches 1080 Ti. Do not invent PromQL until those series exist.
 
 global:
   scrape_interval: 15s
@@ -107,5 +107,6 @@ scrape_configs:
         target_label: host
     # Taxonomy path omitted: colliding with node_filesystem path would drop
     # mountpoints and explode cardinality.
-    # RAID live mount on gpu5080 is /mnt/bulk-old (md127, degraded). Do not
-    # invent a node_filesystem PromQL panel for it here.
+    # RAID live mount on gpu5080 is /bulk (md127 RAID0 both 3 TB, UUID
+    # 8d85a4cc:d1690f1e:5b147e0f:767d6d3e). Do not invent a
+    # node_filesystem PromQL panel for it here.

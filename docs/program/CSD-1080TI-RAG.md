@@ -1,9 +1,9 @@
 # 1080 Ti RAG host — future third GPU
 
 Not `STATUS.md`. Not live. Catalog stub only until `nvidia-smi` on
-**gpu5080** lists the card. Router must ignore `future_hosts` until
-promoted. Autodev must not start `G-1080` and must not power off the
-host to seat hardware.
+**gpu5080** (host or VFIO guest) lists the card. Router must ignore
+`future_hosts` until promoted. Autodev must not start `G-1080` and
+must not power off the host.
 
 Identity: **autodev**. Branch: `feat/agent-harness` (never `main` /
 `staging` / `develop` / `dev`).
@@ -27,16 +27,18 @@ Driver split and sandbox: [CSD-1080TI-ISOLATE.md](CSD-1080TI-ISOLATE.md)
 ## Catalog
 
 `config/model-router.json` `future_hosts` id **`gpu5080-1080ti`**.
-Stay in `future_hosts` (`live: false`, `installed: false`) until the
-operator seats the card and `nvidia-smi` on gpu5080 shows both the 5080
-and the 1080 Ti. Then promote to `hosts` with role retrieve-index-light
-and set `live: true`. Router scheduling reads `hosts` only.
+Stay in `future_hosts` (`live: false`, `installed: false`) until
+`nvidia-smi` on gpu5080 (host or VFIO guest) lists the 1080 Ti UUID.
+The card **is seated** at PCI `06:00.0` (`vfio-pci`) as of
+2026-08-31T20:25:07Z; host `nvidia-smi -L` is still RTX 5080 only.
+Then promote to `hosts` with role retrieve-index-light and set
+`live: true`. Router scheduling reads `hosts` only.
 
 | Field | Value |
 |---|---|
 | future_hosts id | `gpu5080-1080ti` |
-| live | `false` (args.live=false; router ignores for scheduling) |
-| installed | `false` |
+| live | `false` (matches host `nvidia-smi -L`; router ignores for scheduling) |
+| installed | `false` (seated + vfio-pci; no CUDA UUID yet) |
 | role | `retrieve-index-light` (when promoted) |
 | host | `gpu5080` |
 | IP (LAN) | `192.168.1.251` (router static; was `.252`) |
@@ -90,12 +92,19 @@ passthrough uses the host module. Decision:
 
 Pin by PCI / UUID after `nvidia-smi -L`, not by assuming index 0 is
 the 5080. Factory cooler first; factory eco PL when bound. Do not plan
-a 1080 Ti loop until factory air is measured. Preserve `/models` on
-`sda2` if touching disks.
+a 1080 Ti loop until factory air is measured. Preserve `/models`
+(bind of `/bulk/models-hdd` on md127 RAID0). Do not wipe NVMe OS.
+Do not reshape the healthy RAID0 that already uses both 3 TB HDDs.
 
-Host verify (2026-08-31T20:03:42Z): `nvidia-smi -L` lists **only** the
-RTX 5080; `lspci -k` shows `06:00.0`/`06:00.1` **vfio-pci**. Catalog
-stays `live: false` until the **guest** lists the 1080 Ti.
+Host verify (2026-08-31T20:25:07Z, SSH `tzervas@192.168.1.251`):
+`nvidia-smi -L` lists **only** RTX 5080
+`GPU-087267a6-14fb-0af3-da30-9a1a18523106` (P8, 0 % util, 12.5 W).
+`lspci -k` shows `06:00.0`/`06:00.1` **vfio-pci** (EVGA GP102).
+No qemu/OVMF/`virsh`. Catalog stays `live: false` until the **guest**
+lists the 1080 Ti. RAID `md127` `gpu5080:bulk` UUID
+`8d85a4cc:d1690f1e:5b147e0f:767d6d3e` is healthy RAID0 both 3 TB
+HDDs, mounted `/bulk`. Bench CUDA on Pascal did **not** run
+([CSD-1080TI-BENCH.md](CSD-1080TI-BENCH.md)).
 
 ## Labels (o11y)
 
@@ -132,7 +141,8 @@ Never mix 384-d collections.
    unchanged. Comfy stays masked unless the operator unmasks.
 
 Until then: observe only. JSON + this doc must both show `live: false`.
-`ok` is that match (no smi until live).
+`ok` is that match against `nvidia-smi -L` (5080 only → `live: false`).
+Do not set `live: true` for lspci-only / vfio-pci without a UUID.
 
 ## References
 

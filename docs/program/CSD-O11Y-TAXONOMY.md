@@ -247,7 +247,8 @@ Autodev has priority on `local/code` over WebUI chat
 ### `akula-rag`
 
 1080 Ti retrieve/index on **gpu5080** (`192.168.1.251`). **Not live** until
-`nvidia-smi` lists GTX 1080 Ti (PCI `06:00.0` is lspci-only as of 2026-08-31).
+`nvidia-smi` lists GTX 1080 Ti (PCI `06:00.0` is vfio-pci as of
+2026-08-31T20:25:07Z; host smi is RTX 5080 only).
 Do not invent a `service` or PromQL until then. Relabel existing
 `akula_gpu_*` `name` → `gtx1080ti` **if** that series appears
 (`deploy/o11y/vm-scrape.yml`).
@@ -318,9 +319,9 @@ keys. Document here so RAID / eco / sandbox are filterable in runbooks.
 | Annotation | Value | Evidence (2026-08-31, gpu5080 `.251`) |
 |---|---|---|
 | `eco` | `factory-default-pl` | [CSD-GPU-ECO.md](CSD-GPU-ECO.md). Persistence + `power.default_limit` only. 5080 UUID `GPU-087267a6-14fb-0af3-da30-9a1a18523106` default 360 W. 1080 Ti: same policy **when bound**; lspci-only today |
-| RAID array | `/dev/md127` name `gpu5080:bulk` UUID `2fb1b150:fb96fedc:9f569b6b:ddfc2276` | `/etc/mdadm/mdadm.conf` ARRAY. raid1, **degraded** `[2/1] [_U]`, **read-only**, `sda1` only |
-| RAID volume `mount` | `/mnt/bulk-old` | live `lsblk`. fstab intends `LABEL=bulk` → `/bulk` (not mounted). Dual 2.7 T HGST: `sda` in md; `sdb` is `zfs_member` at `/mnt/sdb1-inspect`, not in the array |
-| Preserve | `/models` on `sda2` | fstab bind `/models-hdd` → `/models`. Do not steal for guest root |
+| RAID array | `/dev/md127` name `gpu5080:bulk` UUID `8d85a4cc:d1690f1e:5b147e0f:767d6d3e` | Live 2026-08-31T20:25Z. **RAID0** stripe, both 3 TB HGST (`sda1`+`sdb1`), clean 2/2. Do not wipe. Do not reshape. Old raid1 UUID `2fb1b150:…` is dead. |
+| RAID volume `mount` | `/bulk` | ext4 `LABEL=bulk` UUID `d942aafc-aa92-4fe4-8a04-732a5eda8809`, 5.5 T, rw,noatime,stripe=256. Not `/mnt/bulk-old`. |
+| Preserve | `/models` | bind of `/bulk/models-hdd` on the same md127. Do not steal for guest root. Do not wipe NVMe OS. |
 | isolation env | `host` \| `1080ti-sandbox` | same box, same LAN IP. Not a VLAN. See layer 2a |
 
 ---

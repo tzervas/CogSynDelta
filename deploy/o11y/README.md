@@ -14,8 +14,8 @@ gpu5080 scrape targets are **`192.168.1.251`** (never `.252` as current).
 1080 Ti RAG (`group=akula-rag`, `ns=index`, `path=lab.gpu5080.index.1080ti`)
 is a **metric_relabel** on `akula-health` if `name` matches `1080 Ti`.
 Do not add a scrape target or PromQL for that card while `nvidia-smi` is
-5080-only. RAID live mount `/mnt/bulk-old` is a taxonomy annotation, not a
-`path` label on `akula-node`.
+5080-only (`06:00.0` vfio-pci). RAID live mount `/bulk` (`md127` RAID0
+both 3 TB) is a taxonomy annotation, not a `path` label on `akula-node`.
 
 ## What was live (2026-08-31)
 
