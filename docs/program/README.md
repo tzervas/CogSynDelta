@@ -5,4 +5,5 @@ Official Python-first plan and Phase 0/1 ledgers. Start at
 
 - Live PRs: [HANDOFF-NEXT.md](HANDOFF-NEXT.md)
 - Cold-start for workers/autoloops: [IMPLEMENTER-HANDOFF.md](IMPLEMENTER-HANDOFF.md)
+- Goal loop: [GOAL-LOOP.md](GOAL-LOOP.md) · ledger [GOALS.md](GOALS.md)
 - Horizon (not measured): [SELF-HOSTED-DRIVE-TARGETS.md](SELF-HOSTED-DRIVE-TARGETS.md)

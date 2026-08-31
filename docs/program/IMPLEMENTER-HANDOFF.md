@@ -6,10 +6,12 @@ Do not reconstruct the parent chat. Read these files with tools.
 ## Read in this order
 
 1. This file
-2. `docs/program/PYTHON-FIRST-PLAN.md`
-3. `docs/program/PHASE-1-TASK-BOARD.md` (current board)
-4. `docs/program/SELF-HOSTED-DRIVE-TARGETS.md` (horizon — **do not start training**)
-5. `docs/program/HANDOFF-NEXT.md` (live PR SHAs)
+2. `docs/program/GOAL-LOOP.md` (do-while on **goals**, stall/switch/unblock)
+3. `docs/program/GOALS.md` (ledger)
+4. `docs/program/PYTHON-FIRST-PLAN.md`
+5. `docs/program/PHASE-1-TASK-BOARD.md` (current board)
+6. `docs/program/SELF-HOSTED-DRIVE-TARGETS.md` (horizon — **do not start training**)
+7. `docs/program/HANDOFF-NEXT.md` (live PR SHAs)
 6. `STATUS.md` for any performance claim
 7. Vault (read-only unless you are the gatekeeper indexer):
    `/akula-data/obsidian/akula-csd-kb/Program/`
@@ -20,7 +22,8 @@ Do not reconstruct the parent chat. Read these files with tools.
 |---|---|
 | Hosted Grok (this control plane) | Plans, ADRs, Forgejo as `tzervas`, WAN lookups, KB index enqueue, merge when legitimately green |
 | Self-hosted `local/code` (3090, one GGUF) | One failing test + one function. No WAN |
-| Autoloop `/csd-python-first-drive` | One board ID per run. Verify. Do not merge in the same run that just pushed |
+| Autoloop `/csd-goal-loop` | While unmet goals: drive, stall→switch, all-blocked→gatekeeper or pause you |
+| Autoloop `/csd-python-first-drive` | One board ID per run (backup). Do not merge in the same run that just pushed |
 | Second Grok (akula-ai-platform) | WebUI/Comfy. Do not touch from CSD |
 
 Workflow host **cannot** spawn model slug `local/code` (only `grok-4.5` /
