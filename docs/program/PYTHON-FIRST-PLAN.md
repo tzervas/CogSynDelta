@@ -106,10 +106,15 @@ same cut. See [PHASE-1-TASK-BOARD.md](PHASE-1-TASK-BOARD.md).
 
 ## Later gates (do not start)
 
+Horizon for self-hosted models:
+[SELF-HOSTED-DRIVE-TARGETS.md](SELF-HOSTED-DRIVE-TARGETS.md).
+Worker package: [IMPLEMENTER-HANDOFF.md](IMPLEMENTER-HANDOFF.md).
+
 - **Phase 2**: wire completed Python memory-gate into CogSynDelta `memory/`.
   Keep PoC-1..3 green. Personas select basins.
-- **Phase 3**: more regions (one brain), cull, meta-opt, Triton on 5080,
-  honest STATUS + HF model-index.
+- **Phase 3**: region specialization + interconnect training off private HF
+  data; ephemeral vs persistent storage; eval/bench along the way. SLM/LLM/ML
+  internals in **one mind**. 5080 exclusive-seq only.
 - **Phase 4**: progressive Rust rewrite, dual-run vs Python.
 
 ## Allocation

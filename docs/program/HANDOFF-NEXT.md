@@ -18,11 +18,12 @@ cd /home/kang/code/personal/tzervas/CogSynDelta   # feat/agent-harness
 ./scripts/grok-csd
 ```
 
-Read `docs/program/PYTHON-FIRST-PLAN.md` then `PHASE-1-TASK-BOARD.md`.
+Read `docs/program/IMPLEMENTER-HANDOFF.md` then `PYTHON-FIRST-PLAN.md` and
+`PHASE-1-TASK-BOARD.md`. Horizon only: `SELF-HOSTED-DRIVE-TARGETS.md` (do not train).
 
 ### Open Forgejo PRs (memory-gate, not merged)
 
-- P1-00 https://git.vectorweight.com/tzervas/memory-gate/pulls/1 — `ci/forgejo-cpu-fail-closed` @ `a66f730`. **Pytest ran** (unit 8 failed / 121 passed / 1 error in 132s; fleet-ci 8 failed / 126 passed). Ruff/cz green. Honest leftover reds: unawaited + agent-feedback (P1-03), gitleaks 14 historical hits, trivy chromadb 1.5.9 + cryptography. Drop `upload-artifact@v4` (Forgejo GHESNotSupported). P1-02 unblocked.
+- P1-00 https://git.vectorweight.com/tzervas/memory-gate/pulls/1 — `ci/forgejo-cpu-fail-closed`. Local pytest **134 passed / 1 gpu deselected** after await-learn + ruff 0.16.5 + cryptography 50.0.1 + current-tree gitleaks + chroma `.trivyignore`. Push and wait Forgejo; merge only if **legitimately green**.
 - P1-01 https://git.vectorweight.com/tzervas/memory-gate/pulls/2 — `docs/memory-lifecycle-contract` @ `7b5c877`. Docs only.
 - P1-03 chroma mitigation https://git.vectorweight.com/tzervas/memory-gate/pulls/3 — `fix/chroma-cve-client-only` @ `1b07c56`. Client-only refuse. **Not** an upstream wheel patch.
 - P1-02 https://git.vectorweight.com/tzervas/memory-gate/pulls/4 — `feat/public-error-contract` @ `90a37ce`. `memory_gate.errors` + nine named types + `map_backend_error`. **60** public-error tests passed. Mapper **not** wired into gateway/store raise sites yet (VectorStore* still leak there). Local main `691bb85` untouched.
@@ -37,12 +38,12 @@ Skip / `|| true` / `continue-on-error` / fallback `echo` / missing runner is **n
 green. Honest red is not mergeable. Never merge Jules/`develop`/GitHub bots.
 Never merge GitHub.com without the operator.
 
-**None of PR #1–#4 are legitimately green today** (pytest unawaited, gitleaks history,
-trivy chromadb 1.5.9). Do not merge them.
+Do not merge until Forgejo required checks **ran and succeeded** on the new heads.
 
 ### Next closeable on this side
 
-1. P1-03 durable `learn` / unawaited coroutines (pytest reds are the honest leftover).
+1. Push P1-00 await-learn/CI pins; wait legitimately green Forgejo; then merge PR #1.
+2. Autoloop: `/csd-drive-bootstrap` then `/csd-python-first-drive` `id=next`.
 2. **Chroma:** do **not** pin `1.5.10.dev266` / `latest`. SQLite+vec + Qdrant until a named patched RC/stable that GHSA lists.
 3. 5080 index: still **1024-d / 0 points**. Do not kill Comfy. Do not pause 3090 LocalAI.
 4. HF: private `tzervas/cogsyndelta-eval` only at P1-15.

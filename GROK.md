@@ -42,6 +42,7 @@ CogSynDelta is **MoE-adjacent, not multi-agent**. Regions are experts of one min
 | `/csd-poc-gpu-drive` | CUDA measure on 5080 (exclusive-seq; do not pause LocalAI) |
 | `/csd-ci-unblock` | Merge-stack CI |
 | `/csd-python-first-drive` | One closeable Python-first increment (`P1-00`…`P1-17`, `ops-index`, `ops-runner`) |
+| `/csd-drive-bootstrap` | Mirror program docs into `akula-csd-kb`, enqueue 5080 index, name next ID |
 
 WebUI/Comfy (`ai.vectorweight.com`, `media.vectorweight.com`): **other Grok session**, cwd akula-ai-platform. Brief: `docs/program/HANDOFF-NEXT.md`.
 

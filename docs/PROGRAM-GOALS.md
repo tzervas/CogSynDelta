@@ -61,6 +61,8 @@ Official artifacts (implement against these, not the ChatGPT handoff):
 - [docs/program/PHASE-0-KEEP-DROP.md](program/PHASE-0-KEEP-DROP.md)
 - [docs/program/PYTHON-MEMORY-GATE-GAP-MAP.md](program/PYTHON-MEMORY-GATE-GAP-MAP.md)
 - [docs/program/PHASE-1-TASK-BOARD.md](program/PHASE-1-TASK-BOARD.md)
+- [docs/program/IMPLEMENTER-HANDOFF.md](program/IMPLEMENTER-HANDOFF.md)
+- [docs/program/SELF-HOSTED-DRIVE-TARGETS.md](program/SELF-HOSTED-DRIVE-TARGETS.md)
 
 Phase 0 Codex planning is accepted. **Implementation is in progress** (Goal 0
 ops + Phase 1 board). Drive one ID at a time with `/csd-python-first-drive`.

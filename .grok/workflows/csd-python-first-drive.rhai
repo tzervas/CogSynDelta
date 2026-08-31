@@ -56,8 +56,9 @@ if raw_id == () {
 phase("Pick");
 let pick_p = "";
 pick_p += "CogSynDelta Python-first driver. Read with tools, do not invent.\n";
-pick_p += "Read docs/program/PYTHON-FIRST-PLAN.md, docs/program/PHASE-1-TASK-BOARD.md,\n";
-pick_p += "and docs/program/PYTHON-MEMORY-GATE-GAP-MAP.md.\n";
+pick_p += "Read docs/program/IMPLEMENTER-HANDOFF.md first, then PYTHON-FIRST-PLAN.md,\n";
+pick_p += "PHASE-1-TASK-BOARD.md, HANDOFF-NEXT.md, SELF-HOSTED-DRIVE-TARGETS.md.\n";
+pick_p += "Horizon training is NOT closeable until Phase 1 exit.\n";
 pick_p += "Requested id: " + raw_id + "\n";
 pick_p += "If id is next, pick the first board row whose Depends-on work is landed or\n";
 pick_p += "is ops that can proceed without a product-code PR. P1-01 docs may run with P1-00.\n";
