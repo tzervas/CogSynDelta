@@ -55,3 +55,8 @@ Do not merge until Forgejo required checks **ran and succeeded** on the new head
 
 Push on Forgejo as **`autodev`** via `./scripts/csd-autodev-git`.
 Operator admin stays in `~/.secrets`. Never GitHub bot push.
+
+WebUI self-host close (Comfy image/edit, Piper/whisper, artifacts/functions):
+`/akula-webui-selfhost` `args.apply=true`. Unmask 5080 Comfy only with
+`args.comfy=true` when `gpu5080.lock` is idle. Leftover ops:
+`/csd-ops-remain` `args.track=p1-08|pr-ci|hf`.
