@@ -39,7 +39,7 @@ green.
 |---|---|---|
 | P1-00 | `python-ai/memory-gate-wt-p1-00` PR #1 | Fail-closed CI @ `1c22643`. Gitleaks/pytest marker coverage pushed. Safety onnxruntime 1.22.0 still honest red (WAN). Merge only if **legitimately green** |
 | P1-01 | `...-wt-p1-01` PR #2 | Docs contract. Unmerged |
-| P1-02 | `...-wt-p1-02` PR #4 | Public errors. Mapper not at store call sites |
+| P1-02 | `...-wt-p1-02` PR #4 | Public errors + mapper at store/gateway. CI restack `7a30b7b`. Merge only if legitimately green |
 | P1-03 chroma | `...-wt-chroma-cve` PR #3 | Client-only refuse. Not a wheel patch |
 | Next product | P1-03 durable learn **if** not already on PR #1; else P1-04 in-memory oracle after P1-02 types exist | One change per PR |
 

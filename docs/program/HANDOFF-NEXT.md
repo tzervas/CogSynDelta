@@ -26,7 +26,7 @@ Read `docs/program/IMPLEMENTER-HANDOFF.md` then `PYTHON-FIRST-PLAN.md` and
 - P1-00 https://git.vectorweight.com/tzervas/memory-gate/pulls/1 — `ci/forgejo-cpu-fail-closed` @ `1c22643`. `578c66b` ran honest red. Local: unit 124 + integration 5 + regression 5; gitleaks clean with `.gitleaks.toml`; setuptools 84.0.0 offline. Safety still red on onnxruntime 1.22.0 (no 1.24 wheel in cache). Merge only if **legitimately green**.
 - P1-01 https://git.vectorweight.com/tzervas/memory-gate/pulls/2 — `docs/memory-lifecycle-contract` @ `7b5c877`. Docs only.
 - P1-03 chroma mitigation https://git.vectorweight.com/tzervas/memory-gate/pulls/3 — `fix/chroma-cve-client-only` @ `1b07c56`. Client-only refuse. **Not** an upstream wheel patch.
-- P1-02 https://git.vectorweight.com/tzervas/memory-gate/pulls/4 — `feat/public-error-contract` @ `b80cd13`. Mapper on collection create/stamp/size. **Not merged** (checks failure). Local main `691bb85` untouched.
+- P1-02 https://git.vectorweight.com/tzervas/memory-gate/pulls/4 — `feat/public-error-contract` @ `7a30b7b`. Mapper on store/gateway; CI restacked from P1-00. **Not merged**. Local main `691bb85` untouched.
 
 Worktrees: `...-wt-p1-00`, `...-wt-p1-01`, `...-wt-chroma-cve`, `...-wt-p1-02`. **Never** reset `.../python-ai/memory-gate` (`local/kang-main-wip`).
 
@@ -42,7 +42,8 @@ Do not merge until Forgejo required checks **ran and succeeded** on the new head
 
 ### Next closeable on this side
 
-1. Wait Forgejo on `1c22643`. If only Safety/onnxruntime 1.22.0 is red: WAN lock bump to ≥1.24.1 (not sandbox). Merge PR #1 only if **legitimately green**.
+1. G-CI `1c22643`: only Safety/onnxruntime 1.22.0 is red — WAN lock bump ≥1.24.1 (not sandbox). Merge PR #1 only if **legitimately green**.
+1b. G-ERR PR #4 `7a30b7b`: wait Forgejo after CI restack; same onnxruntime residual.
 2. Autoloop: `/csd-drive-bootstrap` then `/csd-python-first-drive` `id=next`.
 2. **Chroma:** do **not** pin `1.5.10.dev266` / `latest`. SQLite+vec + Qdrant until a named patched RC/stable that GHSA lists.
 3. 5080 index: still **1024-d / 0 points**. Do not kill Comfy. Do not pause 3090 LocalAI.
