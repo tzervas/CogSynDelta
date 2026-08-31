@@ -35,14 +35,16 @@ of `/bulk/models-hdd` on the stripe.
 - Autodev must not `mdadm --manage --add`, grow, format, or re-level
   the array. Operator only.
 
-## fstab excerpts (intent)
+## fstab excerpts (live)
 
 ```
-LABEL=bulk /bulk ext4 defaults,noatime,nofail 0 2
+UUID=d942aafc-aa92-4fe4-8a04-732a5eda8809 /bulk ext4 defaults,noatime,nofail 0 2
+/bulk/models-hdd /models-hdd none bind,nofail,x-systemd.requires-mounts-for=/bulk 0 0
+/models-hdd /models none bind,nofail,x-systemd.requires-mounts-for=/models-hdd 0 0
 ```
 
-`/models` follows `/bulk/models-hdd`. Do not retarget guest disks at
-this UUID.
+`LABEL=bulk` is equivalent; live file uses the UUID. `/models` follows
+`/bulk/models-hdd`. Do not retarget guest disks at this UUID.
 
 ## o11y
 

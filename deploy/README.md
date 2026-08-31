@@ -83,6 +83,10 @@ sudo install -m 644 deploy/gpu5080/nvidia-factory-limits.service \
   /etc/systemd/system/nvidia-factory-limits.service
 sudo install -m 644 deploy/gpu5080/akula-gpu-perf.service.d/factory-pl.conf \
   /etc/systemd/system/akula-gpu-perf.service.d/factory-pl.conf
+sudo mkdir -p /etc/systemd/system/nvidia-factory-limits.service.d
+sudo install -m 644 \
+  deploy/gpu5080/nvidia-factory-limits.service.d/after-gpu-perf.conf \
+  /etc/systemd/system/nvidia-factory-limits.service.d/after-gpu-perf.conf
 sudo systemctl daemon-reload
 sudo systemctl enable --now nvidia-factory-limits.service
 # drop-in must stay: the unit file still contains -pl 396 (max); drop-in
@@ -102,10 +106,40 @@ sudo install -m 644 deploy/gpu5080/vfio/vfio-1080ti.modules \
   /etc/modules-load.d/vfio-1080ti.conf
 sudo install -m 644 deploy/gpu5080/vfio/10-vfio-1080ti.rules \
   /etc/udev/rules.d/10-vfio-1080ti.rules
+sudo mkdir -p /etc/systemd/system/libvirtd.service.d
+sudo install -m 644 \
+  deploy/gpu5080/libvirt/libvirtd.service.d/after-vfio-1080ti.conf \
+  /etc/systemd/system/libvirtd.service.d/after-vfio-1080ti.conf
 sudo systemctl daemon-reload
 sudo systemctl enable vfio-bind-1080ti.service
 # Trust lspci -k / /dev/vfio/18, not RemainAfterExit active-after-unbind.
 ```
+
+Host stealth (oneshot, never `OpenRGB --server`):
+
+```bash
+sudo install -m 755 deploy/gpu5080/stealth-leds \
+  /usr/local/sbin/cabal-stealth-leds
+sudo install -m 644 deploy/gpu5080/cabal-stealth-leds.service \
+  /etc/systemd/system/cabal-stealth-leds.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now cabal-stealth-leds.service
+```
+
+LAN so a later guest can join the inference cluster (macvtap on
+`enp5s0`; guest OpenAI listen on `192.168.1.x` only, never `0.0.0.0`
+WAN). `default` NAT stays for host↔guest:
+
+```bash
+sudo virsh net-define deploy/gpu5080/libvirt/lan-enp5s0.xml
+sudo virsh net-autostart default
+sudo virsh net-autostart lan-enp5s0
+sudo virsh net-start lan-enp5s0 2>/dev/null || true
+```
+
+Linger **yes** for `tzervas` because user units must survive logout
+(`forgejo-runner-gpu*.service`, `gpu-timeshare-5080.timer`). Do not
+enable linger for accounts without those units.
 
 RAID / `/models` — **notes only**, do not rewrite the live array:
 
@@ -113,6 +147,8 @@ RAID / `/models` — **notes only**, do not rewrite the live array:
 - [gpu5080/storage/mdadm.conf](gpu5080/storage/mdadm.conf) (git copy still
   has the old raid1 UUID; **live** is RAID0 UUID
   `8d85a4cc:d1690f1e:5b147e0f:767d6d3e`, both 3 TB, `/bulk`)
+- Live fstab: `UUID=d942aafc-aa92-4fe4-8a04-732a5eda8809 /bulk … nofail`
+  plus `/models-hdd` and `/models` binds with `nofail`.
 - Preserve `/models` (bind of `/bulk/models-hdd`). Do not steal that
   mount for a guest root. Do not install git `mdadm.conf` over live.
 
@@ -120,13 +156,17 @@ RAID / `/models` — **notes only**, do not rewrite the live array:
 
 | File | Why it stays off |
 |---|---|
-| [gpu5080/libvirt/gpu5080-1080ti-rag.xml](gpu5080/libvirt/gpu5080-1080ti-rag.xml) | qemu/ovmf not installed; placeholder qcow2; `virsh define` later |
+| [gpu5080/libvirt/gpu5080-1080ti-rag.xml](gpu5080/libvirt/gpu5080-1080ti-rag.xml) | Domain **defined** + virsh autostart. Guest CUDA UUID still missing (`live: false`). |
+| [gpu5080/guest/](gpu5080/guest/) stealth oneshot + cloud-init | Guest-only. Do not copy onto the **host**. |
 | [gpu5080/podman/](gpu5080/podman/) `*.disabled` | Host CDI `nvidia.com/gpu=0` **is the 5080**. 1080 Ti is vfio-pci, not in `nvidia-smi` |
 
-Do not `virsh define` until operator installs qemu/libvirt/ovmf and
-creates a dedicated qcow2 (not `/models`). Do not copy
-`*.container.disabled` onto `/etc/containers/systemd/` on the **host**.
-Guest CDI/quadlet only after that kernel's `nvidia-smi -L` lists Pascal.
+Domain `gpu5080-1080ti-rag` is defined with a dedicated qcow2 (not `/models`)
+and virsh autostart. Do not autostart a domain that is not defined.
+qemu/ovmf/libvirt are on gpu5080 (`qemu-system-x86_64`,
+`/usr/share/OVMF/OVMF_CODE_4M.fd`).
+Do not copy `*.container.disabled` onto `/etc/containers/systemd/` on
+the **host**. Guest CDI/quadlet only after that kernel's `nvidia-smi -L`
+lists Pascal.
 
 ## akula-prime (3090 LocalAI)
 

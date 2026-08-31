@@ -1,0 +1,87 @@
+#!/bin/bash
+# One-shot RGB off. Never starts the OpenRGB SDK server (CVE-2026-59682/59683).
+# GPU + DRAM + motherboard RGB off. Front-case 2-pin power/HDD LEDs are not
+# OpenRGB devices and stay as the case wired them.
+#
+# 1080 Ti GeForce logo is often a separate NVIDIA logo LED (not OpenRGB).
+# If --list-devices has no 1080 Ti / GP102, try GPULogoBrightness=0.
+# vfio-pci on 06:00.0: host Off is not enough; the guest Pascal driver
+# re-lights the logo. Run this same oneshot inside the guest before CUDA.
+# Never unbind the RTX 5080 (01:00.0). Never fetch OpenRGB from GitHub.
+set -euo pipefail
+APP="${CABAL_OPENRGB:-/usr/local/lib/cabal/OpenRGB.AppImage}"
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
+
+if [[ "${EUID}" -ne 0 ]]; then
+  echo "GPU I2C is root-only; re-run with sudo" >&2
+  exit 1
+fi
+
+modprobe i2c-dev 2>/dev/null || true
+
+run() {
+  # FUSE AppImage (Debian: libfuse2t64). Never --server / --appimage-extract-and-run
+  # (extract-and-run misses bundled libs on a min install).
+  "$APP" --noautoconnect "$@"
+}
+
+list=""
+if [[ -x "$APP" ]]; then
+  echo "=== OpenRGB devices ==="
+  list=$(run --list-devices 2>/dev/null || true)
+  if [[ -z "$list" ]]; then
+    echo "openrgb listed no devices (install libfuse2t64 / run as root for GPU I2C)" >&2
+    run --list-devices || true
+  else
+    printf '%s\n' "$list"
+    while read -r idx rest; do
+      [[ "$idx" =~ ^[0-9]+:$ ]] || continue
+      d="${idx%:}"
+      echo "stealth device $d $rest"
+      run --device "$d" --mode Off >/dev/null 2>&1 || true
+      run --device "$d" --mode Direct --color 000000 >/dev/null 2>&1 || true
+    done < <(printf '%s\n' "$list" | grep -E '^[0-9]+:')
+  fi
+else
+  echo "openrgb AppImage missing at $APP (GPULogoBrightness fallback still runs)" >&2
+fi
+
+logo_seen=0
+if printf '%s\n' "$list" | grep -qiE '1080[[:space:]]*Ti|GP102|GTX 1080'; then
+  logo_seen=1
+  echo "1080 Ti/GP102 is an OpenRGB device; Off + Direct 000000 applied."
+fi
+
+logo_off() {
+  command -v nvidia-settings >/dev/null 2>&1 || {
+    echo "nvidia-settings missing; 1080 Ti GeForce logo not set via GPULogoBrightness" >&2
+    return 1
+  }
+  local disp="${DISPLAY:-:0}"
+  export DISPLAY="$disp"
+  # Headless host: :0 is getty, not X. Guest VNC/X may provide a real display.
+  nvidia-settings -c "$disp" -a GPULogoBrightness=0 2>/dev/null \
+    || nvidia-settings -a GPULogoBrightness=0 2>/dev/null \
+    || true
+  local i
+  for i in 0 1 2; do
+    nvidia-settings -c "$disp" -a "[gpu:${i}]/GPULogoBrightness=0" >/dev/null 2>&1 || true
+  done
+  nvidia-settings -c "$disp" -q GPULogoBrightness 2>/dev/null || true
+}
+
+if [[ "$logo_seen" -eq 0 ]]; then
+  echo "no 1080 Ti/GP102 in OpenRGB list; trying GPULogoBrightness=0"
+  logo_off || true
+fi
+
+pci1080=/sys/bus/pci/devices/0000:06:00.0
+if [[ -e "$pci1080/driver" ]]; then
+  drv=$(basename "$(readlink -f "$pci1080/driver")")
+  if [[ "$drv" == "vfio-pci" ]]; then
+    echo "1080 Ti 06:00.0 is vfio-pci: host OpenRGB/nvidia-settings cannot reach the GeForce logo."
+    echo "Guest Pascal nvidia.ko re-lights it on bind. Run this oneshot inside the guest before CUDA."
+  fi
+fi
+
+echo "stealth-leds: GPU/DRAM/MB RGB Direct #000000. Case 2-pin I/O unchanged."

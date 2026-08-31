@@ -1,0 +1,57 @@
+#cloud-config
+# 1080 Ti RAG guest on gpu5080. Same stealth-leds oneshot as the host.
+# Never OpenRGB --server (CVE-2026-59682 / 59683). Never unbind the host 5080.
+# Host-only Off is not enough: guest Pascal nvidia.ko re-lights the GeForce logo.
+package_update: false
+packages:
+  - libfuse2t64
+  - fuse3
+write_files:
+  - path: /etc/modules-load.d/cabal-i2c.conf
+    permissions: "0644"
+    content: |
+      i2c-dev
+  - path: /etc/systemd/system/cabal-stealth-leds.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Cabal stealth RGB (guest oneshot, no OpenRGB server)
+      After=nvidia-persistenced.service
+      Wants=nvidia-persistenced.service
+      Before=gpu5080-1080ti-rag.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      Environment=QT_QPA_PLATFORM=offscreen
+      Environment=CABAL_OPENRGB=/usr/local/lib/cabal/OpenRGB.AppImage
+      Environment=DISPLAY=:0
+      ExecStart=/usr/local/sbin/cabal-stealth-leds
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/containers/systemd/gpu5080-1080ti-rag.container.d/stealth.conf
+    permissions: "0644"
+    content: |
+      [Unit]
+      After=cabal-stealth-leds.service nvidia-persistenced.service
+      Wants=cabal-stealth-leds.service
+runcmd:
+  - [modprobe, i2c-dev]
+  - [install, -d, -m, "0755", /usr/local/lib/cabal, /usr/local/sbin]
+  - |
+    set -e
+    SRC=/opt/cabal/stealth-leds
+    if [ -x "$SRC" ]; then
+      install -m 0755 "$SRC" /usr/local/sbin/cabal-stealth-leds
+    elif [ -x /usr/local/sbin/cabal-stealth-leds ]; then
+      true
+    else
+      echo "guest stealth-leds missing at $SRC" >&2
+    fi
+    systemctl daemon-reload
+    systemctl enable cabal-stealth-leds.service
+    systemctl start cabal-stealth-leds.service || true
+    if command -v nvidia-settings >/dev/null; then
+      DISPLAY=:0 nvidia-settings -a GPULogoBrightness=0 || true
+    fi

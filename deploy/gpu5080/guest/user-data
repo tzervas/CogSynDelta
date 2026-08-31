@@ -1,0 +1,226 @@
+#cloud-config
+# 1080 Ti RAG guest on gpu5080. Pascal Tesla 535 proprietary (NOT host 610, NOT nvidia-open).
+# Never OpenRGB --server (CVE-2026-59682 / 59683). Never unbind the host 5080.
+hostname: gpu5080-1080ti-rag
+fqdn: gpu5080-1080ti-rag.lan
+manage_etc_hosts: true
+ssh_pwauth: false
+package_update: true
+package_upgrade: false
+timezone: America/New_York
+users:
+  - name: tzervas
+    gecos: tzervas
+    groups: [sudo, video, render]
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPSQ/ya2LBzk+vPpTnNwNd5JMVWDR03XC+IfTPnlbH5F comfyui-homelab
+bootcmd:
+  - |
+    set -e
+    for f in /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list; do
+      [ -f "$f" ] || continue
+      sed -i 's/Components: main$/Components: main contrib non-free non-free-firmware/' "$f"
+      sed -i 's/Components: main contrib$/Components: main contrib non-free non-free-firmware/' "$f"
+      if [ "$(basename "$f")" = "sources.list" ]; then
+        sed -i 's/ main$/ main contrib non-free non-free-firmware/; t; s/ main contrib$/ main contrib non-free non-free-firmware/' "$f"
+      fi
+    done
+    mkdir -p /etc/modprobe.d
+    printf 'blacklist nouveau\noptions nouveau modeset=0\n' > /etc/modprobe.d/blacklist-nouveau.conf
+    mkdir -p /etc/apt/preferences.d
+apt:
+  conf: |
+    APT::Install-Recommends "true";
+packages:
+  - qemu-guest-agent
+  - pciutils
+  - python3
+  - libfuse2t64
+  - fuse3
+  - i2c-tools
+  - linux-headers-amd64
+  - dkms
+  - build-essential
+  - ca-certificates
+  - curl
+write_files:
+  - path: /etc/modules-load.d/cabal-i2c.conf
+    permissions: "0644"
+    content: |
+      i2c-dev
+  - path: /etc/modprobe.d/blacklist-nouveau.conf
+    permissions: "0644"
+    content: |
+      blacklist nouveau
+      options nouveau modeset=0
+  - path: /etc/apt/preferences.d/no-nvidia-610-open
+    permissions: "0644"
+    content: |
+      Package: nvidia-open-kernel-dkms
+      Pin: release *
+      Pin-Priority: -1
+
+      Package: nvidia-open-kernel-source
+      Pin: release *
+      Pin-Priority: -1
+
+      Package: nvidia-kernel-open-dkms
+      Pin: release *
+      Pin-Priority: -1
+
+      Package: nvidia-driver
+      Pin: version 610*
+      Pin-Priority: -1
+
+      Package: nvidia-kernel-dkms
+      Pin: version 610*
+      Pin-Priority: -1
+  - path: /etc/systemd/system/cabal-stealth-leds.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Cabal stealth RGB (guest oneshot, no OpenRGB server)
+      After=nvidia-persistenced.service nvidia-factory-limits.service
+      Wants=nvidia-persistenced.service
+      Before=gpu5080-1080ti-rag.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      Environment=QT_QPA_PLATFORM=offscreen
+      Environment=CABAL_OPENRGB=/usr/local/lib/cabal/OpenRGB.AppImage
+      Environment=DISPLAY=:0
+      ExecStart=/usr/local/sbin/cabal-stealth-leds
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/systemd/system/nvidia-factory-limits.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=NVIDIA factory clocks and default power limits (guest 1080 Ti)
+      After=systemd-modules-load.service nvidia-persistenced.service
+      Wants=nvidia-persistenced.service
+      ConditionPathExists=/usr/bin/nvidia-smi
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/nvidia-factory-limits.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /usr/local/sbin/nvidia-factory-limits.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+      if ! command -v nvidia-smi >/dev/null 2>&1; then
+        echo "nvidia-smi missing" >&2
+        exit 0
+      fi
+      nvidia-smi -pm 1 || true
+      nvidia-smi --query-gpu=uuid,power.default_limit --format=csv,noheader \
+        | while IFS=, read -r uuid defpl; do
+            uuid="${uuid#"${uuid%%[![:space:]]*}"}"
+            uuid="${uuid%"${uuid##*[![:space:]]}"}"
+            defpl=$(echo "$defpl" | awk '{print $1}')
+            [ -n "$uuid" ] || continue
+            nvidia-smi --reset-gpu-clocks -i "$uuid" || true
+            nvidia-smi --reset-memory-clocks -i "$uuid" || true
+            nvidia-smi --reset-applications-clocks -i "$uuid" || true
+            nvidia-smi -pl "$defpl" -i "$uuid" || true
+          done
+  - path: /etc/X11/xorg-nvidia-headless.conf
+    permissions: "0644"
+    content: |
+      Section "Device"
+          Identifier "NVIDIA0"
+          Driver "nvidia"
+          Option "AllowEmptyInitialConfiguration" "true"
+          Option "UseDisplayDevice" "none"
+      EndSection
+      Section "Screen"
+          Identifier "Screen0"
+          Device "NVIDIA0"
+      EndSection
+runcmd:
+  - [systemctl, enable, --now, qemu-guest-agent]
+  - [modprobe, i2c-dev]
+  - |
+    set -e
+    install -d -m 0755 /usr/local/lib/cabal /usr/local/sbin /opt/cabal
+    CIDATA=""
+    for lab in cidata CIDATA; do
+      if [ -e "/dev/disk/by-label/$lab" ]; then
+        mkdir -p /mnt/cidata
+        mount -o ro "/dev/disk/by-label/$lab" /mnt/cidata || true
+        CIDATA=/mnt/cidata
+        break
+      fi
+    done
+    copy_if() {
+      src="$1"; dest="$2"; mode="$3"
+      if [ -f "$src" ]; then
+        install -m "$mode" "$src" "$dest"
+      fi
+    }
+    if [ -n "$CIDATA" ]; then
+      copy_if "$CIDATA/stealth-leds" /usr/local/sbin/cabal-stealth-leds 0755
+      copy_if "$CIDATA/OpenRGB.AppImage" /usr/local/lib/cabal/OpenRGB.AppImage 0755
+      copy_if "$CIDATA/nvidia-factory-limits.sh" /usr/local/sbin/nvidia-factory-limits.sh 0755
+      copy_if "$CIDATA/stealth-leds" /opt/cabal/stealth-leds 0755
+    fi
+    if [ ! -x /usr/local/sbin/cabal-stealth-leds ]; then
+      echo "guest stealth-leds missing after cidata copy" >&2
+    fi
+    umount /mnt/cidata 2>/dev/null || true
+  - |
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+      nvidia-tesla-535-kernel-dkms \
+      nvidia-tesla-535-driver \
+      nvidia-settings-tesla-535 \
+      nvidia-persistenced
+    dpkg -l | grep -E 'nvidia-open-kernel|nvidia-driver ' || true
+    if dpkg -l | grep -E '^ii\s+nvidia-open-kernel'; then
+      echo "REFUSE: nvidia-open kernel package installed" >&2
+      exit 1
+    fi
+    if dpkg -l | grep -E '^ii\s+nvidia-driver\s+610'; then
+      echo "REFUSE: nvidia-driver 610 installed" >&2
+      exit 1
+    fi
+    dkms status || true
+    update-initramfs -u || true
+    systemctl daemon-reload
+    systemctl enable nvidia-persistenced.service || true
+    systemctl enable nvidia-factory-limits.service
+    systemctl enable cabal-stealth-leds.service
+  - |
+    set +e
+    if command -v nvidia-smi >/dev/null; then
+      nvidia-smi -L || true
+      nvidia-smi -pm 1 || true
+      DEFPL=$(nvidia-smi --query-gpu=power.default_limit --format=csv,noheader,nounits 2>/dev/null | head -1 | awk '{print $1}')
+      if [ -n "$DEFPL" ]; then
+        nvidia-smi -pl "$DEFPL" || true
+      fi
+      if command -v nvidia-settings >/dev/null; then
+        DISPLAY=:0 nvidia-settings -a GPULogoBrightness=0 || true
+        nvidia-settings -a GPULogoBrightness=0 || true
+      fi
+    fi
+    /usr/local/sbin/cabal-stealth-leds || true
+power_state:
+  delay: now
+  mode: reboot
+  message: reboot for tesla-535 nvidia.ko
+  timeout: 60
+  condition: true

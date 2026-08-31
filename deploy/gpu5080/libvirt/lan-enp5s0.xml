@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+  Persistent LAN for gpu5080-1080ti-rag (macvtap on enp5s0).
+  Guest gets 192.168.1.x from the LAN DHCP/static — same L2 as
+  model-router / csd-openai-gateway / Caddy. Never 0.0.0.0 WAN.
+
+  Host IP 192.168.1.251 stays on enp5s0 (this does not create br0).
+  macvtap bridge mode: other LAN hosts can reach the guest; the host
+  itself cannot (use libvirt default NAT 192.168.122.0/24 for that).
+
+  Do not VFIO the RTX 5080. Do not unmask Comfy. Do not pause 3090.
+-->
+<network>
+  <name>lan-enp5s0</name>
+  <uuid>8c1a0b10-1080-4f00-9a18-00000000e5e0</uuid>
+  <forward mode="bridge">
+    <interface dev="enp5s0"/>
+  </forward>
+</network>

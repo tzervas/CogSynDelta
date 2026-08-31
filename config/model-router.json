@@ -81,7 +81,11 @@
         "small-embed",
         "light-gguf"
       ],
-      "note": "live=false: keep this id in future_hosts only. Router must ignore future_hosts for scheduling. GTX 1080 Ti is seated at PCI 06:00.0 (EVGA GP102, Pascal sm_61 ~11GiB GDDR5X, factory cooler) on the RTX 5080 box 192.168.1.251 but bound vfio-pci. Host nvidia-smi -L lists only RTX 5080 GPU-087267a6-14fb-0af3-da30-9a1a18523106 (open nvidia.ko 610 has no Pascal GSP; no qemu guest). Not a 5080 substitute: no PoC CUDA, FP8/FP4, dual-14B, or exclusive-seq. Role when promoted: RAG retrieve/index, keyword-cpu assist, small embed, light GGUF. Promote to hosts only after guest or host nvidia-smi lists the 1080 Ti UUID."
+      "host_ip": "192.168.1.251",
+      "guest_ip": null,
+      "libvirt_net": "lan-enp5s0",
+      "listen": "lan-only",
+      "note": "live=false: keep this id in future_hosts only. Router must ignore future_hosts for scheduling. GTX 1080 Ti is seated at PCI 06:00.0 (EVGA GP102, Pascal sm_61 ~11GiB GDDR5X, factory cooler) on the RTX 5080 box 192.168.1.251 but bound vfio-pci. Host nvidia-smi -L lists only RTX 5080 GPU-087267a6-14fb-0af3-da30-9a1a18523106 (open nvidia.ko 610 has no Pascal GSP). Domain gpu5080-1080ti-rag is defined (qcow2 + cidata) with virsh autostart; guest_ip unset until qemu-ga/DHCP. LAN path lan-enp5s0 macvtap on enp5s0. When promoted, OpenAI listen on the guest 192.168.1.x only — never 0.0.0.0 WAN. Not a 5080 substitute: no PoC CUDA, FP8/FP4, dual-14B, or exclusive-seq. Role when promoted: RAG retrieve/index, keyword-cpu assist, small embed, light GGUF. Promote to hosts only after guest or host nvidia-smi lists the 1080 Ti UUID."
     }
   },
   "runtimes": {

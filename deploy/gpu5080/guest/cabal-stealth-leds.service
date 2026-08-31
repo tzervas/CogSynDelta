@@ -1,0 +1,17 @@
+[Unit]
+Description=Cabal stealth RGB (guest oneshot, no OpenRGB server)
+Documentation=file:///opt/cabal/1080ti-rag/cloud-init-stealth.yaml
+After=nvidia-persistenced.service
+Wants=nvidia-persistenced.service
+Before=gpu5080-1080ti-rag.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=QT_QPA_PLATFORM=offscreen
+Environment=CABAL_OPENRGB=/usr/local/lib/cabal/OpenRGB.AppImage
+Environment=DISPLAY=:0
+ExecStart=/usr/local/sbin/cabal-stealth-leds
+
+[Install]
+WantedBy=multi-user.target

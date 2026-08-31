@@ -2,7 +2,8 @@
 Description=VFIO-bind GTX 1080 Ti 06:00.0 only; RTX 5080 stays host nvidia
 Documentation=file:///home/tzervas/akula-harness/config/qemu/gpu5080-1080ti-rag.xml
 After=systemd-modules-load.service systemd-udevd.service
-Before=nvidia-factory-limits.service
+# Bind Pascal before libvirt (guest autostart later) and before factory PL.
+Before=nvidia-factory-limits.service libvirtd.service libvirt-guests.service
 
 [Service]
 Type=oneshot

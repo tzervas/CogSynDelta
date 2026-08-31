@@ -21,15 +21,18 @@
     (CVE-2026-59682 / 59683). GPULogoBrightness=0 at boot. Host stealth
     is not enough — the guest Pascal driver re-lights the GeForce logo.
 
-  Disk: placeholder. Do NOT use /models on sda2 as guest root (preserve that mount).
+  Disk: placeholder. Do NOT use /models (live: md127[/models-hdd]) as guest root.
   RAG HDD later: mechanical RAID virtiofs/9p only — not the 5080 NVMe OS layout.
-  Network: libvirt default NAT (192.168.122.0/24). Never bind 0.0.0.0 on WAN.
+  Network: lan-enp5s0 macvtap (192.168.1.x DHCP/static) + libvirt default NAT
+    (192.168.122.0/24 host-only). Guest OpenAI listen on the LAN IP only.
+    Never bind 0.0.0.0 WAN.
 
-  Host packages (Debian trixie, not installed this run):
-    qemu-system-x86 libvirt-daemon-system ovmf
+  Host packages (Debian trixie, installed 2026-08-31, no reboot):
+    qemu-system-x86 qemu-utils ovmf libvirt-daemon-system virtinst
+    /usr/bin/qemu-system-x86_64 10.0.11; /usr/share/OVMF/OVMF_CODE_4M.fd
   Canonical git: CogSynDelta deploy/gpu5080/libvirt/gpu5080-1080ti-rag.xml
   Host working copy (not a git remote): /home/tzervas/akula-harness/config/qemu/
-  Define later: virsh define <repo>/deploy/gpu5080/libvirt/gpu5080-1080ti-rag.xml
+  Do not virsh define until a dedicated qcow2 exists (not /models).
 -->
 <domain type='kvm'>
   <name>gpu5080-1080ti-rag</name>
@@ -74,6 +77,12 @@
     </disk>
     <controller type='pci' index='0' model='pcie-root'/>
     <controller type='pci' index='1' model='pcie-root-port'/>
+    <!-- LAN: macvtap enp5s0 so Caddy/gateway/model-router reach 192.168.1.x -->
+    <interface type='network'>
+      <source network='lan-enp5s0'/>
+      <model type='virtio'/>
+    </interface>
+    <!-- Host reachability while macvtap hides the host from the guest. -->
     <interface type='network'>
       <source network='default'/>
       <model type='virtio'/>

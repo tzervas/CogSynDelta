@@ -1,0 +1,14 @@
+version: 2
+ethernets:
+  id0:
+    match:
+      macaddress: "52:54:00:10:80:71"
+    dhcp4: true
+    dhcp6: false
+    set-name: enlan0
+  id1:
+    match:
+      macaddress: "52:54:00:10:80:72"
+    dhcp4: true
+    dhcp6: false
+    set-name: ennat0

@@ -147,15 +147,24 @@ Persist (ids are 1080 Ti only):
 | Path | Role |
 |---|---|
 | `/usr/local/sbin/vfio-bind-1080ti.sh` | ID-checked bind; refuses 5080 IDs |
-| `/etc/systemd/system/vfio-bind-1080ti.service` | enabled oneshot |
+| `/etc/systemd/system/vfio-bind-1080ti.service` | enabled oneshot; `Before=libvirtd` |
+| `/etc/systemd/system/libvirtd.service.d/after-vfio-1080ti.conf` | libvirt after VFIO |
 | `/etc/modprobe.d/vfio-1080ti.conf` | `ids=10de:1b06,10de:10ef` |
 | `/etc/modules-load.d/vfio-1080ti.conf` | vfio modules |
 | `/etc/udev/rules.d/10-vfio-1080ti.rules` | `driver_override` on `06:00.*` only |
+| `/etc/systemd/system/nvidia-factory-limits.service` | enabled factory PL (5080) |
+| `/etc/systemd/system/cabal-stealth-leds.service` | enabled host stealth oneshot |
+| `/etc/fstab` UUID `d942aafc-…` `/bulk` | `nofail`; md127 RAID0 |
+| libvirt `default` + `lan-enp5s0` | autostart; macvtap `enp5s0` |
+| `gpu5080-1080ti-rag` domain | defined, running, virsh autostart enable; `guest_ip` unset |
 
-Git CaC (same files): `deploy/gpu5080/vfio/`. Re-apply from
+Git CaC (same files): `deploy/gpu5080/`. Re-apply from
 [deploy/README.md](../../deploy/README.md) if the host drifts.
 
-Libvirt XML stub (no disk image this run; qemu/ovmf **not** installed):
+Linger is **yes** for `tzervas` (Forgejo GPU runner + `gpu-timeshare-5080.timer`).
+Guest stealth lives in `deploy/gpu5080/guest/` — do not copy onto the host.
+
+Libvirt domain (qcow2 + cidata 2026-08-31; qemu/ovmf installed; no reboot):
 
 - Canonical: [deploy/gpu5080/libvirt/gpu5080-1080ti-rag.xml](../../deploy/gpu5080/libvirt/gpu5080-1080ti-rag.xml)
 - Host working copy (not a git remote): `/home/tzervas/akula-harness/config/qemu/gpu5080-1080ti-rag.xml`
@@ -164,12 +173,13 @@ Libvirt XML stub (no disk image this run; qemu/ovmf **not** installed):
 Guest NVIDIA: R535 / R550 / last R570 (Pascal `sm_61`). **Not** host 610.
 Factory eco PL **in the guest** after that driver binds:
 `nvidia-smi -pl` at `power.default_limit`. Host cannot `-pl` a vfio
-device. Do not flash an OC BIOS. `/models` on `sda2` left mounted.
+device. Do not flash an OC BIOS. `/models` left mounted (live:
+`md127[/models-hdd]` bind; no `sda2` partition currently).
 
 Guest **must** run stealth-leds (OpenRGB oneshot, never `--server`) and
 `GPULogoBrightness=0` at boot. Host stealth does not survive a guest
 Pascal bind — the GeForce logo comes back. XML stub comments that
-requirement; no guest image this run.
+requirement. Guest stealth is cloud-init/oneshot inside the VM, not on the host.
 
 `live: false` until the **guest** `nvidia-smi` lists the 1080 Ti.
 
@@ -268,8 +278,10 @@ split a dense 14B onto Pascal.
 4. Guest: install qemu/libvirt/ovmf, define
    [gpu5080-1080ti-rag.xml](gpu5080-1080ti-rag.xml), Pascal driver,
    llama.cpp/embed, factory eco PL, guest stealth-leds oneshot, RAG
-   HDD mount only. Preserve `/models` on `sda2`. **Not this run**
-   (XML stub only; qemu/ovmf not installed).
+   HDD mount only. Preserve `/models`. qemu/ovmf **Done** 2026-08-31
+   (no reboot; `qemu-system-x86_64` + `OVMF_CODE_4M.fd`; VFIO still
+   `06:00.0`). **Not this run:** `virsh define` / qcow2 / Pascal bind
+   (placeholder disk; do not steal `/models`).
 5. Only after guest bind: optional guest container with **that UUID**.
    Then promote `future_hosts.gpu5080-1080ti` per
    [CSD-1080TI-RAG.md](CSD-1080TI-RAG.md).

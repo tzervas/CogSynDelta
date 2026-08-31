@@ -1,0 +1,24 @@
+# Guest must use Pascal-capable proprietary Tesla 535, never host 610 / nvidia-open.
+Package: nvidia-open-kernel-dkms
+Pin: release *
+Pin-Priority: -1
+
+Package: nvidia-open-kernel-source
+Pin: release *
+Pin-Priority: -1
+
+Package: nvidia-open-kernel-dkms
+Pin: version *
+Pin-Priority: -1
+
+Package: nvidia-driver
+Pin: version 610*
+Pin-Priority: -1
+
+Package: nvidia-kernel-dkms
+Pin: version 610*
+Pin-Priority: -1
+
+Package: nvidia-kernel-open-dkms
+Pin: release *
+Pin-Priority: -1
