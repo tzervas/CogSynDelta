@@ -24,7 +24,8 @@ Read `docs/program/PYTHON-FIRST-PLAN.md` then `PHASE-1-TASK-BOARD.md`.
 
 - P1-00 https://git.vectorweight.com/tzervas/memory-gate/pulls/1 — `ci/forgejo-cpu-fail-closed` @ `a66f730`. **Pytest ran** (unit 8 failed / 121 passed / 1 error in 132s; fleet-ci 8 failed / 126 passed). Ruff/cz green. Honest leftover reds: unawaited + agent-feedback (P1-03), gitleaks 14 historical hits, trivy chromadb 1.5.9 + cryptography. Drop `upload-artifact@v4` (Forgejo GHESNotSupported). P1-02 unblocked.
 - P1-01 https://git.vectorweight.com/tzervas/memory-gate/pulls/2 — `docs/memory-lifecycle-contract` @ `7b5c877`. Docs only.
-- P1-03 chroma mitigation https://git.vectorweight.com/tzervas/memory-gate/pulls/3 — `fix/chroma-cve-client-only` @ `5a9a13f`. Client-only refuse (`chroma_server_*` / `trust_remote_code` / `HttpClient`). **Not** an upstream wheel patch.
+- P1-03 chroma mitigation https://git.vectorweight.com/tzervas/memory-gate/pulls/3 — `fix/chroma-cve-client-only` @ `1b07c56`. Client-only refuse. **Not** an upstream wheel patch.
+- P1-02 https://git.vectorweight.com/tzervas/memory-gate/pulls/4 — `feat/public-error-contract` @ `90a37ce`. `memory_gate.errors` + nine named types + `map_backend_error`. **60** public-error tests passed. Mapper **not** wired into gateway/store raise sites yet (VectorStore* still leak there). Local main `691bb85` untouched.
 
 Worktrees: `.../python-ai/memory-gate-wt-p1-00`, `...-wt-p1-01`, `...-wt-chroma-cve`. **Never** reset `.../python-ai/memory-gate` (`local/kang-main-wip`).
 
