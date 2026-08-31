@@ -16,6 +16,7 @@ models only), pool, history, steer. No catalog dump on the feed tab.
 JSON routes wrap existing CLIs (also under /lab prefix). Never 0.0.0.0.
 Never widen apply allowlist. Never wrap csd-autodev-provision.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,24 +35,16 @@ from urllib.parse import parse_qs, urlparse
 STEER = Path(os.environ.get("CSD_STEER", "/akula-data/cabal/csd-steer.json"))
 LOCALAI = os.environ.get("LOCALAI_URL", "http://127.0.0.1:8080")
 GPU5080 = os.environ.get("GPU5080_SSH", "gpu5080")
-ROUTER_STATE = Path(
-    os.environ.get("CSD_ROUTER_STATE", "/akula-data/cabal/model-router-state.json")
-)
+ROUTER_STATE = Path(os.environ.get("CSD_ROUTER_STATE", "/akula-data/cabal/model-router-state.json"))
 QUEUE_DIR = Path(os.environ.get("CSD_LOCALAI_QUEUE", "/akula-data/cabal/localai-queue"))
 AUTODEV_OUT = Path("/akula-data/cabal/autodev-out")
 GPU_PLAN = Path(os.environ.get("CSD_GPU_PLAN", "/akula-data/cabal/gpu-plan.json"))
 SESS_DIR = Path(os.environ.get("CSD_LAB_SESSIONS", "/akula-data/cabal/lab-sessions"))
 UPSTREAM = os.environ.get("CSD_UPSTREAM", "").rstrip("/")
-APPLY_TOKEN_FILE = Path(
-    os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token")
-)
+APPLY_TOKEN_FILE = Path(os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token"))
 WORKTREES = {
-    "p1-08": Path(
-        "/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-08"
-    ),
-    "p1-07": Path(
-        "/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-07"
-    ),
+    "p1-08": Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-08"),
+    "p1-07": Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-07"),
 }
 PROTECTED_WT = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
 ALLOW_PREFIXES = ("src/", "tests/", "docs/")
@@ -238,18 +231,14 @@ def snapshot() -> dict:
         ),
         "localai": lai,
         "models": models,
-        "localai_container": sh(
-            ["docker", "inspect", "-f", "{{.State.Status}}", "akula-localai"]
-        ),
+        "localai_container": sh(["docker", "inspect", "-f", "{{.State.Status}}", "akula-localai"]),
         "gpu5080_smi": ssh_5080(
             "nvidia-smi --query-gpu=name,memory.used,memory.free,utilization.gpu --format=csv,noheader"
         ),
         "gpu5080_lock": ssh_5080(
             "fuser /home/tzervas/akula-harness/state/gpu5080.lock 2>/dev/null || echo idle"
         ),
-        "gpu5080_runner": ssh_5080(
-            "systemctl --user is-active forgejo-runner-gpu-tzervas.service"
-        ),
+        "gpu5080_runner": ssh_5080("systemctl --user is-active forgejo-runner-gpu-tzervas.service"),
         "gpu5080_comfy": ssh_5080("systemctl is-enabled akula-comfyui.service 2>/dev/null || true"),
         "steer": steer,
         "note": "autodev webapp on code.vectorweight.com; chat on ai.vectorweight.com",
@@ -337,7 +326,14 @@ def print_snap(s: dict) -> None:
     print("loaded prime", [x.get("alias") for x in (feed.get("prime") or {}).get("loaded") or []])
     print("=== gpu5080 ===")
     print(s.get("gpu5080_smi"))
-    print("lock", s.get("gpu5080_lock"), "runner", s.get("gpu5080_runner"), "comfy", s.get("gpu5080_comfy"))
+    print(
+        "lock",
+        s.get("gpu5080_lock"),
+        "runner",
+        s.get("gpu5080_runner"),
+        "comfy",
+        s.get("gpu5080_comfy"),
+    )
     print("loaded 5080", [x.get("alias") for x in (feed.get("gpu5080") or {}).get("loaded") or []])
     print("=== steer ===")
     print(json.dumps(s.get("steer") or {}, indent=2))
@@ -395,7 +391,7 @@ def list_sessions() -> list[dict]:
 def load_session(sid: str) -> dict:
     """Load one historic session by id (chat-YYYY-MM-DD or autodev-TS)."""
     if sid.startswith("autodev-"):
-        path = AUTODEV_OUT / f"{sid[len('autodev-'):]}.json"
+        path = AUTODEV_OUT / f"{sid[len('autodev-') :]}.json"
         rec = _read_json(path)
         rec["id"] = sid
         rec["kind"] = "autodev"
@@ -465,6 +461,7 @@ def http_apply(worktree: str, rel: str, content: str) -> dict:
     target.write_text(content, encoding="utf-8")
     return {"ok": True, "wrote": str(target)}
 
+
 def _scrub(text: str) -> str:
     """Strip token-like assignments from CLI text. Never print secrets."""
     return re.sub(
@@ -501,9 +498,7 @@ def _parse_last_json(text: str) -> dict:
 
 
 def _run_cli(argv: list[str], timeout: int = 90) -> tuple[int, str]:
-    p = subprocess.run(
-        argv, capture_output=True, text=True, timeout=timeout, check=False
-    )
+    p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
     out = _scrub((p.stdout or "").strip())
     err = _scrub((p.stderr or "").strip())
     text = out if out else err
@@ -540,9 +535,7 @@ def lab_git(args: list[object]) -> dict:
     argv = [str(a) for a in args]
     if any("github.com" in a.lower() for a in argv):
         return {"ok": False, "rc": 2, "stdout": "never GitHub"}
-    if any(
-        a == "-c" or a.startswith("--exec") or "credential" in a.lower() for a in argv
-    ):
+    if any(a == "-c" or a.startswith("--exec") or "credential" in a.lower() for a in argv):
         return {"ok": False, "rc": 2, "stdout": "refusing git config/credential args"}
     if argv[0] in {"push", "checkout", "switch", "merge", "rebase"}:
         for a in argv[1:]:
@@ -629,13 +622,9 @@ def lab_loop(mode: str) -> dict:
             "ok": live,
             "rc": 0 if live else 1,
             "goal": str(last.get("goal") or ""),
-            "applied": last.get("applied")
-            if isinstance(last.get("applied"), dict)
-            else {},
+            "applied": last.get("applied") if isinstance(last.get("applied"), dict) else {},
             "out": "",
-            "notes": (
-                "worker is systemd csd-autodev-loop.service; HTTP does not spawn it"
-            ),
+            "notes": ("worker is systemd csd-autodev-loop.service; HTTP does not spawn it"),
         }
     if mode != "once":
         return {
@@ -1033,7 +1022,11 @@ def serve(port: int) -> None:
             if postpath == "/api/steer":
                 raw = json.dumps(write_steer(**payload)).encode()
             elif postpath == "/api/spawn":
-                raw = json.dumps(spawn_alias(str(payload.get("alias") or "local/code"), str(payload.get("why") or "lab"))).encode()
+                raw = json.dumps(
+                    spawn_alias(
+                        str(payload.get("alias") or "local/code"), str(payload.get("why") or "lab")
+                    )
+                ).encode()
             elif postpath == "/api/chat":
                 text = chat(str(payload.get("prompt") or ""))
                 raw = json.dumps({"content": text}).encode()

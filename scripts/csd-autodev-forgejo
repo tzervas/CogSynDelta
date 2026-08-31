@@ -232,15 +232,9 @@ def evaluate_gate(
     states = [check_state(row) for row in rows]
     required_ran = all(s not in {"", "pending", "missing", "running"} for s in states)
     required_succeeded = (
-        required_ran
-        and all(s == "success" for s in states)
-        and str(state).lower() == "success"
+        required_ran and all(s == "success" for s in states) and str(state).lower() == "success"
     )
-    notes = (
-        "required checks ran and succeeded"
-        if required_succeeded
-        else f"combined={state}"
-    )
+    notes = "required checks ran and succeeded" if required_succeeded else f"combined={state}"
     return {
         "required_ran": required_ran,
         "required_succeeded": required_succeeded,
@@ -317,14 +311,8 @@ def cmd_merge_gate(ns: argparse.Namespace) -> int:  # noqa: PLR0911
     already = bool(pr.get("merged"))
     extra = []
     if repo.endswith("CogSynDelta") and number == 1:
-        extra.append(
-            "CogSynDelta PR 1 waits for required checks ran and succeeded"
-        )
-    if (
-        head_ref in DENIED_HEADS
-        or head_ref.startswith("jules/")
-        or "copilot" in head_ref
-    ):
+        extra.append("CogSynDelta PR 1 waits for required checks ran and succeeded")
+    if head_ref in DENIED_HEADS or head_ref.startswith("jules/") or "copilot" in head_ref:
         rec = _gate_rec(
             ok=False,
             state="blocked",
