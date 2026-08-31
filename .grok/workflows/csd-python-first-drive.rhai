@@ -98,21 +98,31 @@ impl_p += "Use sibling worktrees from forgejo/main. Never push main/staging/deve
 impl_p += "Never pause 3090 LocalAI. Never kill Comfy; enqueue 5080 jobs.\n";
 impl_p += "Never write tzervas-dev-kb or akula-model-kb. Never mix 384-d Qdrant.\n";
 impl_p += "Never bot-push GitHub. Conventional commits. One architecture change.\n";
-impl_p += "If ID is P1-00: fail-closed Forgejo CPU CI in memory-gate-wt-p1-00.\n";
+impl_p += "If ID is P1-00: remaining fail-closed CI on memory-gate-wt-p1-00 / Forgejo PR #1.\n";
+impl_p += "lint.yml and fleet-ci.yml already pin uvx ruff@0.12.1. HEAD 7119214 dropped\n";
+impl_p += "setup-python and pinned bandit to CPython 3.13. Do not redo that.\n";
+impl_p += "Read live Forgejo check logs. Separate install failures from honest findings.\n";
+impl_p += "Fix only install/tooling that still hides the binary or uses ubuntu-latest /\n";
+impl_p += "continue-on-error / || true. Leave pytest unawaited reds for P1-03.\n";
+impl_p += "Leave chromadb 1.5.9 Trivy red until a named patched RC (do not pin .devN).\n";
+impl_p += "If remaining blocker is tzervas-scoped runner, say so; do not fake green.\n";
 impl_p += "If ID is P1-01: spec+ADR+tasks only in memory-gate-wt-p1-01; no product code.\n";
 impl_p += "If ID is ops-index: repair csd-kb-index remote path; enqueue behind Comfy.\n";
 impl_p += "If ID is ops-runner: discover and restore the Forgejo CPU runner; do not fake green.\n";
-impl_p += "Commit on the feature branch. Push to forgejo remote if credentials work.\n";
+impl_p += "Commit on the feature branch. Push to forgejo as GIT_USERNAME=tzervas with\n";
+impl_p += "credential.helper disabled + git-askpass-token under secret exec\n";
+impl_p += "TOKEN=git/cabal-forgejo-admin. Never GitHub bot push. Cabal user is ACL-blocked.\n";
 impl_p += "Open a Forgejo PR if the forge CLI/API is available; otherwise report the push.\n";
-impl_p += "You are local/code on the resident 3090 LocalAI. Keep LocalAI loaded. Never pause it.\n";
-impl_p += "Never steal the 5080 from Comfy. Never deploy a CogSynDelta checkpoint.\n";
+impl_p += "Workflow host cannot spawn LocalAI model slugs; implement here as grok-4.6.\n";
+impl_p += "Keep 3090 LocalAI loaded anyway. Never pause it. Never steal the 5080 from Comfy.\n";
+impl_p += "Never deploy a CogSynDelta checkpoint.\n";
 impl_p += "HF datasets: only if this ID is P1-15+; use private tzervas/cogsyndelta-eval.\n";
 impl_p += "Return status, summary, verify_ok (local checks), branch, commit, optional pr_url.\n";
 let impl = agent(impl_p, #{
     label: "implement",
     capability_mode: "all",
     output_schema: impl_schema,
-    model: "local/code",
+    model: "grok-4.6",
 });
 if impl == () || !impl.success || impl.output == () {
     complete(#{ summary: "implement failed", id: pick.output.id });
