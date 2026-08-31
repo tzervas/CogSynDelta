@@ -26,7 +26,7 @@ Read `docs/program/IMPLEMENTER-HANDOFF.md` then `PYTHON-FIRST-PLAN.md` and
 - P1-00 https://git.vectorweight.com/tzervas/memory-gate/pulls/1 — `ci/forgejo-cpu-fail-closed` @ `1c22643`. `578c66b` ran honest red. Local: unit 124 + integration 5 + regression 5; gitleaks clean with `.gitleaks.toml`; setuptools 84.0.0 offline. Safety still red on onnxruntime 1.22.0 (no 1.24 wheel in cache). Merge only if **legitimately green**.
 - P1-01 https://git.vectorweight.com/tzervas/memory-gate/pulls/2 — `docs/memory-lifecycle-contract` @ `7b5c877`. Docs only.
 - P1-03 chroma mitigation https://git.vectorweight.com/tzervas/memory-gate/pulls/3 — `fix/chroma-cve-client-only` @ `1b07c56`. Client-only refuse. **Not** an upstream wheel patch.
-- P1-02 https://git.vectorweight.com/tzervas/memory-gate/pulls/4 — `feat/public-error-contract` @ `52e8aac`. Types + `raise_mapped` self-chain fix. **Not merged**: Forgejo 1 ok / 14 fail (not legitimately green). Uncommitted mapper wiring may be in-flight on the p1-02 worktree (`csd-goal-loop`). Local main `691bb85` untouched.
+- P1-02 https://git.vectorweight.com/tzervas/memory-gate/pulls/4 — `feat/public-error-contract` @ `b80cd13`. Mapper on collection create/stamp/size. **Not merged** (checks failure). Local main `691bb85` untouched.
 
 Worktrees: `...-wt-p1-00`, `...-wt-p1-01`, `...-wt-chroma-cve`, `...-wt-p1-02`. **Never** reset `.../python-ai/memory-gate` (`local/kang-main-wip`).
 

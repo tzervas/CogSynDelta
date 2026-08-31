@@ -32,7 +32,10 @@ homelab CPU CI, sibling git worktrees, `uv`/`pytest`/`ruff` on the worktree.
 
 **Not sandbox** (gatekeeper or operator): WAN/GitHub/PyPI/HF downloads, pause
 3090 LocalAI, preempt Comfy/video on the 5080, git history rewrite, merge of
-red checks, writes to `tzervas-dev-kb` / `akula-model-kb`, Jules/`develop`.
+red checks, writes to `tzervas-dev-kb` / `akula-model-kb`, Jules/`develop`,
+**registering a new Forgejo runner**. `homelab-cpu` id 5 already has the six
+labels and runs `tzervas/*`. Asking to add `tzervas-homelab-cpu` is an
+operator pause, not a sandbox unblock.
 
 ## Context pack (always)
 

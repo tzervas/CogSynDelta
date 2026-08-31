@@ -7,8 +7,8 @@ Horizon rows stay **blocked** until Phase 1 exit. Not `STATUS.md`.
 
 | ID | Goal | Status | Blocker | Sandbox? | Refs |
 |---|---|---|---|---|---|
-| G-CI | Forgejo required checks **legitimately green** on memory-gate PR #1, then merge | open | Head `1c22643` pushed. `578c66b` was honest red (gitleaks dummy keys, integration cov 85% on empty marker, Safety `--ignore CVE-*` ignored nothing). Remaining: Safety onnxruntime 1.22.0 (chromadb transitive; 1.24+ needs WAN lock). Do not merge red. | wait+merge is sandbox after green; onnxruntime bump is WAN | HANDOFF-NEXT; PR #1 |
-| G-ERR | Public `memory_gate.errors` in use; mapper at store/gateway or documented leftover closed | open | PR #4 unmerged; mapper not at call sites | yes (code) | P1-02; spec FR-010 |
+| G-CI | Forgejo required checks **legitimately green** on memory-gate PR #1, then merge | open | Head `1c22643`. **Do not register a new runner** — `homelab-cpu` id 5 is already active with the six labels. Wait for that run. onnxruntime 1.22.0 bump is WAN/gatekeeper. Do not merge red. | wait existing runner | HANDOFF-NEXT; PR #1 |
+| G-ERR | Public `memory_gate.errors` in use; mapper at store/gateway or documented leftover closed | open | PR #4 @ `b80cd13` maps collection create/stamp/size. Unmerged; checks not green | yes (code) | P1-02; spec FR-010 |
 | G-STORE | In-memory oracle + store protocol conformance | open | After typed errors | yes | P1-04 |
 | G-SQL | Durable SQLite+sqlite-vec backend | open | After G-STORE | yes | P1-06; SELF-HOSTED-DRIVE-TARGETS storage |
 | G-QD | Qdrant 1024-d Qwen3 binding, fail-closed 384 | open | After G-STORE; 5080 only for measure | CPU tests yes; embeddings no if Comfy | P1-07 |
