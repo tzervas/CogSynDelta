@@ -1,1 +1,1 @@
-This document outlines the do-while loop for goals, detailing the stall, switch, and unblock processes.
+This document outlines the do-while loop for goals, including stall, switch, and unblock mechanisms.
