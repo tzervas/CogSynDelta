@@ -72,6 +72,40 @@ def test_gpu_and_lock_read_plan_without_ssh(
     assert lock["helper_ok"] is True
 
 
+def test_comfy_lab_field_wrap_ready_not_masked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lab status comfy field is wrapped when lock drop-in is live."""
+    mod = load_lab(tmp_path, monkeypatch)
+    assert mod.comfy_lab_field("generated", True) == "wrapped"
+    assert mod.parse_comfy_ssh("generated\nwrap-ready") == "wrapped"
+    assert mod.parse_comfy_ssh("masked\nwrap-ready") == "masked"
+    (tmp_path / "gpu-plan.json").write_text(
+        json.dumps(
+            {
+                "autodev_priority": True,
+                "akula-prime": {"name": "RTX 3090 Ti"},
+                "gpu5080": {
+                    "lock": "lock=idle",
+                    "comfy": "wrapped",
+                    "helper_ok": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    def boom(*_a: object, **_k: object) -> tuple[int, str]:
+        raise AssertionError("must not spawn CLI when plan file exists")
+
+    monkeypatch.setattr(mod, "_run_cli", boom)
+    code, rec = mod.handle_lab("GET", "/api/gpu", {})
+    assert code == 200
+    assert rec["gpu5080"]["comfy"] == "wrapped"
+    code, lock = mod.handle_lab("GET", "/api/gpu/lock", {})
+    assert lock["comfy"] == "wrapped"
+    assert lock["helper_ok"] is True
+
+
 def test_git_refuses_github_and_protected_push(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

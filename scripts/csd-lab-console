@@ -116,6 +116,51 @@ def ssh_5080(cmd: str) -> str:
     return sh(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", GPU5080, cmd])
 
 
+COMFY_STATUS_CMD = (
+    "systemctl is-enabled akula-comfyui.service 2>/dev/null || echo unknown; "
+    "grep -qs akula-comfyui-locked "
+    "/etc/systemd/system/akula-comfyui.service.d/gpu5080-lock.conf "
+    "&& echo wrap-ready || echo wrap-missing"
+)
+
+
+def comfy_lab_field(enabled: str, wrap_ready: bool) -> str:
+    """Map systemd is-enabled + lock wrap to the lab comfy field.
+
+    Args:
+        enabled: ``systemctl is-enabled`` stdout (generated/enabled/masked).
+        wrap_ready: True when ExecStart drop-in is ``akula-comfyui-locked``.
+
+    Returns:
+        ``masked``, ``wrapped``, or the raw enabled string.
+
+    Why: Quadlets report ``generated``. Mask is not the scheduler once the
+    gpu5080-lock wrap is live. Operator mask still wins if systemd is masked.
+    """
+    raw = (enabled or "").strip()
+    low = raw.lower()
+    if "masked" in low:
+        return "masked"
+    if wrap_ready:
+        return "wrapped"
+    return raw or "unknown"
+
+
+def parse_comfy_ssh(raw: str) -> str:
+    """Parse gpu5080 comfy SSH blob into the lab status field.
+
+    Args:
+        raw: is-enabled line plus wrap-ready/wrap-missing.
+
+    Returns:
+        Lab comfy field (``wrapped`` / ``masked`` / raw systemd).
+    """
+    lines = [ln.strip() for ln in (raw or "").splitlines() if ln.strip()]
+    enabled = lines[0] if lines else ""
+    wrap_ready = any("wrap-ready" in ln.lower() for ln in lines)
+    return comfy_lab_field(enabled, wrap_ready)
+
+
 def ssh_guest(cmd: str, host: str | None = None) -> str:
     """Guest nvidia-smi when SSH works. Empty string on failure.
 
@@ -670,7 +715,7 @@ def snapshot() -> dict:
             "fuser /home/tzervas/akula-harness/state/gpu5080.lock 2>/dev/null || echo idle"
         ),
         "gpu5080_runner": ssh_5080("systemctl --user is-active forgejo-runner-gpu-tzervas.service"),
-        "gpu5080_comfy": ssh_5080("systemctl is-enabled akula-comfyui.service 2>/dev/null || true"),
+        "gpu5080_comfy": parse_comfy_ssh(ssh_5080(COMFY_STATUS_CMD)),
         "guest_smi": guest_smi,
         "gpu5080_1080ti_smi": guest_smi,
         "steer": steer,

@@ -164,6 +164,32 @@ def test_lock_observe_from_status(monkeypatch: pytest.MonkeyPatch) -> None:
     assert rec["helper_ok"] is True
 
 
+def test_lock_observe_wrapped_idle_helper_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Wrap-ready + lock idle is helper_ok; mask is not required."""
+    tools = load_overlay().Tools()
+
+    def fake(
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        **_k: object,
+    ) -> dict[str, Any]:
+        if path == "/api/gpu5080-lock":
+            return {"ok": False, "http": 404}
+        return {
+            "ok": True,
+            "http": 200,
+            "gpu5080_lock": "idle",
+            "gpu5080_comfy": "wrapped",
+        }
+
+    monkeypatch.setattr(tools, "_call", fake)
+    rec = tools.gpu5080_lock_observe()
+    assert rec["ok"] is True
+    assert rec["comfy"] == "wrapped"
+    assert rec["helper_ok"] is True
+
+
 def test_merge_gate_missing_is_not_green(monkeypatch: pytest.MonkeyPatch) -> None:
     tools = load_overlay().Tools()
 

@@ -16,4 +16,5 @@ Official Python-first plan and Phase 0/1 ledgers. Start at
 - GPU placement / ~40 GiB pool: [GPU-POOL.md](GPU-POOL.md) · ADR-0015
 - GPU share / interned micro-specialists / 1080 Ti: [GPU-SHARE.md](GPU-SHARE.md) · ADR-0016 (horizon)
 - Factory GPU eco (default clocks/PL, persistence): [CSD-GPU-ECO.md](CSD-GPU-ECO.md)
+- GPU keep-up (services stay up; lock wrap, not mask): [CSD-GPU-KEEPUP.md](CSD-GPU-KEEPUP.md)
 - Observability + send-only MTA: [O11Y.md](O11Y.md) · `deploy/mail/`

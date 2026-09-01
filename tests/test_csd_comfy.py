@@ -83,6 +83,25 @@ def test_plan_masked_without_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert rec == {"ok": False, "notes": "masked", "workflows": []}
 
 
+def test_plan_wrapped_is_not_masked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Wrap-ready plan does not fail-closed as masked; HTTP decides."""
+    monkeypatch.delenv("CSD_COMFY_MASKED", raising=False)
+    plan = tmp_path / "gpu-plan.json"
+    plan.write_text(
+        json.dumps({"gpu5080": {"comfy": "wrapped", "lock": "lock=idle"}}),
+        encoding="utf-8",
+    )
+    mod = load_comfy(tmp_path, monkeypatch)
+
+    def fake_http(method: str, path: str, body: dict | None = None, timeout: float = 8.0):
+        if path == "/system_stats":
+            return 200, {"devices": []}
+        return 404, {}
+
+    monkeypatch.setattr(mod, "http_json", fake_http)
+    assert mod.is_masked() is False
+
+
 def test_unmasked_catalog_and_queue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CSD_COMFY_MASKED", "0")
     mod = load_comfy(tmp_path, monkeypatch)

@@ -35,7 +35,7 @@ generation goes through** `./scripts/csd-localai-queue` → 3090 `local/code`
   second WebUI on `code.vectorweight.com`.
 - Lab: https://code.vectorweight.com — **Live feed** (3090+5080 loaded
   models), **Pool**, **History**, **Steer**. `/chat` redirects to AI WebUI.
-- Autodev priority: `./scripts/csd-autodev-priority on` (Comfy masked; prime WebUI off)
+- Autodev priority: `./scripts/csd-autodev-priority on` (Comfy lock-wrap; prime WebUI off)
 
 ## How to invert it (self-hosted lift)
 

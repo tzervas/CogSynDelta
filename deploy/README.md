@@ -14,7 +14,8 @@ Never `main` / `staging` / `develop` / `dev`. Never GitHub.
 working copy, **not** a Forgejo remote. Canonical git is this repo.
 
 Hard rules: never bind `0.0.0.0` on WAN, never VFIO the RTX 5080,
-never unmask Comfy from autodev, never dump vault tokens into these
+never mask Comfy to schedule (lock wrap, not mask; unmask is
+operator-once after wrap), never dump vault tokens into these
 files. Guest `nvidia-smi` lists GTX 1080 Ti (`tzervas@192.168.1.243`);
 router `hosts.gpu5080-1080ti` is `live: true` role retrieve-index-light.
 SSH: [gpu5080/guest/README.md](gpu5080/guest/README.md).
@@ -138,6 +139,28 @@ sudo virsh net-autostart lan-enp5s0
 sudo virsh net-start lan-enp5s0 2>/dev/null || true
 ```
 
+
+### Comfy lock wrap (queue hook)
+
+Do **not** mask. HTTP stays on `192.168.1.251:8188`. GPU Comfy starts
+only after `/home/tzervas/akula-harness/scripts/gpu5080-lock` (same
+helper as CUDA CI). Drop-in CaC:
+
+```bash
+sudo install -m 755 deploy/gpu5080/akula-comfyui-locked \
+  /home/tzervas/akula-harness/scripts/akula-comfyui-locked
+sudo mkdir -p /etc/systemd/system/akula-comfyui.service.d
+sudo install -m 644 deploy/gpu5080/akula-comfyui.service.d/gpu5080-lock.conf \
+  /etc/systemd/system/akula-comfyui.service.d/gpu5080-lock.conf
+sudo systemctl daemon-reload
+# Unmask is operator-once if still masked. Wrap is live 2026-08-31
+# (is-enabled=generated, ExecStart=akula-comfyui-locked). Do not
+# systemctl mask to free the 5080.
+```
+
+Notes: [gpu5080/comfy-queue-hook.md](gpu5080/comfy-queue-hook.md).
+Policy: [docs/program/CSD-GPU-KEEPUP.md](../docs/program/CSD-GPU-KEEPUP.md).
+
 Linger **yes** for `tzervas` because user units must survive logout
 (`forgejo-runner-gpu*.service`, `gpu-timeshare-5080.timer`). Do not
 enable linger for accounts without those units.
@@ -193,6 +216,6 @@ sudo systemctl enable --now nvidia-factory-limits.service
 | `deploy/mail/` | Send-only postfix |
 | `deploy/systemd/` | CSD user units (console / gateway / autodev) |
 | `deploy/nvidia-factory-limits.sh` | Shared factory eco script |
-| `deploy/gpu5080/` | Host units, VFIO, libvirt stub, RAID notes, disabled CDI |
+| `deploy/gpu5080/` | Host units, Comfy lock wrap, VFIO, libvirt stub, RAID notes |
 | `deploy/prime/` | Prime factory-limits unit (`After=` without persistenced) |
 | `config/model-router.json` | `future_hosts.gpu5080-1080ti` (`live: false`) |

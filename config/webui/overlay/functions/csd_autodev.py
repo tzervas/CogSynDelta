@@ -326,7 +326,7 @@ class Tools:
         return rec
 
     def csd_autodev_priority(self, action: str) -> dict[str, Any]:
-        """CSD_STEER autodev_priority on/off/status. Mask Comfy. Never pause 3090 LocalAI."""
+        """CSD_STEER autodev_priority on/off/status. Lock-wrap Comfy. Never pause 3090 LocalAI."""
         act = (action or "").strip().lower()
         if act not in {"on", "off", "status"}:
             return {"ok": False, "notes": "action must be on|off|status"}
@@ -341,7 +341,7 @@ class Tools:
                 "steer": snap.get("steer") or {},
                 "comfy": snap.get("gpu5080_comfy"),
                 "webui": "homelab",
-                "notes": "never pause 3090 LocalAI; Comfy stays masked",
+                "notes": "never pause 3090 LocalAI; Comfy lock-wrap not mask",
                 "evidence": "csd_autodev_priority",
             }
         rec = self._call("POST", "/api/autodev/priority", {"action": act})
@@ -403,7 +403,8 @@ class Tools:
             "http": snap.get("http", 200),
             "lock": lock,
             "comfy": comfy,
-            "helper_ok": "idle" in lock.lower() and "masked" in comfy.lower(),
+            "helper_ok": "idle" in lock.lower()
+            and ("masked" in comfy.lower() or comfy.lower().strip() == "wrapped"),
             "notes": "observe only; do not acquire/release from OWUI",
             "evidence": "gpu5080_lock_observe",
         }

@@ -11,6 +11,76 @@ from pathlib import Path
 OUT = Path(os.environ.get("CSD_GPU_PLAN", "/akula-data/cabal/gpu-plan.json"))
 
 
+def comfy_lab_field(enabled: str, wrap_ready: bool) -> str:
+    """Map systemd is-enabled + lock wrap to the lab comfy field.
+
+    Args:
+        enabled: ``systemctl is-enabled`` stdout (generated/enabled/masked).
+        wrap_ready: True when ExecStart drop-in is ``akula-comfyui-locked``.
+
+    Returns:
+        ``masked``, ``wrapped``, or the raw enabled string.
+
+    Why: Quadlets report ``generated``. Mask is not the scheduler once the
+    gpu5080-lock wrap is live. Operator mask still wins if systemd is masked.
+    """
+    raw = (enabled or "").strip()
+    low = raw.lower()
+    if "masked" in low:
+        return "masked"
+    if wrap_ready:
+        return "wrapped"
+    return raw or "unknown"
+
+
+def helper_ok_5080(free_mib: int, comfy: str, lock: str) -> bool:
+    """Share-small only when lock idle and Comfy is not free-running CUDA.
+
+    Args:
+        free_mib: nvidia-smi free MiB on the 5080.
+        comfy: Lab comfy field (``masked`` / ``wrapped`` / raw systemd).
+        lock: fuser / ``lock=idle`` text.
+
+    Returns:
+        True when leftover VRAM may hold a helper.
+
+    Why: wrapped idle HTTP does not hold the 5080; masked also does not.
+    Enabled without wrap is free-running CUDA — refuse helpers.
+    """
+    cf = (comfy or "").lower()
+    return (
+        free_mib >= 6144
+        and ("masked" in cf or cf == "wrapped")
+        and "idle" in (lock or "").lower()
+    )
+
+
+def parse_5080_aux(lines: list[str]) -> tuple[str, str, int]:
+    """Parse is-enabled / wrap / lock / gguf lines after nvidia-smi.
+
+    Args:
+        lines: SSH stdout lines after the smi CSV row.
+
+    Returns:
+        Tuple of lab comfy field, lock text, and GGUF count.
+
+    Why: live SSH grew a wrap-ready line; old 3-line blobs still parse.
+    """
+    enabled = lines[0] if lines else ""
+    rest = list(lines[1:])
+    wrap_ready = False
+    if rest and rest[0].lower().startswith("wrap"):
+        wrap_ready = "ready" in rest[0].lower() and "missing" not in rest[0].lower()
+        rest = rest[1:]
+    lock = rest[0] if rest else "?"
+    gguf_raw = rest[1] if len(rest) > 1 else "0"
+    try:
+        gguf_count = int(gguf_raw.strip() or "0")
+    except ValueError:
+        gguf_count = 0
+    return comfy_lab_field(enabled, wrap_ready), lock, gguf_count
+
+
 def smi_local() -> dict:
     p = subprocess.run(
         [
@@ -60,7 +130,10 @@ def smi_5080() -> dict:
             "gpu5080",
             "nvidia-smi --query-gpu=name,memory.used,memory.free,memory.total "
             "--format=csv,noheader,nounits; "
-            "systemctl is-enabled akula-comfyui.service 2>/dev/null; "
+            "systemctl is-enabled akula-comfyui.service 2>/dev/null || echo unknown; "
+            "grep -qs akula-comfyui-locked "
+            "/etc/systemd/system/akula-comfyui.service.d/gpu5080-lock.conf "
+            "&& echo wrap-ready || echo wrap-missing; "
             "fuser /home/tzervas/akula-harness/state/gpu5080.lock 2>/dev/null || echo lock=idle; "
             "ls /models/localai/*.gguf 2>/dev/null | wc -l",
         ],
@@ -73,13 +146,8 @@ def smi_5080() -> dict:
     if len(parts) < 4:
         return {"error": (p.stderr or p.stdout)[:200]}
     used, free, total = (int(float(parts[i])) for i in (1, 2, 3))
-    comfy = lines[1] if len(lines) > 1 else "?"
-    lock = lines[2] if len(lines) > 2 else "?"
-    helper = free >= 6144 and "masked" in comfy and "idle" in lock
-    try:
-        gguf_count = int((lines[3] if len(lines) > 3 else "0").strip() or "0")
-    except ValueError:
-        gguf_count = 0
+    comfy, lock, gguf_count = parse_5080_aux(lines[1:])
+    helper = helper_ok_5080(free, comfy, lock)
     return {
         "name": parts[0],
         "used_mib": used,
@@ -94,9 +162,8 @@ def smi_5080() -> dict:
         "role": "cuda-tests" if not helper else "cuda-or-helper",
         "helper_ok": helper,
         "helper": "Qwen3-Embedding-0.6B in Comfy python3.13" if helper else None,
-        "never": ["second 14B", "unmask Comfy during autodev"],
+        "never": ["second 14B", "mask Comfy to schedule", "0.0.0.0 WAN"],
     }
-
 
 
 def smi_1080ti() -> dict:

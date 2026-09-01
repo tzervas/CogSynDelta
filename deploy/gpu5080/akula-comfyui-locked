@@ -1,0 +1,472 @@
+#!/usr/bin/env python3
+"""Comfy LAN HTTP stays up; RTX 5080 CUDA starts behind gpu5080-lock.
+
+Queue hook: GET /system_stats and GET /queue are idle (no CUDA, no flock).
+Any other request (POST /prompt, /ws, /object_info) waits on the same
+`gpu5080-lock` helper CUDA CI uses, starts the GPU container on loopback,
+proxies, then releases after idle. Wrapping the whole quadlet ExecStart
+would hold the flock for the unit lifetime and starve autodev.
+
+Never bind 0.0.0.0. LAN is 192.168.1.251:8188. GPU Comfy is 127.0.0.1:8189.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import signal
+import socket
+import sys
+import time
+from typing import Any
+
+LOCK_HELPER = os.environ.get(
+    "GPU5080_LOCK_HELPER",
+    "/home/tzervas/akula-harness/scripts/gpu5080-lock",
+)
+LAN_BIND = os.environ.get("COMFY_LAN_BIND", "192.168.1.251")
+LAN_PORT = int(os.environ.get("COMFY_LAN_PORT", "8188"))
+GPU_BIND = os.environ.get("COMFY_GPU_BIND", "127.0.0.1")
+GPU_PORT = int(os.environ.get("COMFY_GPU_PORT", "8189"))
+IDLE_SEC = float(os.environ.get("COMFY_IDLE_SEC", "90"))
+HEALTH_WAIT = float(os.environ.get("COMFY_HEALTH_WAIT", "180"))
+CIDFILE = os.environ.get("COMFY_CIDFILE", "/run/akula-comfyui-gpu.cid")
+IMAGE = os.environ.get(
+    "COMFY_IMAGE",
+    "docker.io/yanwk/comfyui-boot:cu130-slim-v2"
+    "@sha256:ff3427708468120acc1ee9c52ca555958222512a30a6fa85a10834de31092e5b",
+)
+CLI_ARGS = os.environ.get(
+    "COMFY_CLI_ARGS",
+    "--listen 0.0.0.0 --port 8188 --enable-cors-header --fast "
+    "--use-split-cross-attention",
+)
+WAN_BINDS = {"0.0.0.0", "::", "[::]", "*"}
+IDLE_PATHS = {"/system_stats", "/queue", "/healthz", "/"}
+HEADER_LIMIT = 1024 * 1024
+
+
+def log(msg: str) -> None:
+    """Write a journal line. Why: systemd SyslogIdentifier is the unit name."""
+    print(msg, file=sys.stderr, flush=True)
+
+
+def _http_json(status: int, payload: dict[str, Any]) -> bytes:
+    body = json.dumps(payload).encode("utf-8")
+    hdr = (
+        f"HTTP/1.1 {status} {'OK' if status == 200 else 'Error'}\r\n"
+        "Content-Type: application/json\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    )
+    return hdr.encode("ascii") + body
+
+
+STUB_STATS = _http_json(
+    200,
+    {
+        "system": {
+            "os": "linux",
+            "python_version": "proxy",
+            "embedded_python": False,
+            "comfyui": "akula-comfyui-locked",
+        },
+        "devices": [],
+        "notes": "idle HTTP; GPU on first /prompt via gpu5080-lock",
+    },
+)
+STUB_QUEUE = _http_json(200, {"queue_running": [], "queue_pending": []})
+STUB_HEALTH = _http_json(200, {"ok": True, "gpu": False, "notes": "idle"})
+STUB_ROOT = _http_json(200, {"ok": True, "service": "akula-comfyui-locked"})
+BUSY_503 = _http_json(
+    503,
+    {"ok": False, "notes": "gpu5080-lock wait exceeded or Comfy start failed"},
+)
+
+
+def _stub_for(path: str) -> bytes:
+    if path == "/system_stats":
+        return STUB_STATS
+    if path == "/queue":
+        return STUB_QUEUE
+    if path == "/healthz":
+        return STUB_HEALTH
+    return STUB_ROOT
+
+
+def _notify_ready() -> None:
+    sock_path = os.environ.get("NOTIFY_SOCKET")
+    if not sock_path:
+        return
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        sock.connect(sock_path)
+        sock.sendall(b"READY=1")
+        sock.close()
+    except OSError as exc:
+        log(f"sd_notify skipped: {exc}")
+
+
+class ComfyLockProxy:
+    """LAN HTTP proxy that claims gpu5080-lock only while GPU Comfy is up."""
+
+    def __init__(self) -> None:
+        self._gate = asyncio.Lock()
+        self._lock_proc: asyncio.subprocess.Process | None = None
+        self._backend = False
+        self._splices = 0
+        self._last_gpu = 0.0
+        self._stopping = False
+
+    async def _acquire_lock(self) -> None:
+        """Hold flock via the same helper CUDA CI execs; release by killing it."""
+        if self._lock_proc is not None and self._lock_proc.returncode is None:
+            return
+        log("gpu5080-lock: waiting (same wrap as CUDA CI)")
+        self._lock_proc = await asyncio.create_subprocess_exec(
+            LOCK_HELPER,
+            "--",
+            "sleep",
+            "infinity",
+            stderr=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
+        )
+        assert self._lock_proc.stderr is not None
+        while True:
+            line = await self._lock_proc.stderr.readline()
+            if not line:
+                rc = self._lock_proc.returncode
+                self._lock_proc = None
+                raise RuntimeError(f"gpu5080-lock exited rc={rc}")
+            text = line.decode("utf-8", errors="replace").rstrip()
+            if text:
+                log(text)
+            if "acquired" in text:
+                return
+
+    async def _release_lock(self) -> None:
+        proc = self._lock_proc
+        self._lock_proc = None
+        if proc is None or proc.returncode is not None:
+            return
+        proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+        log("gpu5080-lock: released")
+
+    def _podman_cmd(self) -> list[str]:
+        return [
+            "/usr/bin/podman",
+            "run",
+            "--name",
+            "akula-comfyui",
+            "--cidfile",
+            CIDFILE,
+            "--replace",
+            "--rm",
+            "--pull=never",
+            "--log-driver",
+            "json-file",
+            "--hostname",
+            "akula-comfyui",
+            "-d",
+            "--device",
+            "nvidia.com/gpu=all",
+            "-v",
+            "/models/comfyui:/root/ComfyUI/models",
+            "-v",
+            "/akula-data/comfyui/output:/root/ComfyUI/output",
+            "-v",
+            "/akula-data/comfyui/input:/root/ComfyUI/input",
+            "-v",
+            "/akula-data/comfyui/workflows:/root/ComfyUI/user/default/workflows:ro",
+            "-v",
+            "/akula-data/comfyui/extra_model_paths.yaml:"
+            "/root/ComfyUI/extra_model_paths.yaml:ro",
+            "--publish",
+            f"{GPU_BIND}:{GPU_PORT}:8188",
+            "--env",
+            f"CLI_ARGS={CLI_ARGS}",
+            "--log-opt",
+            "max-size=10m",
+            "--log-opt",
+            "max-file=3",
+            IMAGE,
+        ]
+
+    async def _start_podman(self) -> None:
+        if os.path.exists(CIDFILE):
+            try:
+                os.unlink(CIDFILE)
+            except OSError:
+                pass
+        rm = await asyncio.create_subprocess_exec(
+            "/usr/bin/podman",
+            "rm",
+            "-f",
+            "akula-comfyui",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await rm.wait()
+        log(f"podman start gpu Comfy on {GPU_BIND}:{GPU_PORT}")
+        proc = await asyncio.create_subprocess_exec(
+            *self._podman_cmd(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            err = stderr.decode("utf-8", errors="replace")[-400:]
+            raise RuntimeError(f"podman run failed rc={proc.returncode} {err}")
+        cid = stdout.decode("utf-8", errors="replace").strip()
+        log(f"podman started cid={cid[:12]}")
+
+    async def _stop_podman(self) -> None:
+        proc = await asyncio.create_subprocess_exec(
+            "/usr/bin/podman",
+            "rm",
+            "-f",
+            "akula-comfyui",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+        if os.path.exists(CIDFILE):
+            try:
+                os.unlink(CIDFILE)
+            except OSError:
+                pass
+        self._backend = False
+        log("podman stopped gpu Comfy")
+
+    async def _backend_healthy(self) -> bool:
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(GPU_BIND, GPU_PORT),
+                timeout=2,
+            )
+        except (OSError, TimeoutError):
+            return False
+        try:
+            writer.write(b"GET /system_stats HTTP/1.1\r\nHost: comfy\r\n\r\n")
+            await writer.drain()
+            buf = await asyncio.wait_for(reader.read(256), timeout=2)
+            return buf.startswith(b"HTTP/1.1 200") or buf.startswith(b"HTTP/1.0 200")
+        except (OSError, TimeoutError):
+            return False
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except OSError:
+                pass
+
+    async def _wait_healthy(self) -> None:
+        deadline = time.monotonic() + HEALTH_WAIT
+        while time.monotonic() < deadline:
+            if await self._backend_healthy():
+                return
+            await asyncio.sleep(1.5)
+        raise RuntimeError("Comfy GPU HTTP did not become healthy")
+
+    async def ensure_backend(self) -> None:
+        """Claim lock, start GPU Comfy, wait for loopback HTTP."""
+        async with self._gate:
+            if self._backend and await self._backend_healthy():
+                self._last_gpu = time.monotonic()
+                return
+            await self._acquire_lock()
+            try:
+                await self._start_podman()
+                await self._wait_healthy()
+            except Exception:
+                await self._stop_podman()
+                await self._release_lock()
+                raise
+            self._backend = True
+            self._last_gpu = time.monotonic()
+
+    async def _queue_empty(self) -> bool:
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(GPU_BIND, GPU_PORT),
+                timeout=2,
+            )
+        except (OSError, TimeoutError):
+            return True
+        try:
+            writer.write(b"GET /queue HTTP/1.1\r\nHost: comfy\r\n\r\n")
+            await writer.drain()
+            raw = await asyncio.wait_for(reader.read(65536), timeout=3)
+            split = raw.split(b"\r\n\r\n", 1)
+            body = split[1] if len(split) == 2 else b"{}"
+            data = json.loads(body.decode("utf-8", errors="replace") or "{}")
+            running = data.get("queue_running") or []
+            pending = data.get("queue_pending") or []
+            return not running and not pending
+        except (OSError, TimeoutError, json.JSONDecodeError):
+            return True
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except OSError:
+                pass
+
+    async def idle_reaper(self) -> None:
+        while not self._stopping:
+            await asyncio.sleep(5)
+            if not self._backend or self._splices > 0:
+                continue
+            if time.monotonic() - self._last_gpu < IDLE_SEC:
+                continue
+            async with self._gate:
+                if not self._backend or self._splices > 0:
+                    continue
+                if time.monotonic() - self._last_gpu < IDLE_SEC:
+                    continue
+                if not await self._queue_empty():
+                    self._last_gpu = time.monotonic()
+                    continue
+                log("idle: stop GPU Comfy and release gpu5080-lock")
+                await self._stop_podman()
+                await self._release_lock()
+
+    async def shutdown(self) -> None:
+        self._stopping = True
+        async with self._gate:
+            await self._stop_podman()
+            await self._release_lock()
+
+    async def handle(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> None:
+        peer = writer.get_extra_info("peername")
+        try:
+            header = await _read_headers(reader)
+            if not header:
+                return
+            first = header.split(b"\r\n", 1)[0].decode("latin1", errors="replace")
+            parts = first.split(" ")
+            method = parts[0] if parts else ""
+            raw_path = parts[1] if len(parts) > 1 else "/"
+            path = raw_path.split("?", 1)[0]
+            idle = method == "GET" and path in IDLE_PATHS
+            if idle and not self._backend:
+                writer.write(_stub_for(path))
+                await writer.drain()
+                return
+            try:
+                await self.ensure_backend()
+            except Exception as exc:
+                log(f"ensure_backend failed peer={peer}: {exc}")
+                writer.write(BUSY_503)
+                await writer.drain()
+                return
+            self._splices += 1
+            self._last_gpu = time.monotonic()
+            try:
+                br, bw = await asyncio.open_connection(GPU_BIND, GPU_PORT)
+                bw.write(header)
+                await bw.drain()
+                await asyncio.gather(
+                    _pipe(reader, bw),
+                    _pipe(br, writer),
+                )
+            finally:
+                self._splices = max(0, self._splices - 1)
+                self._last_gpu = time.monotonic()
+        except (OSError, asyncio.IncompleteReadError) as exc:
+            log(f"client {peer}: {exc}")
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except OSError:
+                pass
+
+
+async def _read_headers(reader: asyncio.StreamReader) -> bytes:
+    buf = bytearray()
+    while b"\r\n\r\n" not in buf:
+        chunk = await reader.read(4096)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > HEADER_LIMIT:
+            raise OSError("HTTP headers too large")
+    return bytes(buf)
+
+
+async def _pipe(
+    src: asyncio.StreamReader,
+    dst: asyncio.StreamWriter,
+) -> None:
+    try:
+        while True:
+            data = await src.read(65536)
+            if not data:
+                break
+            dst.write(data)
+            await dst.drain()
+    except (OSError, asyncio.CancelledError):
+        pass
+    finally:
+        try:
+            dst.close()
+        except OSError:
+            pass
+
+
+async def amain() -> int:
+    if LAN_BIND in WAN_BINDS:
+        log(f"refuse WAN bind {LAN_BIND}")
+        return 2
+    if GPU_BIND in WAN_BINDS:
+        log(f"refuse WAN GPU publish {GPU_BIND}")
+        return 2
+    if not os.access(LOCK_HELPER, os.X_OK):
+        log(f"missing lock helper {LOCK_HELPER}")
+        return 2
+    proxy = ComfyLockProxy()
+    loop = asyncio.get_running_loop()
+    stop = asyncio.Event()
+
+    def _ask_stop() -> None:
+        stop.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _ask_stop)
+
+    server = await asyncio.start_server(proxy.handle, host=LAN_BIND, port=LAN_PORT)
+    socks = ", ".join(str(s.getsockname()) for s in server.sockets or [])
+    log(f"LAN HTTP {socks} (GPU Comfy on prompt via gpu5080-lock)")
+    _notify_ready()
+    reaper = asyncio.create_task(proxy.idle_reaper())
+    await stop.wait()
+    log("signal: shutting down")
+    server.close()
+    await server.wait_closed()
+    reaper.cancel()
+    await proxy.shutdown()
+    return 0
+
+
+def main() -> int:
+    try:
+        return asyncio.run(amain())
+    except OSError as exc:
+        log(f"bind/start failed: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

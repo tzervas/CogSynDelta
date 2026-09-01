@@ -68,14 +68,14 @@ nvidia-smi --query-gpu=uuid,power.default_limit --format=csv,noheader \
 Do **not** use `nvidia-smi -ac …` or `--lock-gpu-clocks`. `-ac` is
 deprecated on current drivers; reset is the unlock.
 
-gpu5080 (passwordless sudo, Comfy stays masked):
+gpu5080 (passwordless sudo, Comfy lock-wrap not mask):
 
 ```bash
 ssh -o BatchMode=yes gpu5080 \
   'sudo -n nvidia-smi -pm 1
    nvidia-smi --query-gpu=uuid,power.default_limit --format=csv,noheader
    sudo -n systemctl start nvidia-factory-limits.service
-   systemctl is-enabled akula-comfyui.service   # expect: masked'
+   systemctl is-enabled akula-comfyui.service   # expect: generated/wrapped, not masked'
 ```
 
 Skip exclusive CUDA work if `gpu5080.lock` is **flock-held**. An empty
