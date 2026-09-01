@@ -512,6 +512,7 @@ def live_feed(snap: dict) -> dict:
     return {
         "prime": {
             "gpu": "RTX 3090 Ti Ampere sm_86",
+            "role": (cluster.get("prime") or {}).get("role") or "autodev-local-code",
             "smi": snap.get("prime_smi"),
             "loaded": loaded["prime"],
             "thinking": thinking,
@@ -525,6 +526,7 @@ def live_feed(snap: dict) -> dict:
         },
         "gpu5080": {
             "gpu": "RTX 5080 Blackwell sm_120",
+            "role": (cluster.get("gpu5080") or {}).get("role") or "chat-comfy",
             "smi": snap.get("gpu5080_smi"),
             "lock": snap.get("gpu5080_lock"),
             "comfy": snap.get("gpu5080_comfy"),
@@ -540,6 +542,7 @@ def live_feed(snap: dict) -> dict:
         },
         "gpu5080_1080ti": {
             "gpu": "GTX 1080 Ti Pascal sm_61",
+            "role": ti.get("role") or "retrieve-index-light",
             "smi": snap.get("guest_smi") or snap.get("gpu5080_1080ti_smi"),
             "loaded": loaded.get("gpu5080-1080ti") or [],
             "thinking": _thinking_1080ti(loaded.get("gpu5080-1080ti") or [], ti),
@@ -608,7 +611,8 @@ def cluster_snapshot() -> dict:
             "host_ip": PRIME_IP,
             "live": True,
             "group": "csd-autodev",
-            "role": "local/code",
+            "role": prime_spec.get("role") or (cat.get("roles") or {}).get("akula-prime")
+            or "autodev-local-code",
         },
         {
             "id": "gpu5080",
@@ -619,7 +623,8 @@ def cluster_snapshot() -> dict:
             "host_ip": GPU5080_IP,
             "live": True,
             "group": "csd-autodev",
-            "role": "exclusive-cuda",
+            "role": gpu_spec.get("role") or (cat.get("roles") or {}).get("gpu5080")
+            or "chat-comfy",
         },
         {
             "id": "gpu5080-1080ti",
@@ -642,11 +647,20 @@ def cluster_snapshot() -> dict:
         "groups": ["csd-autodev", "akula-rag"],
         "heterogeneous": True,
         "not_mig": True,
-        "prime": {"host": "prime", "ip": PRIME_IP, "role": "local/code"},
+        "roles": cat.get("roles") or {
+            "akula-prime": "autodev local/code 14B Q4 32k",
+            "gpu5080": "chat+Comfy (CUDA exclusive-seq via lock)",
+            "gpu5080-1080ti": "retrieve-index-light",
+        },
+        "prime": {
+            "host": "prime",
+            "ip": PRIME_IP,
+            "role": prime_spec.get("role") or "autodev-local-code",
+        },
         "gpu5080": {
             "host": "gpu5080",
             "ip": GPU5080_IP,
-            "role": "exclusive-cuda",
+            "role": gpu_spec.get("role") or "chat-comfy",
         },
         "homelab": {"host": "homelab", "ip": HOMELAB_IP, "role": "ui-cpu-ci"},
         "gpu5080_1080ti": {
@@ -720,6 +734,7 @@ def snapshot() -> dict:
         "gpu5080_1080ti_smi": guest_smi,
         "steer": steer,
         "cluster": cluster,
+        "roles": cluster.get("roles") or {},
         "note": "autodev webapp on code.vectorweight.com; chat on ai.vectorweight.com",
         "links": {
             "lab": "https://code.vectorweight.com",
@@ -1967,7 +1982,7 @@ button,textarea{font:inherit}textarea{width:100%;background:#000;color:#ddd;bord
 </header>
 <main>
 <section class="pane on" id=feed>
-  <p class=muted>Loaded models only. Three hosts: 3090 Ti · 5080 · 1080 Ti guest.</p>
+  <p class=muted>Loaded models only. Three hosts. Roles: 3090 autodev local/code · 5080 chat+Comfy (CUDA via lock) · 1080 Ti retrieve-index-light.</p>
   <div class=cols3>
     <div class=card id=c0></div>
     <div class=card id=c1></div>
@@ -2057,7 +2072,7 @@ function card(title, node){
   const think = bits.think ? '<h3>thinking</h3><pre>'+esc(bits.think)+'</pre>' : '';
   const body = bits.out ? '<h3>'+esc(th.phase||'activity')+'</h3><pre>'+esc(bits.out)+'</pre>' : (th.prompt?'<h3>in-flight</h3><pre>'+esc(th.prompt)+'</pre>':'<p class=muted>idle</p>');
   const lat=node.latent||{};
-  return '<h2>'+title+'</h2><p class=muted>'+(node.gpu||'')+'</p><p>'+(node.smi||'')+'</p>'
+  return '<h2>'+title+'</h2><p class=muted>'+(node.gpu||'')+' · role '+(node.role||'')+'</p><p>'+(node.smi||'')+'</p>'
     +(node.lock?'<p>lock '+node.lock+' comfy '+(node.comfy||'')+'</p>':'')
     +'<p>loaded '+aliases(node.loaded)+'</p>'
     +think+body

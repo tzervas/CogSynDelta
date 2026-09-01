@@ -1,0 +1,26 @@
+{
+  "schema": "csd-gpu-timeshare/v1",
+  "note": "Enqueue on gpu5080. Prime /akula-data/cabal/gpu-timeshare.json is not the 5080 worker queue. Autodev numeric prio is higher than webui/comfy. Queue/lock, not mask.",
+  "gpu5080_path": "/home/tzervas/akula-harness/state/gpu-timeshare.json",
+  "prime_path_not_5080_queue": "/akula-data/cabal/gpu-timeshare.json",
+  "host_ip": "192.168.1.251",
+  "listen": "lan-only",
+  "prio_higher_wins": true,
+  "prio": {
+    "autodev": 100,
+    "cuda-eval": 90,
+    "chat": 50,
+    "webui": 40,
+    "comfy": 30,
+    "idle-fill": 10
+  },
+  "priority": [
+    "autodev",
+    "cuda-eval",
+    "chat",
+    "webui",
+    "comfy",
+    "idle-fill"
+  ],
+  "never_unmask_without_wrap": true
+}

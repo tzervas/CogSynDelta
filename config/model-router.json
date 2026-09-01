@@ -37,7 +37,8 @@
         "chat"
       ],
       "host_ip": "192.168.1.98",
-      "listen": "lan-only"
+      "listen": "lan-only",
+      "role": "autodev-local-code"
     },
     "gpu5080": {
       "gpu": "RTX 5080",
@@ -66,6 +67,7 @@
         "localai"
       ],
       "prefer_jobs": [
+        "chat",
         "cuda-tests",
         "train",
         "triton",
@@ -74,7 +76,8 @@
       ],
       "needs_lock": "gpu5080",
       "host_ip": "192.168.1.251",
-      "listen": "lan-only"
+      "listen": "lan-only",
+      "role": "chat-comfy"
     },
     "gpu5080-1080ti": {
       "gpu": "GTX 1080 Ti",
@@ -460,8 +463,8 @@
     },
     "local/uncensored-fast": {
       "host_pref": [
-        "akula-prime",
         "gpu5080",
+        "akula-prime",
         "gpu5080-1080ti"
       ],
       "class": "8b",
@@ -487,7 +490,9 @@
         "gpu5080": "share-small",
         "gpu5080-1080ti": "retrieve-index-light"
       },
-      "fits_1080ti": true
+      "fits_1080ti": true,
+      "prime_fallback": "14b-not-loaded",
+      "note": "Resident 5080 chat when lock idle. 6000+Comfy 6144 <= 14336 safeguard. Fall back 3090 leftover only if 14B not loaded. Never dual 14B."
     },
     "embed-qwen3-0.6b": {
       "host_pref": [
@@ -618,5 +623,47 @@
       "note": "Large MoE on combined ~40 GiB. Gate+active experts tight; idle experts ok-lan. vLLM if format is HF. Never preempt autodev.",
       "fits_1080ti": false
     }
+  },
+  "roles": {
+    "akula-prime": "autodev local/code 14B Q4 32k",
+    "gpu5080": "chat+Comfy (CUDA exclusive-seq via lock)",
+    "gpu5080-1080ti": "retrieve-index-light"
+  },
+  "share_small": {
+    "helper_cap_mib": 6144,
+    "job_reserve_mib": 8192,
+    "note": "Share-small only when gpu5080.lock idle and nvidia-smi free >= 8192. Chat on 5080 reserves helper_cap for Comfy."
+  },
+  "fan_out": {
+    "n1": "akula-prime leftover",
+    "then": [
+      "gpu5080 share-small lock-idle",
+      "gpu5080-1080ti"
+    ],
+    "never": "second 14B",
+    "helper_alias": "embed-qwen3-0.6b",
+    "note": "Dry-run n=1 -> 3090 leftover. n=3 embed helpers pack leftover then 5080 then 1080 Ti. Never a second 14B."
+  },
+  "timeshare": {
+    "gpu5080_path": "/home/tzervas/akula-harness/state/gpu-timeshare.json",
+    "prime_path_not_5080_queue": "/akula-data/cabal/gpu-timeshare.json",
+    "prio_higher_wins": true,
+    "prio": {
+      "autodev": 100,
+      "cuda-eval": 90,
+      "chat": 50,
+      "webui": 40,
+      "comfy": 30,
+      "idle-fill": 10
+    },
+    "priority": [
+      "autodev",
+      "cuda-eval",
+      "chat",
+      "webui",
+      "comfy",
+      "idle-fill"
+    ],
+    "never_unmask_without_wrap": true
   }
 }

@@ -159,7 +159,7 @@ def smi_5080() -> dict:
         "arch": "blackwell",
         "sm": "12.0",
         "caps": ["cuda-eval", "sm_120", "fp8", "fp4", "embed", "gpu-ci", "blackwell"],
-        "role": "cuda-tests" if not helper else "cuda-or-helper",
+        "role": "cuda-exclusive-seq" if not helper else "chat-comfy",
         "helper_ok": helper,
         "helper": "Qwen3-Embedding-0.6B in Comfy python3.13" if helper else None,
         "never": ["second 14B", "mask Comfy to schedule", "0.0.0.0 WAN"],
@@ -214,6 +214,11 @@ def main() -> int:
         "webui_host": "homelab",
         "text_implementer": "local/code via csd-localai-queue",
         "hosted_grok": "plan/unblock/safety only",
+        "roles": {
+            "akula-prime": "autodev local/code 14B Q4 32k",
+            "gpu5080": "chat+Comfy (CUDA exclusive-seq via lock)",
+            "gpu5080-1080ti": "retrieve-index-light",
+        },
         "pool": {
             "combined_mib": 39331,
             "usable_mib": 39331 - 1536,

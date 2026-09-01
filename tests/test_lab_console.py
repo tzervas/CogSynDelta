@@ -256,6 +256,13 @@ def test_cluster_snapshot_includes_1080ti_guest_ip(
     assert g["group"] == "akula-rag"
     assert g["path"] == "lab.gpu5080.index.1080ti"
     assert g["rag"] == "retrieve-index-light"
+    assert rec["prime"]["role"] == "autodev-local-code"
+    assert rec["gpu5080"]["role"] == "chat-comfy"
+    roles = rec.get("roles") or {}
+    assert "autodev" in str(roles.get("akula-prime") or rec["prime"]["role"])
+    assert rec["backends"][0]["role"] == "autodev-local-code"
+    assert rec["backends"][1]["role"] == "chat-comfy"
+    assert rec["backends"][2]["role"] == "retrieve-index-light"
 
 
 def test_cluster_snapshot_parses_guest_ip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -755,3 +762,13 @@ def test_gpu_tab_5080_receipt_and_1080ti_thinking(
     assert tth.get("goal") == "retrieve-index-light"
     assert ti["live"] is True
     assert ti["guest_ip"] == "192.168.1.243"
+
+
+def test_gpu_tab_shows_roles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Lab GPU pane documents 3090 autodev / 5080 chat+Comfy / 1080 RAG."""
+    mod = load_lab(tmp_path, monkeypatch)
+    page = mod.PAGE
+    assert "role" in page
+    assert "autodev local/code" in page
+    assert "chat+Comfy" in page
+    assert "retrieve-index-light" in page

@@ -14,6 +14,8 @@ not executed, until pool.enabled and 5080 GGUFs exist.
   csd-model-router pack
   csd-model-router restore
   csd-model-router plan-pool --alias pool/large
+  csd-model-router flex --dry-run
+  csd-model-router fanout --n 1
 """
 
 from __future__ import annotations
@@ -342,11 +344,51 @@ def lock_busy(node: dict[str, Any]) -> bool:
     return "idle" not in lock
 
 
+def leftover_mib(host: str, inventory: dict[str, Any]) -> int:
+    """Safeguard-capped leftover MiB, not raw nvidia-smi free.
+
+    Why: 3090 14B resident leaves ~4492 after 20480-used even when smi free
+    is ~6.5 GiB. Swap aliases only if they FIT that cap.
+    """
+    cat = catalog()
+    hspec = (cat.get("hosts") or {}).get(host) or {}
+    safeguard = int(hspec.get("safeguard_mib") or hspec.get("vram_mib") or 0)
+    node = inventory.get(host) or {}
+    used = int(node.get("used_mib") or 0)
+    free = node.get("free_mib")
+    cap = max(0, safeguard - used) if safeguard else 0
+    if free is not None:
+        free_i = int(free)
+        return min(free_i, cap) if safeguard else free_i
+    return cap
+
+
+def fourteen_b_loaded_on_prime(inventory: dict[str, Any]) -> bool:
+    """True when 3090 occupancy looks like resident 14B, not idle leftover."""
+    used = int((inventory.get("akula-prime") or {}).get("used_mib") or 0)
+    code = (catalog().get("aliases") or {}).get("local/code") or {}
+    vram = int(code.get("vram_mib") or 16500)
+    return used >= int(vram * 0.7)
+
+
+def is_chat_alias(spec: dict[str, Any]) -> bool:
+    """Chat-shaped jobs (OWUI text), not autodev 14B or CUDA."""
+    return bool(set(spec.get("jobs") or []) & {"chat", "chat-small"})
+
+
+def missing_only_gguf(spec: dict[str, Any], host: str, inventory: dict[str, Any]) -> bool:
+    """True when the only missing need is gguf-infer (logical 5080 park)."""
+    need = set(spec.get("needs_caps") or [])
+    have = host_caps(host, inventory)
+    return need - have <= {"gguf-infer"}
+
+
 def vram_ok(spec: dict[str, Any], host: str, inventory: dict[str, Any]) -> bool:
     """Return False if placing this alias on host would OOM.
 
     Why: 14B/heavy occupancy is the model itself (safeguard), not leftover
-    after a sticky local/code load. Helpers must fit remaining free_mib.
+    after a sticky local/code load. Helpers use safeguard-capped leftover.
+    5080 chat reserves Comfy helper_cap so both FIT under safeguard.
     """
     vram = int(spec.get("vram_mib") or 0)
     if vram <= 0:
@@ -354,14 +396,18 @@ def vram_ok(spec: dict[str, Any], host: str, inventory: dict[str, Any]) -> bool:
     cat = catalog()
     hspec = (cat.get("hosts") or {}).get(host) or {}
     safeguard = int(hspec.get("safeguard_mib") or hspec.get("vram_mib") or 0)
-    node = inventory.get(host) or {}
     cls = str(spec.get("class") or "")
     if cls in {"14b", "heavy"}:
         return not (safeguard and vram > safeguard)
-    free = node.get("free_mib")
-    if free is not None:
-        return int(free) >= vram
-    if safeguard and vram > safeguard:
+    need = vram
+    if host == "gpu5080" and is_chat_alias(spec):
+        share = cat.get("share_small") or {}
+        need += int(share.get("helper_cap_mib") or 6144)
+    leftover = leftover_mib(host, inventory)
+    node = inventory.get(host) or {}
+    if leftover or node.get("free_mib") is not None or node.get("used_mib") is not None:
+        return leftover >= need
+    if safeguard and need > safeguard:
         return False
     return True
 
@@ -391,7 +437,14 @@ def place_host(
         if host not in allowed:
             continue
         if not caps_ok(spec, host, inventory):
-            continue
+            logical_5080 = (
+                host == "gpu5080"
+                and spec.get("fits_5080")
+                and not busy5080
+                and missing_only_gguf(spec, host, inventory)
+            )
+            if not logical_5080:
+                continue
         if host == "gpu5080" and spec.get("fits_5080") is False:
             continue
         if host == "akula-prime" and spec.get("fits_prime") is False:
@@ -400,6 +453,10 @@ def place_host(
             continue
         if host == "gpu5080" and busy5080:
             continue
+        if host == "akula-prime" and is_chat_alias(spec) and spec.get("fits_5080"):
+            # 5080-fit chat falls back to 3090 leftover only if 14B not loaded.
+            if fourteen_b_loaded_on_prime(inventory):
+                continue
         if not vram_ok(spec, host, inventory):
             continue
         idx = prefs.index(host) if host in prefs else 9
@@ -712,6 +769,7 @@ def cluster_backends(cat: dict[str, Any] | None = None) -> dict[str, Any]:
                 "host_ip": spec.get("host_ip"),
                 "live": spec.get("live") is not False,
                 "installed": spec.get("installed") is not False,
+                "role": spec.get("role") or (cat.get("roles") or {}).get(name),
             }
         )
     for name, spec in (cat.get("future_hosts") or {}).items():
@@ -735,6 +793,109 @@ def cluster_backends(cat: dict[str, Any] | None = None) -> dict[str, Any]:
         "not_mig": True,
         "groups": ["csd-autodev", "akula-rag"],
         "never_dual_14b": bool(cat.get("never_dual_14b")),
+        "roles": cat.get("roles") or {},
+    }
+
+
+
+def cluster_flex(
+    dry_run: bool = True,
+    inventory: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Dry-run heterogeneous placement across 3090 + 5080 + 1080 Ti.
+
+    Why: cluster-flex must pick gpu5080-1080ti for rag-index when leftover
+    FITs, without loading weights. 14B stays on akula-prime; CUDA stays
+    exclusive-seq on gpu5080.
+
+    Args:
+        dry_run: Always true; this command never mutates router state.
+        inventory: Optional gpu-plan overlay; defaults to load_inventory.
+
+    Returns:
+        JSON with picks, rag_index_host, and cluster backends.
+    """
+    del dry_run  # always dry-run; never request_alias
+    inv = inventory if inventory is not None else load_inventory()
+    jobs = (
+        "local/code",
+        "cuda-eval",
+        "rag-index",
+        "embed",
+        "light-gguf",
+        "vision",
+    )
+    picks: list[dict[str, Any]] = []
+    for job in jobs:
+        rec = pick_alias(job_to_alias(job), inventory=inv)
+        rec["job"] = job
+        picks.append(rec)
+    rag = next((p for p in picks if p.get("job") == "rag-index"), {})
+    return {
+        "ok": True,
+        "dry_run": True,
+        "never_dual_14b": True,
+        "live_1080ti": "gpu5080-1080ti" in schedulable_hosts(),
+        "picks": picks,
+        "rag_index_host": rag.get("host"),
+        "cluster": cluster_backends(),
+    }
+
+
+def helper_fanout(
+    n_helpers: int,
+    inventory: dict[str, Any] | None = None,
+    alias: str = "embed-qwen3-0.6b",
+) -> dict[str, Any]:
+    """Dry-run n ok-lan helpers: 3090 leftover, then 5080, then 1080 Ti.
+
+    Why: n=1 stays on 3090 leftover. n=3 embed helpers pack leftover then
+    share-small then retrieve-index-light. Never a second 14B.
+    """
+    inv = inventory if inventory is not None else load_inventory()
+    spec = dict((catalog().get("aliases") or {}).get(alias) or {})
+    if spec.get("class") in {"14b", "heavy"}:
+        return {
+            "ok": False,
+            "error": "refusing 14B helper fan-out",
+            "n": n_helpers,
+            "second_14b": False,
+        }
+    order = ("akula-prime", "gpu5080", "gpu5080-1080ti")
+    remaining = {host: leftover_mib(host, inv) for host in order}
+    vram = int(spec.get("vram_mib") or 0)
+    placements: list[dict[str, Any]] = []
+    for i in range(max(0, int(n_helpers))):
+        placed = None
+        for host in order:
+            if host == "gpu5080" and lock_busy(inv.get("gpu5080") or {}):
+                continue
+            if host == "gpu5080" and spec.get("fits_5080") is False:
+                continue
+            if host == "gpu5080-1080ti" and spec.get("fits_1080ti") is False:
+                continue
+            if remaining.get(host, 0) >= vram:
+                remaining[host] -= vram
+                placed = host
+                break
+        placements.append(
+            {
+                "i": i + 1,
+                "host": placed or "reject",
+                "alias": alias,
+                "class": spec.get("class"),
+            }
+        )
+    hosts = [row["host"] for row in placements]
+    ok = bool(n_helpers == 0 or all(h != "reject" for h in hosts))
+    return {
+        "ok": ok,
+        "dry_run": True,
+        "n": n_helpers,
+        "alias": alias,
+        "placements": placements,
+        "second_14b": False,
+        "never_dual_14b": True,
     }
 
 
@@ -750,6 +911,9 @@ def status_blob() -> dict[str, Any]:
         "future_hosts": cat.get("future_hosts"),
         "cluster": cluster_backends(cat),
         "pool": cat.get("pool"),
+        "roles": cat.get("roles") or {},
+        "timeshare": cat.get("timeshare") or {},
+        "fan_out": cat.get("fan_out") or {},
         "state": load_state(),
         "inventory": inv,
     }
@@ -772,6 +936,11 @@ def main() -> int:
     sub.add_parser("restore")
     pp = sub.add_parser("plan-pool")
     pp.add_argument("--alias", default="pool/large")
+    fx = sub.add_parser("flex")
+    fx.add_argument("--dry-run", action="store_true", default=True)
+    fo = sub.add_parser("fanout")
+    fo.add_argument("--n", type=int, default=1)
+    fo.add_argument("--alias", default="embed-qwen3-0.6b")
     args = ap.parse_args()
     if args.cmd == "status":
         print(json.dumps(status_blob(), indent=2))
@@ -791,16 +960,24 @@ def main() -> int:
         rec = restore_pass()
         print(json.dumps(rec))
         return 0
-    if args.cmd == "plan-pool":
-        spec = (catalog().get("aliases") or {}).get(args.alias) or {}
-        rec = {
-            "alias": args.alias,
-            "plan": split_plan(int(spec.get("vram_mib") or 36000)),
-            "ok": False,
-            "error": "pool-parked",
-        }
+    if args.cmd in {"plan-pool", "flex", "fanout"}:
+        if args.cmd == "fanout":
+            rec = helper_fanout(int(args.n), alias=str(args.alias))
+            rc = 0 if rec.get("ok") else 1
+        elif args.cmd == "flex":
+            rec = cluster_flex(dry_run=True)
+            rc = 0 if rec.get("ok") else 1
+        else:
+            spec = (catalog().get("aliases") or {}).get(args.alias) or {}
+            rec = {
+                "alias": args.alias,
+                "plan": split_plan(int(spec.get("vram_mib") or 36000)),
+                "ok": False,
+                "error": "pool-parked",
+            }
+            rc = 0
         print(json.dumps(rec, indent=2))
-        return 0
+        return rc
     alias = args.alias or (job_to_alias(args.job) if args.job else catalog().get("autodev_default"))
     rec = request_alias(str(alias), args.why, args.ttl, noping=args.noping)
     print(json.dumps(rec))
