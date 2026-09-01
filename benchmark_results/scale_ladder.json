@@ -1,5 +1,5 @@
 {
-  "schema": "csd-scale-ladder/v1",
+  "schema": "csd-scale-ladder/v2",
   "checked_at": "2026-08-31",
   "doc": "docs/program/CSD-SCALE-LADDER.md",
   "grafana_sat": {
@@ -9,44 +9,77 @@
     "fires_when": "csd_scale_ladder_rung_green == 1",
     "contact": "maintainers-email",
     "no_data": "OK",
-    "note": "green=false for every rung. Historical STATUS.md is not a Grafana sat. Do not page a dummy 1."
+    "note": "green=false for every rung. Historical STATUS.md is not a Grafana sat. Do not page a dummy 1. Page only when a new STATUS row or pytest/CUDA receipt sets green=true."
   },
   "hf": {
     "autodev": false,
     "gap": "mint HF",
-    "never_copy": "gpu/huggingface-token"
+    "never_copy": "gpu/huggingface-token",
+    "region_pattern": "tzervas/cogsyndelta-region-<name>-<size>",
+    "assembled_pattern": "tzervas/cogsyndelta-<size>"
   },
   "rungs": [
     {
       "n": 0,
-      "size": "tiny",
-      "device": "cpu",
+      "size": "region_pretrain",
+      "stage": "tiny-region-pretrain",
+      "device": "cpu-or-5080-smoke",
       "green": false,
       "status": "historical-pass",
-      "hf_repo": "tzervas/cogsyndelta-tiny",
-      "train": "uv run python -m cogsyndelta.poc.cli train-route --device cpu --steps 20",
-      "eval": "pytest tests/test_poc_train.py tests/test_poc_route_train.py; train-route last < first",
-      "status_md": "STATUS.md PoC-1..3 CPU 2026-08-19",
-      "why_not_green": "historical pass only; write green=true after a new receipt"
+      "hf_repo": "tzervas/cogsyndelta-region-stream_vae-tiny",
+      "hf_pattern": "tzervas/cogsyndelta-region-<name>-tiny",
+      "train": "uv run python -m cogsyndelta.poc.cli train --device cpu --steps 20",
+      "eval": "pytest tests/test_poc_train.py; train last < first",
+      "status_md": "STATUS.md PoC-1 CPU 2026-08-19 (one LatentVAE specialist, synthetic)",
+      "why_not_green": "historical pass only; write green=true after a new STATUS row or pytest/CUDA receipt"
     },
     {
       "n": 1,
+      "size": "router",
+      "stage": "frozen-then-joint-router",
+      "device": "cpu-or-5080-smoke",
+      "green": false,
+      "status": "historical-pass",
+      "hf_repo": "tzervas/cogsyndelta-region-route-tiny",
+      "hf_pattern": "tzervas/cogsyndelta-region-route-tiny",
+      "train": "uv run python -m cogsyndelta.poc.cli train-route --device cpu --steps 20 --gate-only; then train-route without --gate-only",
+      "eval": "pytest tests/test_poc_route_train.py; train-route last < first; load not {1,0}",
+      "status_md": "STATUS.md PoC-3 CPU/CUDA 2026-08-19 (softmax gate, not mHC)",
+      "why_not_green": "historical pass only; write green=true after a new STATUS row or pytest/CUDA receipt"
+    },
+    {
+      "n": 2,
+      "size": "tiny_mind",
+      "stage": "assembled-tiny-whole-mind",
+      "device": "cpu-or-5080-smoke",
+      "green": false,
+      "status": "not-yet",
+      "hf_repo": "tzervas/cogsyndelta-tiny",
+      "hf_pattern": "tzervas/cogsyndelta-tiny",
+      "train": "blocked until R0+R1 receipts; then train-route assembled tiny mind",
+      "eval": "measured STATUS.md table + labeled region batch; not a skip",
+      "why_not_green": "needs R0+R1 green receipts; historical train-route is not this rung"
+    },
+    {
+      "n": 3,
       "size": "small",
+      "stage": "larger-params",
       "device": "cuda",
       "host": "gpu5080",
       "host_ip": "192.168.1.251",
       "mode": "exclusive-seq",
       "green": false,
-      "status": "historical-pass",
+      "status": "not-yet",
       "hf_repo": "tzervas/cogsyndelta-small",
-      "train": "with-gpu-5080 --mode exclusive-seq -- uv run python -m cogsyndelta.poc.cli train-route --device cuda --steps 20",
-      "eval": "tests/test_poc_cuda.py plus tiny gates on CUDA",
-      "status_md": "STATUS.md Device CUDA 2026-08-19 RTX 5080",
-      "why_not_green": "historical pass only; write green=true after a new receipt"
+      "hf_pattern": "tzervas/cogsyndelta-region-<name>-small then tzervas/cogsyndelta-small",
+      "train": "blocked until G-LIFE / Phase 3; then 5080 exclusive-seq longer recipe",
+      "eval": "measured STATUS.md table + labeled region batch; not a skip",
+      "why_not_green": "G-TRAIN blocked; do not autoloop this rung"
     },
     {
-      "n": 2,
+      "n": 4,
       "size": "medium",
+      "stage": "larger-params-foundation",
       "device": "cuda",
       "host": "gpu5080",
       "host_ip": "192.168.1.251",
@@ -54,7 +87,8 @@
       "green": false,
       "status": "not-yet",
       "hf_repo": "tzervas/cogsyndelta-medium",
-      "train": "blocked until G-LIFE / Phase 3; then 5080 exclusive-seq longer recipe",
+      "hf_pattern": "tzervas/cogsyndelta-region-<name>-medium then tzervas/cogsyndelta-medium",
+      "train": "blocked until R3 measured; then 5080 exclusive-seq; foundation tzervas/cogsyndelta last",
       "eval": "measured STATUS.md table + labeled region batch; not a skip",
       "why_not_green": "G-TRAIN blocked; do not autoloop this rung"
     }

@@ -10,6 +10,8 @@ the self-hosted loop, Forgejo tools, and Forgejo workflows.
 |---|---|
 | Git identity | Forgejo **`autodev`** |
 | Token | CSD vault `TOKEN=git/autodev` via `./scripts/csd-autodev-git` |
+| Harness repo | Forgejo **`tzervas/csd-autodev`** (ADR-0017). Not CogSynDelta. |
+| How-to | `tzervas/csd-autodev` `docs/HOW-TO.md` (CLI + https://code.vectorweight.com/lab) |
 | Operator admin | stays in `~/.secrets` — never copy into the CSD vault |
 
 **Never:** GitHub bot push; working branch `main` / `staging` / `develop` /
