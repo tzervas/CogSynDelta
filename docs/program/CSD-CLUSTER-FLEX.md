@@ -13,7 +13,10 @@ Autodev **may** combine cards for helpers, extra inference, RAG, and
 light GGUF — any mix that **FITs** leftover VRAM and respects arch
 tags. Latency-**tight** stays on one card. `ok-lan` may split or
 migrate. The pool is **heterogeneous** (~24 + 16 + 11 GiB when the
-1080 Ti is live), not one MIG slice.
+1080 Ti is live), not one MIG slice. **256 specialists** in
+ADR-0016 / GPU-SHARE is a **future intern-pool example**, not a
+deployed target. Autodev schedules what **FITs** now (a handful of
+helpers + one 14B on the 3090).
 
 ## Hard rules
 
@@ -41,7 +44,7 @@ helper policy (Stage A place/migrate/pack). Router ignores
 |---|---|---|---|---|---|---|
 | `akula-prime` | akula-prime `192.168.1.98` | RTX 3090 Ti | `ampere` `sm_86` `fp16` `bf16` `gguf-infer` `high-vram` `localai` `decode-tight` | 23028 MiB | 20480 MiB | yes (`hosts`) |
 | `gpu5080` | gpu5080 `192.168.1.251` | RTX 5080 | `blackwell` `sm_120` `fp8` `fp4` `fp16` `bf16` `cuda-eval` `embed` `gpu-ci` `parallel-batch` | 16303 MiB | 14336 MiB | yes (`hosts`; `needs_lock: gpu5080`) |
-| `gpu5080-1080ti` | same box `192.168.1.251` PCI `06:00.0` | GTX 1080 Ti | `pascal` `sm_61` `gguf-infer-legacy` `11gb` | 11264 MiB | 10240 MiB | **no** (`future_hosts`; VFIO; no UUID) |
+| `gpu5080-1080ti` | same box `192.168.1.251` PCI `06:00.0` guest `192.168.1.243` | GTX 1080 Ti | `pascal` `sm_61` `gguf-infer-legacy` `11gb` | 11264 MiB | 10240 MiB | **yes** (`hosts`; `live: true`; guest nvidia-smi UUID `GPU-4df3ba11…`) |
 
 Lacks (do not schedule against them):
 
@@ -73,7 +76,7 @@ Pack leftover, do not OOM:
 |---|---|---|---|
 | 3090 Ti | `local/code` (~16500 MiB) | `embed-qwen3-0.6b` (~4000) and/or `local/uncensored-fast` (~6000) | second 14B; pause for RAG |
 | 5080 | idle **or** exclusive-seq job | share-small embed (~4000) when lock idle | 14B; helpers while `gpu5080.lock` held |
-| 1080 Ti | nothing until UUID | small embed / light GGUF / retrieve (when live) | `sm_120`, FP8/FP4, 14B, exclusive-seq |
+| 1080 Ti | retrieve-index-light | small embed / light GGUF / retrieve / rag-index | `sm_120`, FP8/FP4, 14B, exclusive-seq |
 
 Combined raw: 23028 + 16303 = **39331 MiB** (3090+5080). Plus 11264
 when the 1080 Ti is promoted ≈ **50595 MiB**. Usable pooled GGUF on
@@ -140,24 +143,29 @@ and `cuda-eval` take exclusive-seq and **unload 5080 helpers**.
 Homelab (`192.168.1.170`) is CPU Actions only. No GPU alias lands
 there.
 
-## 1080 Ti guest not live
+## 1080 Ti guest live
 
-Catalog: `future_hosts.gpu5080-1080ti` (`live: false`,
-`installed: false`). Seated at PCI `06:00.0` (`vfio-pci`) on
-**192.168.1.251**. Host `nvidia-smi -L` lists only RTX 5080
-`GPU-087267a6-14fb-0af3-da30-9a1a18523106`. No qemu guest as of
-the 1080 Ti RAG catalog.
+Catalog: `hosts.gpu5080-1080ti` (`live: true`, `installed: true`).
+VFIO PCI `06:00.0` on **192.168.1.251**. Guest LAN
+`192.168.1.243`. Guest `nvidia-smi -L` lists GTX 1080 Ti
+`GPU-4df3ba11-fd12-3550-bb97-ad00b0b00569`. Host `nvidia-smi -L`
+lists only RTX 5080 `GPU-087267a6-14fb-0af3-da30-9a1a18523106`.
 
-Until a guest or host lists the Pascal UUID:
+Role: `retrieve-index-light`. Helpers / embed / light GGUF / RAG
+may land on the guest when leftover FITs. Still no FP8/FP4, no
+`sm_120`, no dual 14B, no exclusive-seq on Pascal. Do not start
+`G-1080`. Do not power off gpu5080.
 
-1. Router scheduling reads `hosts` only (`akula-prime` + `gpu5080`).
-2. **3090 + 5080 helper policy stays on** (sticky `local/code`,
-   leftover embed/8B, 5080 share-small when lock idle).
-3. Do not start `G-1080`. Do not power off gpu5080 to “fix” VFIO.
+Dry-run (no weight load):
 
-Promote only after `nvidia-smi` lists the 1080 Ti UUID. Role then:
-`retrieve-index-light`. Still no FP8/FP4, no `sm_120`, no dual 14B,
-no exclusive-seq on Pascal.
+```bash
+./scripts/csd-model-router flex --dry-run
+```
+
+`rag-index` / `embed` pick `gpu5080-1080ti` when leftover FITs.
+`local/code` stays `akula-prime`. `cuda-eval` stays `gpu5080`.
+When the guest is OOM, rag-index falls back to 5080 leftover or
+3090 leftover — never dual 14B.
 
 ## Related
 

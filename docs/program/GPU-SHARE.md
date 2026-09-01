@@ -26,11 +26,14 @@ Unblock only when **all** of:
 (A100/H100/A30/…). Do not claim MIG, do not call nvidia-smi MIG APIs.
 Get **as close as is robust** on this hardware.
 
-## 256 microscopic specialists that fit
+## Future intern pool (256 was an example)
 
-This is **not** 256 copies of a 14B, and not only 256 sessions of one
-backbone. It is up to 256 **small distinct models** (heads, LoRAs, tiny
-GGUFs, region specialists) that **collectively fit**, with the scheduler
+**Not a live target.** “256 microscopic specialists” is a **horizon
+illustration** for G-SHARE when many tiny models **fit**. Today autodev
+uses three heterogeneous GPUs and schedules what FITs (not 256
+residents). This is **not** 256 copies of a 14B. When unblocked it would
+be up to that many **small distinct models** (heads, LoRAs, tiny GGUFs,
+region specialists) that **collectively fit**, with the scheduler
 interning what is the same.
 
 Disk symlink / hardlink / same inode is the easy layer. **It does not

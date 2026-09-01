@@ -39,8 +39,20 @@ P108_PACK = ROOT / "docs/program/CONTEXT-PACK-P1-08.md"
 REGION_PACK = ROOT / "docs/program/CONTEXT-PACK-REGION-PRETRAIN.md"
 MG_DEFAULT = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-09")
 MG_WT = Path(os.environ.get("CSD_AUTODEV_WT", str(MG_DEFAULT)))
+AUTODEV_HOME = Path(
+    os.environ.get("CSD_AUTODEV_HOME", "/home/kang/code/personal/tzervas/csd-autodev")
+)
 PROTECTED = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
 ALLOW_PREFIXES = ("src/", "tests/", "docs/")
+HARNESS_ALLOW = ("scripts/", "tests/", "docs/", ".grok/")
+HARNESS_RELS = (
+    "scripts/csd-autodev-",
+    "scripts/csd-lab-console",
+    "tests/test_autodev_",
+    "tests/test_lab_console.py",
+    "tests/test_need_grok.py",
+    ".grok/skills/csd-autodev",
+)
 PROTECTED_REFS = frozenset({"main", "staging", "develop", "dev"})
 HORIZON = ("G-TRAIN", "G-SPLIT", "G-CHROMA", "G-SHARE", "G-1080", "G-LIFE")
 OPS_SKIP = ("G-POOL", "G-GPUCI", "G-WHEEL")
@@ -147,12 +159,32 @@ def is_region_pretrain(goal: str) -> bool:
     return "region" in g and "pretrain" in g
 
 
-def dest_worktree(goal: str) -> Path:
-    """CogSynDelta for region-pretrain; memory-gate otherwise.
+def is_harness_goal(goal: str) -> bool:
+    """True when the slice is the autodev/lab harness, not CSD PoC."""
+    g = (goal or "").lower()
+    keys = (
+        "autodev-harness",
+        "csd-autodev",
+        "lab-console",
+        "harness-split",
+        "autodev-repo",
+    )
+    return any(k in g for k in keys)
 
-    Why: P1-09 ticks must not land CSD docs in memory-gate, and
-    region-pretrain must not land in memory-gate-wt-p1-09.
+
+def is_harness_rel(rel: str) -> bool:
+    """Harness paths must not land in CogSynDelta (ADR-0017)."""
+    path = str(rel or "").lstrip("/")
+    return any(path == prefix.rstrip("-") or path.startswith(prefix) for prefix in HARNESS_RELS)
+
+
+def dest_worktree(goal: str) -> Path:
+    """Harness → csd-autodev; region-pretrain → CogSynDelta; else memory-gate.
+
+    Why: autodev loop/lab/forgejo CLI is out of scope for CSD PoC PRs.
     """
+    if is_harness_goal(goal):
+        return AUTODEV_HOME
     if is_region_pretrain(goal):
         return ROOT
     if MG_WT.resolve() == ROOT.resolve():
@@ -161,10 +193,12 @@ def dest_worktree(goal: str) -> Path:
 
 
 def repo_for(goal: str, dest: Path | None = None) -> str:
-    """Forgejo repo for this goal. Region-pretrain is always CogSynDelta."""
+    """Forgejo repo. Harness is csd-autodev; region-pretrain is CogSynDelta."""
+    path = (dest or dest_worktree(goal)).resolve()
+    if is_harness_goal(goal) or path == AUTODEV_HOME.resolve():
+        return "csd-autodev"
     if is_region_pretrain(goal):
         return "CogSynDelta"
-    path = (dest or dest_worktree(goal)).resolve()
     root = ROOT.resolve()
     if path == root or root in path.parents or "CogSynDelta" in path.parts:
         return "CogSynDelta"
@@ -172,6 +206,8 @@ def repo_for(goal: str, dest: Path | None = None) -> str:
 
 
 def apply_worktree_name(goal: str) -> str:
+    if is_harness_goal(goal):
+        return "csd-autodev"
     if is_region_pretrain(goal):
         return "region-pretrain"
     return os.environ.get("CSD_APPLY_WORKTREE", "p1-09")
@@ -344,7 +380,11 @@ def apply_proposal(payload: dict, dest: Path, worktree: str | None = None) -> di
         return {"ok": False, "error": "refusing kang-main-wip"}
     if not rel or payload.get("content") is None:
         return {"ok": True, "skipped": payload.get("note") or "no-file"}
-    if ".." in Path(rel).parts or not rel.startswith(ALLOW_PREFIXES):
+    if dest.resolve() == ROOT.resolve() and is_harness_rel(rel):
+        dest = AUTODEV_HOME
+        worktree = "csd-autodev"
+    allow = HARNESS_ALLOW if dest.resolve() == AUTODEV_HOME.resolve() else ALLOW_PREFIXES
+    if ".." in Path(rel).parts or not rel.startswith(allow):
         return {"ok": False, "error": f"path not allowed: {rel}"}
     deny = {
         "src/memory_policy.py",
@@ -556,15 +596,31 @@ def launch_local_workflow(goal: str, reason: str) -> dict:
     return rec
 
 
+def _ref_is_protected(arg: str) -> bool:
+    """True when an argv token names a protected trunk (main/staging/develop/dev)."""
+    for branch in PROTECTED_REFS:
+        if arg == branch or arg.endswith(f":{branch}") or arg.endswith(f"/{branch}"):
+            return True
+    return False
+
+
 def git_cmd(args: list[str], cwd: Path) -> dict:
-    """Git as identity autodev. Never GitHub. Never protected trunks."""
+    """Git as identity autodev. Never GitHub. Never author on protected trunks.
+
+    Merging ``origin/main`` *into* a feature branch is allowed (operator merge
+    or autodev catch-up). Checkout/switch/push of those trunks is not.
+    """
     if any("github.com" in a.lower() for a in args):
         return {"ok": False, "error": "never GitHub", "stdout": "never GitHub"}
-    if args and args[0] in {"push", "checkout", "switch", "merge", "rebase"}:
+    cmd = args[0] if args else ""
+    if cmd in {"push", "checkout", "switch"}:
         for a in args[1:]:
-            for branch in PROTECTED_REFS:
-                if a == branch or a.endswith(f":{branch}") or a.endswith(f"/{branch}"):
-                    return {"ok": False, "error": f"refusing {args[0]} {branch}"}
+            if _ref_is_protected(a):
+                return {"ok": False, "error": f"refusing {cmd} {a}", "stdout": ""}
+    if cmd in {"merge", "rebase"}:
+        br = current_branch(cwd)
+        if br in PROTECTED_REFS:
+            return {"ok": False, "error": f"refusing {cmd} on {br}", "stdout": ""}
     argv = [str(GIT_CLI), "-C", str(cwd), *args]
     rc, text = _run(argv, cwd=cwd, timeout=120)
     return {"ok": rc == 0, "rc": rc, "stdout": text}
@@ -608,6 +664,15 @@ def land_git(goal: str, applied: dict) -> dict:  # noqa: PLR0911
     branch = current_branch(cwd)
     if branch in PROTECTED_REFS:
         return {"ok": False, "error": f"refusing push {branch}", "repo": repo}
+    integrated = integrate_remote(cwd)
+    if not integrated.get("ok"):
+        return {
+            "ok": False,
+            "error": integrated.get("error") or "integrate remote failed",
+            "repo": repo,
+            "branch": branch,
+            "integrate": integrated,
+        }
     if rel:
         add = git_cmd(["add", "--", rel], cwd)
         if not add.get("ok"):
@@ -621,16 +686,28 @@ def land_git(goal: str, applied: dict) -> dict:  # noqa: PLR0911
     if not commit.get("ok"):
         return {"ok": False, "error": commit.get("stdout") or "commit failed", "repo": repo}
     sha = current_sha(cwd)
-    push = git_cmd(["push", "forgejo", f"HEAD:{branch}"], cwd)
+    remote = str(integrated.get("remote") or push_remote(cwd))
+    push = git_cmd(["push", remote, f"HEAD:{branch}"], cwd)
     if not push.get("ok"):
-        return {
-            "ok": False,
-            "error": push.get("error") or push.get("stdout") or "push failed",
-            "branch": branch,
-            "sha": sha,
-            "repo": repo,
-        }
-    return {"ok": True, "branch": branch, "sha": sha, "repo": repo}
+        retry = integrate_remote(cwd)
+        push = git_cmd(["push", remote, f"HEAD:{branch}"], cwd)
+        if not push.get("ok"):
+            return {
+                "ok": False,
+                "error": push.get("error") or push.get("stdout") or "push failed",
+                "branch": branch,
+                "sha": sha,
+                "repo": repo,
+                "remote": remote,
+                "integrate": retry,
+            }
+    return {
+        "ok": True,
+        "branch": branch,
+        "sha": current_sha(cwd),
+        "repo": repo,
+        "remote": remote,
+    }
 
 
 def existing_pr(repo: str, head: str) -> int | None:
@@ -660,9 +737,13 @@ def land_pr(goal: str, git_rec: dict) -> dict:
                 "pr-create",
                 repo,
                 (
-                    f"feat(agents): {goal_id(goal)}"
-                    if is_region_pretrain(goal)
-                    else f"feat(memory): {goal_id(goal)}"
+                    f"feat(harness): {goal_id(goal)}"
+                    if repo == "csd-autodev" or is_harness_goal(goal)
+                    else (
+                        f"feat(agents): {goal_id(goal)}"
+                        if is_region_pretrain(goal)
+                        else f"feat(memory): {goal_id(goal)}"
+                    )
                 ),
                 head,
                 "--base",
@@ -707,11 +788,157 @@ def land_pr(goal: str, git_rec: dict) -> dict:
     return out
 
 
+def steer_note() -> str:
+    return str(_read_json(STEER).get("note") or "").strip()
+
+
+def note_fingerprint(note: str) -> str:
+    return note.replace("\n", " ")[:240]
+
+
+def should_apply_steer_note(last: dict, note: str) -> bool:
+    """Operator steer with CI/branch hints must not be ignored while follow-stuck."""
+    if not note:
+        return False
+    fp = note_fingerprint(note)
+    if last.get("consumed_note") == fp:
+        return False
+    low = note.lower()
+    markers = (
+        "actions/runs",
+        "jobs/",
+        "import",
+        "pytest",
+        "failure",
+        "updated the branch",
+        "out of date",
+        "reran checks",
+        "merge",
+        "rebase",
+    )
+    return any(m in low for m in markers)
+
+
+def refresh_pr(last: dict) -> dict:
+    """Replace heartbeat SHA with the live Forgejo PR head (merge or rebase)."""
+    repo = str(last.get("repo") or "") or repo_for(str(last.get("goal") or ""))
+    number = last.get("number")
+    out = dict(last)
+    out["repo"] = repo
+    if number is None:
+        return out
+    pr = forgejo_cmd(["pr", repo, str(int(number))])
+    sha = str(pr.get("sha") or last.get("sha") or "")
+    if sha:
+        out["sha"] = sha
+    out["number"] = int(number)
+    out["head"] = pr.get("head") or last.get("head")
+    out["base"] = pr.get("base") or last.get("base") or "main"
+    out["base_sha"] = pr.get("base_sha") or last.get("base_sha")
+    out["mergeable"] = pr.get("mergeable")
+    out["mergeable_state"] = pr.get("mergeable_state")
+    out["merged"] = bool(pr.get("merged") or last.get("merged"))
+    out["pr_http"] = pr.get("http")
+    return out
+
+
+def divergence(repo: str, base: str, sha: str) -> dict:
+    """How far the PR head is behind the merge target (usually main)."""
+    if not repo or not base or not sha:
+        return {"behind": 0, "ahead": 0, "ok": False}
+    rec = forgejo_cmd(["compare", repo, str(base), sha])
+    try:
+        behind = int(rec.get("behind") or 0)
+    except (TypeError, ValueError):
+        behind = 0
+    try:
+        ahead = int(rec.get("ahead") or 0)
+    except (TypeError, ValueError):
+        ahead = 0
+    status = str(rec.get("status") or "")
+    if behind == 0 and status in {"behind", "diverged"}:
+        behind = 1
+    return {
+        "behind": behind,
+        "ahead": ahead,
+        "status": status,
+        "ok": bool(rec.get("ok", rec.get("http") == 200)),
+    }
+
+
+def push_remote(cwd: Path) -> str:
+    """Prefer ``forgejo`` (lab) then ``origin``. Never GitHub."""
+    rec = git_cmd(["remote"], cwd)
+    names = set(str(rec.get("stdout") or "").split())
+    for name in ("forgejo", "origin"):
+        if name in names:
+            return name
+    return "origin"
+
+
+def integrate_remote(cwd: Path, *, base: str = "main") -> dict:
+    """Merge remote feature + merge-target into HEAD (merge, not rebase).
+
+    Covers operator ``git merge main`` on the PR: local worker is behind the
+    feature ref itself, not only behind ``main``.
+    """
+    branch = current_branch(cwd)
+    if branch in PROTECTED_REFS:
+        return {"ok": False, "error": f"refusing sync on {branch}"}
+    remote = push_remote(cwd)
+    fetch = git_cmd(["fetch", remote], cwd)
+    if not fetch.get("ok"):
+        return {"ok": False, "error": fetch.get("stdout") or "fetch failed", "fetch": fetch}
+    steps: list[dict] = []
+    for ref in (f"{remote}/{branch}", f"{remote}/{base}"):
+        merged = git_cmd(["merge", "--no-edit", ref], cwd)
+        out = str(merged.get("stdout") or merged.get("error") or "")
+        steps.append({"ref": ref, "ok": bool(merged.get("ok")), "out": out[:400]})
+        if merged.get("ok"):
+            continue
+        git_cmd(["merge", "--abort"], cwd)
+        miss = (
+            "not something we can merge" in out.lower()
+            or "unknown revision" in out.lower()
+            or "couldn't find" in out.lower()
+            or "does not exist" in out.lower()
+        )
+        if miss:
+            continue
+        return {"ok": False, "error": out or "merge failed", "steps": steps, "remote": remote}
+    return {
+        "ok": True,
+        "sha": current_sha(cwd),
+        "branch": branch,
+        "remote": remote,
+        "base": base,
+        "how": "merge",
+        "steps": steps,
+    }
+
+
+def sync_feature_with_base(cwd: Path, base: str = "main") -> dict:
+    """Merge remote feature + origin/<base> into HEAD, then push the feature."""
+    sync = integrate_remote(cwd, base=base)
+    if not sync.get("ok"):
+        return sync
+    branch = str(sync.get("branch") or current_branch(cwd))
+    remote = str(sync.get("remote") or push_remote(cwd))
+    push = git_cmd(["push", remote, f"HEAD:{branch}"], cwd)
+    return {
+        **sync,
+        "ok": bool(push.get("ok")),
+        "push": push,
+        "sha": current_sha(cwd),
+    }
+
+
 def follow_pr(last: dict) -> dict:
     """Resume wait/merge-gate for an in-flight PR. Does not implement."""
-    repo = str(last.get("repo") or "") or repo_for(str(last.get("goal") or ""))
-    sha = str(last.get("sha") or "")
-    number = last.get("number")
+    live = refresh_pr(last)
+    repo = str(live.get("repo") or "") or repo_for(str(live.get("goal") or ""))
+    sha = str(live.get("sha") or "")
+    number = live.get("number")
     if not sha or number is None:
         return {"ok": False, "skipped": "no in-flight pr"}
     st = forgejo_cmd(["status", repo, sha])
@@ -725,8 +952,10 @@ def follow_pr(last: dict) -> dict:
             "repo": repo,
             "sha": sha,
             "number": number,
-            "goal": last.get("goal"),
+            "goal": live.get("goal") or last.get("goal"),
             "status": st,
+            "head": live.get("head"),
+            "base": live.get("base"),
         }
     gate = forgejo_cmd(["merge-gate", repo, sha, str(int(number))], timeout=120)
     return {
@@ -737,9 +966,11 @@ def follow_pr(last: dict) -> dict:
         "repo": repo,
         "sha": sha,
         "number": number,
-        "goal": last.get("goal"),
+        "goal": live.get("goal") or last.get("goal"),
         "gate": gate,
         "notes": str(gate.get("notes") or ""),
+        "head": live.get("head"),
+        "base": live.get("base"),
     }
 
 
@@ -767,17 +998,122 @@ def implement(goal: str) -> dict:
         + "Never dual 14B. Regions are MoE experts of one mind, not agents.\n"
         f"Worktree: {dest}. JSON only "
         '{"path": "src|tests|docs/...", "content": "..."}. '
+        "Harness (csd-autodev-loop, csd-lab-console, forgejo CLI, "
+        "test_autodev_*, test_lab_console) belongs in tzervas/csd-autodev. "
+        "Never those paths in CogSynDelta. "
         "Do not wait-ci unless the slice pack says CI is in flight.\n"
         f"Open goal:\n{goal}\n\n"
         + (f"Slice pack:\n{slice_pack}\n" if slice_pack else "")
         + "Handoff (trim):\n"
         + (HAND.read_text(encoding="utf-8")[:1800] if HAND.is_file() else "")
     )
+    note = steer_note()
+    if note:
+        brief += (
+            "\nOperator steer note (Forgejo is LAN git.vectorweight.com):\n"
+            + note[:2500]
+            + "\nUse the live PR head SHA, not a stale heartbeat SHA. "
+            "If the merge target moved, merge origin/<base> into this feature "
+            "branch (do not rebase unless steered; never checkout main).\n"
+            "CI red: patch imports and ensure packages in pyproject are used.\n"
+        )
     rc, text = _run(
         [str(QUEUE), "complete", "--kind", "autodev", "--prompt", brief, "--timeout", "240"],
         timeout=260,
     )
     return {"rc": rc, "text": text[:8000]}
+
+
+def handle_inflight(last: dict) -> dict:
+    """Follow the live PR head; merge-from-base if behind; else wait/fail.
+
+    Returns ``retry_implement=True`` when a new operator steer note should
+    drive a CI-fix slice instead of spinning on the old SHA.
+    """
+    live = refresh_pr(last)
+    goal = str(live.get("goal") or next_open_goal())
+    live["goal"] = goal
+    if live.get("merged"):
+        rec = {
+            "ok": True,
+            "merged": True,
+            "goal": goal,
+            "number": live.get("number"),
+            "sha": live.get("sha"),
+            "repo": live.get("repo"),
+            "ti": ti_ok(),
+        }
+        if live.get("required_ran"):
+            rec["next_goal"] = advance_next_goal(goal)
+        return rec
+    base = str(live.get("base") or "main")
+    sha = str(live.get("sha") or "")
+    dest = dest_worktree(goal)
+    local = current_sha(dest)
+    div = divergence(str(live.get("repo") or ""), base, sha)
+    behind = int(div.get("behind") or 0)
+    if behind == 0 and str(live.get("mergeable_state") or "") == "behind":
+        behind = 1
+    stale_local = bool(local and sha and local != sha)
+    if behind > 0 or stale_local:
+        sync = sync_feature_with_base(dest, base)
+        if sync.get("ok") and sync.get("sha"):
+            return {
+                "ok": False,
+                "waiting": True,
+                "failed": False,
+                "state": "pending",
+                "goal": goal,
+                "number": live.get("number"),
+                "sha": sync["sha"],
+                "repo": live.get("repo"),
+                "head": live.get("head"),
+                "base": base,
+                "behind": behind,
+                "synced": True,
+                "sync": {"how": "merge", "sha": sync.get("sha"), "base": base},
+                "ti": ti_ok(),
+            }
+        return {
+            "ok": False,
+            "failed": True,
+            "behind": behind,
+            "synced": False,
+            "sync": sync,
+            "goal": goal,
+            "number": live.get("number"),
+            "sha": sha,
+            "repo": live.get("repo"),
+            "ti": ti_ok(),
+            "ping": maybe_ping_stall(
+                goal,
+                "behind merge target",
+                "PR head is behind the merge-target; merge origin/<base> into the feature?",
+                f"blocker: behind={behind} base={base}; tried: fetch+merge origin/{base}",
+                paths=["scripts/csd-autodev-loop"],
+                tried=["pr", "compare", f"merge origin/{base}"],
+            ),
+        }
+    rec = follow_pr(live)
+    rec["goal"] = goal
+    rec["ti"] = ti_ok()
+    if rec.get("merged") and rec.get("required_ran"):
+        rec["next_goal"] = advance_next_goal(goal)
+        return rec
+    if rec.get("failed") and should_apply_steer_note(live, steer_note()):
+        rec["retry_implement"] = True
+        rec["consumed_note"] = note_fingerprint(steer_note())
+        return rec
+    if rec.get("failed"):
+        rec["ping"] = maybe_ping_stall(
+            goal,
+            "required pytest red",
+            "Forgejo required checks failed twice; contract or runner?",
+            f"blocker: CI {rec.get('state')}; sha={rec.get('sha')}; tried: wait, merge-gate, pr",
+            paths=["scripts/csd-autodev-loop"],
+            tried=["forgejo/pr", "forgejo/status", "forgejo/wait", "merge-gate"],
+        )
+    return rec
 
 
 def tick() -> dict:
@@ -791,24 +1127,16 @@ def tick() -> dict:
     if steered_pause():
         return {"ok": True, "skipped": "steer.pause"}
     last = _read_json(HEART).get("last") if isinstance(_read_json(HEART).get("last"), dict) else {}
-    if last.get("number") and last.get("sha") and not last.get("merged"):
-        rec = follow_pr(last)
-        rec["goal"] = str(last.get("goal") or next_open_goal())
-        rec["ti"] = ti_ok()
-        if rec.get("merged") and rec.get("required_ran"):
-            rec["next_goal"] = advance_next_goal(str(rec.get("goal") or ""))
-        elif rec.get("failed"):
-            rec["ping"] = maybe_ping_stall(
-                str(rec.get("goal") or ""),
-                "required pytest red",
-                "Forgejo required checks failed twice; contract or runner?",
-                f"blocker: CI {rec.get('state')}; paths: scripts/csd-autodev-loop; tried: wait, merge-gate",
-                paths=["scripts/csd-autodev-loop"],
-                tried=["forgejo/status", "forgejo/wait", "merge-gate"],
-            )
-        beat({"last": rec})
-        return rec
-    goal = next_open_goal()
+    inflight_extra: dict = {}
+    if last.get("number") and not last.get("merged"):
+        rec = handle_inflight(last)
+        if last.get("consumed_note") and not rec.get("consumed_note"):
+            rec["consumed_note"] = last["consumed_note"]
+        if not rec.get("retry_implement"):
+            beat({"last": rec})
+            return rec
+        inflight_extra = rec
+    goal = str(inflight_extra.get("goal") or next_open_goal())
     if not goal:
         return {"ok": True, "skipped": "no open goal"}
     impl = implement(goal)
@@ -845,7 +1173,8 @@ def tick() -> dict:
         "t": time.time(),
         "repo": pr_rec.get("repo") or git_rec.get("repo"),
         "sha": pr_rec.get("sha") or git_rec.get("sha"),
-        "number": pr_rec.get("number"),
+        "number": pr_rec.get("number") or inflight_extra.get("number"),
+        "consumed_note": inflight_extra.get("consumed_note"),
         "merged": bool(pr_rec.get("merged")),
         "required_ran": bool(pr_rec.get("required_ran")),
         "required_succeeded": bool(pr_rec.get("required_succeeded")),

@@ -69,7 +69,6 @@ def test_no_grok_scheduler_unit() -> None:
     assert "CSD_ESCALATE" in escalate
 
 
-
 def test_local_python_first_drive_workflow_exists() -> None:
     """Fallback job is a Forgejo workflow, not hosted /csd-python-first-drive."""
     wf = ROOT / ".github" / "workflows" / "csd-python-first-drive.yml"

@@ -29,7 +29,7 @@ console passwords, GPG, Cloudflare, GitHub rescue, WebUI secret key,
 | Service | Account | Scope |
 |---|---|---|
 | LocalAI | existing API key | completions on `:8080` |
-| Forgejo | **`autodev`** (restricted, not admin) | write collaborator on `tzervas/CogSynDelta` and `tzervas/memory-gate` only; token also repo-limited (`write:repository`, `write:issue`). Not `memory-gate-rs`. Password discarded; `prohibit_login` is off because Forgejo 16 also blocks API tokens when it is on. |
+| Forgejo | **`autodev`** (restricted, not admin) | write collaborator on `tzervas/CogSynDelta`, `tzervas/memory-gate`, and `tzervas/csd-autodev` (ADR-0017); token also repo-limited (`write:repository`, `write:issue`). Not `memory-gate-rs`. Password discarded; `prohibit_login` is off because Forgejo 16 also blocks API tokens when it is on. |
 | Open WebUI | human operator | `ai.vectorweight.com` |
 | HF | `hf/autodev` | **not minted.** Hugging Face has no API to create a fine-grained write token. Operator: huggingface.co/settings/tokens → fine-grained write on `tzervas/cogsyndelta*` only → `printf '%s' 'hf_…' \| SECRET_VAULT=/akula-data/cabal/csd-vault SOPS_AGE_KEY_FILE=$SECRET_VAULT/age.txt secret set hf/autodev`. Never copy `gpu/huggingface-token`. |
 

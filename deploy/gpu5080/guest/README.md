@@ -22,8 +22,8 @@ NAT `ennat0` (`52:54:00:10:80:72`, libvirt `default` / `virbr0`) is a host-only 
 
 ## Guest NVIDIA
 
-Tesla **535.274.02** proprietary (`nvidia-tesla-535-kernel-dkms` + `nvidia-tesla-535-driver`).
-Not host 610, not `nvidia-open`. Secure Boot off so DKMS can load.
+Tesla **535.274.02** proprietary (`nvidia-tesla-535-kernel-dkms` + `nvidia-tesla-535-driver`
++ `libnvidia-tesla-535-cfg1`). Not host 610, not `nvidia-open`. Secure Boot off so DKMS can load.
 
 ```
 nvidia-smi -L
@@ -35,7 +35,9 @@ Factory eco PL 250 W (`power.default_limit`). Role: retrieve-index-light / RAG o
 ## Stealth (boot oneshot)
 
 `cabal-stealth-leds.service` is enabled. OpenRGB CLI Off/Direct `000000`, **never** `--server`.
-`GPULogoBrightness=0` is attempted after bind. Copy of `akula-ai-platform/scripts/stealth-leds`.
+`GPULogoBrightness=0` needs headless X on **BusID `PCI:6:0:0`** (QEMU VGA is `00:01.0`).
+Drop-in `cabal-stealth-leds.service.d/logobrightness.conf` starts Xorg `-nolisten tcp` then
+`nvidia-settings -a GPULogoBrightness=0`. Copy of `akula-ai-platform/scripts/stealth-leds`.
 
 ## Autostart
 

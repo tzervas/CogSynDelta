@@ -209,7 +209,6 @@ def test_merge_gate_refuses_develop_head(
     assert rec["state"] == "blocked"
 
 
-
 def test_workflow_dispatch_refuses_rhai(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -270,3 +269,51 @@ def test_workflow_dispatch_posts_local_yml(
         "goal": "region-pretrain",
         "reason": "queue-failed",
     }
+
+
+def test_cmd_pr_returns_live_head_sha(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pr <repo> <n> is the live head, not a cached heartbeat SHA."""
+    mod = load_fj()
+    monkeypatch.setattr(mod, "token", lambda: "x")
+
+    def api(method: str, path: str, body: dict | None = None) -> tuple[int, object]:
+        assert method == "GET"
+        assert path.endswith("/pulls/3")
+        return 200, {
+            "number": 3,
+            "merged": False,
+            "mergeable": True,
+            "mergeable_state": "clean",
+            "state": "open",
+            "head": {"ref": "feat/agent-harness", "sha": "c31186ccnew"},
+            "base": {"ref": "main", "sha": "e2b04a48base"},
+        }
+
+    monkeypatch.setattr(mod, "api", api)
+    buf = StringIO()
+    with patch("sys.stdout", buf):
+        rc = mod.cmd_pr(_ns(repo="CogSynDelta", number=3))
+    rec = json.loads(buf.getvalue())
+    assert rc == 0
+    assert rec["sha"] == "c31186ccnew"
+    assert rec["base"] == "main"
+    assert rec["head"] == "feat/agent-harness"
+
+
+def test_cmd_compare_reports_behind(monkeypatch: pytest.MonkeyPatch) -> None:
+    """compare base...head exposes behind_by so autodev can merge-up."""
+    mod = load_fj()
+    monkeypatch.setattr(mod, "token", lambda: "x")
+
+    def api(method: str, path: str, body: dict | None = None) -> tuple[int, object]:
+        assert "compare/" in path
+        return 200, {"ahead_by": 2, "behind_by": 5, "status": "diverged"}
+
+    monkeypatch.setattr(mod, "api", api)
+    buf = StringIO()
+    with patch("sys.stdout", buf):
+        rc = mod.cmd_compare(_ns(repo="CogSynDelta", base="main", head="c31186cc"))
+    rec = json.loads(buf.getvalue())
+    assert rc == 0
+    assert rec["behind"] == 5
+    assert rec["ahead"] == 2

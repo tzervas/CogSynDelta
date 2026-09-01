@@ -611,7 +611,8 @@ def cluster_snapshot() -> dict:
             "host_ip": PRIME_IP,
             "live": True,
             "group": "csd-autodev",
-            "role": prime_spec.get("role") or (cat.get("roles") or {}).get("akula-prime")
+            "role": prime_spec.get("role")
+            or (cat.get("roles") or {}).get("akula-prime")
             or "autodev-local-code",
         },
         {
@@ -623,8 +624,7 @@ def cluster_snapshot() -> dict:
             "host_ip": GPU5080_IP,
             "live": True,
             "group": "csd-autodev",
-            "role": gpu_spec.get("role") or (cat.get("roles") or {}).get("gpu5080")
-            or "chat-comfy",
+            "role": gpu_spec.get("role") or (cat.get("roles") or {}).get("gpu5080") or "chat-comfy",
         },
         {
             "id": "gpu5080-1080ti",
@@ -647,7 +647,8 @@ def cluster_snapshot() -> dict:
         "groups": ["csd-autodev", "akula-rag"],
         "heterogeneous": True,
         "not_mig": True,
-        "roles": cat.get("roles") or {
+        "roles": cat.get("roles")
+        or {
             "akula-prime": "autodev local/code 14B Q4 32k",
             "gpu5080": "chat+Comfy (CUDA exclusive-seq via lock)",
             "gpu5080-1080ti": "retrieve-index-light",
@@ -1795,27 +1796,54 @@ def proxy_upstream(
         return 502, json.dumps({"error": "prime agent down", "detail": str(exc)[:200]}).encode()
 
 
+def lab_root_redirect(path: str) -> str | None:
+    """Send ``/`` to ``/lab`` so JS BASE is ``/lab`` (avoids 500 on bare host)."""
+    if path in ("/", "/goals", "/todos"):
+        return "/lab"
+    return None
+
+
 def serve(port: int) -> None:
     class H(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: object) -> None:
             return
+
+        def _write_body(self, raw: bytes) -> None:
+            if getattr(self, "_omit_body", False):
+                return
+            self.wfile.write(raw)
 
         def _send(self, code: int, raw: bytes, ctype: str = "application/json") -> None:
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
-            self.wfile.write(raw)
+            self._write_body(raw)
+
+        def do_HEAD(self) -> None:
+            """Probes (curl -I, CDNs) 501 without this; public `/` looked dead."""
+            self._omit_body = True
+            try:
+                self.do_GET()
+            finally:
+                self._omit_body = False
 
         def do_GET(self) -> None:  # noqa: PLR0911
             path = urlparse(self.path).path
-            if path in ("/", "/lab", "/lab/", "/goals", "/lab/goals", "/todos", "/lab/todos"):
+            loc = lab_root_redirect(path)
+            if loc is not None:
+                self.send_response(302)
+                self.send_header("Location", loc)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if path in ("/lab", "/lab/", "/lab/goals", "/lab/todos"):
                 body = PAGE.encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                self.wfile.write(body)
+                self._write_body(body)
                 return
             parsed = urlparse(self.path)
             apipath = parsed.path[4:] if parsed.path.startswith("/lab/") else parsed.path
@@ -1835,12 +1863,17 @@ def serve(port: int) -> None:
                 self._send(code, raw)
                 return
             if apipath.startswith("/api/status"):
-                raw = json.dumps(snapshot()).encode()
-                self.send_response(200)
+                try:
+                    raw = json.dumps(snapshot()).encode()
+                    code = 200
+                except Exception as exc:
+                    raw = json.dumps({"ok": False, "error": str(exc)[:300]}).encode()
+                    code = 200
+                self.send_response(code)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
-                self.wfile.write(raw)
+                self._write_body(raw)
                 return
             if apipath.startswith("/api/sessions"):
                 q = parse_qs(parsed.query)
@@ -1851,7 +1884,7 @@ def serve(port: int) -> None:
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
-                self.wfile.write(raw)
+                self._write_body(raw)
                 return
             if apipath.startswith("/api/comfy/list-workflows"):
                 q = parse_qs(parsed.query)
@@ -1931,7 +1964,7 @@ def serve(port: int) -> None:
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
-            self.wfile.write(raw)
+            self._write_body(raw)
 
     bind = lab_bind()
     httpd = ThreadingHTTPServer((bind, port), H)
@@ -2050,7 +2083,7 @@ button,textarea{font:inherit}textarea{width:100%;background:#000;color:#ddd;bord
 </section>
 </main>
 <script>
-const BASE=location.pathname.indexOf('/lab')===0?'/lab':'';
+const BASE='/lab';
 function tab(id){
   document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on', p.id===id));
   document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===id));
@@ -2179,7 +2212,7 @@ async function openSess(id){
 }
 async function go(){
   const prompt=document.getElementById('p').value;
-  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
+  const r=await fetch(BASE+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
   const d=await r.json();
   document.getElementById('c').textContent=d.content||JSON.stringify(d);
 }

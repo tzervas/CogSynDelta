@@ -40,6 +40,8 @@ packages:
   - python3
   - libfuse2t64
   - fuse3
+  - libusb-1.0-0
+  - libgpg-error0
   - i2c-tools
   - linux-headers-amd64
   - dkms
@@ -97,6 +99,11 @@ write_files:
 
       [Install]
       WantedBy=multi-user.target
+  - path: /etc/systemd/system/cabal-stealth-leds.service.d/logobrightness.conf
+    permissions: "0644"
+    content: |
+      [Service]
+      ExecStartPost=/bin/bash -c "if ! pgrep -x Xorg >/dev/null; then Xorg :0 -config /etc/X11/xorg-nvidia-headless.conf -nolisten tcp >/var/log/xorg-logo.log 2>&1 & sleep 3; fi; DISPLAY=:0 nvidia-settings -c :0 -a GPULogoBrightness=0 || true; DISPLAY=:0 nvidia-settings -c :0 -a [gpu:0]/GPULogoBrightness=0 || true"
   - path: /etc/systemd/system/nvidia-factory-limits.service
     permissions: "0644"
     content: |
@@ -138,15 +145,27 @@ write_files:
   - path: /etc/X11/xorg-nvidia-headless.conf
     permissions: "0644"
     content: |
+      Section "ServerLayout"
+          Identifier "Layout0"
+          Screen 0 "Screen0"
+      EndSection
       Section "Device"
           Identifier "NVIDIA0"
           Driver "nvidia"
+          BusID "PCI:6:0:0"
           Option "AllowEmptyInitialConfiguration" "true"
           Option "UseDisplayDevice" "none"
+          Option "ConnectedMonitor" "DFP-0"
+          Option "ProbeAllGpus" "false"
       EndSection
       Section "Screen"
           Identifier "Screen0"
           Device "NVIDIA0"
+          DefaultDepth 24
+          SubSection "Display"
+              Depth 24
+              Virtual 640 480
+          EndSubSection
       EndSection
 runcmd:
   - [systemctl, enable, --now, qemu-guest-agent]
@@ -187,6 +206,7 @@ runcmd:
       nvidia-tesla-535-kernel-dkms \
       nvidia-tesla-535-driver \
       nvidia-settings-tesla-535 \
+      libnvidia-tesla-535-cfg1 \
       nvidia-persistenced
     dpkg -l | grep -E 'nvidia-open-kernel|nvidia-driver ' || true
     if dpkg -l | grep -E '^ii\s+nvidia-open-kernel'; then

@@ -21,7 +21,9 @@ import urllib.parse
 import urllib.request
 
 FJ = "https://git.vectorweight.com/api/v1"
-ALLOW = frozenset({"tzervas/CogSynDelta", "tzervas/memory-gate"})
+ALLOW = frozenset(
+    {"tzervas/CogSynDelta", "tzervas/memory-gate", "tzervas/csd-autodev"}
+)
 USER = "autodev"
 SKIP_MARKERS = (
     "skip",
@@ -78,6 +80,64 @@ def cmd_whoami(_: argparse.Namespace) -> int:
     code2, _ = api("GET", "/repos/tzervas/memory-gate")
     print(json.dumps({"http": code, "login": login, "memory_gate": code2}))
     return 0 if code2 == 200 else 1
+
+
+def cmd_pr(ns: argparse.Namespace) -> int:
+    """Live PR head/base SHAs. Autodev must not glue to a heartbeat SHA."""
+    repo = repo_id(ns.repo)
+    code, body = api("GET", f"/repos/{repo}/pulls/{int(ns.number)}")
+    if not isinstance(body, dict) or code != 200:
+        print(json.dumps({"http": code, "error": body}))
+        return 1
+    head = body.get("head") if isinstance(body.get("head"), dict) else {}
+    base = body.get("base") if isinstance(body.get("base"), dict) else {}
+    print(
+        json.dumps(
+            {
+                "http": code,
+                "number": body.get("number"),
+                "head": head.get("ref"),
+                "sha": head.get("sha"),
+                "base": base.get("ref"),
+                "base_sha": base.get("sha"),
+                "mergeable": body.get("mergeable"),
+                "mergeable_state": body.get("mergeable_state"),
+                "merged": bool(body.get("merged")),
+                "state": body.get("state"),
+            }
+        )
+    )
+    return 0
+
+
+def cmd_compare(ns: argparse.Namespace) -> int:
+    """Ahead/behind vs merge target. Feature may be behind after main moved."""
+    repo = repo_id(ns.repo)
+    spec = f"{ns.base}...{ns.head}"
+    quoted = urllib.parse.quote(spec, safe=".")
+    code, body = api("GET", f"/repos/{repo}/compare/{quoted}")
+    if not isinstance(body, dict) or code != 200:
+        print(json.dumps({"http": code, "error": body, "base": ns.base, "head": ns.head}))
+        return 1
+    behind = body.get("behind_by")
+    if behind is None:
+        behind = body.get("behind")
+    ahead = body.get("ahead_by")
+    if ahead is None:
+        ahead = body.get("ahead")
+    print(
+        json.dumps(
+            {
+                "http": code,
+                "base": ns.base,
+                "head": ns.head,
+                "ahead": int(ahead or 0),
+                "behind": int(behind or 0),
+                "status": body.get("status"),
+            }
+        )
+    )
+    return 0
 
 
 def cmd_prs(ns: argparse.Namespace) -> int:
@@ -466,6 +526,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("whoami")
+    p_one = sub.add_parser("pr")
+    p_one.add_argument("repo")
+    p_one.add_argument("number", type=int)
+    p_cmp = sub.add_parser("compare")
+    p_cmp.add_argument("repo")
+    p_cmp.add_argument("base")
+    p_cmp.add_argument("head")
     p_list = sub.add_parser("prs")
     p_list.add_argument("repo")
     p_list.add_argument("--state", default="open")
@@ -500,6 +567,8 @@ def main() -> int:
     ns = ap.parse_args()
     dispatch = {
         "whoami": cmd_whoami,
+        "pr": cmd_pr,
+        "compare": cmd_compare,
         "prs": cmd_prs,
         "pr-create": cmd_pr_create,
         "status": cmd_status,

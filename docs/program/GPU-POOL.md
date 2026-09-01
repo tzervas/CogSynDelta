@@ -42,6 +42,10 @@ W1.58). `pool.enabled=false` until 5080 GGUFs + images exist.
 other card). Alias `pool/large` / `pool/moe` (~36 GiB). Tight decode
 never splits a dense 14B. Never preempt autodev unless steer says so.
 
+Do **not** implement llama.cpp RPC, Arrow, QUIC, UDP, RDMA, or a
+CSD-native tensor wire. Research pack (blocked until `G-LIFE` **and**
+the pack says unblocked): [CSD-TENSOR-WIRE.md](CSD-TENSOR-WIRE.md).
+
 ## Stage C (horizon, do not start)
 
 Intern + parallel share: up to 256 microscopic specialists **and**,
@@ -52,7 +56,8 @@ Pack: [GPU-SHARE.md](GPU-SHARE.md) (`G-SHARE`, `G-1080`).
 ## Product next
 
 **G-QD met** (PR #9 `a823268`). Next board **P1-08** tiered store.
-Do not start G-TRAIN, G-SPLIT, G-SHARE, G-1080, or physical RPC.
+Do not start G-TRAIN, G-SPLIT, G-SHARE, G-1080, physical RPC, or
+the tensor wire.
 
 ## Commands
 

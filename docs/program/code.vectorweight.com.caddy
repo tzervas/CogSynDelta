@@ -8,6 +8,9 @@ https://code.vectorweight.com {
   handle /chat* {
     redir https://ai.vectorweight.com{uri} 302
   }
+  # path `/` is a prefix matcher (everything). Exact bare host only:
+  @csd_bare path_regexp ^/(goals|todos)?$
+  redir @csd_bare /lab 302
   reverse_proxy 192.168.1.98:9118 {
     header_up Host {host}
     header_up X-Forwarded-Proto {scheme}

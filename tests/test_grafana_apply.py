@@ -31,10 +31,7 @@ def test_taxonomy_vars_include_akula_rag_gpu5080_path() -> None:
     path = by_name["path"]
     assert any(opt.get("value") == "akula-rag" for opt in group.get("options") or [])
     assert any(opt.get("value") == "gpu5080" for opt in host.get("options") or [])
-    assert any(
-        opt.get("value") == "lab.gpu5080.index.1080ti"
-        for opt in path.get("options") or []
-    )
+    assert any(opt.get("value") == "lab.gpu5080.index.1080ti" for opt in path.get("options") or [])
     assert by_name["catalog_group_akula_rag"]["query"] == "akula-rag"
     assert by_name["catalog_host_gpu5080"]["query"] == "gpu5080"
     assert by_name["catalog_path_1080ti"]["query"] == "lab.gpu5080.index.1080ti"
@@ -46,14 +43,8 @@ def test_taxonomy_vars_include_akula_rag_gpu5080_path() -> None:
     assert "group=akula-rag" in note
     assert "path=lab.gpu5080.index.1080ti" in note
     assert "Do not invent" in note
-    exprs = [
-        t.get("expr", "")
-        for panel in gpus["panels"]
-        for t in panel.get("targets") or []
-    ]
+    exprs = [t.get("expr", "") for panel in gpus["panels"] for t in panel.get("targets") or []]
     joined = "\n".join(exprs)
     assert "1080" not in joined
     assert "gtx1080ti" not in joined.lower()
-    assert any(
-        link.get("url") == mod.AKULA_RAG_DASH_URL for link in gpus.get("links") or []
-    )
+    assert any(link.get("url") == mod.AKULA_RAG_DASH_URL for link in gpus.get("links") or [])

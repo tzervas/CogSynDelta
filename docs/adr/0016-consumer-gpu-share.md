@@ -8,8 +8,11 @@ goals are open.
 
 ## Context
 
-The lab wants up to **256 microscopic specialized models** resident at
-once **when they fit**, with hybrid split/share: intern identical
+The lab may someday intern many tiny specialists (an **example** figure
+was 256) **when they fit**. That is a **future G-SHARE illustration**,
+not a live count or a Phase 1 requirement. Today: three heterogeneous
+GPUs, fit-based helpers, never dual 14B. When unblocked, hybrid
+split/share: intern identical
 read-only weights (disk symlink / same inode; GPU content-hash tensor
 pool), isolate only mutables (KV, unique overlays, scratch contents).
 Compose with LAN pooling (`G-POOL`, ADR-0015). Cards are GeForce

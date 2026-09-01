@@ -42,7 +42,8 @@ def test_dropin_execstart_is_lock_wrapper() -> None:
     assert "COMFY_GPU_BIND=127.0.0.1" in text
     assert "Do not mask to schedule" in text
     binds = [
-        ln for ln in text.splitlines()
+        ln
+        for ln in text.splitlines()
         if ln.startswith("Environment=COMFY_") or ln.startswith("ExecStart=")
     ]
     assert binds, "drop-in missing ExecStart/Environment"
@@ -158,15 +159,11 @@ def test_comfy_lab_field_wrap_ready_is_not_masked() -> None:
     assert lab.parse_comfy_ssh("generated\nwrap-ready") == "wrapped"
     assert lab.parse_comfy_ssh("masked\nwrap-ready") == "masked"
     assert lab.parse_comfy_ssh("generated\nwrap-missing") == "generated"
-    comfy, lock, gguf = plan.parse_5080_aux(
-        ["generated", "wrap-ready", "lock=idle", "2"]
-    )
+    comfy, lock, gguf = plan.parse_5080_aux(["generated", "wrap-ready", "lock=idle", "2"])
     assert comfy == "wrapped"
     assert "idle" in lock
     assert gguf == 2
-    old_comfy, old_lock, old_gguf = plan.parse_5080_aux(
-        ["masked", "lock=idle", "0"]
-    )
+    old_comfy, old_lock, old_gguf = plan.parse_5080_aux(["masked", "lock=idle", "0"])
     assert old_comfy == "masked"
     assert old_lock == "lock=idle"
     assert old_gguf == 0
@@ -194,9 +191,7 @@ def test_acquire_lock_waits_for_acquired_line(tmp_path: Path) -> None:
     """ComfyLockProxy holds the helper until stderr prints acquired."""
     helper = tmp_path / "gpu5080-lock"
     helper.write_text(
-        "#!/usr/bin/env bash\n"
-        "echo 'gpu5080-lock: acquired pid=$$' >&2\n"
-        "exec sleep 30\n",
+        "#!/usr/bin/env bash\necho 'gpu5080-lock: acquired pid=$$' >&2\nexec sleep 30\n",
         encoding="utf-8",
     )
     helper.chmod(helper.stat().st_mode | stat.S_IXUSR)

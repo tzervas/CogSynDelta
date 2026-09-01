@@ -12,10 +12,25 @@ let meta = #{
 let ok_schema = #{
     "type": "object",
     "required": ["ok", "notes", "evidence"],
+    "additionalProperties": false,
     "properties": #{
         "ok": #{ "type": "boolean" },
         "notes": #{ "type": "string" },
         "evidence": #{ "type": "string" },
+    },
+};
+
+let loop_schema = #{
+    "type": "object",
+    "required": ["ok", "notes", "evidence", "loop_active", "ping_api", "uses_git"],
+    "additionalProperties": false,
+    "properties": #{
+        "ok": #{ "type": "boolean" },
+        "notes": #{ "type": "string" },
+        "evidence": #{ "type": "string" },
+        "loop_active": #{ "type": "boolean" },
+        "ping_api": #{ "type": "boolean" },
+        "uses_git": #{ "type": "boolean" },
     },
 };
 
@@ -52,11 +67,14 @@ if do_apply {
     lp += "csd-autodev-forgejo pr-create/status/wait, merge-gate only when checks ran, then next_goal. ";
     lp += "If it cannot run a job, launch a *local* workflow name (csd-python-first-drive) — not hosted Grok. ";
     lp += "On real blocker write csd-need-grok.json. Wire /api/grok-need on csd-lab-console. Goals tab shows the ping.\n";
-    lp += "ok=true if loop is active and ping file/API exist.\n";
+    lp += "FINAL MESSAGE MUST be one json fence and nothing after it. Schema keys only: ";
+    lp += "ok (bool), notes (string <=500 chars), evidence (string <=800 chars), ";
+    lp += "loop_active (bool), ping_api (bool), uses_git (bool). additionalProperties false. ";
+    lp += "ok=true only if loop_active and ping_api and uses_git are all true.\n";
     let autoloop = agent(lp, #{
         label: "wire-loop-ping",
         capability_mode: "execute",
-        output_schema: ok_schema,
+        output_schema: loop_schema,
     });
 
     phase("Alert");

@@ -94,6 +94,7 @@ def test_comfy_lab_field_wrap_ready_not_masked(
         ),
         encoding="utf-8",
     )
+
     def boom(*_a: object, **_k: object) -> tuple[int, str]:
         raise AssertionError("must not spawn CLI when plan file exists")
 
@@ -762,6 +763,17 @@ def test_gpu_tab_5080_receipt_and_1080ti_thinking(
     assert tth.get("goal") == "retrieve-index-light"
     assert ti["live"] is True
     assert ti["guest_ip"] == "192.168.1.243"
+
+
+def test_root_redirects_to_lab(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bare host / must 302 to /lab (code.vectorweight.com without suffix)."""
+    mod = load_lab(tmp_path, monkeypatch)
+    assert mod.lab_root_redirect("/") == "/lab"
+    assert mod.lab_root_redirect("/goals") == "/lab"
+    assert mod.lab_root_redirect("/lab") is None
+    assert mod.lab_root_redirect("/api/status") is None
+    assert "const BASE='/lab'" in mod.PAGE
+    assert "fetch(BASE+'/api/chat'" in mod.PAGE
 
 
 def test_gpu_tab_shows_roles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

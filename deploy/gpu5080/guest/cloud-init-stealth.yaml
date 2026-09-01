@@ -2,10 +2,13 @@
 # 1080 Ti RAG guest on gpu5080. Same stealth-leds oneshot as the host.
 # Never OpenRGB --server (CVE-2026-59682 / 59683). Never unbind the host 5080.
 # Host-only Off is not enough: guest Pascal nvidia.ko re-lights the GeForce logo.
+# GPULogoBrightness=0 needs headless X on BusID PCI:6:0:0 (QEMU VGA is 00:01.0).
 package_update: false
 packages:
   - libfuse2t64
   - fuse3
+  - libusb-1.0-0
+  - libgpg-error0
 write_files:
   - path: /etc/modules-load.d/cabal-i2c.conf
     permissions: "0644"
@@ -30,6 +33,11 @@ write_files:
 
       [Install]
       WantedBy=multi-user.target
+  - path: /etc/systemd/system/cabal-stealth-leds.service.d/logobrightness.conf
+    permissions: "0644"
+    content: |
+      [Service]
+      ExecStartPost=/bin/bash -c "if ! pgrep -x Xorg >/dev/null; then Xorg :0 -config /etc/X11/xorg-nvidia-headless.conf -nolisten tcp >/var/log/xorg-logo.log 2>&1 & sleep 3; fi; DISPLAY=:0 nvidia-settings -c :0 -a GPULogoBrightness=0 || true; DISPLAY=:0 nvidia-settings -c :0 -a [gpu:0]/GPULogoBrightness=0 || true"
   - path: /etc/containers/systemd/gpu5080-1080ti-rag.container.d/stealth.conf
     permissions: "0644"
     content: |
@@ -53,5 +61,5 @@ runcmd:
     systemctl enable cabal-stealth-leds.service
     systemctl start cabal-stealth-leds.service || true
     if command -v nvidia-settings >/dev/null; then
-      DISPLAY=:0 nvidia-settings -a GPULogoBrightness=0 || true
+      DISPLAY=:0 nvidia-settings -c :0 -a GPULogoBrightness=0 || true
     fi

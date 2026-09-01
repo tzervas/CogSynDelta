@@ -29,6 +29,7 @@ EMAIL = "autodev@vectorweight.com"
 REPOS = (
     {"owner": "tzervas", "name": "CogSynDelta"},
     {"owner": "tzervas", "name": "memory-gate"},
+    {"owner": "tzervas", "name": "csd-autodev"},
 )
 # Repo-limited tokens may only use issue + repository scopes (Forgejo 16).
 SCOPES = ["write:issue", "write:repository"]
@@ -157,6 +158,35 @@ def ensure_user() -> None:
     print("user locked: restricted, no admin, no org, no extra repos", file=sys.stderr)
 
 
+def ensure_harness_repo() -> None:
+    """Create private tzervas/csd-autodev. Push-to-create is off on this Forgejo."""
+    code, body = api("GET", "/repos/tzervas/csd-autodev")
+    if code == 200:
+        print("repo tzervas/csd-autodev exists", file=sys.stderr)
+        return
+    if code not in {404, 403}:
+        print(f"get csd-autodev failed {code} {body}", file=sys.stderr)
+        sys.exit(1)
+    code, body = api(
+        "POST",
+        "/user/repos",
+        {
+            "name": "csd-autodev",
+            "private": True,
+            "description": (
+                "Self-hosted autodev harness (loop, lab, Forgejo tools). "
+                "Not CogSynDelta PoC. ADR-0017."
+            ),
+            "auto_init": False,
+            "default_branch": "feat/bootstrap",
+        },
+    )
+    if code not in {201, 200}:
+        print(f"create csd-autodev failed {code} {body}", file=sys.stderr)
+        sys.exit(1)
+    print("created private tzervas/csd-autodev", file=sys.stderr)
+
+
 def ensure_collab() -> None:
     for rec in REPOS:
         path = f"/repos/{rec['owner']}/{rec['name']}/collaborators/{USER}"
@@ -167,9 +197,28 @@ def ensure_collab() -> None:
         print(f"collaborator write on {rec['owner']}/{rec['name']}", file=sys.stderr)
 
 
+def _token_covers_harness(bot_token: str) -> bool:
+    code, _ = api("GET", "/repos/tzervas/csd-autodev", token=bot_token)
+    return code == 200
+
+
+def _delete_program_tokens() -> None:
+    code, body = api("GET", f"/admin/users/{USER}/tokens")
+    if code != 200 or not isinstance(body, list):
+        print(f"list tokens failed {code}", file=sys.stderr)
+        return
+    for row in body:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "")
+        tid = row.get("id")
+        if name.startswith("program") and tid is not None:
+            dcode, _ = api("DELETE", f"/admin/users/{USER}/tokens/{tid}")
+            print(f"deleted token {name} http={dcode}", file=sys.stderr)
+
+
 def ensure_token() -> str:
     if vault_has("git/autodev"):
-        print("CSD vault already has git/autodev; not minting a second token", file=sys.stderr)
         proc = subprocess.run(
             [str(SECRET_BIN), "get", "git/autodev"],
             env=_secret_env(),
@@ -180,7 +229,12 @@ def ensure_token() -> str:
         if proc.returncode != 0 or not (proc.stdout or "").strip():
             print("vault get git/autodev failed", file=sys.stderr)
             sys.exit(1)
-        return proc.stdout.strip()
+        existing = proc.stdout.strip()
+        if _token_covers_harness(existing):
+            print("CSD vault git/autodev already covers csd-autodev", file=sys.stderr)
+            return existing
+        print("reminting git/autodev to include tzervas/csd-autodev", file=sys.stderr)
+        _delete_program_tokens()
     code, body = api(
         "POST",
         f"/admin/users/{USER}/tokens",
@@ -194,8 +248,11 @@ def ensure_token() -> str:
         print(f"create token failed {code} {str(body)[:200]}", file=sys.stderr)
         sys.exit(1)
     token = str(body["sha1"])
-    last = str(body.get("token_last_eight") or token[-8:])
-    print(f"token program last8={last} scopes={body.get('scopes')} repos=CogSynDelta,memory-gate", file=sys.stderr)
+    print(
+        "token program minted (value only in vault; not printed) "
+        f"scopes={body.get('scopes')} repos=CogSynDelta,memory-gate,csd-autodev",
+        file=sys.stderr,
+    )
     vault_set("git/autodev", token)
     return token
 
@@ -218,7 +275,11 @@ def verify(bot_token: str) -> None:
     if code == 200:
         print("bot can read memory-gate-rs; token/collab too wide", file=sys.stderr)
         sys.exit(1)
-    print("verify ok: autodev can CogSynDelta+memory-gate; cannot admin or memory-gate-rs", file=sys.stderr)
+    print(
+        "verify ok: autodev can CogSynDelta+memory-gate+csd-autodev; "
+        "cannot admin or memory-gate-rs",
+        file=sys.stderr,
+    )
 
 
 def main() -> int:
@@ -233,6 +294,7 @@ def main() -> int:
         print("admin token is not tzervas; abort", file=sys.stderr)
         return 2
     ensure_user()
+    ensure_harness_repo()
     ensure_collab()
     bot = ensure_token()
     verify(bot)

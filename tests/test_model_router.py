@@ -218,9 +218,7 @@ def test_1080ti_is_live_retrieve_index() -> None:
     ]
 
 
-def test_1080ti_scheduled_for_rag_not_cuda(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_1080ti_scheduled_for_rag_not_cuda(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     r = load_router(tmp_path, monkeypatch)
     assert "gpu5080-1080ti" in r.schedulable_hosts()
     inventory = inv_idle()
@@ -244,9 +242,7 @@ def test_1080ti_scheduled_for_rag_not_cuda(
     assert r.place_host(cuda, inventory) == "gpu5080"
 
 
-def test_embed_prefers_1080ti_guest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_embed_prefers_1080ti_guest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     r = load_router(tmp_path, monkeypatch)
     spec = r.catalog()["aliases"]["embed-qwen3-0.6b"]
     inventory = inv_idle(helper_ok=True)
@@ -285,9 +281,7 @@ def test_helper_aliases_list_multiple_hosts() -> None:
     assert eight["share"]["gpu5080-1080ti"] == "retrieve-index-light"
 
 
-def test_rag_index_prefers_1080ti_guest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rag_index_prefers_1080ti_guest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     r = load_router(tmp_path, monkeypatch)
     assert r.job_to_alias("rag-index") == "embed-qwen3-0.6b"
     assert r.job_to_alias("retrieve") == "embed-qwen3-0.6b"
@@ -342,9 +336,7 @@ def test_pick_refuses_oom_and_exclusive_seq(
     assert rec14["host"] == "akula-prime"
 
 
-def test_cluster_backends_three_hosts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cluster_backends_three_hosts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     r = load_router(tmp_path, monkeypatch)
     rec = r.cluster_backends()
     ids = [b["id"] for b in rec["backends"]]
@@ -393,9 +385,8 @@ def test_flex_dry_run_picks_1080ti_for_rag_index(
     assert rec2["rag_index_host"] in {"gpu5080", "akula-prime"}
     assert rec2["rag_index_host"] != "gpu5080-1080ti"
 
-def test_chat_prefers_5080_when_lock_idle(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+
+def test_chat_prefers_5080_when_lock_idle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """5080-fit chat prefers gpu5080; 14B stays sticky on akula-prime."""
     r = load_router(tmp_path, monkeypatch)
     spec = r.catalog()["aliases"]["local/uncensored-fast"]
@@ -456,4 +447,3 @@ def test_fanout_n1_3090_n3_embed_not_second_14b(
     refuse = r.helper_fanout(1, inventory=inv, alias="local/code")
     assert refuse["ok"] is False
     assert refuse["second_14b"] is False
-

@@ -38,10 +38,13 @@
     "private": true,
     "models": [
       {"id": "tzervas/cogsyndelta", "role": "foundation weights when trained", "upload": "not-yet"},
-      {"id": "tzervas/cogsyndelta-bedrock", "role": "region specialists", "upload": "not-yet"},
-      {"id": "tzervas/cogsyndelta-tiny", "role": "rung 0 CPU PoC", "upload": "blocked-hf-autodev"},
-      {"id": "tzervas/cogsyndelta-small", "role": "rung 1 5080 CUDA", "upload": "blocked-hf-autodev"},
-      {"id": "tzervas/cogsyndelta-medium", "role": "rung 2 larger when measured", "upload": "blocked-hf-autodev"}
+      {"id": "tzervas/cogsyndelta-bedrock", "role": "region specialists assembled, no overall pretrain", "upload": "not-yet"},
+      {"id": "tzervas/cogsyndelta-region-stream_vae-tiny", "role": "R0 one-specialist pretrain (PoC LatentVAE)", "upload": "blocked-hf-autodev"},
+      {"id": "tzervas/cogsyndelta-region-residual_mlp-tiny", "role": "R0 one-specialist pretrain (PoC ResidualMLP)", "upload": "blocked-hf-autodev"},
+      {"id": "tzervas/cogsyndelta-region-route-tiny", "role": "R1 softmax gate frozen-then-joint", "upload": "blocked-hf-autodev"},
+      {"id": "tzervas/cogsyndelta-tiny", "role": "R2 assembled tiny whole-mind", "upload": "blocked-hf-autodev"},
+      {"id": "tzervas/cogsyndelta-small", "role": "R3 larger params 5080 CUDA", "upload": "blocked-hf-autodev"},
+      {"id": "tzervas/cogsyndelta-medium", "role": "R4 larger when measured", "upload": "blocked-hf-autodev"}
     ],
     "datasets": [
       {"id": "tzervas/cogsyndelta-data", "role": "train configs common / region-*", "upload": "when-recipe-exists"},
