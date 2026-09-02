@@ -75,6 +75,32 @@ POLICY: dict[str, tuple[str, str]] = {
 NEVER_MOVE_GLOBS = ("receipts", "checkpoints", "manifest.json", "*.log")
 
 
+def _manifest_cmd() -> str:
+    """Build the paths+sizes manifest command, excluding NEVER_MOVE_GLOBS.
+
+    Why this must exist: `offload()` passes --exclude=<glob> to rsync for every
+    NEVER_MOVE_GLOBS entry, so those files are deliberately never copied to cold
+    storage. If the verification manifest below hashed every file instead, it would
+    hash hot-only files (e.g. a *.log dropped in the corpus dir) that have no cold
+    counterpart, and hot_manifest could never equal cold_manifest no matter how
+    clean the transfer was -- the exact bug this function fixes.
+    The predicate is built FROM NEVER_MOVE_GLOBS (not a second hardcoded list) so the
+    transfer's exclusions and the verification's exclusions cannot drift apart again:
+    edit the tuple once and both the rsync flags in `offload()` and this `find`
+    expression pick it up. `find -name` accepts the same glob syntax rsync's
+    slash-free --exclude patterns use (plain names and simple *.ext globs), which is
+    all NEVER_MOVE_GLOBS currently contains -- a future entry with a `/` in it would
+    need this mapping revisited, since rsync and find treat path separators in
+    patterns differently.
+    """
+    pred = " -o ".join(f"-name '{glob}'" for glob in NEVER_MOVE_GLOBS)
+    return (
+        f"find . -type d \\( {pred} \\) -prune -o "
+        f"-type f -not \\( {pred} \\) -printf '%s %p\\n' "
+        "| sort | md5sum | cut -d' ' -f1"
+    )
+
+
 def ssh(host: str, cmd: str, timeout: int = 600) -> tuple[int, str]:
     p = subprocess.run(
         ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, cmd],
@@ -152,7 +178,8 @@ def offload(rel: str, apply: bool) -> dict:
     # rsync has already content-checksummed each file it sent. What it cannot tell us is
     # whether a file was never attempted -- a permission error on one subtree still exits
     # 0 overall. So compare every path and size on both sides before deleting anything.
-    man = "find . -type f -printf '%s %p\\n' | sort | md5sum | cut -d' ' -f1"
+    # Excludes NEVER_MOVE_GLOBS -- see _manifest_cmd() for why that's required.
+    man = _manifest_cmd()
     rc_a, a = ssh(HOT_HOST, f'cd {src} && sh -c "{man}"', timeout=3600)
     rc_b, b = ssh(COLD_HOST, f'cd {dst} && sh -c "{man}"', timeout=3600)
     res["hot_manifest"], res["cold_manifest"] = a[:12], b[:12]
