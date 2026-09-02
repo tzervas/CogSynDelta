@@ -307,7 +307,33 @@ new ones.
 | P11.2 | Hard negative mining | InfoNCE learns most from negatives it nearly confuses; random in-batch negatives are mostly trivially easy | mined-negative run beats random-negative run on the same holdout | todo |
 | P11.4 | Progressive sequence length ("crawl, walk, run") | short context early, longer context later. Reframes max_len from a binary choice into a schedule | staged-length run matches or beats a fixed-length run at equal compute | todo |
 | P11.5 | Progressive visual resolution | same principle for images: small crops early, larger views later, so the visual region eventually reasons over a whole screenshot rather than a tile | staged-resolution beats fixed at equal compute | todo |
+| P11.6 | Composite-image training ("patch n' pack") | many images per frame; find, compare and relate elements within one view | composite-trained encoder locates a target element among N that a tile-trained one cannot | todo |
 | P11.3 | Curriculum over negative difficulty | easy discriminations first, fine ones later -- "dog, then Belgian Malinois vs other dogs" | staged difficulty beats constant difficulty at equal step count | todo |
+
+COMPOSITE IMAGES -- established, with one correction to the motivating argument.
+Prior art: NaViT's "Patch n' Pack" (multiple variable-resolution images packed into one ViT
+sequence), mosaic augmentation from YOLOv4 (4 images into 1), and Set-of-Marks prompting
+(identify a specific element among many). What is being proposed is making this the NATIVE
+training regime rather than an augmentation trick.
+
+THE CORRECTION: packing does NOT reduce compute. N images in one sequence is (N*64)^2
+attention against N*(64^2) processed separately -- quadratic in total tokens means packing
+costs MORE per image, not less. The efficiency framing is wrong.
+
+THE REAL WINS, which are better arguments anyway:
+  - cross-image reasoning becomes possible AT ALL. Separate forward passes cannot compare,
+    locate or relate across a set; one packed pass can.
+  - fixed overheads amortise -- one pass, one set of norms and projections.
+  - IT MATCHES THE DEPLOYMENT TARGET. A screenshot IS a collage. If the end state is a model
+    reading a display, "many elements in one frame, find the relevant one" is the NORMAL
+    case and training on isolated 64x64 tiles is the artificial one.
+
+STAGING IS PROBABLY REQUIRED, and the operator's instinct here is likely correct: blasting a
+heterogeneous mix at an encoder early looks more likely to fragment it than to teach general
+structure. I-JEPA predicts masked-region representations from visible context, and that
+signal is coherent within a domain and much less so across wildly dissimilar ones. Expect to
+need per-domain or weighted staging before a naive union. This should be MEASURED, not
+assumed -- it is a testable claim and the probe already exists to test it.
 
 PROGRESSIVE LENGTH IS ESTABLISHED PRACTICE, and it reframes P0.9a. The max_len question is
 not "96 or 256" -- it is "96 THEN 256". Training short first is cheaper (attention is
