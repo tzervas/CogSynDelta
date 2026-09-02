@@ -269,10 +269,42 @@ hybrid predictive training approach itself.
 
 | id | task | note |
 |----|------|------|
-| P13.1 | Revive the hybrid predictive training approach | exists in both Python and Rust; did not work due to underlying issues and gaps. Diagnose the gaps BEFORE porting -- a rewrite that carries the original defect forward is worse than the original |
+| P13.1 | Revive the hybrid predictive training approach | FOUND and diagnosed -- see below. The postmortem is preserved on both remotes |
 | P13.2 | Modernise the surrounding stack | the ecosystem moved substantially in ~2 years; some parts refactor, some want reimplementing |
 | P13.3 | Full Rust stack | model, training, quant, fine-tune, orchestration |
 | P13.4 | Forgejo repos for everything, under the right orgs | see org map below; blocked on the P13.1 catalogue so placement is informed rather than guessed |
+
+### P13.1 — located, and the failure is already diagnosed
+
+THE PYTHON LINEAGE: `tritter` (local /home/kang/code/personal/tzervas/python-ai/tritter,
+Forgejo `aphelion/tritter`, GitHub `tzervas/tritter`). Two mechanisms both called "hybrid
+predictive training":
+  - an embedding-prediction curriculum (JEPA/Coconut-shaped, alpha ramps token loss ->
+    embedding loss). Unit-tested, never wired into a real Trainer.
+  - a phase-cycling gradient predictor (WARMUP -> FULL -> PREDICT -> CORRECT) that skips
+    backprop during PREDICT using an EMA of past gradients. THIS is what broke.
+
+ROOT CAUSE, quoted from its own postmortem: *"the current EMA-based gradient prediction
+fails because it accumulates errors exponentially over steps, treating gradients as
+independent entities when they are actually samples from a structured, learnable dynamical
+system."* Concrete run: a 100M BitNet converged normally 11.2 -> 3.407 through step 112,
+then diverged to NaN by step ~160-200 as PREDICT-heavy phases compounded the error.
+
+THE RUST LINEAGE: `hybrid-predict-trainer-rs`, best copy inside the `rust-ai` monorepo. It
+is a real implementation of the fix the Python postmortem prescribes -- an RSSM-lite
+world-model predictor with online GRU training, i.e. PREDICT OUTCOMES, NOT GRADIENTS. It
+stalled on a VRAM leak: Burn's functional `.map()` copies the entire model on every
+weight-delta, taking GPT-2-small from 3.9 GB to 14.1 GB in 50 steps. A same-day mitigation
+was written and explicitly never validated.
+
+NOT A DEAD END: one validated run is documented at 77% speedup (4x) at 99.9% quality. The
+mechanism has partial proof; the scaling and VRAM engineering is what was never finished.
+
+PRESERVATION: the whole postmortem existed ONLY in unpushed local commit b8f8670 and is now
+on both remotes as branch `preserve/local-2026-03-05-hybrid-research`, verified byte-
+identical (blob b962c296, 41,345 bytes). Local `main` and `origin/main` have DIVERGED --
+1 commit local vs 6 upstream, 13 files overlapping, including the very optimization module
+upstream rewrote unaware. Do not merge casually.
 
 NOT STARTING FROM ZERO. The operator already has a substantial Rust ML ecosystem on this
 fleet, all now private: rust-ai-core, bitnet-rs, ternary-rs, triton-bridge-rs (CUDA driver
