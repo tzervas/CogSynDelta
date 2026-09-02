@@ -40,9 +40,10 @@ import torch
 from tokenizers import Tokenizer
 
 from cogsyndelta.eval import (
-    assert_no_contamination,
+    assert_no_pair_contamination,
     contamination_report,
     mean_reciprocal_rank,
+    pair_fingerprint,
     recall_at_k,
     spearman_correlation,
 )
@@ -199,6 +200,11 @@ def _pair_key(left: str, right: str) -> str:
     Order-independent because similarity is symmetric: (a, b) in training and (b, a) in
     the eval set is the same leak, and an ordered key would miss half of them.
 
+    Delegates to :func:`cogsyndelta.eval.metrics.pair_fingerprint` so that the graded-set
+    filter here and the contamination guard's `pair_exact` channel are provably the same
+    key. Two independently-written "unordered pair key" implementations that drift apart
+    is exactly how a guard ends up checking something other than what it claims to.
+
     Args:
         left: One side of the pair.
         right: The other side.
@@ -206,10 +212,7 @@ def _pair_key(left: str, right: str) -> str:
     Returns:
         A hex digest identifying the unordered pair, whitespace- and case-normalised.
     """
-    first, second = sorted((" ".join(left.split()).lower(), " ".join(right.split()).lower()))
-    return hashlib.blake2b(
-        f"{first}\x00{second}".encode("utf-8", "replace"), digest_size=16
-    ).hexdigest()
+    return pair_fingerprint(left, right)
 
 
 def load_graded_pairs(
@@ -503,7 +506,22 @@ def build_splits(
 
     # Contamination is checked BEFORE any training happens, so a dirty split stops the
     # run rather than producing a number nobody can trust.
-    contamination = assert_no_contamination([a for a, _ in train_pairs], [a for a, _ in holdout])
+    #
+    # THIS USED TO BE STRUCTURALLY INCAPABLE OF FIRING. The call was
+    # `assert_no_contamination([a for a, _ in train_pairs], [a for a, _ in holdout])`,
+    # whose `_fingerprint` is `blake2b(" ".join(text.split()).lower())` -- byte for byte
+    # the normalisation and hash the dedup loop above had just made unique, over the same
+    # anchors. Unique keys, partitioned by the split, cannot intersect: the guard returned
+    # `overlap: 0` for every region on every run BY CONSTRUCTION, and that zero went into
+    # every receipt looking like a measurement. Meanwhile an independent survey measured
+    # 53.7% near-duplicate holdout leakage in `retrieve`.
+    #
+    # The replacement keys on things the dedup above has NOT eliminated: the positive
+    # side (dedup is anchor-only), the pair in either direction (symmetric InfoNCE trains
+    # both), and a content-word normalisation coarser than the exact one dedup used. Only
+    # the two PAIR-level channels are gated; see `_GATED_CHANNELS` in eval/metrics.py for
+    # why the single-side channels are counted rather than enforced.
+    contamination = assert_no_pair_contamination(train_pairs, holdout)
     return (
         holdout,
         train_pairs,

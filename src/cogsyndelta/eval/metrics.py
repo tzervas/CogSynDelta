@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 from collections.abc import Iterable, Sequence
 from typing import TypedDict
 
@@ -41,6 +42,27 @@ class ContaminationReport(TypedDict):
     overlap: int
     eval_fraction_contaminated: float
     examples: list[str]
+
+
+class ChannelOverlap(TypedDict):
+    """Train/eval overlap measured through ONE key, plus what that key can see."""
+
+    key: str
+    gated: bool
+    eval_unique: int
+    overlap: int
+    eval_fraction_contaminated: float
+    examples: list[str]
+
+
+class PairContaminationReport(TypedDict):
+    """Multi-channel overlap between a train and an eval set of (anchor, positive) pairs."""
+
+    train_pairs_seen: int
+    eval_pairs: int
+    gated_channels: list[str]
+    channels: dict[str, ChannelOverlap]
+    eval_duplicate_positives: int
 
 
 def token_weighted_perplexity(losses: Sequence[float], token_counts: Sequence[int]) -> float:
@@ -68,14 +90,107 @@ def token_weighted_perplexity(losses: Sequence[float], token_counts: Sequence[in
     return math.exp(nll / total)
 
 
+def _normalise(text: str) -> str:
+    """Collapse whitespace and case. The one normalisation every exact key shares."""
+    return " ".join(text.split()).lower()
+
+
+def _digest(payload: str) -> str:
+    """blake2b-128 of a UTF-8 payload, hex. One spelling, so keys cannot drift apart."""
+    return hashlib.blake2b(payload.encode("utf-8", "replace"), digest_size=16).hexdigest()
+
+
 def _fingerprint(text: str) -> str:
     """Stable hash of normalised text, for overlap detection.
 
     Normalises whitespace and case so that trivial reformatting cannot hide a duplicate --
     contamination usually arrives via a reformatted copy, not a byte-identical one.
     """
-    normalised = " ".join(text.split()).lower()
-    return hashlib.blake2b(normalised.encode("utf-8", "replace"), digest_size=16).hexdigest()
+    return _digest(_normalise(text))
+
+
+def _unordered(first: str, second: str) -> str:
+    """Hash two keys so that (a, b) and (b, a) collide.
+
+    Similarity is symmetric and the training objective here is symmetric InfoNCE, which
+    trains (a, b) and (b, a) in the same step. An ordered key would therefore miss half
+    of every duplicated pair.
+    """
+    lo, hi = sorted((first, second))
+    return _digest(f"{lo}\x00{hi}")
+
+
+def pair_fingerprint(left: str, right: str) -> str:
+    """Order-independent fingerprint of a sentence pair, whitespace- and case-normalised.
+
+    Args:
+        left: One side of the pair.
+        right: The other side.
+
+    Returns:
+        A hex digest identifying the unordered pair.
+    """
+    return _unordered(_normalise(left), _normalise(right))
+
+
+_FUNCTION_WORDS = frozenset(
+    # determiners and deixis
+    ["a", "an", "the", "this", "that", "these", "those", "there", "here"]
+    # copulas, auxiliaries and modals
+    + ["is", "are", "was", "were", "be", "been", "being", "am"]
+    + ["do", "does", "did", "doing", "done", "have", "has", "had", "having"]
+    + ["can", "could", "will", "would", "shall", "should", "may", "might", "must"]
+    # prepositions and conjunctions
+    + ["of", "in", "on", "at", "to", "from", "by", "for", "with", "without"]
+    + ["about", "into", "onto", "over", "under", "and", "or", "but", "nor"]
+    + ["so", "yet", "if", "then", "than", "as", "because", "while"]
+    # pronouns
+    + ["i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us", "them"]
+    + ["my", "your", "his", "its", "our", "their"]
+    # interrogatives and common adverbs
+    + ["what", "which", "who", "whom", "whose", "when", "where", "why", "how"]
+    + ["not", "no", "too", "very", "just", "also", "only"]
+    # contraction tails left behind by the word regex ("don't" -> "don", "t")
+    + ["s", "t", "re", "ve", "ll", "d", "m", "o", "y"]
+)
+"""English function words, stripped before the CONTENT-word key below.
+
+Deliberately closed and small: it is a fixed list of grammatical glue, not a tuned
+parameter. Growing it makes the content key coarser (more things collide) and shrinking
+it makes it finer, so it is the kind of knob that quietly changes what a guard means --
+it should move only with a stated reason.
+"""
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _content_fingerprint(text: str) -> str:
+    """Hash the SET of content words, discarding order, repetition and function words.
+
+    This exists to be a genuinely different normalisation from :func:`_fingerprint`,
+    because a guard whose key equals the key its caller already deduplicated on cannot
+    fire. Exact normalisation says "how do you know if a mango is ripe" and "how to know
+    if a mango is ripe" are different texts. This says they are the same claim: both
+    reduce to {know, mango, ripe}.
+
+    It deliberately does NOT collapse the corpus survey's other near-duplicate category.
+    "44 is 25 percent of what number?" and "44 is 55 percent of what number?" have the
+    same template and DIFFERENT correct answers; the digits are content words, so the two
+    keys differ and the pair is left alone. Treating those as duplicates would hide a real
+    weakness (the encoder failing to read a slot value) rather than fix a leak.
+
+    Args:
+        text: Any text.
+
+    Returns:
+        A hex digest over the sorted content-word set. Falls back to the full word set,
+        then to the normalised text, so an all-function-word text ("how are you") keys on
+        itself instead of colliding with every other function-word-only text.
+    """
+    normalised = _normalise(text)
+    words = set(_WORD_RE.findall(normalised))
+    content = sorted(words - _FUNCTION_WORDS) or sorted(words) or [normalised]
+    return _digest("\x00".join(content))
 
 
 def contamination_report(
@@ -131,6 +246,172 @@ def assert_no_contamination(
             f"{report['eval_unique']} documents also appear in training; tolerance "
             f"{tolerance:.2%}). Every metric measured against it is inflated."
         )
+    return report
+
+
+_CHANNEL_MEANING = {
+    "anchor_exact": (
+        "the eval anchor, whitespace- and case-normalised. VACUOUS whenever the caller "
+        "deduplicated on this same key -- reported so a zero here is never mistaken for "
+        "evidence."
+    ),
+    "positive_exact": (
+        "the eval POSITIVE, normalised. Anchor-only dedup never touches this side, so it "
+        "can fire. Reported rather than gated: a passage shared across two genuinely "
+        "different queries is normal in IR and only leaks if the queries are also close."
+    ),
+    "pair_exact": (
+        "the whole pair, order-independent. A held-out pair that is also a training pair "
+        "in either direction -- symmetric InfoNCE trains both directions, so a swap is "
+        "the same leak. Unambiguous memorisation."
+    ),
+    "anchor_content": (
+        "the eval anchor's content-word SET (function words, order and repetition "
+        "discarded). Catches the paraphrase family exact normalisation cannot see."
+    ),
+    "positive_content": "the eval positive's content-word set.",
+    "pair_content": (
+        "BOTH sides content-word-identical to a training pair. Function-word paraphrase "
+        "of an entire training example, which is memorisation with the wording changed."
+    ),
+}
+
+_GATED_CHANNELS = ("pair_exact", "pair_content")
+"""Channels that stop a run rather than merely being counted.
+
+Both are PAIR-level and neither is implied by anchor-level dedup, so this guard can
+actually fire -- which is the whole point. The single-side channels are reported instead
+of gated because whether a shared anchor or a shared passage is leakage depends on the
+corpus, and a guard that halts every legitimate run is a guard whose tolerance gets
+raised until it means nothing again.
+"""
+
+
+def _channel_keys(anchor: str, positive: str) -> dict[str, str]:
+    """The six overlap keys for one pair. One place, so both sides key identically."""
+    a_exact, p_exact = _fingerprint(anchor), _fingerprint(positive)
+    a_content, p_content = _content_fingerprint(anchor), _content_fingerprint(positive)
+    return {
+        "anchor_exact": a_exact,
+        "positive_exact": p_exact,
+        "pair_exact": _unordered(_normalise(anchor), _normalise(positive)),
+        "anchor_content": a_content,
+        "positive_content": p_content,
+        "pair_content": _unordered(a_content, p_content),
+    }
+
+
+def _index_eval(
+    eval_pairs: Iterable[tuple[str, str]],
+) -> tuple[dict[str, dict[str, str]], int, int]:
+    """Index the eval side by every channel key, mapping each key to a readable example.
+
+    Returns:
+        ``(keys, n_pairs, duplicate_positives)``. ``keys[channel][key]`` is a truncated
+        eval anchor, so a hit reports text a human can chase rather than a bare digest.
+        ``duplicate_positives`` counts held-out pairs whose positive is not unique WITHIN
+        the holdout -- those cap recall@1 by construction, since two identical candidates
+        cannot both be ranked first.
+    """
+    keys: dict[str, dict[str, str]] = {name: {} for name in _CHANNEL_MEANING}
+    positives: set[str] = set()
+    n_pairs = 0
+    duplicate_positives = 0
+    for anchor, positive in eval_pairs:
+        n_pairs += 1
+        channel_keys = _channel_keys(anchor, positive)
+        for name, key in channel_keys.items():
+            keys[name].setdefault(key, anchor[:160])
+        if channel_keys["positive_exact"] in positives:
+            duplicate_positives += 1
+        positives.add(channel_keys["positive_exact"])
+    return keys, n_pairs, duplicate_positives
+
+
+def pair_contamination_report(
+    train_pairs: Iterable[tuple[str, str]], eval_pairs: Iterable[tuple[str, str]]
+) -> PairContaminationReport:
+    """Measure train/eval overlap through several keys, not one.
+
+    WHY THIS EXISTS RATHER THAN :func:`contamination_report`
+    The single-key version was called with the same normalisation the caller had already
+    deduplicated on, over the same field. Dedup guarantees those keys are unique; a split
+    partitions unique keys; so the intersection was empty BY CONSTRUCTION, for every
+    region, always. It reported zero while an independent survey measured 53.7% near-
+    duplicate holdout leakage in `retrieve`. A guard has to key on something its caller
+    has NOT already eliminated, or it is only confirming its own arithmetic.
+
+    The train side is streamed and never held: only membership in the eval-side key index
+    is retained, so this costs O(eval) memory against a half-million-pair training set.
+    That is why the report says ``train_pairs_seen`` rather than a train-unique count.
+
+    Args:
+        train_pairs: (anchor, positive) pairs the model will train on.
+        eval_pairs: (anchor, positive) pairs held out.
+
+    Returns:
+        Per-channel counts, which channels are gated, and the number of held-out pairs
+        sharing a positive with another held-out pair.
+    """
+    index, n_eval, duplicate_positives = _index_eval(eval_pairs)
+    hits: dict[str, dict[str, str]] = {name: {} for name in index}
+    seen = 0
+    for anchor, positive in train_pairs:
+        seen += 1
+        for name, key in _channel_keys(anchor, positive).items():
+            example = index[name].get(key)
+            if example is not None:
+                hits[name][key] = example
+    channels: dict[str, ChannelOverlap] = {
+        name: ChannelOverlap(
+            key=_CHANNEL_MEANING[name],
+            gated=name in _GATED_CHANNELS,
+            eval_unique=len(index[name]),
+            overlap=len(hits[name]),
+            eval_fraction_contaminated=(len(hits[name]) / len(index[name]) if index[name] else 0.0),
+            examples=sorted(hits[name].values())[:5],
+        )
+        for name in index
+    }
+    return PairContaminationReport(
+        train_pairs_seen=seen,
+        eval_pairs=n_eval,
+        gated_channels=list(_GATED_CHANNELS),
+        channels=channels,
+        eval_duplicate_positives=duplicate_positives,
+    )
+
+
+def assert_no_pair_contamination(
+    train_pairs: Iterable[tuple[str, str]],
+    eval_pairs: Iterable[tuple[str, str]],
+    *,
+    tolerance: float = 0.0,
+) -> PairContaminationReport:
+    """Raise if a GATED channel shows the eval set overlapping training beyond ``tolerance``.
+
+    Args:
+        train_pairs: (anchor, positive) pairs the model will train on.
+        eval_pairs: (anchor, positive) pairs held out.
+        tolerance: Maximum acceptable contaminated fraction, per gated channel.
+
+    Returns:
+        The full multi-channel report, when every gated channel is within tolerance.
+
+    Raises:
+        ValueError: If a gated channel exceeds ``tolerance``.
+    """
+    report = pair_contamination_report(train_pairs, eval_pairs)
+    for name in report["gated_channels"]:
+        channel = report["channels"][name]
+        if channel["eval_fraction_contaminated"] > tolerance:
+            raise ValueError(
+                f"contamination on channel {name!r}: {channel['eval_fraction_contaminated']:.2%} "
+                f"of the held-out set ({channel['overlap']} of {channel['eval_unique']}) also "
+                f"appears in training; tolerance {tolerance:.2%}. This channel matches on "
+                f"{_CHANNEL_MEANING[name]} Anchor-level dedup does not remove it, so this is a "
+                f"real leak rather than a bookkeeping artefact. Examples: {channel['examples']}"
+            )
     return report
 
 
