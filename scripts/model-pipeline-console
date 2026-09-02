@@ -30,6 +30,8 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -38,6 +40,56 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from cogsyndelta.pipeline.receipt import Receipt, load_all
 
 RECEIPT_ROOTS: list[Path] = []
+
+# One root may sit on a `hard` NFS mount (required elsewhere so a stalled server
+# cannot silently drop a write -- see the fstab entry this console's receipts live
+# next to). `hard` means a stat() against that mount blocks indefinitely while the
+# server is unreachable, not just the first one. `_PROBE_TIMEOUT` is how long any
+# single root gets before it is reported unavailable instead of hanging the request.
+_PROBE_TIMEOUT = 3.0
+
+
+def _bounded[T](fn: Callable[[], T], timeout: float = _PROBE_TIMEOUT) -> tuple[T | None, bool]:
+    """Run ``fn`` off-thread and give up after ``timeout`` rather than block on it.
+
+    A dashboard that hangs because one storage root went away is worse than one that
+    reports what it can see -- so this is how every filesystem touch that can land on
+    removable/networked storage is guarded. On timeout the worker thread is abandoned
+    (daemonized): it finishes on its own whenever the underlying call unblocks, or
+    never does, but either way it stops being this request's problem. Returns
+    ``(result, finished)`` -- ``finished`` is False on timeout, in which case the
+    result is always ``None``.
+    """
+    box: list[T | None] = [None]
+
+    def _run() -> None:
+        box[0] = fn()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        return None, False
+    return box[0], True
+
+
+def load_receipts(roots: list[Path]) -> tuple[list[Receipt], list[str]]:
+    """Read every root independently, newest first, tolerating a wedged one.
+
+    ``load_all`` reads roots in one sequential pass; if any single root sits behind an
+    unreachable NFS server, that pass never returns and every OTHER root's receipts --
+    including the local, always-fast ones -- disappear from the response with it. Each
+    root gets its own bounded attempt here so a stuck root is merely absent, not fatal.
+    """
+    receipts: list[Receipt] = []
+    unavailable: list[str] = []
+    for root in roots:
+        found, finished = _bounded(lambda root=root: load_all([root]))
+        if finished:
+            receipts.extend(found or [])
+        else:
+            unavailable.append(str(root))
+    return sorted(receipts, key=lambda r: r.started_utc, reverse=True), unavailable
 
 
 def fleet_state() -> dict:
@@ -73,11 +125,20 @@ def fleet_state() -> dict:
         pass
     for path in ("/akula-data", "/bulk", "/mnt/bulk", "/mnt/fleet-datasets"):
         p = Path(path)
-        if not p.is_dir():
-            continue
-        try:
-            u = shutil.disk_usage(p)
-        except OSError:
+
+        def _usage(p: Path = p) -> object:
+            if not p.is_dir():
+                return None
+            try:
+                return shutil.disk_usage(p)
+            except OSError:
+                return None
+
+        # Two of these paths are NFS mounts (fleet-datasets always was; bulk now is
+        # too), so the same stuck-server risk applies here as to receipt roots --
+        # bound it the same way rather than let one dead mount blank the whole panel.
+        u, finished = _bounded(_usage)
+        if not finished or u is None:
             continue
         out["storage"].append(
             {
@@ -253,9 +314,10 @@ function spark(vals){
     `<i style="height:${3 + 15 * (v - lo) / span}px"></i>`).join('') + '</span>';
 }
 async function load(){
-  const [rows, fleet] = await Promise.all([
+  const [rows, fleet, health] = await Promise.all([
     fetch('api/pipelines').then(r => r.json()),
     fetch('api/fleet').then(r => r.json()),
+    fetch('api/health').then(r => r.json()).catch(() => ({unavailable_roots: []})),
   ]);
   const f = document.getElementById('fleet');
   f.innerHTML = (fleet.gpus||[]).map(g =>
@@ -281,8 +343,10 @@ async function load(){
       <td class="metrics">${mets}</td><td>${spark(r.trend)}</td>
       <td>${r.runs}</td><td class="mono arch">${(r.when||'').replace('T',' ').replace('Z','')}</td></tr>`;
   }).join('');
+  const stuck = (health.unavailable_roots || []);
+  const warn = stuck.length ? ` · UNAVAILABLE: ${stuck.join(', ')}` : '';
   document.getElementById('sub').textContent =
-    `${rows.length} pipeline(s) · ${rows.filter(r=>r.passed).length} passing · updated ${new Date().toLocaleTimeString()}`;
+    `${rows.length} pipeline(s) · ${rows.filter(r=>r.passed).length} passing · updated ${new Date().toLocaleTimeString()}${warn}`;
 }
 load(); setInterval(load, 15000);
 </script></body></html>"""
@@ -311,8 +375,10 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self._send(200, PAGE.encode(), "text/html; charset=utf-8")
         elif path == "/api/pipelines":
-            self._json(summarise(load_all(RECEIPT_ROOTS)))
+            receipts, _unavailable = load_receipts(RECEIPT_ROOTS)
+            self._json(summarise(receipts))
         elif path == "/api/runs":
+            receipts, _unavailable = load_receipts(RECEIPT_ROOTS)
             self._json(
                 [
                     {
@@ -329,16 +395,24 @@ class Handler(BaseHTTPRequestHandler):
                         "artifacts": r.artifacts,
                         "detail": r.detail,
                     }
-                    for r in load_all(RECEIPT_ROOTS)
+                    for r in receipts
                 ]
             )
         elif path == "/metrics":
-            body = prometheus_text(load_all(RECEIPT_ROOTS)).encode()
+            receipts, _unavailable = load_receipts(RECEIPT_ROOTS)
+            body = prometheus_text(receipts).encode()
             self._send(200, body, "text/plain; version=0.0.4; charset=utf-8")
         elif path == "/api/fleet":
             self._json(fleet_state())
         elif path == "/api/health":
-            self._json({"ok": True, "roots": [str(p) for p in RECEIPT_ROOTS]})
+            _receipts, unavailable = load_receipts(RECEIPT_ROOTS)
+            self._json(
+                {
+                    "ok": True,
+                    "roots": [str(p) for p in RECEIPT_ROOTS],
+                    "unavailable_roots": unavailable,
+                }
+            )
         else:
             self._send(404, b"not found", "text/plain")
 
@@ -367,7 +441,10 @@ def main() -> int:
     RECEIPT_ROOTS.extend(roots)
 
     if args.once:
-        print(json.dumps(summarise(load_all(roots)), indent=2, default=str))
+        receipts, unavailable = load_receipts(roots)
+        if unavailable:
+            print(f"warning: unavailable roots: {', '.join(unavailable)}", file=sys.stderr)
+        print(json.dumps(summarise(receipts), indent=2, default=str))
         return 0
 
     srv = ThreadingHTTPServer((args.bind, args.http), Handler)
