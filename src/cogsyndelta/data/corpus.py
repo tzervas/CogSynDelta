@@ -180,7 +180,10 @@ def iter_token_windows(
     if eos_id is None:
         eos_id = tokenizer.get_vocab_size() - 1
 
-    rng = random.Random(seed)
+    # S311 is suppressed below: this shuffles a training buffer, not a cryptographic
+    # context. A seeded, reproducible PRNG is exactly what is wanted --
+    # secrets.SystemRandom would destroy the determinism the docstring promises.
+    rng = random.Random(seed)  # noqa: S311
     buffer: list[torch.Tensor] = []
     carry: list[int] = []
     emitted = 0

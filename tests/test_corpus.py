@@ -15,10 +15,13 @@ from __future__ import annotations
 import pytest
 import torch
 
-from cogsyndelta.data import corpus as corpus_mod
-
+# These MUST precede the corpus import: cogsyndelta.data.corpus imports pyarrow and
+# tokenizers at module scope, so without the train group installed the import below
+# raises during collection and the whole file errors instead of skipping.
 pytest.importorskip("pyarrow", reason="train group not installed")
 pytest.importorskip("tokenizers", reason="train group not installed")
+
+from cogsyndelta.data import corpus as corpus_mod
 
 _HAVE_CORPUS = corpus_mod.DEFAULT_CORPUS_ROOT.is_dir()
 needs_corpus = pytest.mark.skipif(
