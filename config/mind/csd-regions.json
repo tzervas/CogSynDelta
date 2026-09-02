@@ -111,6 +111,60 @@
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": true},
       "live": false
+    },
+    {
+      "name": "reason",
+      "kind": "contrastive_encoder",
+      "stream_dim": 512,
+      "hidden_dim": 1024,
+      "latent_dim": null,
+      "modality": "text",
+      "role": "Question <-> worked derivation retrieval: match a question to its own step-by-step solution among candidates. Does NOT generate reasoning steps -- same bi-encoder shape as code/compress/retrieve, trained the same way.",
+      "router_trigger": "A question paired with a pool of candidate worked solutions to rank (arithmetic or algebraic word problems). Not a trigger for open-ended step generation, which this region cannot do.",
+      "pretrain": {
+        "corpus": "gsm8k-main(7473) + aqua_rat-raw sampled to 4982 (seed 0, docs/design/CORPUS-CONTRACT.md B4)",
+        "objective": "contrastive-pair",
+        "available": true,
+        "notes": "N_eff ~1.92 (60/40 gsm8k/aqua_rat, capped per CORPUS-CONTRACT.md B1 -- uncapped it was 92.9% aqua_rat, N_eff 1.15), below the >=3 general-capability threshold in Part 3 B2. WAIVER (B2): only 2 licence-clean reasoning-shape sources exist today (arithmetic word problems, algebraic MCQ); deduction and multi-hop-factual shapes have no clean candidate (MATH family DMCA-rejected by the catalogue; HotpotQA is CC-BY-SA and collides with retrieve's Wikipedia lineage). Capability NOT covered: multi-hop / deductive reasoning retrieval. Dated 2026-09-02."
+      },
+      "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
+      "live": false
+    },
+    {
+      "name": "classify_banking77",
+      "kind": "classifier_head",
+      "stream_dim": 512,
+      "hidden_dim": 1024,
+      "latent_dim": null,
+      "modality": "text",
+      "role": "Classify a banking-support utterance into one of 77 fine-grained intents. Encoder + softmax cross-entropy head, trained end to end -- NOT a bi-encoder (see regions/classify_pretrain.py's module docstring for why classify does not fit the InfoNCE shape).",
+      "router_trigger": "Text already believed to be a banking-support query. NO out-of-label-space ('none of these') detector is trained -- routing open-domain text here returns a confident, wrong intent rather than 'unknown'. docs/design/CORPUS-CONTRACT.md 1.5 names this the single most important missing requirement for a router-dispatched classify region.",
+      "pretrain": {
+        "corpus": "PolyAI/banking77 train split (10,003 rows)",
+        "objective": "classification-single-label",
+        "available": true,
+        "notes": "N_eff = 1 (single source), below even the narrow-region >=2 threshold in Part 3 B2. WAIVER: banking77 is the only licence-clean 77-way banking-intent corpus catalogued; no second source identified. Within-source class balance passes B5 (77 classes, max share 1.87%, max:min 5.34:1). Capability NOT covered: no out-of-label-space rejection. Dated 2026-09-02."
+      },
+      "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
+      "live": false
+    },
+    {
+      "name": "classify_go_emotions",
+      "kind": "classifier_head",
+      "stream_dim": 512,
+      "hidden_dim": 1024,
+      "latent_dim": null,
+      "modality": "text",
+      "role": "Predict which of 28 emotions (multi-label, including 'neutral') a short text expresses. Encoder + independent per-label BCE head, trained end to end -- NOT a bi-encoder, and NOT the same region as classify_banking77 (incompatible label spaces; see regions/classify_pretrain.py's module docstring).",
+      "router_trigger": "Text already believed to carry emotional content worth labelling. NO out-of-label-space detector is trained (see classify_banking77's router_trigger for the same caveat).",
+      "pretrain": {
+        "corpus": "google-research-datasets/go_emotions simplified train split (43,410 rows)",
+        "objective": "classification-multi-label",
+        "available": true,
+        "notes": "N_eff = 1 (single source; same waiver as classify_banking77 -- no second multi-label emotion corpus catalogued). Also fails within-source balance B5 on its own: largest label ('neutral') is 32.8% of label instances, max:min 184.7:1 (threshold: max 25%, max:min 20:1). NOT rebalanced by resampling -- per B5's own remedy menu ('rebalance ... or declare the region's metric per-class'), this region is instead gated on macro-averaged per-label average precision, which weights every label equally regardless of prevalence, with each label's own chance level (its holdout prevalence) recorded alongside its score. Capability NOT covered: no out-of-label-space rejection. Dated 2026-09-02."
+      },
+      "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
+      "live": false
     }
   ]
 }

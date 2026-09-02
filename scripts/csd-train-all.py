@@ -55,6 +55,26 @@ from pathlib import Path
 DEFAULT_STATE = Path("/akula-data/csd")
 CORPUS = Path("/mnt/fleet-datasets/csd")
 
+LOCAL_CORPUS = Path("/bulk/csd-corpus")
+"""Corpora fetched directly to a training host's local disk, not (yet) mirrored to the
+shared `/mnt/fleet-datasets/csd` NFS export `CORPUS` reads from. `classify` and `reason`
+are the first regions to draw from here: their four datasets were fetched and
+licence-verified straight onto gpu5080's `/bulk` array (see
+docs/design/LICENCE-FOR-OPEN-WEIGHTS.md), and this constant makes that a declared fact
+rather than a path guessed at the call site. `REGION_CORPUS_ROOT` below says which
+regions use it; every region not listed there still resolves against `CORPUS`.
+"""
+
+REGION_CORPUS_ROOT: dict[str, Path] = {"reason": LOCAL_CORPUS}
+"""Per-region override of the glob root `_shards()` resolves against. Absent = `CORPUS`.
+
+A dict rather than a field on `SourceSpec`: every OTHER region's sources already share
+one root, and `SourceSpec` is a plain 3-tuple used identically for `code`/`compress`/
+`retrieve`'s glob/(cols)/cap -- adding a fourth element there to carry a root only
+`reason` needs would change every existing entry's shape for one region's benefit. This
+map is consulted once, in `run_region`, before any `_shards()` call for that region.
+"""
+
 BASE_BATCH = 256
 BASE_LR = 3e-4
 """The batch/LR pair every text-region receipt before 2026-09-02 was trained at.
@@ -135,8 +155,8 @@ against.
 """
 
 
-def _shards(pattern: str) -> list[str]:
-    return sorted(str(p) for p in CORPUS.glob(pattern))
+def _shards(pattern: str, root: Path = CORPUS) -> list[str]:
+    return sorted(str(p) for p in root.glob(pattern))
 
 
 # A region draws from one or more sources. Each source is (glob, (left, right), cap).
@@ -192,6 +212,38 @@ REGIONS: dict[str, tuple[list[SourceSpec], str, int]] = {
         "query -> passage rank; multi-source, gooaq capped for balance",
         96,
     ),
+    "reason": (
+        # Both sources are (question, worked-solution) pairs, so this fits the SAME
+        # bi-encoder shape as every region above -- unlike `classify` (see
+        # regions/classify_pretrain.py's module docstring for why THAT one does not).
+        #
+        # aqua_rat is capped to 4,982 via SourceSpec's `limit`, per
+        # docs/design/CORPUS-CONTRACT.md Part 3:
+        #   B1 (max single-source share <= 0.40): uncapped, aqua_rat is 92.88% of the
+        #   staged gsm8k+aqua_rat pool (N_eff 1.15) -- "an aqua_rat model called a
+        #   reasoning region", per that document's `reason` section. Capping aqua_rat to
+        #   ~4,982 against gsm8k's full 7,473 gives a 60/40 mix, N_eff ~1.92 -- the same
+        #   ratio that section's own worked arithmetic (7473/0.60*0.40) lands on.
+        #   B4 (a cap must be a SAMPLE, not a prefix): satisfied by `load_pairs`
+        #   (regions/pretrain.py) itself as of the reservoir-sampling fix -- a cap here
+        #   now draws a uniform sample seeded from `cfg.seed` in one pass, recorded as
+        #   `corpus.cap_sampling` in the receipt, rather than the first N rows in file
+        #   order. No separate pre-sampled file needed.
+        [
+            ("reason/gsm8k-main/train.parquet", ("question", "answer"), 0),
+            ("reason/aqua_rat-raw/train.parquet", ("question", "rationale"), 4982),
+        ],
+        "question <-> worked derivation; retrieval of the matching solution, NOT step "
+        "generation. Corpus at /bulk/csd-corpus, not the shared mount -- see "
+        "REGION_CORPUS_ROOT",
+        # 256, not the fleet default 96: gsm8k's answer side truncates at 41.2% of rows
+        # at 96 tokens (mean 95.3, p90 153) and aqua_rat's rationale at 21.3% -- both mid
+        # derivation, which makes the pair meaningless in a way truncating a code body
+        # does not (measured with tokstats against the GPT-2 tokenizer this region
+        # trains with; see the reason region's training receipt for the same numbers).
+        # At 256 both fall under 1.1% truncated.
+        256,
+    ),
 }
 
 
@@ -210,6 +262,58 @@ VL_REGIONS: dict[str, dict] = {
         "transfer": "vl/cifar100/cifar100/test-*.parquet",
         "transfer_columns": ("img", "fine_label"),
         "note": "I-JEPA over 64x64 patches; gated on a linear probe, never on loss",
+    },
+}
+
+
+# The classify corpora are (text, LABEL) rows, not (anchor, positive) text pairs -- see
+# regions/classify_pretrain.py's module docstring for the full reasoning, including why
+# banking77 and go_emotions are two SEPARATE regions here rather than one `classify`
+# region with two sources: their label spaces are incompatible (77-way single-label vs
+# 28-way multi-label), so there is no one head shape, loss or metric that fits both. So
+# this gets its own spec dict and runner, same as VL_REGIONS above, rather than a fourth
+# column bolted onto SourceSpec for one region family's benefit.
+#
+# Both corpora live under LOCAL_CORPUS (`/bulk/csd-corpus`), not the shared `CORPUS`
+# mount -- same reason `reason` does (see REGION_CORPUS_ROOT above).
+CLASSIFY_REGIONS: dict[str, dict] = {
+    "classify_banking77": {
+        "shards": "classify/banking77/train.parquet",
+        "text_column": "text",
+        "label_column": "category",
+        "multi_label": False,
+        "label_names_from_metadata": False,
+        "max_len": 96,
+        # 1,500 rather than the text-region default 512: 77 roughly-balanced classes
+        # (CORPUS-CONTRACT.md B5: 5.34:1 max:min) need enough held-out rows per class for
+        # macro-F1 to mean something -- 512 gives ~6-7/class, this gives ~19/class.
+        "holdout_rows": 1500,
+        "note": (
+            "77 banking intents, single-label, softmax cross-entropy head. Chance top1 "
+            "~1.3% (1/77) -- see the receipt's untrained_baseline for the measured "
+            "number, not this estimate."
+        ),
+    },
+    "classify_go_emotions": {
+        "shards": "classify/go_emotions-simplified/train.parquet",
+        "text_column": "text",
+        "label_column": "labels",
+        "multi_label": True,
+        "label_names_from_metadata": True,
+        "max_len": 96,
+        # 3,000 rather than 512: the rarest label ("grief") is 77 of 43,410 rows
+        # (0.18%). At 512 held out, its expected count is under 1 -- too few to compute
+        # an average precision that means anything. At 3,000 it is ~5-6, still thin but
+        # reported (and excluded from the macro average below that threshold) rather
+        # than silently unreliable; see ClassifyPretrainConfig.min_holdout_positives.
+        "holdout_rows": 3000,
+        "note": (
+            "28 emotions, multi-label, per-label BCE head. Gated on macro average "
+            "precision, NOT accuracy: the corpus is 32.8% one label and 184.7:1 "
+            "max:min (CORPUS-CONTRACT.md B5 fail on both), so per-label binary "
+            "accuracy's chance floor is ~99.8% for the rarest label -- see "
+            "regions/classify_pretrain.py's module docstring."
+        ),
     },
 }
 
@@ -270,11 +374,14 @@ def run_region(
     """
     sources, note, default_max_len = REGIONS[name]
     resolved_max_len = default_max_len if max_len is None else max_len
+    corpus_root = REGION_CORPUS_ROOT.get(name, CORPUS)
     print(f"\n=== {name} — {note}", flush=True)
+    if corpus_root != CORPUS:
+        print(f"    corpus root: {corpus_root} (not the shared {CORPUS})", flush=True)
 
     resolved: list[SourceSpec] = []
     for glob_pat, cols, cap in sources:
-        shards = _shards(glob_pat)
+        shards = _shards(glob_pat, corpus_root)
         if shard_limit and not cap:
             shards = shards[:shard_limit]
         if not shards:
@@ -314,11 +421,12 @@ def run_region(
     # Single-source regions keep the simple path; multi-source ones are materialised by
     # the trainer via explicit shard lists per source.
     primary_glob, pair_cols, _ = resolved[0]
-    shards = _shards(primary_glob)
+    shards = _shards(primary_glob, corpus_root)
     if shard_limit and not resolved[0][2]:
         shards = shards[:shard_limit]
     extra_sources = [
-        {"shards": _shards(g), "columns": list(c), "limit": cap} for g, c, cap in resolved[1:]
+        {"shards": _shards(g, corpus_root), "columns": list(c), "limit": cap}
+        for g, c, cap in resolved[1:]
     ]
 
     cfg = PretrainConfig(
@@ -413,6 +521,7 @@ def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> 
         checkpoint_every=min(CHECKPOINT_EVERY, max(1, steps // 3)),
         jepa=JEPAConfig(),
         out_dir=str(state / "receipts"),
+        cache_dir=str(state / "vl-cache"),
     )
     started = time.time()
     receipt = pretrain_vl_region(cfg)
@@ -442,6 +551,100 @@ def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> 
         f"(ratio {receipt['collapse_ratio']}, collapsed={receipt['collapsed']})",
         flush=True,
     )
+    print(
+        f"    beats_untrained={receipt['beats_untrained']}  "
+        f"({time.time() - started:.0f}s, {receipt['parameters']:,} params)",
+        flush=True,
+    )
+    return receipt
+
+
+def run_classify_region(
+    name: str, state: Path, steps: int, batch: int, dry: bool, bf16: bool = True
+) -> dict | None:
+    """Train one classify specialist and return its receipt.
+
+    Separate path from `run_region`/`run_vl_region`: the corpus is (text, label) rows,
+    not (anchor, positive) pairs or an image struct, so it needs its own loss (softmax
+    cross-entropy or per-label BCE, per the spec's `multi_label`) and its own metrics
+    (top1/top5/macro-F1, or macro/micro average precision). See
+    `regions/classify_pretrain.py`'s module docstring for the full reasoning.
+    """
+    spec = CLASSIFY_REGIONS[name]
+    print(f"\n=== {name} — {spec['note']}", flush=True)
+    print(f"    corpus root: {LOCAL_CORPUS} (not the shared {CORPUS})", flush=True)
+
+    shards = _shards(spec["shards"], LOCAL_CORPUS)
+    print(
+        f"    {len(shards):>2} shard(s)  text={spec['text_column']!r} "
+        f"label={spec['label_column']!r} multi_label={spec['multi_label']}  {spec['shards']}",
+        flush=True,
+    )
+    if not shards:
+        print(f"    source MISSING for {name} — skipping", flush=True)
+        return None
+    print(
+        f"    steps={steps} batch={batch} lr={lr_for_batch(batch):.2e} "
+        f"max_len={spec['max_len']} holdout_rows={spec['holdout_rows']}",
+        flush=True,
+    )
+    if dry:
+        return None
+
+    # Imported here so --dry-run works without torch present.
+    from cogsyndelta.regions.classify_pretrain import (
+        ClassifyPretrainConfig,
+        pretrain_classify_region,
+    )
+    from cogsyndelta.regions.text_encoder import TextEncoderConfig
+
+    cfg = ClassifyPretrainConfig(
+        region=name,
+        shards=shards,
+        text_column=spec["text_column"],
+        label_column=spec["label_column"],
+        multi_label=spec["multi_label"],
+        label_names_from_metadata=spec["label_names_from_metadata"],
+        steps=steps,
+        batch_size=batch,
+        max_len=spec["max_len"],
+        holdout_rows=spec["holdout_rows"],
+        eval_every=max(1, steps // 6),
+        warmup_steps=max(50, steps // 15),
+        lr=lr_for_batch(batch),
+        checkpoint_every=min(CHECKPOINT_EVERY, max(1, steps // 3)),
+        encoder=TextEncoderConfig(dim=256, depth=4, n_heads=4, max_len=spec["max_len"]),
+        bf16=bf16,
+        out_dir=str(state / "receipts"),
+    )
+    started = time.time()
+    receipt = pretrain_classify_region(cfg)
+    if receipt.get("resumed"):
+        print(
+            f"    resumed from step {receipt['resumed_from_step']}/{steps} "
+            f"(checkpoint from a matching config)",
+            flush=True,
+        )
+    else:
+        print("    fresh run (no matching checkpoint found)", flush=True)
+
+    b, h = receipt["untrained_baseline"], receipt["held_out"]
+    if spec["multi_label"]:
+        print(
+            f"    untrained macro_ap={b['macro_ap']:.4f} (chance~={b['macro_ap_chance']:.4f}) "
+            f"micro_ap={b['micro_ap']:.4f}  ->  "
+            f"trained macro_ap={h['macro_ap']:.4f} (chance~={h['macro_ap_chance']:.4f}) "
+            f"micro_ap={h['micro_ap']:.4f}",
+            flush=True,
+        )
+    else:
+        print(
+            f"    untrained top1={b['top1']:.4f} (chance={b['top1_chance']:.4f}) "
+            f"macro_f1={b['macro_f1']:.4f}  ->  "
+            f"trained top1={h['top1']:.4f} (chance={h['top1_chance']:.4f}) "
+            f"macro_f1={h['macro_f1']:.4f}",
+            flush=True,
+        )
     print(
         f"    beats_untrained={receipt['beats_untrained']}  "
         f"({time.time() - started:.0f}s, {receipt['parameters']:,} params)",
@@ -523,13 +726,17 @@ def main() -> int:
 
     gate_failures = []
     for name in [r.strip() for r in args.regions.split(",") if r.strip()]:
-        if name not in REGIONS and name not in VL_REGIONS:
-            known = sorted(set(REGIONS) | set(VL_REGIONS))
+        if name not in REGIONS and name not in VL_REGIONS and name not in CLASSIFY_REGIONS:
+            known = sorted(set(REGIONS) | set(VL_REGIONS) | set(CLASSIFY_REGIONS))
             print(f"  unknown region {name!r}; have {known}", file=sys.stderr)
             continue
         try:
             if name in VL_REGIONS:
                 receipt = run_vl_region(name, state, args.steps, args.batch, args.dry_run)
+            elif name in CLASSIFY_REGIONS:
+                receipt = run_classify_region(
+                    name, state, args.steps, args.batch, args.dry_run, bf16=not args.no_bf16
+                )
             else:
                 receipt = run_region(
                     name,
