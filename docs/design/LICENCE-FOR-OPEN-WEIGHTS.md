@@ -626,22 +626,21 @@ image sets (Open Images, CC12M, RedCaps, YFCC100M) distribute **URLs, not pixels
 so explicitly. RedCaps states the reason in as many words: *"We do not distribute image
 files as we do not legally own them."*
 
-Candidates whose primary source does put the images inside the grant, and which are
-therefore worth evaluating:
+**A full candidate search is in [Replacement vision corpora](#replacement-vision-corpora)
+at the end of this document** — ~25 datasets with both the mirror tag and the true upstream
+verified, a recommended composite mix, and a reasoned treatment of whether mixing that many
+domains in one I-JEPA run is sound. It supersedes anything sketched here; read it rather
+than guessing from this section.
 
-| candidate | licence | scale | assessment |
-|---|---|---|---|
-| **`google/docci`** | **CC BY 4.0, stated to cover annotations *and* images**, which Google took and donated | ~15k images | The cleanest chain of title found anywhere in this audit. **Far too small** for 100k-image pretraining on its own |
-| **EuroSAT** (`blanchon/EuroSAT_RGB`) | MIT | 27k, 64×64 | Right resolution, clean licence, but **single-domain satellite imagery** — a poor proxy for 200-class object recognition |
-| **Caltech-256** | CC BY 4.0 (verified at the CaltechDATA record) | ~30k, 257 classes | Good licence and good class structure; small, and higher-resolution |
-| **`zalando-datasets/fashion_mnist`** | MIT | 60k, 28×28 greyscale | Already on this fleet's disk. Clean, but greyscale clothing is not a substitute for natural images |
-
-**None of these is a drop-in.** The honest statement is that no single permissively licensed
-corpus of ~100,000 natural photographic images at ~64px was found, and assembling one
-(EuroSAT + Caltech-256 + DOCCI + Open Images-by-URL, say) changes both the pretraining
-distribution and the probe. **`vl_latent` cannot be repaired by swapping a path in
-`VL_REGIONS`; it needs a corpus-construction project.** That is the finding, and it should
-be weighed against P3.1's plan to scale the region on tiny-imagenet first.
+Its headline is the same as this one's, and it is worth stating twice: **no replacement
+matches tiny-imagenet's density of natural object photography.** The clean options are a
+composite — general stock photography (`nyuuzyou/pxhere`, CC0), histopathology
+(`1aurent/PatchCamelyon`, CC0), synthetic 3D renders (Shapes3D and CLEVR), satellite
+(`timm/eurosat-rgb`, MIT, natively 64×64), garments (`fashion_mnist`, MIT) — with Quick Draw
+(CC BY 4.0) and Caltech-256 (CC BY 4.0) held out as clean probes. **`vl_latent` cannot be
+repaired by swapping a path in `VL_REGIONS`; it needs a corpus-construction project.** That
+is the finding, and it should be weighed against P3.1's plan to scale the region on
+tiny-imagenet first.
 
 **This region is also the one the program says matters most.** P12's note argues vision may
 be the primary interface rather than a side quest, and P3 plans to scale it. **Every hour
@@ -659,6 +658,65 @@ HotpotQA and oxford-iiit-pet. Plus ~15% GPL/AGPL source code in `code`.
 
 **The unsettled question is whether trained model weights are a derivative work — in CC's
 vocabulary, "Adapted Material" — of the data they were trained on.**
+
+CC BY-SA 4.0 §1(a) defines the term:
+
+> *"Adapted Material means material subject to Copyright and Similar Rights that is derived
+> from or based upon the Licensed Material and in which the Licensed Material is translated,
+> altered, arranged, transformed, or otherwise modified in a manner requiring permission
+> under the Copyright and Similar Rights held by the Licensor."*
+
+Whether weights fall inside that is exactly what nobody has settled. What follows is the
+range of published positions, not an argument for one.
+
+**Creative Commons itself states both halves and declines to choose.** Its May 2025 primer
+*Using CC-Licensed Works for AI Training* says:
+
+> *"ShareAlike: … When training data is subject to the ShareAlike condition, model outputs
+> and the model itself, if shared publicly, should be made available under the same CC
+> license as the original works **when taking this conservative approach**."*
+
+and in the same document:
+
+> *"Although, in many cases, neither the AI model nor its outputs would be considered to be
+> derivative works of training data under copyright law…"*
+
+with the explicit caveat that the guidance *"is not intended to take a position on whether
+and when copyright applies"* and that following it *"will almost certainly lead to
+overcompliance."* CC also notes the conditions are *"triggered only upon public sharing"* —
+which is precisely the step this project is contemplating.
+
+**One court has now ruled close to the point, and ruled against propagation.** In
+*Getty Images v. Stability AI* [2025] EWHC 2863 (Ch) (4 Nov 2025), on whether model weights
+are an "infringing copy" under CDPA s.27(3), Mrs Justice Joanna Smith held:
+
+> *"…the model weights are not themselves an infringing copy and they do not store an
+> infringing copy. They are purely the product of the patterns and features which they have
+> learnt over time during the training process."* (¶599–600)
+
+**Read that narrowly.** It is UK secondary-infringement statute, not CC ShareAlike, not US
+law, and not binding anywhere relevant to this project. It is nonetheless the closest thing
+to a judicial answer that exists.
+
+**The contrary position is held seriously too.** Software Freedom Conservancy's Bradley Kuhn,
+on Copilot and GPL'd training data:
+
+> *"GitHub has meanwhile artfully avoided the question of whether the trained model is a
+> 'work based on' the input. We contend that it probably is."*
+
+SFC's own 2026 guidance is candid that the question is open — *"The question of licensing
+obligations for material passed through the process called 'training' remains undecided"* —
+and recommends copyleft as the safe default while courts catch up. Law-firm commentary on the
+US Copyright Office's 2025 report notes the Office's view that where outputs are substantially
+similar to training inputs there is a *"strong argument"* that the weights themselves
+implicate the derivative-work right, adding that the point *"has been sharply debated, with
+different courts taking opposing views."*
+
+**No case anywhere has turned on a ShareAlike or copyleft obligation.** Bartz v. Anthropic,
+Kadrey v. Meta, Thomson Reuters v. Ross, Getty (UK and US), Andersen v. Stability and NYT v.
+OpenAI are all disputes over proprietary or all-rights-reserved content. The nearest,
+*Doe v. GitHub*, is pleaded under DMCA §1202 (attribution/CMI removal), not as a
+derivative-work claim. So the specific question this project faces has no direct precedent.
 
 What can be said without deciding it:
 
@@ -685,6 +743,55 @@ What can be said without deciding it:
 **What is NOT a mitigation:** asserting that weights are not derivative works because it
 would be convenient. If that position is taken, take it explicitly, in the model card, as a
 stated position rather than a silence.
+
+**What the field actually does, and the one place it does not.** The norm is unambiguous:
+`all-MiniLM-L6-v2` and `all-mpnet-base-v2` ship Apache-2.0 while trained on AllNLI and never
+mention SNLI's CC BY-SA; BERT ships Apache-2.0 trained on Wikipedia; RoBERTa ships MIT;
+OLMo, Molmo, Pythia and RedPajama-INCITE all ship Apache-2.0. A survey of licensed HF models
+found MIT and Apache-2.0 as the top two categories and copyleft-type terms on roughly 5%.
+**A targeted search for a single shipped model that chose a copyleft weights licence
+*because* its training data was copyleft found none.** That is evidence of a norm, not of an
+obligation — but it is the norm this project would be departing from if it went the other
+way, and it is worth knowing that the departure would be close to unprecedented.
+
+**The exception is directly on point for `vl_latent`, and it cuts the other way.** `timm` —
+the most-used distributor of ImageNet-pretrained weights in the ecosystem — says in its own
+README:
+
+> *"Any models I have trained with ImageNet are done for research purposes and **one should
+> assume that the original dataset license applies to the weights**. It's best to seek legal
+> advice if you intend to use the pretrained weights in a commercial product."*
+
+torchvision says the same thing more generally:
+
+> *"The pre-trained models provided in this library may have their own licenses or terms and
+> conditions derived from the dataset used for training. It is your responsibility to
+> determine whether you have permission to use the models for your use case."*
+
+So the "everyone releases ImageNet-trained weights permissively and nobody worries" reading
+is **wrong**, and it would have been the convenient thing to believe. The two maintainers
+closest to the problem both tell users to assume the dataset licence reaches the weights.
+That is the single most relevant piece of observed practice in this audit, and it points
+away from releasing `vl_latent` at all.
+
+**And there is a worked precedent for the `code` fix.** BigCode did not resolve the copyleft
+question for The Stack — it removed the question by filtering: *"The three copyleft licenses
+(MPL/EPL/LGPL) were excluded and the list of permissive licenses extended to 193 licenses in
+total."* StarCoder's card then still warns that *"The code's license might require
+attribution and/or other specific requirements that must be respected"* and ships a search
+index so users can trace generated code back to its source. That is precisely the shape of
+the `code` recommendation in this document, executed at scale by a project that took the
+question seriously.
+
+**A note on the standards bodies**, which matter less than they appear to. OSI's Open Source
+AI Definition requires *"Data Information"* — a description sufficient to rebuild an
+equivalent system — not the data itself, and its own FAQ defends that choice against critics
+who wanted full data openness. The Linux Foundation's Model Openness Framework goes further
+in the same direction: even its most demanding Class I accepts raw training datasets under
+*"Any including unlicensed"* terms so long as they are disclosed, while expecting the model
+parameters themselves to carry a real open licence. **Both frameworks treat data licensing
+and weights licensing as separate questions.** Neither answers the one asked here, and
+conforming to either would not make an MIT release of these weights defensible.
 
 ---
 
@@ -720,13 +827,15 @@ underlying scraped images. That is a licence vacuum, not a permission.
 
 **If the eval-only argument is not relied on, CIFAR-100 is replaceable and cheaply so.**
 The probe needs a labelled set from a domain different to the pretraining corpus, with
-enough classes that top-1 is informative. **Caltech-256** (CC BY 4.0, verified at the
-CaltechDATA record; 257 classes, ~30k images) is the closest structural substitute —
-comparable class count to CIFAR-100's 100, a real licence, and a different domain from
-whatever replaces tiny-imagenet. **EuroSAT** (MIT, 64×64) is the cleanest chain of title but
-only 10 classes and single-domain. `timm/oxford-iiit-pet`, already on this fleet's disk, is
-CC BY-SA 4.0 — a share-alike probe, which is a smaller problem than an unlicensed one but
-not nothing. Swapping the probe costs one config line and re-runs in 497 seconds.
+enough classes that top-1 is informative. **Caltech-256** (CC BY 4.0 via the CaltechDATA
+institutional deposit; 257 categories, ~30k images) is the closest structural substitute —
+more classes than CIFAR-100's 100, a real licence, and natural object photography, though
+no HF mirror carries a matching tag so it must come from the official archive.
+**Quick Draw** (CC BY 4.0, 345 categories) is the other clean option. `timm/oxford-iiit-pet`,
+already on this fleet's disk, is CC BY-SA 4.0 — a share-alike probe, a smaller problem than
+an unlicensed one but not nothing. Swapping the probe costs one config line and re-runs in
+497 seconds. See [Replacement vision corpora](#replacement-vision-corpora) for the verified
+chains.
 
 **Where it is strong, and it is strong here for CIFAR-100.** `vl_latent`'s transfer probe was
 read rather than assumed. `regions/vl_pretrain.py::_linear_probe` constructs a local
@@ -751,13 +860,46 @@ as this argument gets.
    `vl_latent`'s gate list includes `transfer_top1` — so **CIFAR-100 is already part of a
    gate decision**, not purely an observation. The leak is small and indirect, but it is not
    zero, and "we only evaluated on it" is doing more work in that sentence than it can bear.
-2. **Most restrictive terms do not distinguish.** ImageNet's clause is *"use the Database
-   only for non-commercial research and educational purposes"* — "use", not "train on". A
-   term written that way does not obviously grant evaluation while withholding training;
-   it restricts both.
-3. **It is a norm, not a rule.** Reporting benchmark numbers on restrictively licensed
-   evaluation sets while releasing weights permissively is near-universal practice. Practice
-   is evidence about risk appetite. It is not evidence about obligation.
+2. **No licence examined draws the distinction at all.** This was checked rather than
+   assumed. ImageNet: *"Researcher shall use the Database only for non-commercial research
+   and educational purposes"* — "use", not "train on". MS MARCO: *"intended for
+   non-commercial research purposes only … without extending any license or other
+   intellectual property rights."* Neither carves evaluation out of a restricted training
+   category, because neither has such categories. **The distinction is one this project
+   would be inventing, not one any licensor granted.**
+3. **No published guidance treats it as a licensing question either.** NIST's AI RMF
+   mentions copyright only in connection with *training* data (*"Training data may also be
+   subject to copyright and should follow applicable intellectual property rights laws"*)
+   and discusses evaluation data purely methodologically. EleutherAI's lm-evaluation-harness
+   is silent. HuggingFace's leaderboard gates GPQA explicitly *"to minimize the risk of data
+   contamination"* — a contamination control, not a licensing one. MLCommons' train/test
+   separation rules are anti-cheating rules. The train-versus-eval line is everywhere in the
+   methodology literature and **nowhere in the licensing literature.**
+4. **The model-selection leak argument in point 1 appears to be unsupported.** A targeted
+   search for anyone making it *as a licensing claim* — that tuning or early-stopping on a
+   benchmark makes its licence attach to the weights — found nothing. Test-set contamination
+   is discussed constantly, always as a statistics problem. So point 1 should be read as
+   this document's own reasoning about where the argument gets thin, not as a position with
+   backing. It is offered as a reason for caution, not as a cited risk.
+5. **It is a norm, not a rule.** `timm/resnet50.a1_in1k` ships Apache-2.0 and reports
+   ImageNet top-1 81.22; CLIP ships MIT and reports ImageNet accuracy; the
+   `cross-encoder/ms-marco-*` models ship Apache-2.0 and report MS MARCO MRR. This is
+   near-universal practice. Practice is evidence about risk appetite. It is not evidence
+   about obligation — and torchvision's own README treats it as an open question it pushes
+   onto the user rather than a settled non-issue.
+
+**One licence does address it, and resolves it the other way entirely.** Microsoft's
+Computational Use of Data Agreement (C-UDA v1.0) does not separate evaluation from training;
+it declares the *model* outside the data's reach:
+
+> *"'Result' means anything that you develop or improve from your use of Data that does not
+> include more than a de minimis portion of the Data … **Artificial intelligence models
+> trained on Data (and which do not include more than a de minimis portion of Data) are
+> Results.**"* … *"The C-UDA does not impose any restriction with respect to the use,
+> modification, or distribution of Results."*
+
+That is what an unambiguous grant for this situation looks like. **None of the corpora in
+this audit carries one** — which is the cleanest way to see what is actually missing.
 
 **Plain answer, since the task asks for one:** the eval-only distinction is sound enough to
 rely on for **CIFAR-100 specifically in this codebase**, because it was verified structurally
@@ -781,6 +923,39 @@ checkable by anyone.
 > audit. Before publication, confirm each dataset's own preferred attribution/citation
 > string from its card — several request a specific paper citation in addition to the
 > licence notice.*
+
+**What CC BY 4.0 actually requires**, so the notices below can be checked against it rather
+than taken on trust. §3(a)(1): if you share the material, including in modified form, you
+must retain identification of the creator, a copyright notice, a notice referring to the
+licence, a notice referring to the disclaimer of warranties, and a URI to the material;
+**indicate if you modified it**; and state which licence applies, with its text or a link.
+§3(a)(2) then supplies the flexibility that makes a model card a workable place to do this:
+
+> *"You may satisfy the conditions in Section 3(a)(1) in any reasonable manner based on the
+> medium, means, and context in which You Share the Licensed Material. For example, it may
+> be reasonable to satisfy the conditions by providing a URI or hyperlink to a resource that
+> includes the required information."*
+
+CC's recommended shape is **TASL** — Title, Author, Source, Licence — with the licence named
+*and* linked. The block below follows that. Note that *"indicate if You modified"* is a
+requirement the notices below do not yet satisfy; if weights are treated as adapted
+material, a line saying the data was filtered, joined and used for training belongs in each
+entry.
+
+**Two upstreams impose their own specific forms**, and both are relevant here:
+
+- **Wikimedia** (SQuAD, Natural Questions and HotpotQA passages are Wikipedia text) requires
+  a hyperlink or URL to the reused page or a stable copy or a full author list; requires
+  modifications to be indicated; requires derivative text to be licensed CC BY-SA 4.0 or
+  later; and requires a licensing notice with a link to the licence. **Wikipedia's reuse
+  guidance says nothing about datasets, corpora or machine learning** — the page was checked
+  for those terms and contains none. There is no Wikimedia guidance for this use.
+- **Stack Exchange** (potentially relevant if FiQA derives from StackExchange) requires
+  visually indicating the content's origin, a direct hyperlink to the *original question*,
+  the author names, and direct hyperlinks to each author's profile, not nofollowed. That is
+  a per-item obligation which **cannot be satisfied for training data at all** — there is no
+  per-row provenance to link to. Establishing whether FiQA is StackExchange-derived is
+  therefore worth doing before relying on the FiQA line below.
 
 ```markdown
 ## Training data attribution
@@ -976,6 +1151,20 @@ Listed rather than guessed. Each is a real gap.
 13. **The copyright status of 80 Million Tiny Images' underlying scraped images**, and hence
     of CIFAR-100's. No source addresses it — not the CIFAR page, not the TPAMI paper, not
     the withdrawal letter.
+14. **Whether FiQA is StackExchange-derived.** It matters more than it looks: Stack Exchange's
+    attribution requirement is per-item (link the original question, name each author, link
+    each profile), and that is not satisfiable from training data at all. If FiQA is
+    StackExchange-sourced, the FiQA attribution line in this document is not merely
+    incomplete — it is unsatisfiable in principle.
+15. **Any US ruling on whether weights are copies or derivative works.** The one judicial
+    holding found is UK (*Getty v. Stability*, secondary infringement under CDPA s.27(3)),
+    and the US cases have produced only pleading-stage survivals on adjacent theories. The
+    question is open in the jurisdiction most likely to matter.
+16. **Whether the "conservative approach" CC recommends is one this project should take.**
+    CC states both that ShareAlike-trained models *"should be made available under the same
+    CC license … when taking this conservative approach"* and that *"in many cases"* the
+    model would not be a derivative work — while declining to resolve which applies. That is
+    a genuine choice left to the releaser, not a gap in the research.
 
 ---
 
@@ -993,6 +1182,14 @@ measurements read shards already on disk.
 | CodeSearchNet licence scope | fetched `github/CodeSearchNet` README |
 | GooAQ's contradiction | `curl` of the raw bytes of `allenai/gooaq`'s `README.md` and `LICENSE` on `main`; GitHub API for repo metadata and README commit history (last touched 2021-07-23) |
 | GooAQ's HF card silence | `huggingface.co/datasets/allenai/gooaq/raw/main/README.md` — tag `apache-2.0`, no non-commercial note anywhere |
+| CC's position on ShareAlike and weights | *Using CC-Licensed Works for AI Training*, creativecommons.org, May 2025 |
+| "Adapted Material" definition | CC BY-SA 4.0 legal code §1(a); attribution requirements from CC BY 4.0 §3(a) |
+| the one judicial holding on weights | *Getty Images v. Stability AI* [2025] EWHC 2863 (Ch), ¶599–600, ¶757 |
+| the contrary position | Software Freedom Conservancy (Kuhn, 2022) and SFC's 2026 LLM recommendations |
+| observed practice on ImageNet weights | `timm` README and torchvision README, quoted verbatim — **both tell users to assume the dataset licence reaches the weights** |
+| the copyleft-filtering precedent | BigCode's The Stack docs and the StarCoder model card |
+| absence of a train-vs-eval licensing line | ImageNet and MS MARCO terms; NIST AI RMF; HF leaderboard docs; lm-evaluation-harness; MLCommons |
+| a licence that does address it | Microsoft C-UDA v1.0, "Results" definition |
 | all-nli SNLI/MultiNLI split | set-match of `all-nli/pair/train` against `snli/train` label==0, both on disk |
 | restricted-genre presence | regex over the 314,315 anchors in the shard `compress` trained on |
 | absence of a `genre` column | `pyarrow` schema of the trained shard |
@@ -1075,7 +1272,7 @@ cover the relevant use.
 | `imageomics/TreeOfLife-200M` | Its **own** "Licensing Information" section states the compilation-level CC0 tag sits over a knowing mix of CC0/CC-BY/CC-BY-NC/CC-BY-NC-SA/CC-BY-NC-ND content from GBIF/EOL/BIOSCAN/FathomNet, filtered to none of them. This is the exact mixed-per-contributor trap that already ruled out COCO and red_caps, and the dataset's own documentation admits it rather than requiring inference. Independently disqualifying: it ships **metadata only** (`catalog.parquet` has no image column); actual pixels require external re-download from four different providers' own infrastructure. | **BLOCKING**, two independent reasons |
 | STL-10 | `cs.stanford.edu/~acoates/stl10/`: "Images were acquired from labeled examples on ImageNet." Same root cause as tiny-imagenet. No licence text anywhere on the page. | **BLOCKING** |
 | SVHN | Archived `ufldl.stanford.edu/housenumbers/`: "(Note: for non-commercial use only)." HF's own community card repeats it. One mirror (`Genius-Society/svhn`) wrongly tags `mit`. | **BLOCKING** |
-| Food-101 | `data.vision.ee.ethz.ch/cvl/datasets_extra/food-101/` states no licence at all; `source_datasets: extended|other-foodspotting` — images are individually-submitted foodspotting.com user photos, the same per-photographer pattern that already ruled out COCO/red_caps. | **BLOCKING** |
+| Food-101 | `data.vision.ee.ethz.ch/cvl/datasets_extra/food-101/` states no licence at all; `source_datasets: extended\|other-foodspotting` — images are individually-submitted foodspotting.com user photos, the same per-photographer pattern that already ruled out COCO/red_caps. | **BLOCKING** |
 | Places365 | Archived `places2.csail.mit.edu`: "for academic research and education purposes." Two obscure mirrors wrongly tag `mit`. | **BLOCKING** |
 | CIFAR-10 | Identical provenance to CIFAR-100, already BLOCKING above: "a labeled subset of the 80 million tiny images dataset," no licence text at the source, underlying corpus formally withdrawn. | **BLOCKING** |
 | DTD | `robots.ox.ac.uk/~vgg/data/dtd/`: "This data is made available to the computer vision community for research purposes." | **BLOCKING** |
