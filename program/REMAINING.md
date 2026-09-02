@@ -231,6 +231,33 @@ Already in place, do not rebuild: warmup+cosine LR, gradient clipping, determini
 seeding with corpus fingerprints, receipt-based experiment tracking, Prometheus export,
 sensitivity-driven PTQ with real sub-byte packing.
 
+## P12 — Late-phase training regime (operator vision)
+
+All established techniques. Every one belongs AFTER a working conventional baseline, per
+the operator, because none can be attributed without one.
+
+| id | task | name in the literature | status |
+|----|------|------------------------|--------|
+| P12.1 | Mixed-modality, mixed-class batches late in training | multi-task / interleaved training | todo |
+| P12.2 | "not a Malinois -- but what IS it, is it even a dog" | hierarchical classification + open-set / OOD recognition | todo |
+| P12.3 | Keep older data in the mix so a region does not forget | experience replay | todo |
+| P12.4 | Internal deliberation before answering | latent reasoning (Coconut-style continuous thought) -- SAME as the deferred looped transformers | todo |
+
+WHY VL MAY BE THE PRIMARY INTERFACE, NOT A SIDE QUEST
+The operator's argument, which holds up: a 64x64 image at patch-8 is 64 positions, the same
+order as a 96-token text sequence, but a screenshot carries far more decision-relevant
+information than 64 tokens of prose. Per unit of compute, vision can be the cheaper
+channel. If that holds at scale, the end state is a model handed a display or a VM rather
+than a token stream, with the text regions as specialists rather than the trunk. This is
+why `vl_latent` should not be treated as optional polish.
+
+THE END GOAL THAT SHAPES ALL OF IT
+Not a model that captions images or emits text. A composed mind of specialised regions
+working in concert, architected for traceability -- eventually rewritten in the operator's
+own language so provenance is total and no layer is a black box. That is why regions are
+trained and gated INDIVIDUALLY, and why every number carries a receipt: a system you can
+interrogate layer by layer has to be built that way from the start, not instrumented later.
+
 ## P8 — Deferred by explicit operator decision
 
 - Recursive/looped latent transformers
