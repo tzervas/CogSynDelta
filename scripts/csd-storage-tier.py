@@ -22,8 +22,12 @@ MEASURED, NOT ASSUMED
   stays readable.
 
 SAFETY
-- Nothing local is deleted until the remote copy is verified BY CHECKSUM. rsync exits 0
-  on a truncated transfer, and a short file has a perfectly plausible size.
+- Nothing local is deleted until the remote copy is verified. Two layers, because they
+  cover different failures: rsync checksums each file's CONTENT as it transfers, and this
+  tool then compares a manifest of every path and size on both sides to prove nothing was
+  silently skipped. The manifest is a size-and-path digest, NOT a content hash -- content
+  is rsync's job, and re-reading 661 GB on both ends to hash it would cost hours to
+  re-verify what rsync already verified.
 - /bulk is RAID0 with NO redundancy -- lose one disk and all 5.5 TB goes. So only data
   that can be re-fetched may live there as its only copy. Anything not explicitly
   classified `cold` below is refused rather than assumed re-fetchable.
@@ -145,7 +149,9 @@ def offload(rel: str, apply: bool) -> dict:
         res["status"], res["detail"] = "TRANSFER FAILED", out[:300]
         return res
 
-    # Verify by manifest checksum. rsync's exit code does not prove the bytes landed.
+    # rsync has already content-checksummed each file it sent. What it cannot tell us is
+    # whether a file was never attempted -- a permission error on one subtree still exits
+    # 0 overall. So compare every path and size on both sides before deleting anything.
     man = "find . -type f -printf '%s %p\\n' | sort | md5sum | cut -d' ' -f1"
     rc_a, a = ssh(HOT_HOST, f'cd {src} && sh -c "{man}"', timeout=3600)
     rc_b, b = ssh(COLD_HOST, f'cd {dst} && sh -c "{man}"', timeout=3600)
@@ -158,7 +164,7 @@ def offload(rel: str, apply: bool) -> dict:
         {
             "offloaded_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "moved_to": f"{COLD_HOST}:{dst}",
-            "manifest_md5": a,
+            "manifest_md5": a,  # digest of paths+sizes, not content
             "why_safe": why,
             "restore": f"scripts/csd-storage-tier.py --restore {rel} --apply",
         },
