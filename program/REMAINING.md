@@ -58,6 +58,12 @@ TWO COMPONENTS WITH NO CURRENT ANALOGUE, and both are architectural rather than 
     the thalamus relays and modulates what reaches cortex. So if dynamic gating is wanted on
     top of learned connectivity, the supplement is thalamus-shaped, not white-matter-shaped.
 
+    SEQUENCING -- the interconnect is LATE STAGE BY NECESSITY. It cannot be trained before
+    the regions exist, because it has no signal to learn from: there is nothing to route,
+    schedule or weight until there are trained faculties producing representations. This is
+    not a preference, it is a dependency. It is also its own substantial problem, not a
+    finishing step.
+
     DESIGN CHOICE TO SETTLE BEFORE P4:
       (a) cross-region attention as white matter; routing emergent, no separate router
       (b) fixed high-bandwidth interconnect PLUS a thalamic gate that modulates what passes
@@ -79,7 +85,33 @@ TWO COMPONENTS WITH NO CURRENT ANALOGUE, and both are architectural rather than 
          than "non-overlapping": the interconnect must learn to route and integrate on data
          where NO SINGLE REGION ALREADY HAS THE ANSWER MEMORISED. Otherwise it learns to
          forward to whichever region already knows, which is dispatch, not integration.
-      3. REGIONS MAY NEED TO BE TRAINED KNOWING THEY WILL BE WIRED. A region trained in
+      3. THE INTERCONNECT IS A LEARNED SCHEDULER, not a router. It must learn, from context
+         and scenario, ALL of:
+           - WHICH regions to activate
+           - with what INTENSITY and PRIORITY
+           - how much ATTENTION to allocate to each, split and spread across them
+           - how much CONTEXT WINDOW each gets
+           - the EXECUTION TOPOLOGY: what runs asynchronously, what sequentially, and what
+             must run in parallel IN LOCKSTEP
+         A router picks one thing. This emits a dataflow graph. That is a substantially
+         harder learning problem and should not be underestimated by inheriting the word
+         "router" from P4.
+
+         CONTEXT MANAGEMENT is part of it: a hybrid of sliding windows over an overarching
+         context, plus latent-reasoning windows. Per-region budgets, not one global window.
+
+         MEMORY EFFICIENCY is a stated goal -- bring up only what is needed rather than the
+         whole model. HONEST TIMING NOTE: a region today is 16M params (64 MB fp32, 6.5 MB
+         quantized), so seven regions is ~450 MB and everything fits on the 16 GB 5080 with
+         room to spare. Dynamic paging solves a problem that does not exist YET. It becomes
+         real when regions scale up, or when many run concurrently with long contexts and
+         ACTIVATION memory dominates weight memory. Selective activation still buys compute
+         and attention budget today -- just not memory. Build it when the constraint is
+         real, and measure which of the two it is.
+
+         DEPLOYMENT TARGET: the composed mind should run on a SINGLE consumer card (~16 GB).
+
+      4. REGIONS MAY NEED TO BE TRAINED KNOWING THEY WILL BE WIRED. A region trained in
          isolation optimises to solve its task ALONE. If the interconnect unifies them, a
          region's objective arguably should account for contributing to a shared state
          rather than producing a standalone answer. Every region trained so far was trained
