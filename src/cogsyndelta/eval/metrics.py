@@ -29,7 +29,7 @@ import hashlib
 import math
 import re
 from collections.abc import Iterable, Sequence
-from typing import TypedDict
+from typing import NamedTuple, TypedDict
 
 import torch
 
@@ -56,9 +56,16 @@ class ChannelOverlap(TypedDict):
 
 
 class PairContaminationReport(TypedDict):
-    """Multi-channel overlap between a train and an eval set of (anchor, positive) pairs."""
+    """Multi-channel overlap between a train and an eval set of (anchor, positive) pairs.
+
+    `train_pairs_removed` is the count of TRAINING pairs dropped for colliding with the
+    holdout on a gated channel. It is separate from the overlap figures on purpose: the
+    overlaps are what was MEASURED, before anything was done about it, so a receipt
+    records the contamination that existed rather than only the state after cleanup.
+    """
 
     train_pairs_seen: int
+    train_pairs_removed: int
     eval_pairs: int
     gated_channels: list[str]
     channels: dict[str, ChannelOverlap]
@@ -328,6 +335,74 @@ def _index_eval(
     return keys, n_pairs, duplicate_positives
 
 
+class PairScan(NamedTuple):
+    """One pass of the train side against an indexed eval side.
+
+    An implementation detail of the two public entry points below, not exported: it
+    exists so that measuring and repairing share a single pass over a half-million pairs
+    rather than keying every one of them twice.
+    """
+
+    eval_index: dict[str, dict[str, str]]
+    hits: dict[str, dict[str, str]]
+    contaminated: list[int]
+    train_seen: int
+    eval_pairs: int
+    eval_duplicate_positives: int
+
+
+def _scan(
+    train_pairs: Iterable[tuple[str, str]], eval_pairs: Iterable[tuple[str, str]]
+) -> PairScan:
+    """Stream the train side once, recording every channel hit and which rows to drop.
+
+    The train side is never held in this function: only membership in the eval-side key
+    index and the POSITIONS of contaminated rows are kept, so this costs O(eval) memory
+    against a half-million-pair training set.
+    """
+    index, n_eval, duplicate_positives = _index_eval(eval_pairs)
+    hits: dict[str, dict[str, str]] = {name: {} for name in index}
+    contaminated: list[int] = []
+    seen = 0
+    for position, (anchor, positive) in enumerate(train_pairs):
+        seen += 1
+        gated_hit = False
+        for name, key in _channel_keys(anchor, positive).items():
+            example = index[name].get(key)
+            if example is None:
+                continue
+            hits[name][key] = example
+            gated_hit = gated_hit or name in _GATED_CHANNELS
+        if gated_hit:
+            contaminated.append(position)
+    return PairScan(index, hits, contaminated, seen, n_eval, duplicate_positives)
+
+
+def _report(scan: PairScan, removed: int = 0) -> PairContaminationReport:
+    """Turn a scan into the reportable per-channel figures."""
+    channels: dict[str, ChannelOverlap] = {
+        name: ChannelOverlap(
+            key=_CHANNEL_MEANING[name],
+            gated=name in _GATED_CHANNELS,
+            eval_unique=len(scan.eval_index[name]),
+            overlap=len(scan.hits[name]),
+            eval_fraction_contaminated=(
+                len(scan.hits[name]) / len(scan.eval_index[name]) if scan.eval_index[name] else 0.0
+            ),
+            examples=sorted(scan.hits[name].values())[:5],
+        )
+        for name in scan.eval_index
+    }
+    return PairContaminationReport(
+        train_pairs_seen=scan.train_seen,
+        train_pairs_removed=removed,
+        eval_pairs=scan.eval_pairs,
+        gated_channels=list(_GATED_CHANNELS),
+        channels=channels,
+        eval_duplicate_positives=scan.eval_duplicate_positives,
+    )
+
+
 def pair_contamination_report(
     train_pairs: Iterable[tuple[str, str]], eval_pairs: Iterable[tuple[str, str]]
 ) -> PairContaminationReport:
@@ -353,33 +428,7 @@ def pair_contamination_report(
         Per-channel counts, which channels are gated, and the number of held-out pairs
         sharing a positive with another held-out pair.
     """
-    index, n_eval, duplicate_positives = _index_eval(eval_pairs)
-    hits: dict[str, dict[str, str]] = {name: {} for name in index}
-    seen = 0
-    for anchor, positive in train_pairs:
-        seen += 1
-        for name, key in _channel_keys(anchor, positive).items():
-            example = index[name].get(key)
-            if example is not None:
-                hits[name][key] = example
-    channels: dict[str, ChannelOverlap] = {
-        name: ChannelOverlap(
-            key=_CHANNEL_MEANING[name],
-            gated=name in _GATED_CHANNELS,
-            eval_unique=len(index[name]),
-            overlap=len(hits[name]),
-            eval_fraction_contaminated=(len(hits[name]) / len(index[name]) if index[name] else 0.0),
-            examples=sorted(hits[name].values())[:5],
-        )
-        for name in index
-    }
-    return PairContaminationReport(
-        train_pairs_seen=seen,
-        eval_pairs=n_eval,
-        gated_channels=list(_GATED_CHANNELS),
-        channels=channels,
-        eval_duplicate_positives=duplicate_positives,
-    )
+    return _report(_scan(train_pairs, eval_pairs))
 
 
 def assert_no_pair_contamination(
@@ -413,6 +462,84 @@ def assert_no_pair_contamination(
                 f"real leak rather than a bookkeeping artefact. Examples: {channel['examples']}"
             )
     return report
+
+
+REMOVAL_CEILING = 0.01
+"""Ceiling on the fraction of TRAINING that may be deleted to clean a split.
+
+The quantity matters. Removing leaked TRAINING rows is a repair: the held-out set is
+untouched, the leak is genuinely gone, and the count goes in the receipt. This repo
+already does exactly that one level up -- `_prepare_graded` drops the STS-B pairs that
+are also AllNLI training positives rather than tolerating them, because "raising a
+tolerance makes a number look clean without making it clean".
+
+Measured on the real corpora at a 512-pair holdout: `code` leaks nothing, `compress`
+leaks 1 held-out pair, `retrieve` leaks 35. Even the worst of those deletes on the order
+of 0.01% of a half-million-pair training set. That is a stray-row repair.
+
+What the ceiling is actually guarding against is a corpus so duplicated that deleting the
+leaks guts the training set -- at which point the split is not repairable by deletion and
+the honest answer is to stop. Expressing the ceiling as a share of the EVAL set would
+have refused `retrieve` outright over 35 rows, which teaches an operator to raise the
+tolerance and puts us back where this file started.
+"""
+
+
+def screen_pair_contamination(
+    train_pairs: Sequence[tuple[str, str]],
+    eval_pairs: Sequence[tuple[str, str]],
+    *,
+    removal_ceiling: float = REMOVAL_CEILING,
+) -> tuple[list[tuple[str, str]], PairContaminationReport]:
+    """Measure contamination, then drop the training rows that cause it.
+
+    Order matters and is the point: the report describes what was MEASURED, before the
+    removal, so a receipt records the contamination that existed rather than the tidy
+    state afterwards. A reader can see that `retrieve` leaked 6.84% of its holdout and
+    that those rows were removed; a report generated after cleanup would show a zero
+    indistinguishable from a corpus that never leaked -- which is exactly what made the
+    previous anchor-only guard worthless.
+
+    Only the GATED channels cause removal, and only TRAINING rows are ever removed. The
+    single-side channels are ambiguous (a passage answering two different queries is
+    normal in IR; two paraphrased queries with different answers is a real weakness the
+    metric SHOULD see), so acting on them would edit the corpus on a judgement this code
+    is not entitled to make. They are reported instead.
+
+    Args:
+        train_pairs: Pairs the model would train on.
+        eval_pairs: The held-out pairs.
+        removal_ceiling: Fraction of TRAINING above which this refuses rather than
+            cleans. See :data:`REMOVAL_CEILING`.
+
+    Returns:
+        `(kept_train_pairs, report)`. The report's overlap figures are pre-removal.
+
+    Raises:
+        ValueError: If cleaning would delete more than ``removal_ceiling`` of training --
+            at that scale the corpus is duplicated and the split is not repairable by
+            deletion.
+    """
+    scan = _scan(train_pairs, eval_pairs)
+    report = _report(scan, removed=len(scan.contaminated))
+    share = len(scan.contaminated) / max(1, scan.train_seen)
+    if share > removal_ceiling:
+        fired = [
+            f"{name} {report['channels'][name]['eval_fraction_contaminated']:.2%} of the holdout"
+            for name in _GATED_CHANNELS
+            if report["channels"][name]["overlap"]
+        ]
+        raise ValueError(
+            f"refusing to train: cleaning the held-out leak would delete "
+            f"{len(scan.contaminated)} of {scan.train_seen} training pairs ({share:.2%}), "
+            f"above the {removal_ceiling:.2%} ceiling. Channels: {'; '.join(fired)}. "
+            f"Removing a stray row is a repair; removing this much is deleting the corpus "
+            f"until the eval looks clean. The split itself is wrong. Examples: "
+            f"{report['channels'][_GATED_CHANNELS[-1]]['examples']}"
+        )
+    drop = set(scan.contaminated)
+    kept = [pair for position, pair in enumerate(train_pairs) if position not in drop]
+    return kept, report
 
 
 def recall_at_k(scores: torch.Tensor, relevant: torch.Tensor, k: int) -> float:

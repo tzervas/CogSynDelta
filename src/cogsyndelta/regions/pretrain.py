@@ -47,11 +47,11 @@ from cogsyndelta.corpus import (
     sampling_rng,
 )
 from cogsyndelta.eval import (
-    assert_no_pair_contamination,
     contamination_report,
     mean_reciprocal_rank,
     pair_fingerprint,
     recall_at_k,
+    screen_pair_contamination,
     spearman_correlation,
 )
 from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
@@ -553,9 +553,19 @@ def build_splits(
     # The replacement keys on things the dedup above has NOT eliminated: the positive
     # side (dedup is anchor-only), the pair in either direction (symmetric InfoNCE trains
     # both), and a content-word normalisation coarser than the exact one dedup used. Only
-    # the two PAIR-level channels are gated; see `_GATED_CHANNELS` in eval/metrics.py for
-    # why the single-side channels are counted rather than enforced.
-    contamination = assert_no_pair_contamination(train_pairs, holdout)
+    # the two PAIR-level channels drive removal; see `_GATED_CHANNELS` in eval/metrics.py
+    # for why the single-side channels are counted rather than acted on.
+    #
+    # MEASURE, then REPAIR, and record both. The training rows that duplicate a held-out
+    # pair are dropped -- the holdout is never touched -- and the receipt keeps the
+    # PRE-removal figures, so it says what leaked rather than only that nothing leaks now.
+    # Measured on the real corpora at this holdout size: `code` 0 of 512, `compress` 1 of
+    # 512, `retrieve` 35 of 512 (6.84%), all previously reported as a flat zero. Refusing
+    # outright at 6.84% would block `retrieve` from training at all over 35 training rows
+    # out of 505,216, and that is the pressure that ends with someone raising a tolerance;
+    # `screen_pair_contamination` therefore refuses on how much of TRAINING a repair would
+    # delete, not on how much of the holdout leaked.
+    train_pairs, contamination = screen_pair_contamination(train_pairs, holdout)
     return (
         holdout,
         train_pairs,

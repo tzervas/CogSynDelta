@@ -13,6 +13,7 @@ from cogsyndelta.eval.metrics import (
     pair_fingerprint,
     recall_at_k,
     representation_std,
+    screen_pair_contamination,
     spearman_correlation,
     token_weighted_perplexity,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "pair_fingerprint",
     "recall_at_k",
     "representation_std",
+    "screen_pair_contamination",
     "spearman_correlation",
     "token_weighted_perplexity",
 ]
