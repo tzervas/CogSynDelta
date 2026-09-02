@@ -265,10 +265,24 @@ THE THREE HARD REQUIREMENTS, in priority order:
    Every candidate gets an overlap check against what is already held, BEFORE download.
    Downloading a terabyte of duplicate is worse than downloading nothing.
 
-3. NO SINGLE-CORPUS DOMINANCE. `retrieve` is already 77.8% GooAQ, 19.5% NQ, 2.7% FiQA while
-   being EVALUATED on financial-domain FiQA. That is training on one distribution and
-   measuring on another. Caps exist for exactly this and must be set per source, not
-   globally.
+3. NO SINGLE-CORPUS DOMINANCE. `retrieve` is 79.1% GooAQ / 19.8% NQ / 1.09% FiQA POST-DEDUP
+   (the pre-dedup 77.8/19.5/2.7 figures repeated earlier in this file were wrong).
+
+   CORRECTION -- the "evaluated on financial-domain FiQA" transfer test DOES NOT EXIST on
+   the training path. build_splits shuffles the concatenated pool and takes all_pairs[:512],
+   a uniform sample of the mixture, so expected FiQA content of the holdout is about 5.6
+   items. recall@1 0.7480 is an IN-MIXTURE number on a ~79%-GooAQ holdout. The transfer test
+   is described in a code comment and never implemented there. A second path, the untracked
+   src/cogsyndelta/regions/retrieve.py, does implement a real BEIR-style FiQA-pool eval --
+   but trains on FiQA alone. Two `retrieve` regimes now exist in the tree.
+
+   Worse: dedup is UNDOING the balance cap. FiQA's anchor-level collapse (14,131 -> 5,498)
+   accounts for 8,633 of the 8,634 rows build_splits removed, so the rule bites only the
+   smallest source.
+
+   And the gooaq cap is a PREFIX, not a sample: load_pairs returns as soon as `limit` is
+   reached and the shuffle happens afterwards, so the 400,000 rows are the first 13.3% of
+   the file in shard order. Unrepairable downstream.
 
 COVERAGE NEEDED, per region and then for the composed model:
   code      currently CodeSearchNet Python only, and licence-REJECTED at that. Needs
@@ -286,9 +300,21 @@ COVERAGE NEEDED, per region and then for the composed model:
 |----|------|------|--------|
 | P2.5a | Overlap-check tooling as a reusable gate | a candidate is rejected on measured overlap, not judgement | todo |
 | P2.5b | Per-region licence-clean candidate lists | every entry verified at upstream | todo |
-| P2.5c | Fetch, with per-source caps | no source exceeds its cap; balance recorded in the receipt | todo |
-| P2.5d | Reserve non-overlapping material for the composed model | held-out from every region's training set | todo |
+| P2.5c | Fetch, with per-source caps that SAMPLE rather than truncate | no source exceeds its cap; balance recorded in the receipt | todo |
+| P2.5d | **RESERVE composed-model material FIRST** | held out from every region before any region trains on it | todo — **BLOCKS P2.3** |
 
+
+### SEQUENCING ERROR, corrected: P2.5d must PRECEDE P2.3
+
+The clean unallocated staged pool is 244,761 rows, and P2.5's coverage list assigns every
+one of them to a region. ALLOCATION IS IRREVERSIBLE -- once a region trains on a row, that
+row can never serve the composed model's evaluation without contaminating it.
+
+So training the new regions first (P2.3) and reserving afterwards (P2.5d) leaves the
+composed model with NOTHING. The reservation needs about 23% of that pool and is free to
+take today. It costs an unrecoverable amount to take later.
+
+Recorded because the earlier ordering in this file had it backwards.
 
 ## P3 — Visual region maturation
 
