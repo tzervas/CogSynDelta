@@ -194,6 +194,27 @@ jobs:
       - name: Upload security reports
         uses: actions/upload-artifact@v3
         if: always()
+        # The artifact endpoint is derived from Forgejo's ROOT_URL
+        # (https://git.vectorweight.com/), which DNS resolves to 192.168.1.170:443 -- an
+        # address job containers cannot reach. Measured from a container with the
+        # runner's exact options:
+        #     container -> 192.168.1.170:443   REFUSED
+        #     container -> 172.32.0.1:3080     OPEN
+        #     homelab   -> 192.168.1.170:443   OPEN
+        # so the upload fails with ECONNREFUSED and a 500, and takes the whole job with
+        # it. This is the same wall that forced registering the runner against
+        # http://172.32.0.1:3080; the artifact path reaches it by a different route.
+        #
+        # continue-on-error because this artifact is bandit-report.json -- a report for a
+        # human, not a gate. The actual checks run above and print their findings to the
+        # log. Failing a security job because a convenience artifact could not be stored
+        # trains people to ignore a red security check, which costs more than the report
+        # is worth.
+        #
+        # The real fix is routing/publishing so containers can reach the TLS edge. That
+        # is a fleet change, not a workflow change, and widening the host firewall to the
+        # edge just to store a report would trade a real boundary for a convenience.
+        continue-on-error: true
         with:
           name: security-reports
           path: |
