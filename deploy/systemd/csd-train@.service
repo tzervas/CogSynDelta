@@ -26,7 +26,7 @@ WorkingDirectory=/home/kang/code/personal/tzervas/CogSynDelta
 # splits on commas. Verified empirically against this systemd version (257) before relying
 # on it here.
 ExecStart=/home/kang/.local/bin/uv run --group train python scripts/csd-train-all.py \
-    --regions %I --steps 8000 --batch 256 --shard-limit 0 --state /akula-data/csd
+    --regions %I --steps 4000 --batch 1280 --shard-limit 0 --state /akula-data/csd
 
 # No start timeout. Type=simple is considered "started" the instant ExecStart forks, not
 # when training reaches any milestone, so TimeoutStartSec has no real work to do here --
