@@ -206,14 +206,11 @@ class CorpusStream:
             FileNotFoundError: Root, tokenizer or shards missing.
             ValueError: The corpus yielded fewer than two usable texts.
         """
-        # Imported here, not at module scope. `tokenizers` is in the `train` dependency
-        # group, and cogsyndelta.regions.__init__ pulls it in transitively -- so a
-        # top-level import would make every PoC bench unimportable on a CI runner that
-        # installed only `dev`, including the ones that never touch a corpus.
-        from tokenizers import Tokenizer
-
-        from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
-
+        # Validate BEFORE importing anything heavy. `tokenizers` lives in the `train`
+        # dependency group, so on a runner that installed only `dev` an unmounted corpus
+        # used to surface as ModuleNotFoundError -- naming a missing package instead of
+        # the missing mount, and hiding the message that tells you how to ask for the
+        # synthetic fallback on purpose.
         if source not in TEXT_SOURCES:
             raise KeyError(f"unknown text source {source!r}; have {sorted(TEXT_SOURCES)}")
         base = datasets_root(root)
@@ -225,6 +222,12 @@ class CorpusStream:
         shards = sorted(base.glob(pattern))
         if not shards:
             raise FileNotFoundError(_NOT_MOUNTED.format(root=base / pattern))
+
+        # Deferred for the same reason: a top-level import would make every PoC bench
+        # unimportable on a runner that never touches a corpus.
+        from tokenizers import Tokenizer
+
+        from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
 
         raw = _read_texts(shards, column, texts)
         if len(raw) < 2:
