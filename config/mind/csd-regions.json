@@ -1,0 +1,116 @@
+{
+  "stream_dim": 512,
+  "top_k": 1,
+  "aux_coef": 1.0,
+  "notes": "Region catalogue from docs/program/CSD-BRAIN-REGIONS.md. `live` reflects what is IMPLEMENTED, not what is intended; `pretrain.available` reflects what is ON DISK, not what is named. Both default to false so that intent can be recorded without it reading as capability. Curriculum order is mandatory: per-region pretrain -> router -> assembled mind -> foundation. Foundation corpora (FineWeb/C4/Pile) are step 4, not step 1.",
+  "regions": [
+    {
+      "name": "residual_mlp",
+      "kind": "residual_mlp",
+      "stream_dim": 512,
+      "hidden_dim": 1024,
+      "latent_dim": null,
+      "modality": "any",
+      "role": "Residual update on the shared [B, D] stream; keeps the residual path competent.",
+      "router_trigger": "Tokens not tagged code/retrieve/compress.",
+      "pretrain": {
+        "corpus": "synthetic",
+        "objective": "reconstruction",
+        "available": true,
+        "notes": "Synthetic tokens only via train-route. No public corpus bound yet."
+      },
+      "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
+      "live": true
+    },
+    {
+      "name": "stream_vae",
+      "kind": "latent_vae",
+      "stream_dim": 512,
+      "hidden_dim": 1024,
+      "latent_dim": 64,
+      "modality": "any",
+      "role": "Encode / reparameterize / decode. The compress analog in the PoC.",
+      "router_trigger": "Stream that wants reconstruction or quantization.",
+      "pretrain": {
+        "corpus": "synthetic",
+        "objective": "reconstruction",
+        "available": true,
+        "notes": "Honest stored-byte ratios ~1.3-2.7x in STATUS.md. Not 10x."
+      },
+      "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
+      "live": true
+    },
+    {
+      "name": "code",
+      "kind": "contrastive_encoder",
+      "stream_dim": 512,
+      "hidden_dim": 1024,
+      "latent_dim": null,
+      "modality": "text",
+      "role": "Docstring <-> function, search and generation. Explicitly NOT next-token over all of GitHub.",
+      "router_trigger": "language=python and a docstring is present.",
+      "pretrain": {
+        "corpus": "codesearchnet-python",
+        "objective": "contrastive-pair",
+        "available": false,
+        "notes": "NOT on disk. /pretrain/code/codesearchnet holds only metadata.json; download-status.json shows 2 of 6 sets completed. MBPP and HumanEval are eval, not pretrain."
+      },
+      "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
+      "live": false
+    },
+    {
+      "name": "retrieve",
+      "kind": "contrastive_encoder",
+      "stream_dim": 512,
+      "hidden_dim": 1024,
+      "latent_dim": null,
+      "modality": "text",
+      "role": "Query or claim -> passage rank.",
+      "router_trigger": "A query plus candidate passages.",
+      "pretrain": {
+        "corpus": "fiqa",
+        "objective": "rank",
+        "available": false,
+        "notes": "NOT on disk. SciFact and NFCorpus are eval-only per license (NC / ToS) and must not be trained on."
+      },
+      "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
+      "live": false
+    },
+    {
+      "name": "compress",
+      "kind": "latent_vae",
+      "stream_dim": 512,
+      "hidden_dim": 1024,
+      "latent_dim": 64,
+      "modality": "any",
+      "role": "Neighbors stay neighbors in a short latent.",
+      "router_trigger": "Sentence pair or embedding to reconstruct.",
+      "pretrain": {
+        "corpus": "stsb+allnli-10k",
+        "objective": "contrastive-pair",
+        "available": false,
+        "notes": "NOT on disk. WikiText-2 is later-assembly reconstruction, not first pretrain."
+      },
+      "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
+      "live": false
+    },
+    {
+      "name": "vl_latent",
+      "kind": "jepa_predictor",
+      "stream_dim": 512,
+      "hidden_dim": 1024,
+      "latent_dim": 64,
+      "modality": "latent",
+      "role": "Latent visual reasoning. Consumes visual latents, NOT tokens; predicts representations rather than reconstructing pixels. Enters the same shared stream as the text regions, which is why the [B, D] activate surface is modality-agnostic.",
+      "router_trigger": "Stream carrying visual latents.",
+      "pretrain": {
+        "corpus": "unbound",
+        "objective": "jepa-predictive",
+        "available": false,
+        "notes": "NOT on disk: /vision is empty (0 bytes). core/vl_jepa_extension.py has modules but no EMA target encoder, no masking, and no predictor loss, so there is currently no JEPA training path at all."
+      },
+      "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": true},
+      "live": false
+    }
+  ]
+}
