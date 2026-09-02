@@ -402,3 +402,78 @@ def test_load_pairs_cap_spans_the_whole_shard(tmp_path) -> None:
     # heads, so a sample should hold roughly 27.
     assert heads < 100, f"load_pairs took a prefix: {heads}/200 rows are the file head"
     assert load_pairs([str(shard)], ("a", "b"), limit=200, seed=0) == pairs
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 4 -- the decoded-image cache key changed every process, so it never hit.
+# ---------------------------------------------------------------------------------------
+
+_CACHE_KEY_PROBE = (
+    "import json;"
+    "from cogsyndelta.corpus import stable_cache_tag;"
+    "parts={'shards': ['tiny-imagenet-0.parquet'], 'size': 64, 'limit': 100000,"
+    " 'image_col': 'image', 'label_col': 'label'};"
+    "print(stable_cache_tag(parts));"
+    "print(abs(hash(json.dumps(parts, sort_keys=True))) % 10**16)"
+)
+
+
+def _probe(hash_seed: str) -> tuple[str, str]:
+    """Compute both tags in a fresh interpreter with a chosen PYTHONHASHSEED."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    env = {**os.environ, "PYTHONHASHSEED": hash_seed}
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    out = subprocess.run(
+        [sys.executable, "-c", _CACHE_KEY_PROBE],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+    stable, salted = out.stdout.split()
+    return stable, salted
+
+
+def test_the_cache_tag_is_the_same_in_every_process() -> None:
+    """Two interpreters, two hash seeds. The digest agrees; `hash()` does not.
+
+    The second assertion is what makes the first one mean something: it demonstrates the
+    salting empirically in this environment, so this is a test of the real failure
+    condition rather than of a story about it. `_decode_split` used the salted form, so
+    its cache filename differed on every run and 100,000 JPEGs were re-decoded each time.
+    """
+    stable_one, salted_one = _probe("1")
+    stable_two, salted_two = _probe("2")
+
+    assert stable_one == stable_two, "cache tag is not stable across processes"
+    assert salted_one != salted_two, (
+        "PYTHONHASHSEED is not varying str hashing here, so this test is not exercising "
+        "the condition it exists to catch"
+    )
+
+
+def test_the_cache_tag_separates_inputs_that_produce_different_pixels() -> None:
+    """Stability is worthless if everything collides. Each field must move the tag --
+    `label_col` included, which the pre-fix key omitted entirely."""
+    from cogsyndelta.corpus import stable_cache_tag
+
+    base = {
+        "shards": ["a.parquet"],
+        "size": 64,
+        "limit": 100,
+        "image_col": "image",
+        "label_col": "label",
+    }
+    tag = stable_cache_tag(base)
+    for field, changed in (
+        ("shards", ["b.parquet"]),
+        ("size", 32),
+        ("limit", 200),
+        ("image_col", "img"),
+        ("label_col", "fine_label"),
+    ):
+        assert stable_cache_tag({**base, field: changed}) != tag, f"{field} does not change the tag"

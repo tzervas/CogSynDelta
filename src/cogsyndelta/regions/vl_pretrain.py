@@ -50,6 +50,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from cogsyndelta.corpus import stable_cache_tag
 from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig
 from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
 
@@ -101,15 +102,30 @@ def _decode_split(
     """Decode a parquet split to uint8 ``[N,3,size,size]`` and int64 labels.
 
     Cached to disk because decoding 100k JPEGs costs minutes and every rerun of this
-    harness would otherwise pay it again. The cache key includes the shard list, the
-    requested size and the limit, so changing any of them produces a different file
-    rather than silently reusing the wrong pixels.
+    harness would otherwise pay it again. The cache key includes the shard list, both
+    column names, the requested size and the limit, so changing any of them produces a
+    different file rather than silently reusing the wrong pixels.
+
+    The tag is a real digest, not `hash()`. `abs(hash(key)) % 10**16` was salted by
+    PYTHONHASHSEED, so it named a different file in every process and this cache had
+    never once been read -- every visual run re-decoded the whole corpus and the miss was
+    silent, because a miss is indistinguishable from a first run.
     """
     import pyarrow.parquet as pq
     from PIL import Image
 
-    key = json.dumps({"shards": sorted(shards), "size": size, "limit": limit, "col": image_col})
-    tag = str(abs(hash(key)) % (10**16))
+    tag = stable_cache_tag(
+        {
+            "shards": sorted(shards),
+            "size": size,
+            "limit": limit,
+            "image_col": image_col,
+            # `label_col` belongs in the key for the same reason `image_col` does: two
+            # splits reading the same images under different label columns are different
+            # artefacts, and without it the second would silently load the first's labels.
+            "label_col": label_col,
+        }
+    )
     cache.mkdir(parents=True, exist_ok=True)
     xf, yf = cache / f"{tag}-x.npy", cache / f"{tag}-y.npy"
     if xf.exists() and yf.exists():

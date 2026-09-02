@@ -220,3 +220,27 @@ def reservoir_sample[T](stream: Iterable[T], limit: int, rng: random.Random) -> 
         if index < limit:
             reservoir[index] = item
     return reservoir
+
+
+def stable_cache_tag(parts: dict[str, Any]) -> str:
+    """A cache key that is the same in every process, for artefacts that outlive one.
+
+    `hash()` is not that. CPython salts string hashing with PYTHONHASHSEED, which is
+    random per interpreter unless it is pinned, so `abs(hash(key)) % 10**16` names a
+    DIFFERENT file on every run. `vl_pretrain._decode_split` keyed its decoded-image
+    cache that way: the cache could never hit, so every visual run re-decoded 100,000
+    JPEGs from scratch and paid minutes for a lookup that was structurally impossible to
+    satisfy. Nothing failed loudly -- the miss path just did the work again.
+
+    So: `hash()` is for in-memory dict placement and nothing else. Anything written to
+    disk, recorded in a receipt, or compared across processes gets a real digest.
+
+    Args:
+        parts: Everything that identifies the artefact. Serialised with sorted keys, so
+            two callers assembling the same facts in a different order agree.
+
+    Returns:
+        A 16-character hex digest, safe to use in a filename.
+    """
+    payload = json.dumps(parts, sort_keys=True, default=str)
+    return hashlib.blake2b(payload.encode("utf-8", "replace"), digest_size=8).hexdigest()
