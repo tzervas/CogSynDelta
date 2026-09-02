@@ -80,6 +80,42 @@ Foundation is step 4, not step 1.
 Checkpoints are 184 MB of which only 64 MB is weights; the rest is AdamW optimizer state.
 Fine for resuming, wrong to publish.
 
+## P10 — Fleet-parallel training
+
+Two idle-ish GPUs and one measured constraint that decides the design.
+
+MEASURED FACTS
+- 3090 Ti (24 GiB) on akula-prime .98; RTX 5080 (16 GiB) on gpu5080 .251.
+- They are on DIFFERENT HOSTS, linked at 1000 Mb/s.
+- A live region run uses ~5 GiB of 23 GiB at 39% utilisation. The 5080 sits at 10 MiB.
+- All regions trained so far total 87M parameters / 348 MB fp32.
+
+WHY NOT DDP ACROSS THE TWO CARDS
+Data-parallel synchronises gradients every step. A 16M-parameter model is ~64 MB of
+gradients per step per direction; over 1 GbE an all-reduce costs on the order of a second,
+which exceeds the step time it would be overlapping. Cross-host DDP would make training
+slower. It is the right technique on the wrong interconnect.
+
+WHY REGION-PARALLEL INSTEAD
+Regions are independent by construction -- that is what the architecture means. Training
+`code` on one host and `compress` on the other requires ZERO gradient communication. The
+speedup is near-linear in hosts, and it needs no distributed runtime.
+
+WHY BATCH SIZE IS A QUALITY LEVER, NOT A SPEED ONE
+InfoNCE draws its negatives from the batch. A larger batch is a harder and more informative
+contrastive problem, so the idle VRAM converts directly into quality. This is why P9.1/P9.2
+rank above raw parallelism: filling one card well beats spreading a small batch across two.
+
+| id | task | gate | status |
+|----|------|------|--------|
+| P10.1 | Make the runner able to execute a region on a named host | a region trains on gpu5080 and writes a receipt back | todo |
+| P10.2 | Region-to-host scheduling (independent regions run concurrently) | two regions training simultaneously on two hosts | todo |
+| P10.3 | Measure the composed-model footprint before P6 | actual params/bytes recorded; decide if one card constrains it | todo |
+
+DEPENDENCY: P10 lands AFTER P9.1/P9.2. Filling one card is worth more than splitting a
+small batch across two, and a batch-size change alters what fits per host -- doing P10
+first would mean scheduling against numbers that are about to change.
+
 ## P9 — Modern training stack
 
 Make training, fine-tuning and quantization idempotent, parameterised, pausable, resumable
