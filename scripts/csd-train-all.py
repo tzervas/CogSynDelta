@@ -85,6 +85,25 @@ REGIONS: dict[str, tuple[list[SourceSpec], str]] = {
 }
 
 
+# The visual region does not fit the text (left, right) pair shape: its objective is
+# latent prediction over image patches, its metric is a linear probe rather than recall,
+# and its data is an image struct rather than two text columns. So it gets its own entry
+# and its own runner rather than being bent into REGIONS.
+VL_REGIONS: dict[str, dict] = {
+    "vl_latent": {
+        "train": "vl/tiny-imagenet/data/train-*.parquet",
+        "probe_eval": "vl/tiny-imagenet/data/valid-*.parquet",
+        "columns": ("image", "label"),
+        # cifar100 is a DIFFERENT dataset with different classes, so the probe on it
+        # measures whether the representation transfers rather than memorises -- the same
+        # reason `retrieve` is scored on out-of-domain fiqa.
+        "transfer": "vl/cifar100/cifar100/test-*.parquet",
+        "transfer_columns": ("img", "fine_label"),
+        "note": "I-JEPA over 64x64 patches; gated on a linear probe, never on loss",
+    },
+}
+
+
 def _schema_mismatch(shards: list[str], cols: tuple[str, str]) -> str | None:
     """Return a description if any shard lacks the requested columns, else None."""
     try:
@@ -185,6 +204,74 @@ def run_region(
     return receipt
 
 
+def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> dict | None:
+    """Train the visual region. Separate path because its metric is a probe, not recall."""
+    spec = VL_REGIONS[name]
+    print(f"\n=== {name} — {spec['note']}", flush=True)
+
+    train = _shards(spec["train"])
+    probe_eval = _shards(spec["probe_eval"])
+    transfer = _shards(spec["transfer"])
+    for label, got in (("train", train), ("probe_eval", probe_eval), ("transfer", transfer)):
+        print(f"    {len(got):>2} shard(s)  {label}", flush=True)
+        if not got:
+            print(f"    source MISSING for {label} — skipping {name}", flush=True)
+            return None
+    print(f"    steps={steps} batch={batch}", flush=True)
+    if dry:
+        return None
+
+    from cogsyndelta.model.vl_jepa import JEPAConfig
+    from cogsyndelta.regions.vl_pretrain import VLPretrainConfig, pretrain_vl_region
+
+    cfg = VLPretrainConfig(
+        region=name,
+        train_shards=train,
+        # The probe trains on labelled pretraining images and is scored on the valid
+        # split, which pretraining never touches.
+        probe_train_shards=train,
+        probe_eval_shards=probe_eval,
+        transfer_shards=transfer,
+        image_column=spec["columns"][0],
+        label_column=spec["columns"][1],
+        transfer_image_column=spec["transfer_columns"][0],
+        transfer_label_column=spec["transfer_columns"][1],
+        steps=steps,
+        batch_size=batch,
+        warmup_steps=max(50, steps // 15),
+        eval_every=max(1, steps // 8),
+        checkpoint_every=max(1, steps // 3),
+        jepa=JEPAConfig(),
+        out_dir=str(state / "receipts"),
+    )
+    started = time.time()
+    receipt = pretrain_vl_region(cfg)
+    b, h = receipt["untrained_baseline"], receipt["held_out"]
+    print(
+        f"    probe  untrained top1={b['top1']:.4f} top5={b['top5']:.4f}  ->  "
+        f"trained top1={h['top1']:.4f} top5={h['top5']:.4f}",
+        flush=True,
+    )
+    if receipt.get("transfer") and receipt.get("untrained_transfer"):
+        tb, th = receipt["untrained_transfer"], receipt["transfer"]
+        print(
+            f"    transfer (cifar100)  untrained top1={tb['top1']:.4f}  ->  "
+            f"trained top1={th['top1']:.4f}",
+            flush=True,
+        )
+    print(
+        f"    rep_std {b['rep_std']:.4f} -> {h['rep_std']:.4f} "
+        f"(ratio {receipt['collapse_ratio']}, collapsed={receipt['collapsed']})",
+        flush=True,
+    )
+    print(
+        f"    beats_untrained={receipt['beats_untrained']}  "
+        f"({time.time() - started:.0f}s, {receipt['parameters']:,} params)",
+        flush=True,
+    )
+    return receipt
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", default=str(DEFAULT_STATE))
@@ -214,13 +301,17 @@ def main() -> int:
 
     gate_failures = []
     for name in [r.strip() for r in args.regions.split(",") if r.strip()]:
-        if name not in REGIONS:
-            print(f"  unknown region {name!r}; have {sorted(REGIONS)}", file=sys.stderr)
+        if name not in REGIONS and name not in VL_REGIONS:
+            known = sorted(set(REGIONS) | set(VL_REGIONS))
+            print(f"  unknown region {name!r}; have {known}", file=sys.stderr)
             continue
         try:
-            receipt = run_region(
-                name, state, args.steps, args.batch, args.shard_limit, args.dry_run
-            )
+            if name in VL_REGIONS:
+                receipt = run_vl_region(name, state, args.steps, args.batch, args.dry_run)
+            else:
+                receipt = run_region(
+                    name, state, args.steps, args.batch, args.shard_limit, args.dry_run
+                )
         except Exception as exc:
             print(f"  {name}: FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
             gate_failures.append(name)
@@ -229,7 +320,11 @@ def main() -> int:
             continue
 
         beats = receipt["beats_untrained"]
-        passed = bool(beats.get("recall@1")) and bool(beats.get("recall@10"))
+        # Every declared check must pass. Reading fixed key names here would silently
+        # pass a visual region, whose keys are probe_top1/not_collapsed rather than
+        # recall@1 -- .get() on an absent key returns None, and None is falsy, so a
+        # hardcoded recall check would fail vl_latent for the wrong reason entirely.
+        passed = bool(beats) and all(bool(v) for v in beats.values())
         summary["regions"][name] = {  # type: ignore[index]
             "receipt": receipt.get("receipt_path"),
             "untrained": receipt["untrained_baseline"],
