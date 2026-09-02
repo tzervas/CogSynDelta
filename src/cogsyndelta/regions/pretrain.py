@@ -47,6 +47,7 @@ from cogsyndelta.eval import (
     spearman_correlation,
 )
 from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
+from cogsyndelta.regions._tokencache import corpus_token_cache
 from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig, info_nce
 
 
@@ -668,17 +669,48 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
             flush=True,
         )
 
+    # Tokenise the training corpus ONCE, before the clock starts. Measured on the 3090
+    # Ti, 81.5 ms of a 131.3 ms `code` step was a single-threaded CPU tokenizer running
+    # inside the loop, and an 8,000-step run is ~9.5 epochs, so every pair was being
+    # tokenized ~9.5 times to produce identical ids. `elapsed_s` still measures the
+    # training loop only, so it stays comparable with every receipt written before this;
+    # the one-off cost is reported separately as `tokenisation.prepare_s`.
+    tokenise_start = time.time()
+    cache_dir = Path(cfg.out_dir) / "token-cache"
+    anchor_tokens = corpus_token_cache(
+        tok,
+        [a for a, _ in train_pairs],
+        max_len=cfg.max_len,
+        cache_dir=cache_dir,
+        tokenizer_path=cfg.tokenizer_path,
+        key_parts={"region": cfg.region, "side": "anchor"},
+        label=f"{cfg.region}-train-anchor",
+    )
+    positive_tokens = corpus_token_cache(
+        tok,
+        [b for _, b in train_pairs],
+        max_len=cfg.max_len,
+        cache_dir=cache_dir,
+        tokenizer_path=cfg.tokenizer_path,
+        key_parts={"region": cfg.region, "side": "positive"},
+        label=f"{cfg.region}-train-positive",
+    )
+    tokenise_s = time.time() - tokenise_start
+
     session_start = time.time()
     model.train()
     for step in range(start_step, cfg.steps):
         for group in opt.param_groups:
             group["lr"] = _lr_at(step, cfg)
         lo = (step * cfg.batch_size) % max(1, len(train_pairs) - cfg.batch_size)
-        chunk = train_pairs[lo : lo + cfg.batch_size]
-        if len(chunk) < 2:
+        hi = min(lo + cfg.batch_size, len(train_pairs))
+        if hi - lo < 2:
             continue
-        a_ids, a_mask = _tokenize(tok, [a for a, _ in chunk], cfg.max_len, device)
-        p_ids, p_mask = _tokenize(tok, [b for _, b in chunk], cfg.max_len, device)
+        # Ids come from the pre-tokenised corpus, padded to THIS batch's longest
+        # sequence -- byte-identical to what `_tokenize` produced here before, asserted
+        # in tests/test_token_cache.py. The tokenizer is out of the loop entirely.
+        a_ids, a_mask = anchor_tokens.batch(lo, hi, device)
+        p_ids, p_mask = positive_tokens.batch(lo, hi, device)
         loss, stats = info_nce(model(a_ids, a_mask), model(p_ids, p_mask))
         opt.zero_grad()
         loss.backward()
@@ -769,6 +801,23 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         "checkpoint": str(final_ckpt),
         "device": str(device),
         "elapsed_s": round(elapsed, 1),
+        # Outside `elapsed_s` on purpose: `elapsed_s` has always meant "the training
+        # loop", and folding a one-off corpus pass into it would make every receipt
+        # written before pre-tokenisation incomparable with every one written after.
+        # `ragged_ratio` is the guard on the padding trap -- it is the fraction of
+        # `n_texts * max_len` actually stored, so a value at 1.0 means something padded
+        # the corpus up front and the GPU is now chewing padding.
+        "tokenisation": {
+            "mode": "pre-tokenised ragged corpus cache",
+            "prepare_s": round(tokenise_s, 2),
+            "cache_dir": str(cache_dir),
+            "train_tokens": anchor_tokens.n_tokens + positive_tokens.n_tokens,
+            "ragged_ratio": round(
+                (anchor_tokens.n_tokens + positive_tokens.n_tokens)
+                / max(1, 2 * len(train_pairs) * cfg.max_len),
+                4,
+            ),
+        },
         # Lets an operator reading only the receipt tell a resumed run from a fresh one,
         # and from which step -- without this, a receipt with a suspiciously short
         # elapsed_s for its step count looks like a measurement error rather than what
