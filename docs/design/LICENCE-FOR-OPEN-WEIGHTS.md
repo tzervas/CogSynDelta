@@ -1510,3 +1510,368 @@ rather than smoothed over.
    — very likely, given the shared lineage, but not independently confirmed for that specific
    repo id.
 
+---
+
+## Release licence scenarios
+
+**Status:** this section only. It changes no verdict, no corpus, and no code above.
+`scripts/csd-corpus-expand.py` is untouched, nothing was downloaded, and no GPU work was
+done — a training run is live on the 3090 Ti.
+
+**The question this section answers is narrower than "what should we do."** It is: *what,
+specifically, does changing the release licence buy in corpus availability* — as opposed to
+what corpus work is needed regardless of that choice. The operator's position, stated
+plainly: publishing open weights is non-negotiable, MIT or something aligned with it is
+preferred, and the licence is negotiable *if* negotiating it materially improves dataset
+availability. This section prices that trade in datasets and rows, not in principle.
+
+**Search budget note.** This session drew on the licence findings already established
+above, plus a parallel survey run earlier in this effort specifically to answer this
+question (candidate pair-yielding code corpora, and GooAQ/esci/mr-tydi/miracl/T2Ranking/
+TriviaQA/peS2o/SWIM-IR for `retrieve`). That survey's upstream-verification budget was
+exhausted before every figure below could be independently re-checked from this section; each
+number is marked with how firmly it is established, and nothing was rounded up to look more
+finished than it is.
+
+### The one distinction the whole section rests on
+
+A release-licence change can do exactly one thing: it can turn a **SHARE_ALIKE** corpus
+(CC BY-SA family) into a corpus that is usable **by construction**, instead of usable only by
+taking the position — unresolved, and per the `timm`/torchvision evidence already quoted
+above, not the field's practice specifically for image-derived weights — that trained weights
+are not derivative works of their training data.
+
+**It does nothing for a BLOCKING corpus.** BLOCKING means no licence was ever granted, or the
+one that exists says non-commercial or research-only. What CogSynDelta licenses *its own*
+release under cannot manufacture a grant a third party never made. tiny-imagenet, flickr30k,
+GooAQ (if its README governs rather than its LICENSE file), MS MARCO, STL-10, SVHN,
+Places365, CIFAR-10/100, EMNIST, GTSRB, and the GPL/AGPL ~15.9% of `code` are all in this
+category, and **every one of them is blocked identically under every scenario in this
+section, A through D.** This is the distinction the task that produced this section was
+explicit about protecting, so it is stated once, plainly, and held to throughout: **relicensing
+the release moves SHARE_ALIKE corpora. It moves nothing else.**
+
+One further wrinkle specific to `code`: the ~15.9% GPL/AGPL fraction is copyleft, but it is
+*software* copyleft, not a Creative Commons licence, and GPL/AGPL is not on any CC licence's
+compatibility list. Releasing weights under CC BY-SA would not satisfy a GPL obligation even
+if trained weights were found to be a "work based on" GPL source code in the FSF sense.
+Nothing in scenarios A–D touches that fraction; the only fix is the same one the main audit
+already recommended regardless of release licence — filter `code` to the ~71.3% of rows in
+permissively licensed repositories.
+
+### Comparison table — usable corpus per scenario, per region
+
+"Usable" below means *corpus-supported*: the corpus's own terms affirmatively cover what the
+release needs, with no legal position required. A project can always additionally choose to
+use a SHARE_ALIKE corpus under a permissive release by asserting weights are not derivative
+works — that option exists under every scenario equally (it is how `all-MiniLM-L6-v2` and
+similar models already treat AllNLI's SNLI content) and is not something a licence choice
+buys, so it is not credited to any column here; it is discussed on its own below.
+
+**Text/pair regions:**
+
+| region | currently trained (baseline) | A: MIT/Apache-2.0 weights | B: CC BY-SA weights | C: CC BY (attribution-only) weights |
+|---|---|---|---|---|
+| `code` | 430,931 pairs (BLOCKING as trained) | ~324,000 filtered pairs (71.3% of `code-search-net-python`, GitHub-licence-verified) + 10,000 (`apps`, MIT) + 13,328 (`code_contests`, CC BY, attributed) ≈ **347,328** | **same, 347,328.** No SHARE_ALIKE code corpus exists to unlock | **same, 347,328** |
+| `compress` | 277,269 pairs (BLOCKING as trained) | ≤51,567 corpus-supported (MNLI `government` 25,783, asserted-PD-unverified, + part of `fiction` 25,784, licence not sub-split — see caveat) + 275,579 (`SynCSE-scratch-NLI`, MIT, full replacement) if pursued ≈ **up to 327,146**, but **without** SNLI | **234,983** (SNLI 183,416 + `government` 25,783 + `fiction` 25,784) clean by construction — the audit's own "repaired" figure. Can still add SynCSE on top for more volume | **same as A.** CC BY does not satisfy CC BY-SA's ShareAlike condition, so SNLI stays exactly as contingent as under MIT |
+| `retrieve` | 505,216 pairs (mostly BLOCKING/contested) | `esci` 2,027,874 + `mr-tydi` ~167,000 + `miracl` ~40,000 (all Apache-2.0, both ends) ≈ **2,234,874**, already available today with no licence decision needed. `T2Ranking` 258,000 unverified (LICENSE file 404s) | **A's 2,234,874, plus** NQ 100,231 + FiQA 14,131 + SQuAD 87,599 = **201,961 immediately clean** query/context pairs, **plus** HotpotQA (5,233,329 passages + 97,852 queries, pending a qrels join — see caveat), **plus** SWIM-IR-en 501,538 pairs (mirror tag only, see caveat) → **≈2.94M clean pairs today, ≈8.27M rows of raw material once HotpotQA is joined** | **same as A, ≈2,234,874.** NQ/FiQA/SQuAD/HotpotQA/SWIM-IR all stay exactly as contingent as under MIT |
+| `classify` | 56,493 (banking77 13,083 CC BY + go_emotions 43,410 Apache) | 56,493 | **56,493 — no change.** No SHARE_ALIKE corpus in this region | 56,493 |
+| `reason` | 104,940 (gsm8k 7,473 MIT + aqua_rat 97,467 Apache) | 104,940 | **104,940 — no change.** No SHARE_ALIKE corpus; `hendrycks/competition_math` stays REJECTED on active-dispute grounds unrelated to licence family | 104,940 |
+
+**`vl_latent` (images, reported separately — different unit):**
+
+| | currently trained | A: MIT/Apache-2.0 | B: CC BY-SA | C: CC BY |
+|---|---|---|---|---|
+| tiny-imagenet | 100,000 (100% BLOCKING) | **0, permanently.** No licence exists anywhere in the chain to relicense | **0, permanently.** Same reason — see the distinction above | **0, permanently** |
+| flickr30k (P3.2 plan) | not yet trained | **0, permanently** | **0, permanently** | **0, permanently** |
+| Composite replacement (fashion_mnist, eurosat-rgb, PatchCamelyon, Shapes3D, dSprites, pxhere, british-library, beans, Quick Draw, CLEVR, Caltech-101/256 — PERMISSIVE_OK + ATTRIBUTION only) | 0 | **available today, ≈497k recommended composite (up to several million if uncapped).** Already MIT-compatible; not affected by this section's choice at all | same as A | same as A |
+| oxford-iiit-pet + `ylecun/mnist` + K-MNIST | 0 (oxford-iiit-pet fetched, not trained) | contingent (SHARE_ALIKE) | **+147,349** (7,349 + 70,000 + 70,000) clean by construction | contingent, same as A |
+
+**Read the `vl_latent` row for what it actually says: the region's core problem is not
+priced anywhere in this table.** tiny-imagenet is 100,000 of the region's 100,000 trained
+images and is unaffected by every column. The composite replacement that actually fixes the
+region is *already fully available under scenario A* — it needs a corpus-construction
+project, not a licence decision. Scenario B's entire contribution to `vl_latent` is 147,349
+images (oxford-iiit-pet + two mismatched-mirror MNIST variants), a rounding error next to the
+composite's hundreds of thousands.
+
+### Per-region detail
+
+**`code` — zero delta, and the reason is structural, not incidental.** Every corpus found
+that yields (docstring, code) *pairs* — `Nan-Do/code-search-net-python`,
+`code_x_glue_ct_code_to_text`, `semeru/code-text-python` — is a CodeSearchNet derivative with
+no per-row licence column, and the three mirrors disagree with each other (`c-uda` / `mit` /
+`apache-2.0`) over an upstream tagged `other`. Every corpus found *with* a real per-row
+licence column — the-stack family, `codeparrot/github-code` — ships raw files, not pairs, and
+would need pair-construction from scratch (which also inherits The Stack's standing
+opt-out-request obligation, an ongoing duty against a frozen corpus, not a one-time licence
+check). **Pair-yielding and provenance-bearing code corpora are disjoint sets.** No release
+licence changes that. The only lever that exists is the one the main audit already
+recommended: filter `code-search-net-python` by the surviving `repo` column to the ~71.3%
+sitting in currently-permissive repositories (~324,000 pairs), regardless of what CogSynDelta
+releases under.
+
+**`compress` — the delta is real and it is entirely SNLI.** The repaired corpus (drop the
+three commercial-copyright genres, keep SNLI + `government` + `fiction`) is 234,983 pairs
+either way. What changes between A and B is whether SNLI's 183,416 pairs — 78% of that
+repaired corpus — need a legal position taken to use, or need nothing. Two things that do
+**not** change with the licence choice: the three commercial-copyright genres (telephone/
+Switchboard 27,782 + travel/Berlitz 25,782 + slate/Microsoft 25,768 = **79,332 pairs,
+permanently blocked** — named third-party rights holders, no grant of any kind, share-alike
+or otherwise), and `government`'s public-domain claim (asserted by the MultiNLI paper, not
+independently corroborated — its status is the same under every scenario, since "public
+domain, if true" needs no licence-compatibility analysis at all). `fiction`'s 25,784 rows are
+recorded in the audit as "mixed: CC BY-SA 3.0, CC BY 3.0, and US public domain" without a
+row-level split; the CC BY-SA sub-portion moves with SNLI (scenario B unlocks it), the rest is
+unaffected by the choice. **This sub-split was not resolved in this session and is flagged as
+a gap, not assumed favourably.**
+
+**`retrieve` — this is where a release-licence change buys the most, by a wide margin.**
+Three things are true simultaneously and none of them is in tension with the others:
+
+1. **A meaningful permissive corpus already exists with no licence decision needed at all.**
+   `esci` (2,027,874, Apache-2.0 both ends) + `mr-tydi` (~167,000) + `miracl` (~40,000, under
+   the 100k mark, flagged honestly in the original survey) total ≈2.23M pairs, already
+   PERMISSIVE_OK today. This is worth pursuing regardless of what this section recommends.
+2. **GooAQ — 77.8% of the region as currently trained, and the largest single number in
+   this audit — moves on an email to AI2, not on this section.** If the README's
+   non-commercial NOTE governs, GooAQ is BLOCKING in every scenario, same category as
+   tiny-imagenet. If the Apache-2.0 LICENSE file governs, it is PERMISSIVE_OK in every
+   scenario and needs no licence change either. **Scenario B does not touch this number
+   either way** — it is included here only so the reader does not mistake its absence from
+   the "what CC BY-SA buys" list for an oversight.
+3. **CC BY-SA weights unlock four corpora that stay contingent under MIT or CC BY**, three of
+   them immediately trainable and one large one pending a join:
+   - Natural Questions, 100,231 pairs, CC BY-SA 3.0
+   - FiQA, 14,131 pairs (via BeIR `fiqa` ⋈ `fiqa-qrels`), CC BY-SA 4.0
+   - SQuAD, 87,599 pairs, CC BY-SA 4.0
+   - HotpotQA, 5,233,329 passages + 97,852 queries, CC BY-SA 4.0 — **not yet a training
+     pair count.** `BeIR/hotpotqa-qrels` (the relevance judgements) has not been fetched;
+     without that join this is a passage pool and a query list, not pairs. Flagged rather
+     than estimated.
+   - `nthakur/swim-ir-monolingual` (English split), 501,538 query→passage pairs — **the
+     survey's own characterisation is "the single largest share-alike query→passage source
+     found,"** and it is worth treating that way, with two caveats that must travel with the
+     number: **(a) `cc-by-sa-4.0` is the mirror tag; the upstream (TyDI-QA/MIRACL Wikipedia
+     passages) was not independently re-verified this session** — given this project has now
+     logged eight cases of a mirror asserting more than its upstream grants, this is recorded
+     as "SHARE_ALIKE, mirror tag, upstream unverified," not as confirmed at both ends. **(b)
+     the queries are synthetic** — generated by PaLM-2 via a "Summarize-then-Ask" prompt over
+     the Wikipedia passages, per the card. The *passages* are Wikipedia-derived CC BY-SA; the
+     *queries* are a model provider's output, and whether that provider's terms attach to
+     generated text is a second, independent, unresolved question that a release-licence
+     choice does not touch at all. The card claims ≈28M pairs across 33 languages;
+     10 languages' train counts were actually recorded (en 501,538 · es 492,536 · fr 447,745
+     · de 446,918 · fi 353,725 · id 309,065 · ar 277,651 · hi 226,226 · bn 106,816 ·
+     yo 4,792 — summing to 3,167,012), and the 28M figure is the card's claim, not a count
+     reproduced here.
+
+   Sum of the immediately-clean pairs (NQ + FiQA + SQuAD + SWIM-IR-en): **703,499 pairs**,
+   plus HotpotQA's 5.23M-passage pool once joined, unlocked by scenario B and contingent
+   under A/C.
+
+   **A side note the operator should have regardless of this section's conclusion:** the
+   SWIM-IR synthetic-query finding generalises directly to the operator's own stated fallback
+   plan of building a dataset pipeline. Generating QA pairs with a *hosted* third-party model
+   inherits the same open question SWIM-IR has — whose terms attach to the model's output text
+   — that a self-hosted, permissively licensed model would not carry. Worth weighing when that
+   plan gets built, independent of what happens with the corpora already on hand.
+
+**`vl_latent` — the release-licence question is close to irrelevant here, and that itself is
+the finding.** tiny-imagenet is not SHARE_ALIKE; it is BLOCKING with no licence anywhere in
+the chain, so no scenario in this section touches its 100,000 images or the region's entire
+current training basis. The corpus that actually fixes `vl_latent` — the composite in
+[Replacement vision corpora](#replacement-vision-corpora) — is composed almost entirely of
+PERMISSIVE_OK and ATTRIBUTION sources and is **already available under scenario A, at MIT,
+today.** The only material scenario B adds is the three SHARE_ALIKE-verdict, small-scale
+extras (oxford-iiit-pet 7,349, `ylecun/mnist` 70,000, K-MNIST 70,000 — the last two recorded
+in this audit as *mirror mismatches*, tagged permissively but CC BY-SA upstream), 147,349
+images total against a composite already numbering in the hundreds of thousands. **If the
+operator is deciding whether to accept a copyleft weights licence anywhere, `vl_latent` is
+the weakest case for it** — the region's actual blocker is a missing grant, not a share-alike
+condition, and the fix is corpus construction that scenario B does not accelerate.
+
+**`classify` and `reason` — no SHARE_ALIKE corpus exists in either region**, catalogued or
+otherwise, in anything surveyed for this document. Both regions' current corpora
+(banking77 + go_emotions; gsm8k + aqua_rat) are already PERMISSIVE_OK/ATTRIBUTION and
+unaffected by every scenario here. `hendrycks/competition_math` stays REJECTED regardless —
+an active DMCA dispute is not a licence-family question at all, and no release choice
+resolves it.
+
+### The composed model
+
+The composed model (P2.5's "compose" step) draws non-overlapping held-out material across all
+six regions, so its availability is the union of the rows above, not an independent question.
+Concretely:
+
+- **Four of six regions (`code`, `classify`, `reason`, and `vl_latent`'s actual fix) are
+  entirely unaffected by which release licence CogSynDelta chooses.** Their corpus ceiling is
+  set by provenance gaps (`code`), the absence of any SHARE_ALIKE candidate (`classify`,
+  `reason`), or a corpus with no licence at all rather than a copyleft one (`vl_latent`'s
+  tiny-imagenet dependency).
+- **The entire benefit of choosing CC BY-SA over MIT/CC BY is concentrated in two regions:**
+  `compress` (+183,416 pairs, SNLI) and `retrieve` (+703,499 immediately-clean pairs, plus a
+  5.23M-passage pool pending a join, plus whatever fraction of SWIM-IR's unverified ≈28M-pair
+  claim survives independent checking).
+- **Composed across the whole fleet, scenario B's clean addition over scenario A is on the
+  order of 886,915 pairs/images today** (183,416 + 703,499), **potentially several million
+  more once HotpotQA is joined and SWIM-IR's upstream is verified**, against a permanently
+  blocked floor — tiny-imagenet (100,000), flickr30k (31,783 planned), GooAQ if its README
+  governs (up to 3,112,679), the `code` GPL/AGPL fraction (~72,000), and `compress`'s three
+  commercial-copyright genres (79,332) — that **no scenario in this document moves.**
+
+That permanently-blocked floor is the number worth sitting with: it is comparable in size to
+what a licence change buys, and none of it is available under scenario D or any other
+scenario this project could choose, because none of it was ever licensed for anyone to
+redistribute.
+
+### What CC BY-SA weights would actually oblige a downstream user to do
+
+Concretely, not abstractly — this is what CC BY-SA 4.0 §3(b) says, conditioned on the
+unresolved premise that trained weights are "Adapted Material" of their training data at all:
+
+1. **Only "Sharing" triggers it.** CC's "Share" means distributing or publicly communicating
+   copies — pushing a fine-tuned checkpoint to a registry, bundling it in a shipped product,
+   handing someone the weight file. Running the model as a private internal tool, or even
+   serving it behind an inference API without distributing the weights themselves, is not
+   "Sharing" under CC's definition, the same way ordinary GPL (not AGPL) does not reach
+   network-only use. **This is a real, load-bearing distinction and it means CC BY-SA is
+   materially less viral than AGPL-style copyleft for the common "serve it as an API" case.**
+2. **If they do Share an adaptation, the adaptation must carry a CC BY-SA licence (this
+   version or later, or a CC-designated compatible licence)** — a downstream fine-tune that
+   is distributed must itself be released under CC BY-SA terms. This is the actual
+   "share-alike" propagation, and it is the headline cost: a fine-tuner cannot distribute a
+   closed derivative.
+3. **They must carry attribution forward** (TASL — Title, Author, Source, Licence — for
+   CogSynDelta itself, in addition to whatever the model card already carries for the
+   underlying training corpora) and **indicate what they changed.**
+4. **They may not add restrictions on top.** No extra licence terms or technological
+   measures (DRM, contractual "no commercial use" riders, etc.) that would restrict what the
+   CC BY-SA licence otherwise grants downstream recipients.
+
+**One asymmetry is worth naming plainly, because it cuts against relying on CC BY-SA as a
+clean answer rather than a chosen one.** Whether CogSynDelta's *own* weights are "Adapted
+Material" of the training corpora is unsettled — that is the derivative-work question this
+whole document has already declined to resolve. Choosing CC BY-SA does not resolve it either;
+it chooses to act consistently with the cautious answer, at the top of the chain. The exact
+same open question then recurs one level down, symmetrically, for anyone who fine-tunes
+CogSynDelta's weights: whether *their* fine-tune is "Adapted Material" of CogSynDelta's
+weights is equally unsettled, by the same unresolved legal reasoning, and enforcing the
+ShareAlike condition against a downstream fine-tuner would require deciding it. **CC BY-SA
+weights do not purchase legal certainty; they purchase internal consistency with a cautious
+position, at the cost of exporting the same open question to every downstream user instead of
+absorbing it once.**
+
+**One further, more basic wrinkle: Creative Commons licences were written for creative works,
+and CC's own guidance discourages applying them to software.** A model weights file is
+neither obviously "creative work" nor obviously "software," and applying a CC licence to it
+at all is closer to novel territory than applying MIT or Apache-2.0 to code — a genuinely
+separate uncertainty from the derivative-work question, not a restatement of it, and one this
+document cannot resolve any better than the question it sits next to.
+
+**An architectural point in the operator's favour, worth recording even though it needs a
+human/lawyer to confirm it holds:** CC BY-SA's ShareAlike condition is explicitly scoped to
+*Adapted Material* — material the Licensed Material has been combined into or transformed
+into — and does not reach a mere *Collection* (CC's term for separate works distributed
+together without being merged). CogSynDelta's regions are already architecturally
+independent, each with its own checkpoint. **If per-region checkpoints are kept as separate
+distributable files rather than merged into one weights blob, a CC BY-SA obligation on
+`compress` or `retrieve`'s checkpoint plausibly does not reach `code`, `classify`, `reason`,
+or `vl_latent`'s checkpoints, on a "Collection, not Adapted Material" reading** — the same
+kind of aggregation carve-out already found in the OANC EULA quoted earlier in this document.
+This is exactly the shape of scenario D below.
+
+### Is dual licensing (MIT code, differently-licensed weights) a normal, precedented pattern?
+
+Yes, for RAIL-family and similar bespoke licences; **less established specifically for CC
+BY-SA weights**, which appears to be rare-to-unprecedented in mainstream releases (a targeted
+search for one found none, mirroring the identical finding already recorded above for
+copyleft weights chosen *because* training data was copyleft). Three examples recalled from
+general knowledge rather than freshly re-verified this session (flag for a spot-check before
+citing externally, since this session's web budget is exhausted):
+
+- **Stable Diffusion** (CompVis/Stability AI): the `stable-diffusion` code repository ships
+  under a plain MIT licence; the model weights are distributed under the bespoke CreativeML
+  Open RAIL-M licence, which carries use restrictions the code does not.
+- **BigCode/StarCoder**: the training and data-processing code (a Megatron-LM derivative)
+  ships Apache-2.0; the model itself ships under BigCode OpenRAIL-M. This project's own
+  audit already cites BigCode's copyleft-filtering approach to The Stack, above — the same
+  project also dual-licenses code versus weights.
+- **BigScience BLOOM**: the training code (a Megatron-DeepSpeed fork) ships Apache-2.0; the
+  weights ship under the BigScience RAIL licence.
+
+**The pattern itself — permissive code, encumbered weights — is thoroughly normal.** What is
+not established is CC BY-SA *specifically* as the weights licence; every precedent found uses
+a bespoke RAIL-family licence instead, which typically combines use restrictions with (or
+instead of) share-alike-style propagation. That does not make CC BY-SA weights invalid or
+unworkable — CC BY-SA is a real, well-understood, OSI-adjacent licence family with clear
+legal text, which a bespoke RAIL licence is not — but it means the operator would be an early
+mover on the specific choice of *CC BY-SA* for weights, not merely on dual licensing itself.
+
+### Is CC BY attribution practically burdensome at this corpus scale?
+
+**No, for the ordinary case, and this document has effectively already produced the
+artifact.** The "Required attributions, verbatim" section earlier in this document is the
+complete answer for every CC BY corpus in the catalogue: a fixed block of markdown in the
+model card, authored once, costing nothing at inference time or per-request, covering
+banking77, CodeContests, and (if adopted) Quick Draw, CLEVR, and Caltech-101/256. At this
+project's current scale — roughly a dozen attributable sources — the block is under 20 lines.
+It does not grow with training-row count; it grows with *distinct source count*, which this
+project already knows and tracks.
+
+**The one real exception is not about scale, it is about missing provenance**, and it is
+already flagged above: if FiQA turns out to be StackExchange-derived, Stack Exchange's own
+terms require a *per-item* hyperlink to the original question and each author's profile — an
+obligation that cannot be satisfied from training data at all, at any scale, because no
+per-row provenance survived into the training shard. That is a structural impossibility, not
+a burden that gets heavier with more rows.
+
+### Recommendation
+
+*Recorded as a recommendation to a human, not a decision this document is making.*
+
+**D. Per-region release, matching the architecture: the option this section adds to the
+three already in the main recommendation above.** The numbers in this section support a
+sharper version of "dual licensing" than a single MIT-code/CC-BY-SA-weights split:
+
+- `code`, `classify`, `reason`, and (once its corpus is replaced) `vl_latent` have **zero**
+  SHARE_ALIKE dependency once `code` is GitHub-licence-filtered — there is nothing in any of
+  these regions that a copyleft weights licence would unlock. **Ship these four regions'
+  weights MIT, unconditionally.** Nothing is bought by encumbering them.
+- `compress` and `retrieve` are where the actual trade lives: 183,416 and up to several
+  million pairs respectively, currently usable only by taking on unresolved legal risk, become
+  usable by construction under CC BY-SA. **Ship these two regions' weights CC BY-SA 4.0**
+  (4.0, not 3.0, so Natural Questions' CC BY-SA 3.0 material and everything else's 4.0
+  material sit under one version via CC's one-directional 3.0→4.0 compatibility mechanism —
+  this should be confirmed against CC's current compatible-licences list before being relied
+  on, not assumed from this document).
+- Keep architecture and code MIT throughout, as the operator already prefers — code has no
+  corpus dependency in any scenario, so there is no reason to move it.
+- Distribute per-region checkpoints as separate files, not merged into one weights blob, so
+  the "Collection, not Adapted Material" architectural argument above has the best chance of
+  holding if it is ever tested.
+
+**What this buys over a uniform CC BY-SA release (scenario B applied to everything):**
+identical corpus availability, with copyleft obligations attaching to 2 of 6 regions instead
+of all 6 — strictly more MIT surface at zero corpus cost, which is exactly the trade the
+operator asked to see priced.
+
+**What this costs, stated plainly:** `compress` and `retrieve` weights would not be MIT.
+Anyone fine-tuning those two regions and distributing the result inherits CC BY-SA's
+share-alike condition (see above — API-only serving does not trigger it, but shipping a
+distributed fine-tune does). That is a real, ongoing constraint on downstream users of
+exactly two of six regions, accepted in exchange for real corpus — not a hypothetical trade.
+
+**What this does not fix:** `vl_latent` still needs its corpus replaced before it can ship
+under anything, and that work is identical under every scenario in this section. GooAQ's
+fate — the single largest number in this whole document — still depends on an answer from
+AI2, not on any licence this project chooses for itself.
+
+**This is a recommendation, not a decision.** The legal load-bearing pieces — whether trained
+weights are derivative works at all, whether CC BY-SA's ShareAlike condition really stops at
+a Collection boundary the way argued above, whether CC BY-SA 3.0→4.0 compatibility covers
+this exact case — are exactly the kind of question this document has repeatedly flagged as
+needing a human, and in several places a lawyer, rather than an agent's best reading of
+primary sources. The operator is explicitly the one who trades corpus access against licence
+purity; this section's job was to put a number on that trade, not to make it.
+
