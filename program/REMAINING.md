@@ -321,6 +321,21 @@ hardware isolation that does not exist on this hardware.
 DEPENDS ON: the manifest design. Policy without a declared resource envelope has nothing to
 evaluate.
 
+### REMOTE CONVENTION — read this before creating or pushing anything
+
+**Forgejo (git.vectorweight.com) is the WORK target. GitHub is REMOTE BACKUP.**
+
+Consequences that change behaviour:
+- A new repo is created on Forgejo FIRST, under the right org, then mirrored to a private
+  GitHub repo. Not the other way round.
+- Push to Forgejo first. A GitHub-only commit is unbacked work sitting in the wrong place.
+- PRs, issues and CI live on Forgejo. GitHub is not where work is reviewed.
+- Where the two diverge, Forgejo is authoritative.
+- Every GitHub mirror stays PRIVATE, without exception.
+
+Note most of the fleet already mirrors to Forgejo under org `aphelion`, NOT under `tzervas`
+as one might assume.
+
 ### Forgejo organisation map
 
 Three orgs already exist on git.vectorweight.com, so new repos go INTO them rather than
