@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  UV_VERSION: "0.7.17"
+  UV_VERSION: "0.9.21"
 
 jobs:
   # Check if release is needed (skip for docs-only changes)

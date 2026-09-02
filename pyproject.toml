@@ -116,10 +116,21 @@ docs = [
 
 [tool.uv]
 # CI runs `uv sync --no-sources`, which drops the [tool.uv.sources] cu128 pins and
-# resolves torch/torchvision off the CPU index. With only an upper bound that selected
-# torchvision 0.24.1, which publishes win_arm64 wheels ONLY - so every linux x86_64 job
-# failed at install. Requiring the target platform makes uv resolve to a version that
-# actually has a linux x86_64 wheel.
+# retargets torch/torchvision at the CPU index.
+#
+# The failure that motivates the line below, stated precisely (checked against the
+# index listing, not inferred from the red X):
+#   - torchvision 0.24.1 BARE publishes only macosx_11_0_arm64 and
+#     manylinux_2_28_aarch64 wheels. There is no linux x86_64 wheel.
+#   - torchvision 0.24.1+cpu DOES publish manylinux_2_28_x86_64.
+# A lock entry for the bare version therefore installs fine on the cu128 index but
+# becomes uninstallable the moment --no-sources retargets it at the CPU index on an
+# x86_64 runner.
+#
+# required-environments forces resolution to prove a linux x86_64 wheel exists, so uv
+# picks a version that actually has one. NOTE: it only takes effect when the lockfile
+# is REGENERATED -- adding it without re-running `uv lock` leaves the stale bare-0.24.1
+# entry in place and CI keeps failing with the same error.
 required-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 add-bounds = "major"
 python-preference = "managed"

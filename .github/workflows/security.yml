@@ -35,7 +35,7 @@ permissions:
   actions: read
 
 env:
-  UV_VERSION: "0.7.17"
+  UV_VERSION: "0.9.21"
 
 jobs:
   # CodeQL Static Analysis (SAST)
