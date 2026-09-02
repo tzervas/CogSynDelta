@@ -267,11 +267,27 @@ ORDER, per the operator: Python first, fully proven and dialled. Only then Rust 
 the WHOLE stack in Rust: model, training, quantization, fine-tuning, orchestration, and the
 hybrid predictive training approach itself.
 
-| id | task | note |
+STRICT ORDER, set by the operator. Each step gates the next.
+
+| id | task | gate |
 |----|------|------|
-| P13.1 | Revive the hybrid predictive training approach | FOUND and diagnosed -- see below. The postmortem is preserved on both remotes |
-| P13.2 | Modernise the surrounding stack | the ecosystem moved substantially in ~2 years; some parts refactor, some want reimplementing |
-| P13.3 | Full Rust stack | model, training, quant, fine-tune, orchestration |
+| P13.0 | CSD fully trained conventionally | all regions gated green on a clean holdout; receipts are the CONTROL GROUP for everything below |
+| P13.1 | Fix the PYTHON hybrid trainer | port the Rust design fix back to Python (RSSM-lite world model, predict OUTCOMES not gradients), close the gaps, modernise. Gate: trains without diverging past the step where the old one hit NaN (~160) |
+| P13.2 | Retrain CSD with the hybrid trainer, validate | direct A/B against P13.0's receipts on identical data. Gate: matches or beats conventional recall, at lower cost |
+| P13.3 | Fix the RUST hybrid trainer | close the Burn VRAM leak (.map() copies the whole model per weight-delta), validate the unvalidated mitigation, modernise. Gate: the 77%/99.9% result reproduced at real model scale |
+| P13.4 | Modernise the whole Rust AI/ML ecosystem | currently paused mid-process; resumes here |
+| P13.5 | Forgejo repos under the right orgs | see the org map; note the fleet mirrors under `aphelion`, not `tzervas` |
+
+WHY THIS ORDER IS RIGHT, not just a preference:
+- CSD trained conventionally is the CONTROL. A novel trainer validated without a baseline on
+  the same data cannot distinguish "the trainer works" from "that run was lucky". P13.0
+  produces receipts on a known-clean holdout, which is exactly the comparison P13.2 needs.
+- Python before Rust. The Rust lineage holds the DESIGN fix; the Python lineage holds the
+  working training harness. Porting the fix backwards validates the algorithm where
+  iteration is cheap, and only then pays Rust's cost to reimplement something already
+  proven.
+- The Rust VRAM leak is engineering, not algorithm. It should not block validating whether
+  the algorithm is correct.
 | P13.4 | Forgejo repos for everything, under the right orgs | see org map below; blocked on the P13.1 catalogue so placement is informed rather than guessed |
 
 ### P13.1 — located, and the failure is already diagnosed
