@@ -421,16 +421,36 @@ def build_splits(
         )
         source_counts[f"{source['columns'][0]}->{source['columns'][1]}"] = len(got)
         all_pairs.extend(got)
-    if len(cfg.extra_sources) > 1 or cfg.extra_sources:
-        # Interleave rather than concatenate. Contiguous blocks mean an InfoNCE batch is
-        # drawn from ONE source, so its negatives are all same-domain -- an easier task
-        # that inflates in-batch accuracy while teaching the model less.
-        import random as _random
+    # Shuffle unconditionally -- not just when there is more than one source. This used
+    # to be gated on `len(cfg.extra_sources) > 1 or cfg.extra_sources`, which only ever
+    # covers ACROSS-source contiguity and is false for every single-source region. `code`
+    # and `compress` have exactly one source each, so that condition never fired and
+    # neither region was ever shuffled.
+    #
+    # Two things break without this, and the single-source case breaks both:
+    #   - IN-BATCH NEGATIVES get drawn from a contiguous same-domain block. Concatenating
+    #     sources is the multi-source version of this (an InfoNCE batch drawn from one
+    #     source has all-same-domain negatives); a single ungrouped-but-clustered source
+    #     has the identical problem WITHIN itself. Measured on `code` (CodeSearchNet,
+    #     one source, so the old condition never shuffled it): the first 3000 rows of
+    #     shard 0 span only 5 repositories, 1626 of them from pandas-dev/pandas alone.
+    #     Either way the task gets easier and the model learns less than the metric
+    #     implies.
+    #   - THE HOLDOUT IS UNREPRESENTATIVE, and this half was the one actually overlooked.
+    #     `holdout = all_pairs[:cfg.holdout_pairs]` below takes the HEAD of this exact
+    #     list, so an unshuffled corpus does not just make training easier, it makes the
+    #     EVAL SET a non-random slice too. Measured on `code`: the 512-pair holdout --
+    #     which is the entire eval set -- spanned only 2 repositories out of the corpus's
+    #     13,581 (`ageitgey/face_recognition` and `apache/spark`). recall@1 0.9355 against
+    #     that holdout was measuring "tell these two repos' docstrings apart", not
+    #     "retrieve the right Python function". After this fix the same holdout spans
+    #     443 repositories.
+    import random as _random
 
-        # S311: a seeded shuffle of training data, not a cryptographic context.
-        # secrets.SystemRandom would destroy the reproducibility the receipt promises,
-        # and two checkpoints are not comparable if their data order is not.
-        _random.Random(cfg.seed).shuffle(all_pairs)  # noqa: S311
+    # S311: a seeded shuffle of training data, not a cryptographic context.
+    # secrets.SystemRandom would destroy the reproducibility the receipt promises, and
+    # two checkpoints are not comparable if their data order is not.
+    _random.Random(cfg.seed).shuffle(all_pairs)  # noqa: S311
     if len(all_pairs) < cfg.holdout_pairs * 2:
         raise ValueError(f"only {len(all_pairs)} pairs; need at least {cfg.holdout_pairs * 2}")
 
