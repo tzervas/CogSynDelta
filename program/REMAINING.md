@@ -258,6 +258,32 @@ own language so provenance is total and no layer is a black box. That is why reg
 trained and gated INDIVIDUALLY, and why every number carries a receipt: a system you can
 interrogate layer by layer has to be built that way from the start, not instrumented later.
 
+## P13 — After CSD: hybrid predictive training, then a Rust stack
+
+Explicitly AFTER a fully trained and polished CSD. Recorded so it persists, not to be
+started.
+
+ORDER, per the operator: Python first, fully proven and dialled. Only then Rust — and then
+the WHOLE stack in Rust: model, training, quantization, fine-tuning, orchestration, and the
+hybrid predictive training approach itself.
+
+| id | task | note |
+|----|------|------|
+| P13.1 | Revive the hybrid predictive training approach | exists in both Python and Rust; did not work due to underlying issues and gaps. Diagnose the gaps BEFORE porting -- a rewrite that carries the original defect forward is worse than the original |
+| P13.2 | Modernise the surrounding stack | the ecosystem moved substantially in ~2 years; some parts refactor, some want reimplementing |
+| P13.3 | Full Rust stack | model, training, quant, fine-tune, orchestration |
+
+NOT STARTING FROM ZERO. The operator already has a substantial Rust ML ecosystem on this
+fleet, all now private: rust-ai-core, bitnet-rs, ternary-rs, triton-bridge-rs (CUDA driver
+loader), memory-gate-rs, trit-vsa, tritter-accel, mycelium and hypha. P13.3 is closer to
+consolidation than to greenfield, and the CUDA and ternary pieces are the hard parts that
+already exist.
+
+WHY THIS ORDER IS RIGHT, not just preference: a Rust rewrite of an unproven design ports
+the design's mistakes into a language where they are more expensive to fix. CSD in Python
+is the reference implementation that makes the Rust version a translation rather than a
+redesign.
+
 ## P8 — Deferred by explicit operator decision
 
 - Recursive/looped latent transformers
