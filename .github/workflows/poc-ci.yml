@@ -16,7 +16,16 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: poc-ci-${{ github.head_ref || github.ref_name }}
+  # Keyed on github.ref, matching every other workflow here. The previous key,
+  # `github.head_ref || github.ref_name`, collapsed the push and pull_request events for
+  # a feature branch into ONE group: push falls back to ref_name and pull_request uses
+  # head_ref, and on `feat/poc-x` both evaluate to `feat/poc-x`. With cancel-in-progress
+  # on, whichever started second cancelled the first, and Forgejo reports a cancelled run
+  # as `failure` -- so every push to a PR branch minted a permanently red
+  # `poc-ci (push)` status that no code change could clear.
+  # github.ref differs between the two (`refs/heads/...` vs `refs/pull/N/merge`), so they
+  # get separate groups while superseded runs of the SAME event still cancel.
+  group: poc-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
