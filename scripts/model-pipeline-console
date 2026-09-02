@@ -120,6 +120,86 @@ def summarise(receipts: list[Receipt]) -> list[dict]:
     return rows
 
 
+def _escape(value: str) -> str:
+    """Escape a Prometheus label value.
+
+    Backslash, double quote and newline are the three characters that break the exposition
+    format. A component name is free text from a producer, so it gets escaped rather than
+    trusted -- an unescaped quote makes the whole scrape unparseable, not just one line.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _labels(pairs: dict[str, str]) -> str:
+    return ",".join(f'{k}="{_escape(str(v))}"' for k, v in pairs.items() if v != "")
+
+
+def prometheus_text(receipts: list[Receipt]) -> str:
+    """Render receipts in the Prometheus exposition format.
+
+    Metric NAMES stay constant and the varying part goes in labels. A metric called
+    `recall@1` is not a legal Prometheus name, and minting one series per metric name
+    would also mean the schema changes every time a new architecture reports something
+    novel -- which is precisely what the envelope exists to avoid. So there is one gauge,
+    `model_pipeline_metric`, carrying the metric name as a label.
+
+    Only the newest run per (project, component, stage) is exported. VictoriaMetrics keeps
+    the history itself; re-exporting every past run would rewrite that history on every
+    scrape with whatever timestamp the scrape happened to have.
+    """
+    latest: dict[tuple[str, str, str], Receipt] = {}
+    for r in receipts:  # load_all returns newest first
+        latest.setdefault((r.producer.project, r.producer.component, r.stage), r)
+
+    lines = [
+        "# HELP model_pipeline_metric A metric reported by a pipeline stage",
+        "# TYPE model_pipeline_metric gauge",
+    ]
+    baselines = [
+        "# HELP model_pipeline_baseline The baseline a metric should be read against",
+        "# TYPE model_pipeline_baseline gauge",
+    ]
+    gates = [
+        "# HELP model_pipeline_gate 1 if this gate held, 0 if it did not",
+        "# TYPE model_pipeline_gate gauge",
+    ]
+    passed = [
+        "# HELP model_pipeline_passed 1 if every gate on the run held",
+        "# TYPE model_pipeline_passed gauge",
+    ]
+    seconds = [
+        "# HELP model_pipeline_duration_seconds Wall time of the stage",
+        "# TYPE model_pipeline_duration_seconds gauge",
+    ]
+
+    for (project, component, stage), r in sorted(latest.items()):
+        base = {
+            "project": project,
+            "component": component,
+            "stage": stage,
+            "architecture": r.producer.architecture,
+        }
+        for name, value in r.metrics.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                lines.append(
+                    f"model_pipeline_metric{{{_labels({**base, 'metric': name})}}} {value}"
+                )
+        for name, value in r.baseline.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                baselines.append(
+                    f"model_pipeline_baseline{{{_labels({**base, 'metric': name})}}} {value}"
+                )
+        for name, ok in r.gates.items():
+            gates.append(
+                f"model_pipeline_gate{{{_labels({**base, 'gate': name})}}} {int(bool(ok))}"
+            )
+        passed.append(f"model_pipeline_passed{{{_labels(base)}}} {int(r.passed)}")
+        if r.seconds:
+            seconds.append(f"model_pipeline_duration_seconds{{{_labels(base)}}} {r.seconds}")
+
+    return "\n".join(lines + baselines + gates + passed + seconds) + "\n"
+
+
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <title>Model Pipeline Console</title>
 <style>
@@ -252,6 +332,9 @@ class Handler(BaseHTTPRequestHandler):
                     for r in load_all(RECEIPT_ROOTS)
                 ]
             )
+        elif path == "/metrics":
+            body = prometheus_text(load_all(RECEIPT_ROOTS)).encode()
+            self._send(200, body, "text/plain; version=0.0.4; charset=utf-8")
         elif path == "/api/fleet":
             self._json(fleet_state())
         elif path == "/api/health":
@@ -265,7 +348,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--http", type=int, default=9120)
+    ap.add_argument("--http", type=int, default=9121)
     ap.add_argument(
         "--bind",
         default=os.environ.get("PIPELINE_CONSOLE_BIND", "127.0.0.1"),

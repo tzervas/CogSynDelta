@@ -12,7 +12,7 @@ WorkingDirectory=/home/kang/code/personal/tzervas/CogSynDelta
 # The bind is routable and therefore stated explicitly -- the script defaults to loopback
 # so that exposing it is always a deliberate act.
 ExecStart=/usr/bin/python3 /home/kang/code/personal/tzervas/CogSynDelta/scripts/model-pipeline-console \
-    --http 9120 --bind 192.168.1.98 \
+    --http 9121 --bind 192.168.1.98 \
     --receipt-root /akula-data/csd/receipts
 Restart=always
 RestartSec=5

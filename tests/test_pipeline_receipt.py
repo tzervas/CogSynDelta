@@ -112,3 +112,85 @@ def test_schema_constant_is_architecture_neutral() -> None:
     """The name is load-bearing: a CSD-specific schema invites CSD-specific readers."""
     assert "csd" not in SCHEMA.lower()
     assert "cogsyndelta" not in SCHEMA.lower()
+
+
+def _console():
+    """Load the console script, which has no .py extension."""
+    import importlib.util as u
+    from importlib.machinery import SourceFileLoader
+
+    loader = SourceFileLoader("console", "scripts/model-pipeline-console")
+    spec = u.spec_from_loader("console", loader)
+    mod = u.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+def test_prometheus_escapes_label_values() -> None:
+    """An unescaped quote makes the WHOLE scrape unparseable, not just one line.
+
+    Component names are free text from a producer, so they are escaped rather than
+    trusted.
+    """
+    c = _console()
+    assert c._escape('a"b') == 'a\\"b'
+    assert c._escape("a\\b") == "a\\\\b"
+    assert c._escape("a\nb") == "a\\nb"
+
+
+def test_prometheus_puts_metric_name_in_a_label() -> None:
+    """`recall@1` is not a legal Prometheus metric name, and minting one series per
+    metric name would make the schema change whenever a new architecture reports
+    something novel."""
+    c = _console()
+    rec = Receipt(
+        producer=Producer("tritter", "attn", "ternary"),
+        stage="pretrain",
+        metrics={"recall@1": 0.5, "bits_per_weight": 1.58},
+        gates={"ok": True},
+    )
+    text = c.prometheus_text([rec])
+    assert 'metric="recall@1"' in text
+    assert 'metric="bits_per_weight"' in text
+    assert "model_pipeline_metric{" in text
+    # The architecture must survive into the labels, or per-architecture queries break.
+    assert 'architecture="ternary"' in text
+
+
+def test_prometheus_exports_only_the_newest_run_per_stage() -> None:
+    """Re-exporting past runs would rewrite history on every scrape with the scrape's
+    own timestamp. VictoriaMetrics keeps the history; the exporter reports current state."""
+    c = _console()
+    newer = Receipt(
+        Producer("p", "c"),
+        "pretrain",
+        metrics={"m": 2.0},
+        gates={"g": True},
+        started_utc="2026-09-02T10:00:00Z",
+    )
+    older = Receipt(
+        Producer("p", "c"),
+        "pretrain",
+        metrics={"m": 1.0},
+        gates={"g": True},
+        started_utc="2026-09-01T10:00:00Z",
+    )
+    text = c.prometheus_text([newer, older])  # load_all yields newest first
+    series = [ln for ln in text.splitlines() if ln.startswith("model_pipeline_metric{")]
+    assert len(series) == 1
+    assert series[0].endswith(" 2.0")
+
+
+def test_prometheus_skips_non_numeric_metrics() -> None:
+    """A bool or string in metrics must not emit a line Prometheus cannot parse."""
+    c = _console()
+    rec = Receipt(
+        Producer("p", "c"),
+        "eval",
+        metrics={"good": 1.0, "flag": True, "note": "text"},  # type: ignore[dict-item]
+        gates={"g": True},
+    )
+    text = c.prometheus_text([rec])
+    assert 'metric="good"' in text
+    assert 'metric="flag"' not in text
+    assert 'metric="note"' not in text
