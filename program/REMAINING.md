@@ -76,11 +76,37 @@ NOT used to judge quality). Full results: /mnt/bulk/csd-corpus-analysis/analysis
 
 | id | finding | why it matters | status |
 |----|---------|----------------|--------|
-| P0.9a | `code` truncates 93.9% of code-side tokens at max_len=96 (mean 486, p99 3,113) | recall@1 0.977 may be SIGNATURE matching, not body semantics. The encoder sees a def line and a couple more | todo |
+| P0.9a | `code` truncates 93.9% of code-side tokens at max_len=96 | ANSWERED — see below. Truncation inflated the BASELINE, not the trained score | done |
 | P0.9b | `retrieve` holdout has 53.7% near-dupes (>=0.90) in train | 0.748 is inflated. But see the split below -- not all of it is leakage | todo |
 | P0.9c | `compress` graded/STS-B gate NEVER RAN (`graded_shards=[]`) | a documented gate that silently did nothing | todo |
 | P0.9d | 646 anchor==positive pairs in compress (0.23%) | a free InfoNCE win that teaches nothing | todo |
 | P0.9e | anchor-only dedup drops valid one-to-many structure | one FiQA question with 23 relevant passages collapses to one, losing 22 real positives | todo |
+
+### P0.9a RESULT — truncation inflated the baseline, not the score
+
+Matched arms, only max_len differing (batch 512, 4000 steps, same lr and seed):
+
+| | max_len=96 | max_len=256 |
+|---|---|---|
+| untrained r@1 | 0.2285 | **0.0918** |
+| trained r@1 | 0.9805 | **0.9941** |
+| LEARNED GAIN | 0.7520 | **0.9023** |
+| wall clock | 324 s | 716 s |
+
+The untrained baseline is the evidence. A random-init encoder scores 0.2285 at 96 tokens
+and 0.0918 at 256 -- signature-level lexical overlap is exploitable when only the signature
+is visible, and that shortcut weakens by 60% once whole function bodies are in view.
+
+So the suspicion was half right. Truncation WAS inflating the number, but it inflated the
+BASELINE rather than the trained score. The trained model is better with more context
+(0.9805 -> 0.9941) against a harder problem. On learned gain over baseline, longer context
+wins decisively: 0.902 against 0.752.
+
+Harder task, higher absolute score, bigger gain -- the encoder was starved of context, not
+cheating. And it is direct support for P11.4: if 256 beats 96 this clearly at 2.2x wall
+clock, a SCHEDULE (96 -> 256 -> longer) is worth building rather than picking a bigger
+constant, because the cheap early phase costs little and the expensive phase is where the
+gain is.
 
 TWO KINDS OF "LEAKAGE" IN retrieve, and only one is a defect:
   - genuine paraphrase: "how do you know if..." vs "how to know if...", cos 0.993. Real.
