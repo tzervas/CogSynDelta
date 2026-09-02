@@ -2,6 +2,12 @@
 """Run PoC CUDA checks on a live GPU. No pytest. Receipt JSON to --out.
 
 GPU CI images have torch+CUDA but not pytest. Do not import tests/test_poc_cuda.py.
+
+These checks run on the SYNTHETIC fallback stream, and say so in the receipt. The GPU job
+runs in a container with the repo bind-mounted read-only and no dataset export, so there
+is no corpus to read; what is being asserted here is that CUDA kernels run, not that any
+number is meaningful. Real-data numbers come from tests/test_poc_train.py on a host that
+has the mount.
 """
 
 from __future__ import annotations
@@ -28,11 +34,13 @@ def _device_cuda_resolve() -> None:
 def _train_loss_decreases_cuda() -> None:
     from cogsyndelta.contracts.config import TrainConfig
     from cogsyndelta.contracts.device import DeviceContext
+    from cogsyndelta.data.stream import SyntheticStream
     from cogsyndelta.poc.train import train_latent_vae
 
     cfg = TrainConfig(steps=40, batch_size=32, hidden_dim=64, latent_dim=8, learning_rate=1e-2)
     ctx = DeviceContext.resolve("cuda")
-    result = train_latent_vae(cfg, ctx, seed=123)
+    stream = SyntheticStream(cfg.input_dim, ctx.device, seed=123)
+    result = train_latent_vae(cfg, ctx, seed=123, stream=stream)
     assert result["device"].startswith("cuda")
     assert result["last_loss"] < result["first_loss"], (
         f"first={result['first_loss']:.4f} last={result['last_loss']:.4f}"

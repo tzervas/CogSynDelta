@@ -18,6 +18,7 @@ from cogsyndelta.contracts.config import (
 )
 from cogsyndelta.contracts.device import DeviceContext
 from cogsyndelta.contracts.metrics import MetricsStatus
+from cogsyndelta.data.stream import SyntheticStream
 from cogsyndelta.poc.compress import run_compression_bench
 from cogsyndelta.poc.route import run_route
 from cogsyndelta.poc.train import train_latent_vae
@@ -38,10 +39,16 @@ def test_device_cuda_resolve() -> None:
 
 
 def test_train_loss_decreases_cuda() -> None:
-    """LatentVAE ELBO last step is below first step on CUDA."""
+    """LatentVAE ELBO last step is below first step on CUDA.
+
+    Deliberately the synthetic fallback: this module asserts that CUDA kernels run, and
+    the GPU CI container has neither the NFS export nor the `train` dependency group.
+    The real-data claim is made by ``tests/test_poc_train.py``.
+    """
     cfg = TrainConfig(steps=40, batch_size=32, hidden_dim=64, latent_dim=8, learning_rate=1e-2)
     ctx = DeviceContext.resolve("cuda")
-    result = train_latent_vae(cfg, ctx, seed=123)
+    stream = SyntheticStream(cfg.input_dim, ctx.device, seed=123)
+    result = train_latent_vae(cfg, ctx, seed=123, stream=stream)
     assert result["device"].startswith("cuda")
     assert result["last_loss"] < result["first_loss"], (
         f"first={result['first_loss']:.4f} last={result['last_loss']:.4f}"

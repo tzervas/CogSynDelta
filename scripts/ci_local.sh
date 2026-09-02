@@ -104,8 +104,11 @@ run "poc pytest" uv run --no-sync pytest "${POC_PYTESTS[@]}" -q --tb=short
 
 SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/csd-ci-local.XXXXXX")"
 trap 'rm -rf "${SMOKE_DIR}"' EXIT
+# --stream synthetic mirrors CI exactly: the GitHub runners have no dataset export, so
+# the smoke must pass without one. The real-data path is covered by the corpus tests in
+# `pytest tests/`, which skip when the mount is absent.
 run "poc cli train" uv run --no-sync python -m cogsyndelta.poc.cli train \
-    --device cpu --steps 10 --checkpoint "${SMOKE_DIR}/poc_vae.pt"
+    --device cpu --steps 10 --stream synthetic --checkpoint "${SMOKE_DIR}/poc_vae.pt"
 run "poc cli compress" uv run --no-sync python -m cogsyndelta.poc.cli compress \
     --device cpu --batch 4
 if [[ -f src/cogsyndelta/poc/route.py ]]; then

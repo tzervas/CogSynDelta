@@ -12,6 +12,7 @@ import torch
 
 from cogsyndelta.contracts.config import TrainConfig
 from cogsyndelta.contracts.device import DeviceContext
+from cogsyndelta.data.stream import StreamSource
 from cogsyndelta.poc.vae import LatentVAE
 
 _REPO = Path(__file__).resolve().parents[3]
@@ -24,8 +25,41 @@ def train_latent_vae(
     device_ctx: DeviceContext,
     seed: int = 42,
     checkpoint_path: str | Path | None = None,
+    *,
+    stream: StreamSource,
 ) -> dict[str, Any]:
-    """Train one LatentVAE region on synthetic batches; return loss history."""
+    """Train one LatentVAE region on batches drawn from ``stream``; return loss history.
+
+    ``stream`` is required and has no default. It used to be ``torch.rand`` inline, which
+    meant this function reported the speed at which a VAE learns the mean of a uniform
+    distribution. Pass :class:`~cogsyndelta.data.stream.CorpusStream` for a number about
+    this system, or :class:`~cogsyndelta.data.stream.SyntheticStream` when there is no
+    corpus and the point is only to smoke the code path.
+
+    KNOWN CEILING, measured on real embeddings: ``LatentVAE.decode`` ends in a sigmoid, so
+    reconstructions live in ``(0, 1)``. Uniform noise sat inside that range and hid the
+    assumption; corpus embeddings are LayerNorm-pooled and roughly symmetric about zero,
+    so half the target is unreachable and the reconstruction term keeps a large floor. The
+    loss still falls -- the encoder and the KL term still learn -- but the ELBO value is
+    not comparable across the two streams, and a low ELBO here is not evidence of a good
+    reconstruction. Fixing the head is a change to the region, not to its data, so it is
+    deliberately not done in this commit.
+
+    Args:
+        cfg: VAE shape, batch size, steps, learning rate.
+        device_ctx: Resolved CPU/CUDA context.
+        seed: Torch seed for model init.
+        checkpoint_path: Optional path for the trained state dict.
+        stream: Where the ``[B, input_dim]`` observations come from.
+
+    Returns:
+        Loss history plus device, step count, and the stream's provenance.
+
+    Raises:
+        ValueError: ``stream.dim`` does not match ``cfg.input_dim``.
+    """
+    if stream.dim != cfg.input_dim:
+        raise ValueError(f"stream dim {stream.dim} != cfg.input_dim {cfg.input_dim}")
     torch.manual_seed(seed)
     model = LatentVAE(
         input_dim=cfg.input_dim,
@@ -39,7 +73,7 @@ def train_latent_vae(
     losses: list[float] = []
     model.train()
     for _ in range(cfg.steps):
-        x = torch.rand(cfg.batch_size, cfg.input_dim, device=device_ctx.device)
+        x = stream.sample(cfg.batch_size).to(device_ctx.device)
         opt.zero_grad(set_to_none=True)
         recon, mu, logvar = model(x)
         loss, _ = model.elbo_loss(recon, x, mu, logvar)
@@ -56,6 +90,7 @@ def train_latent_vae(
                 "config": cfg.model_dump(),
                 "losses": losses,
                 "device": device_ctx.name,
+                "stream": stream.provenance,
             },
             path,
         )
@@ -66,6 +101,7 @@ def train_latent_vae(
         "last_loss": losses[-1],
         "device": device_ctx.name,
         "steps": cfg.steps,
+        "stream": stream.provenance,
     }
 
 
@@ -174,8 +210,10 @@ def train_latent_vae_on_public_split(
 ) -> dict[str, Any]:
     """Train LatentVAE on encoded WikiText-2-raw **train** lines (CPU).
 
-    Why: ``train_latent_vae`` still uses ``torch.rand``. Region-pretrain
-    must consume a public train split without G-TRAIN / 14B / LocalAI.
+    Why this exists separately now that ``train_latent_vae`` takes a real stream: this
+    path needs no corpus mount and no ``train`` dependency group. It encodes an in-repo
+    WikiText excerpt with the hashing trick, so region-pretrain has a public train split
+    to consume on a bare CI runner, without G-TRAIN / 14B / LocalAI.
 
     Args:
         dataset: Hub dataset id.
