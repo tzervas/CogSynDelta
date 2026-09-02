@@ -8,6 +8,35 @@ You are orchestrating CogSynDelta (CSD) — a composed mind of specialised submo
 on a self-hosted 4-host GPU fleet. Target: capability of a far larger model from far fewer
 parameters, released as open weights, running on a single ~16 GB consumer card.
 
+## Scale — the current model is a TOY, deliberately
+
+Today ~87M parameters, ~450 MB. **Target: as close to a 30B-class model as reasonably
+achievable.** Present size is scaffolding to get the architecture right the first time.
+Judge current work on whether the STRUCTURE is correct, not on its numbers.
+
+The arithmetic makes quantisation load-bearing rather than incidental: 30B is 120 GB at
+fp32 (impossible), 15 GB at 4 bits (marginal), **12.3 GB at the 3.27 effective bits/param
+this project's PTQ receipts already measure** — which fits a 16 GB card with ~4 GB for
+activations. That is the deployment target.
+
+At scale with long context and vision, ACTIVATION and KV memory dominate weight memory, so
+per-region context budgets and selective activation are the levers, not weight paging.
+**Dynamic paging is planned, not built** — design the seam, implement when measured.
+
+Training phases, one of which appears nowhere else:
+    1. per-region pretraining        <- current
+    2. interconnect training          needs (1) to exist
+    3. WHOLE-MIND DYNAMIC TRAINING    everything together WITH the interconnect trained.
+                                      Probably where most growth in parameters, layers and
+                                      region types happens.
+    4. fine-tune, then quantise       in that order
+
+**Long context is a first-class goal and primarily VISUAL** — efficient large context across
+discrete tokens but chiefly vision, image and video.
+
+**What the operator optimises for: performance, efficiency, functionality, skill, capability,
+tools.** Not benchmark rank. Weigh decisions against those.
+
 ## The architecture, in the operator's terms — read this before anything else
 
 Regions are **brain-analogous FACULTIES, not task domains.** The test for a well-formed
