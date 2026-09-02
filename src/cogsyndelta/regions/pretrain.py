@@ -39,6 +39,7 @@ from typing import Any
 import torch
 from tokenizers import Tokenizer
 
+from cogsyndelta.corpus import CORPUS_FINGERPRINT_SCHEME, fingerprint_corpus
 from cogsyndelta.eval import (
     assert_no_pair_contamination,
     contamination_report,
@@ -248,16 +249,6 @@ def load_graded_pairs(
     return graded
 
 
-def _fingerprint_corpus(shards: list[str]) -> str:
-    """Hash shard names and sizes so a receipt identifies the data it used."""
-    h = hashlib.blake2b(digest_size=16)
-    for path in sorted(shards):
-        p = Path(path)
-        h.update(p.name.encode())
-        h.update(str(p.stat().st_size if p.exists() else 0).encode())
-    return h.hexdigest()
-
-
 @torch.no_grad()
 def evaluate(
     model: TextEncoder,
@@ -400,7 +391,7 @@ def _prepare_graded(
     report: dict[str, Any] = {
         "name": cfg.graded_name or "graded",
         "shards": [Path(s).name for s in cfg.graded_shards],
-        "fingerprint": _fingerprint_corpus(cfg.graded_shards),
+        "fingerprint": fingerprint_corpus(cfg.graded_shards, columns=list(cfg.graded_columns)),
         "columns": list(cfg.graded_columns),
         "pairs_loaded": len(loaded),
         "pairs_removed_as_train_positive": len(loaded) - len(kept),
@@ -842,7 +833,16 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         "method": "symmetric InfoNCE over in-batch negatives",
         "corpus": {
             "shards": [Path(s).name for s in cfg.shards],
-            "fingerprint": _fingerprint_corpus(cfg.shards),
+            # EVERY source, not just the primary. The old value covered `cfg.shards`
+            # alone, which for `retrieve` is FiQA -- roughly 3% of the pairs it trains
+            # on -- so gooaq's 400,000 rows and NQ's 100,231 could have been swapped out
+            # entirely under a matching fingerprint. `csd-quantize.py` hard-fails on this
+            # value, so the check was load-bearing and nearly blind at the same time.
+            "fingerprint": fingerprint_corpus(
+                cfg.shards, columns=list(cfg.pair_columns), extra_sources=cfg.extra_sources
+            ),
+            # Names the rule, so a rule change reads as one instead of as corpus drift.
+            "fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
             "pair_columns": list(cfg.pair_columns),
             "sources": source_counts,
             "train_pairs": len(train_pairs),

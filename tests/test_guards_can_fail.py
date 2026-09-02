@@ -213,3 +213,98 @@ def test_build_splits_still_accepts_a_clean_corpus(tmp_path) -> None:
     # The channel the pre-fix guard used is still reported -- and still zero. Kept
     # visible precisely so nobody reads that zero as evidence again.
     assert meta["contamination"]["channels"]["anchor_exact"]["overlap"] == 0
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 2 -- the receipt fingerprint covered one source out of three.
+# ---------------------------------------------------------------------------------------
+
+
+def _shard(tmp_path, name: str, size: int):
+    """A file of a known size. The fingerprint hashes names and sizes, not content."""
+    path = tmp_path / name
+    path.write_bytes(b"x" * size)
+    return str(path)
+
+
+def test_fingerprint_changes_when_an_extra_source_is_swapped(tmp_path) -> None:
+    """The exact blindness: `retrieve`'s primary (FiQA) is ~3% of what it trains on.
+
+    Under the pre-fix rule these two corpora -- identical primary, COMPLETELY different
+    extra sources -- produced the same fingerprint, so `csd-quantize.py`'s hard failure
+    could not see gooaq or natural-questions being replaced wholesale.
+    """
+    from cogsyndelta.corpus import fingerprint_corpus
+
+    primary = [_shard(tmp_path, "fiqa-0.parquet", 100)]
+    gooaq = [_shard(tmp_path, "gooaq-0.parquet", 4000)]
+    replaced = [_shard(tmp_path, "something-else-0.parquet", 9000)]
+
+    with_gooaq = fingerprint_corpus(
+        primary,
+        columns=["query", "passage"],
+        extra_sources=[{"shards": gooaq, "columns": ["question", "answer"], "limit": 400_000}],
+    )
+    with_replacement = fingerprint_corpus(
+        primary,
+        columns=["query", "passage"],
+        extra_sources=[{"shards": replaced, "columns": ["question", "answer"], "limit": 400_000}],
+    )
+    primary_only = fingerprint_corpus(primary, columns=["query", "passage"])
+
+    assert with_gooaq != with_replacement
+    assert with_gooaq != primary_only
+
+
+def test_fingerprint_changes_when_a_cap_or_a_column_changes(tmp_path) -> None:
+    """The cap and the columns decide which rows reach `build_splits`, so they are corpus
+    identity too -- a re-run under a different cap is not the split the receipt describes."""
+    from cogsyndelta.corpus import fingerprint_corpus
+
+    primary = [_shard(tmp_path, "primary-0.parquet", 100)]
+    extra = [_shard(tmp_path, "extra-0.parquet", 200)]
+
+    def fingerprint(limit: int, columns: list[str]) -> str:
+        return fingerprint_corpus(
+            primary,
+            columns=["a", "b"],
+            extra_sources=[{"shards": extra, "columns": columns, "limit": limit}],
+        )
+
+    assert fingerprint(400_000, ["q", "a"]) != fingerprint(200_000, ["q", "a"])
+    assert fingerprint(400_000, ["q", "a"]) != fingerprint(400_000, ["question", "answer"])
+
+
+def test_fingerprint_ignores_shard_order_but_not_shard_content(tmp_path) -> None:
+    """Sorted, because shard ORDER is a `build_splits` concern, not an identity one."""
+    from cogsyndelta.corpus import fingerprint_corpus
+
+    one = _shard(tmp_path, "a.parquet", 10)
+    two = _shard(tmp_path, "b.parquet", 20)
+    assert fingerprint_corpus([one, two]) == fingerprint_corpus([two, one])
+    assert fingerprint_corpus([one, two]) != fingerprint_corpus([one])
+
+
+def test_a_scheme_change_reports_itself_rather_than_looking_like_corpus_drift() -> None:
+    """Including every source changed every existing fingerprint. A bare mismatch would
+    send an operator hunting a corpus change that never happened."""
+    from cogsyndelta.corpus import (
+        CORPUS_FINGERPRINT_SCHEME,
+        verify_corpus_fingerprint,
+    )
+
+    v1_receipt = {"fingerprint": "0123456789abcdef"}  # no scheme field: pre-fix receipt
+    with pytest.raises(RuntimeError, match="SCHEME changed"):
+        verify_corpus_fingerprint(v1_receipt, "fedcba9876543210", "retrieve")
+
+    same_scheme = {
+        "fingerprint": "0123456789abcdef",
+        "fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
+    }
+    with pytest.raises(RuntimeError, match="fingerprint mismatch"):
+        verify_corpus_fingerprint(same_scheme, "fedcba9876543210", "retrieve")
+
+    # Matching under the current scheme is the only case that proceeds.
+    verify_corpus_fingerprint(same_scheme, "0123456789abcdef", "retrieve")
+    # A receipt with no fingerprint at all predates the check entirely; nothing to verify.
+    verify_corpus_fingerprint({}, "fedcba9876543210", "retrieve")

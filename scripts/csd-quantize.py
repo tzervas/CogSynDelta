@@ -57,13 +57,9 @@ def quantize_text_region(
     """Run sensitivity-driven PTQ on one trained text region."""
     from tokenizers import Tokenizer
 
+    from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
     from cogsyndelta.quant.ptq import build_plan
-    from cogsyndelta.regions.pretrain import (
-        PretrainConfig,
-        _fingerprint_corpus,
-        build_splits,
-        evaluate,
-    )
+    from cogsyndelta.regions.pretrain import PretrainConfig, build_splits, evaluate
     from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
 
     receipt = _latest_receipt(state, region)
@@ -90,26 +86,29 @@ def quantize_text_region(
     else:
         primary_shards = resolved[0][0]
 
-    # The fingerprint is the contract. If the shard list is not the one training used,
-    # every comparison below is void -- so stop rather than report.
-    fingerprint = _fingerprint_corpus(primary_shards)
-    recorded = receipt.get("corpus", {}).get("fingerprint")
-    if recorded and fingerprint != recorded:
-        raise RuntimeError(
-            f"corpus fingerprint mismatch for {region}: rebuilt {fingerprint} vs receipt "
-            f"{recorded}. The held-out split would differ from the one training was judged "
-            f"on, making any quantization comparison meaningless."
-        )
-
+    # The fingerprint is the contract. If the corpus is not the one training used, every
+    # comparison below is void -- so stop rather than report.
+    #
+    # Rebuilt from the GLOB, deliberately, not from the receipt's own `extra_sources`.
+    # Reading the extras back out of the receipt would make them agree with themselves and
+    # turn this check into the same kind of tautology the anchor-level contamination guard
+    # was. The glob is what is on disk now; the receipt is what training saw; the point is
+    # to compare them.
     cfg_d = receipt["config"]
+    extra_sources = [{"shards": s, "columns": list(c), "limit": cap} for s, c, cap in resolved[1:]]
+    fingerprint = fingerprint_corpus(
+        primary_shards,
+        columns=list(cfg_d["pair_columns"]),
+        extra_sources=extra_sources,
+    )
+    verify_corpus_fingerprint(receipt.get("corpus", {}), fingerprint, region)
+
     enc_d = cfg_d["encoder"]
     cfg = PretrainConfig(
         region=region,
         pair_columns=tuple(cfg_d["pair_columns"]),
         shards=primary_shards,
-        extra_sources=[
-            {"shards": s, "columns": list(c), "limit": cap} for s, c, cap in resolved[1:]
-        ],
+        extra_sources=extra_sources,
         steps=cfg_d["steps"],
         batch_size=cfg_d["batch_size"],
         max_len=cfg_d["max_len"],
