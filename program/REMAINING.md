@@ -16,7 +16,8 @@ every metric was batch-composition dependent.
 |----|------|------|--------|
 | P0.1 | Retrain code, compress, retrieve with attention masking fixed | 3 receipts, all `beats_untrained` true | wip |
 | P0.6 | **Make the corpus shuffle unconditional** | code's holdout spans >2 repos; batch negatives are cross-repo | todo — BLOCKS P0.2/P0.3 |
-| P0.7 | Retrain code + compress AGAIN after P0.6 | receipts on a representative holdout | todo |
+| P0.7 | Retrain code + compress AGAIN after P0.6 | receipts on a representative holdout | wip — running |
+| P0.8 | Checkpoint fingerprint does not cover CODE changes | a checkpoint from before a data-path change refuses to resume | todo |
 | P0.2 | Re-run benchmark battery on retrained regions | eval receipts written, anisotropy < 0.9 | todo |
 | P0.3 | Re-run PTQ against retrained fp32 baselines | quant receipts, drop within 0.01 | todo |
 | P0.4 | Fix csd-storage-tier verification | manifest honours the SAME excludes as the rsync | done — homelab SSD 1.5T -> 2.1T free |
@@ -52,6 +53,21 @@ ACROSS sources and never WITHIN one.
 Fix is a one-line condition change, but it invalidates every single-source number measured
 so far. `retrieve` is unaffected. Do NOT compare a post-fix `code` number against 0.9355 or
 0.9590 as though the difference were caused by training.
+
+### P0.8 detail — the resume fingerprint has a blind spot
+
+`_config_fingerprint` hashes PretrainConfig fields: paths, steps, batch_size, lr, seed. It
+does NOT hash corpus content or the build_splits code path. The shuffle fix changed corpus
+ORDER without changing any config field, so a fingerprinted checkpoint written before it
+would have resumed silently against differently-ordered data.
+
+Harmless today only by accident: every checkpoint on disk predates the resumable feature
+and carries no fingerprint at all, so all are correctly treated as "start fresh". The gap
+is real for the next such change.
+
+Fix direction: include something that moves when the data pipeline moves -- the corpus
+fingerprint already recorded in receipts is the obvious candidate, since it is derived from
+the actual shard list.
 
 ## P1 — Repo hygiene. Nearly done.
 
