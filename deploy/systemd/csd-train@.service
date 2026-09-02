@@ -1,0 +1,62 @@
+[Unit]
+Description=CSD training run — region(s) %I
+Documentation=file:///home/kang/code/personal/tzervas/CogSynDelta/scripts/csd-train-all.py
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kang/code/personal/tzervas/CogSynDelta
+
+# --group train is what pulls in tokenizers + pyarrow. The script already guards this and
+# fails loudly (see _require_train_deps) if invoked without it, so getting it wrong here
+# is caught immediately rather than silently -- but the unit's job is to just get it right
+# and never rely on that guard as its safety net.
+#
+# Flags after --regions mirror the known-good production invocation (steps=8000 to clear
+# the recall inversion the script's own docstring describes; shard-limit=0 to train on all
+# shards rather than the 2-shard smoke-test default; --state pointed at durable storage
+# explicitly, never left to fall through to a default that could someday change).
+#
+# %I, not %i: "," is not a valid raw systemd unit-name character, so a
+# `csd-train@code,compress,retrieve` instance is loaded internally as the escaped name
+# `csd-train@code\x2ccompress\x2cretrieve` (systemd logs an "Invalid unit name ... maybe
+# you should use systemd-escape?" warning when you start it -- harmless, it still starts).
+# %i would hand the runner that escaped literal, which matches no region in REGIONS/
+# VL_REGIONS and fails every one of them. %I is the same instance name with escaping
+# undone, so --regions receives the real "code,compress,retrieve" the runner's argparse
+# splits on commas. Verified empirically against this systemd version (257) before relying
+# on it here.
+ExecStart=/home/kang/.local/bin/uv run --group train python scripts/csd-train-all.py \
+    --regions %I --steps 8000 --batch 256 --shard-limit 0 --state /akula-data/csd
+
+# No start timeout. Type=simple is considered "started" the instant ExecStart forks, not
+# when training reaches any milestone, so TimeoutStartSec has no real work to do here --
+# but csd-storage-tier.service hit exactly this class of problem from the DefaultTimeoutStartSec
+# (90s) that a service inherits when nothing overrides it, and a `uv run` cold-resolving the
+# venv plus a large corpus listing on first touch is not guaranteed to stay under that. Set
+# to 0 for the same reason storage-tier sets it: a run measured in tens of minutes must never
+# be killed for taking too long to finish *starting*.
+TimeoutStartSec=0
+
+# Deliberately NOT Restart=on-failure or always. A run that fails its beats_untrained gate
+# has a broken config, not a transient fault; auto-restarting it would loop forever burning
+# GPU-hours re-running the same broken configuration. A failed gate needs an agent or
+# operator to read the receipt in /akula-data/csd/receipts and change something -- not a
+# timer retrying blindly.
+Restart=no
+
+# Mild CPU deprioritisation, not idle-class starvation. Unlike csd-tmp-reaper and
+# csd-storage-tier -- background housekeeping that should be invisible on a machine doing
+# something else -- training IS the point of this machine, so it does not get the same
+# Nice=15/IOSchedulingClass=idle treatment. Nice=5 gives interactive work (an editor, a
+# shell) the edge under CPU contention without meaningfully slowing a GPU-bound job: CFS
+# still hands training the large majority of cycles since GPU wait time, not CPU demand,
+# dominates its wall clock. IOSchedulingClass=best-effort with a priority one notch below
+# default (6 vs 4) protects interactive disk I/O the same way without idle-class's risk of
+# starving a checkpoint write indefinitely behind unrelated I/O -- checkpoints land mid-run,
+# not after it, so an arbitrarily delayed write is an arbitrarily stalled training step.
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+
+[Install]
+WantedBy=default.target
