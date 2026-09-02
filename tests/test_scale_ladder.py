@@ -13,14 +13,27 @@ POLICIES = ROOT / "deploy" / "grafana" / "provisioning" / "alerting" / "policies
 DOC = ROOT / "docs" / "program" / "CSD-SCALE-LADDER.md"
 
 
-def test_scale_ladder_json_has_three_rungs_none_green() -> None:
-    """Receipt file exists; no rung is Grafana-green yet."""
+def test_scale_ladder_json_has_five_rungs_none_green() -> None:
+    """Receipt file exists; no rung is Grafana-green yet.
+
+    v2 extended the ladder from three assembled sizes to five rungs, adding the two
+    region-level stages (region_pretrain, router) ahead of tiny_mind. The receipt is
+    generated, so it is authoritative and this test follows it.
+    """
     rec = json.loads(LADDER.read_text(encoding="utf-8"))
-    assert rec["schema"] == "csd-scale-ladder/v1"
+    assert rec["schema"] == "csd-scale-ladder/v2"
     rungs = rec["rungs"]
-    assert [row["size"] for row in rungs] == ["tiny", "small", "medium"]
-    assert [row["n"] for row in rungs] == [0, 1, 2]
+    assert [row["size"] for row in rungs] == [
+        "region_pretrain",
+        "router",
+        "tiny_mind",
+        "small",
+        "medium",
+    ]
+    assert [row["n"] for row in rungs] == [0, 1, 2, 3, 4]
     assert [row["hf_repo"] for row in rungs] == [
+        "tzervas/cogsyndelta-region-stream_vae-tiny",
+        "tzervas/cogsyndelta-region-route-tiny",
         "tzervas/cogsyndelta-tiny",
         "tzervas/cogsyndelta-small",
         "tzervas/cogsyndelta-medium",
@@ -28,6 +41,9 @@ def test_scale_ladder_json_has_three_rungs_none_green() -> None:
     assert all(row["green"] is False for row in rungs)
     assert rec["hf"]["gap"] == "mint HF"
     assert rec["hf"]["never_copy"] == "gpu/huggingface-token"
+    # v2 additions: region repos are named separately from assembled ones.
+    assert rec["hf"]["region_pattern"] == "tzervas/cogsyndelta-region-<name>-<size>"
+    assert rec["hf"]["assembled_pattern"] == "tzervas/cogsyndelta-<size>"
     assert rec["grafana_sat"]["contact"] == "maintainers-email"
 
 
