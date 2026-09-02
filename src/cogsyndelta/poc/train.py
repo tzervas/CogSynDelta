@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -68,26 +69,55 @@ def train_latent_vae(
     }
 
 
-def encode_public_line(text: str, input_dim: int) -> torch.Tensor:
-    """Map one train-split line to ``[input_dim]`` in ``[0, 1]`` (bag-of-bytes).
+_TOKEN_RE = re.compile(r"[A-Za-z0-9']+")
 
-    Why: CI has no Qwen encoder and must not pause 3090 LocalAI. Blake2
-    expansion is deterministic CPU and matches the region-pretrain pack.
+
+def _token_bucket(token: str, input_dim: int) -> tuple[int, float]:
+    """Map a token to (bucket, sign) deterministically.
+
+    hashlib rather than hash(): str hashing is salted per process unless PYTHONHASHSEED
+    is pinned, which would make the same corpus encode differently between runs and make
+    checkpoints unreproducible.
+    """
+    digest = hashlib.blake2b(token.encode("utf-8", errors="replace"), digest_size=8).digest()
+    value = int.from_bytes(digest, "little")
+    return value % input_dim, 1.0 if (value >> 63) & 1 else -1.0
+
+
+def encode_public_line(text: str, input_dim: int) -> torch.Tensor:
+    """Map one train-split line to a unit-norm ``[input_dim]`` bag-of-tokens vector.
+
+    Uses the hashing trick: each token is hashed to a bucket and accumulated with a
+    signed weight. Lines that share vocabulary share coordinates, so cosine similarity
+    between related lines is meaningfully greater than between unrelated ones.
+
+    Why not an embedding model: CI has no encoder available and must not pause the 3090's
+    LocalAI. This is deterministic, CPU-only, dependency-free, and — unlike the previous
+    implementation — actually carries lexical signal.
+
+    Why not hash the whole line (what this replaced): a cryptographic hash of the full
+    string is *designed* to decorrelate on any input change, so near-identical sentences
+    produced orthogonal vectors and the VAE was fitting 66 fixed pseudorandom points.
+
+    Signed accumulation is deliberate: unsigned counts make hash collisions inflate
+    magnitude systematically, whereas signed collisions cancel in expectation.
 
     Args:
         text: One WikiText-2-raw train line.
         input_dim: LatentVAE observation width.
 
     Returns:
-        Float tensor ``[input_dim]``.
+        Float tensor ``[input_dim]``, L2-normalised. An empty or token-free line yields
+        a zero vector rather than raising, since blank lines are normal in WikiText.
     """
-    raw = hashlib.blake2b(text.encode("utf-8", errors="replace"), digest_size=64).digest()
-    buf = bytearray()
-    counter = 0
-    while len(buf) < input_dim:
-        buf.extend(hashlib.blake2b(raw + counter.to_bytes(4, "little"), digest_size=64).digest())
-        counter += 1
-    return torch.tensor(buf[:input_dim], dtype=torch.float32) / 255.0
+    vec = torch.zeros(input_dim, dtype=torch.float32)
+    for token in _TOKEN_RE.findall(text.lower()):
+        bucket, sign = _token_bucket(token, input_dim)
+        vec[bucket] += sign
+    norm = torch.linalg.vector_norm(vec)
+    if norm > 0:
+        vec = vec / norm
+    return vec
 
 
 def load_public_split_lines(
