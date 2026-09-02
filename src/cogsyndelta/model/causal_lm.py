@@ -48,8 +48,9 @@ from torch import nn
 class CausalLMConfig:
     """Shape of a small decoder-only LM.
 
-    Defaults are a ~20M-parameter model (excluding the tied embedding), sized to train
-    meaningfully on TinyStories within a single GPU-hour.
+    Defaults give 29,920,512 parameters total and 10,621,824 excluding the tied
+    embedding (measured, not estimated). Both numbers are quoted because at this scale
+    the 50257x384 embedding is most of the model, so a single headline figure misleads.
     """
 
     vocab_size: int = 50257
@@ -198,8 +199,9 @@ class CausalLM(nn.Module):
             self.head.weight = self.embed.weight
 
         cos, sin = build_rope_cache(cfg.seq_len, cfg.head_dim, cfg.rope_theta, torch.device("cpu"))
-        # Buffers, so .to(device) and state_dict round-trips carry them without being
-        # trained or counted as parameters.
+        # Buffers so .to(device) moves them and they are not counted as parameters.
+        # persistent=False means they are NOT in state_dict -- correct here, since
+        # __init__ rebuilds them deterministically from the config.
         self.register_buffer("rope_cos", cos, persistent=False)
         self.register_buffer("rope_sin", sin, persistent=False)
 

@@ -39,14 +39,22 @@ from tokenizers import Tokenizer
 # The fleet export. Override for a different mount or a local copy.
 DEFAULT_CORPUS_ROOT = Path(os.environ.get("CSD_CORPUS_ROOT", "/mnt/fleet-datasets/tritter"))
 
-# Named corpora -> path relative to the root, and the column holding text.
-CORPORA: dict[str, tuple[str, str]] = {
-    "tinystories": ("pretrain/tinystories/data", "text"),
-    "fineweb-edu-10b": ("pretrain/fineweb-edu-10B", "text"),
-    "fineweb-edu-100b": ("pretrain/fineweb-edu-100B", "text"),
-    "wikipedia-en": ("pretrain/wikipedia/20231101.en", "text"),
-    "openwebmath": ("pretrain/openwebmath", "text"),
-    "finemath-4plus": ("pretrain/finemath-4plus", "text"),
+# Named corpora -> (path relative to root, text column, filenames encode a split).
+#
+# The third field is NOT cosmetic. An earlier version inferred split-awareness by testing
+# whether any shard filename contained the split name, and fell back to ALL shards when
+# none did. For every corpus without split-encoded filenames that made
+# split="validation" return the entire training set -- a held-out perplexity that is
+# actually a train perplexity, lower and better-looking and worthless for comparing two
+# architectures. Verified at the time: the first document of wikipedia-en "validation"
+# was byte-identical to the first of "train". Declaring the property removes the guess.
+CORPORA: dict[str, tuple[str, str, bool]] = {
+    "tinystories": ("pretrain/tinystories/data", "text", True),
+    "fineweb-edu-10b": ("pretrain/fineweb-edu-10B", "text", False),
+    "fineweb-edu-100b": ("pretrain/fineweb-edu-100B", "text", False),
+    "wikipedia-en": ("pretrain/wikipedia/20231101.en", "text", False),
+    "openwebmath": ("pretrain/openwebmath", "text", False),
+    "finemath-4plus": ("pretrain/finemath-4plus", "text", False),
 }
 
 TOKENIZERS: dict[str, str] = {
@@ -96,7 +104,7 @@ def shard_paths(corpus: str) -> list[Path]:
     """
     if corpus not in CORPORA:
         raise KeyError(f"unknown corpus {corpus!r}; have {sorted(CORPORA)}")
-    rel, _ = CORPORA[corpus]
+    rel, _, _ = CORPORA[corpus]
     directory = corpus_root() / rel
     if not directory.is_dir():
         raise FileNotFoundError(f"corpus {corpus!r} not found at {directory}")
@@ -125,14 +133,26 @@ def iter_documents(
     Yields:
         One document string at a time.
     """
-    _, column = CORPORA[corpus]
+    _, column, has_splits = CORPORA[corpus]
     paths = shards if shards is not None else shard_paths(corpus)
 
-    named = [p for p in paths if split in p.name]
-    # Only filter when the split is actually encoded in filenames; otherwise a corpus
-    # like fineweb (000_00000.parquet) would silently yield nothing.
-    if named:
-        paths = named
+    if shards is None:
+        if has_splits:
+            matched = [p for p in paths if split in p.name]
+            if not matched:
+                # Never fall back to every shard. That returns training data under the
+                # name of a held-out split, and nothing downstream can detect it.
+                raise FileNotFoundError(
+                    f"corpus {corpus!r} declares splits but no shard name contains "
+                    f"{split!r}; refusing to fall back to all shards, which would "
+                    f"return training data"
+                )
+            paths = matched
+        elif split != "train":
+            raise ValueError(
+                f"corpus {corpus!r} has no split-encoded shards, so {split!r} cannot be "
+                f"served. Hold out shards explicitly and pass them via shards=."
+            )
 
     for path in paths:
         pf = pq.ParquetFile(path)
@@ -170,15 +190,23 @@ def iter_token_windows(
         split: Passed to :func:`iter_documents`.
         seed: Seeds the shuffle buffer.
         shuffle_buffer: Windows held for shuffling. 0 disables.
-        eos_id: Separator token; defaults to the tokenizer's vocab size minus one
-            (50256 for GPT-2, which is ``<|endoftext|>``).
+        eos_id: Separator token. Defaults to the tokenizer's own ``<|endoftext|>``.
+            NOT vocab_size - 1: that is correct for GPT-2 only by coincidence. For the
+            pythia tokenizer shipped alongside it, vocab_size - 1 is 50276, which decodes
+            to two spaces, while the real EOS is id 0 -- so every packed window would be
+            separated by whitespace and the real EOS never emitted.
         limit_windows: Stop after this many windows. Useful for smoke runs.
 
     Yields:
         ``torch.long`` tensors of shape ``[seq_len + 1]``.
     """
     if eos_id is None:
-        eos_id = tokenizer.get_vocab_size() - 1
+        eos_id = tokenizer.token_to_id("<|endoftext|>")
+        if eos_id is None:
+            raise ValueError(
+                "tokenizer has no <|endoftext|>; pass eos_id explicitly. "
+                "vocab_size - 1 is correct for GPT-2 only by coincidence."
+            )
 
     # S311 is suppressed below: this shuffles a training buffer, not a cryptographic
     # context. A seeded, reproducible PRNG is exactly what is wanted --

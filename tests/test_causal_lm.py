@@ -117,12 +117,16 @@ def test_perplexity_is_token_weighted(tiny_cfg: CausalLMConfig) -> None:
     """A short trailing batch must not skew the estimate."""
     torch.manual_seed(0)
     model = CausalLM(tiny_cfg)
+    # Deliberately uneven: two full batches and one short trailing batch. The previous
+    # version used three identical (2, 16) batches, so it asserted a property about short
+    # batches while never creating one.
+    shapes = [(2, 16), (2, 16), (1, 4)]
     batches = [
         (
-            torch.randint(0, tiny_cfg.vocab_size, (2, 16)),
-            torch.randint(0, tiny_cfg.vocab_size, (2, 16)),
+            torch.randint(0, tiny_cfg.vocab_size, s),
+            torch.randint(0, tiny_cfg.vocab_size, s),
         )
-        for _ in range(3)
+        for s in shapes
     ]
     ppl = model.estimate_perplexity(batches)
     assert math.isfinite(ppl)

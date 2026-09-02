@@ -54,7 +54,11 @@ def build_mind_from_spec(spec: MindSpec) -> RegionRegistry:
     for region in spec.live_regions:
         if region.kind == "residual_mlp":
             registry.register(
-                ResidualMLPRegion(dim=region.stream_dim, hidden_dim=region.hidden_dim)
+                ResidualMLPRegion(
+                    dim=region.stream_dim,
+                    hidden_dim=region.hidden_dim,
+                    name=region.name,
+                )
             )
         elif region.kind == "latent_vae":
             if region.latent_dim is None:
