@@ -164,6 +164,33 @@ DEPENDENCY: P10 lands AFTER P9.1/P9.2. Filling one card is worth more than split
 small batch across two, and a batch-size change alters what fits per host -- doing P10
 first would mean scheduling against numbers that are about to change.
 
+## P11 — Batch composition and negative difficulty
+
+Operator-identified. Two of these are standard practice we simply are not doing, and one is
+a real defect.
+
+THE DEFECT: batches are contiguous slices of a list shuffled ONCE.
+`pretrain.py` line ~657: `chunk = train_pairs[lo : lo + cfg.batch_size]`. The corpus is
+shuffled at load and never again, so batch composition is frozen for the whole run. `code`
+trains ~4.7 epochs at 8000x256 over 430,931 pairs, so every fixed group of 255 negatives
+repeats about five times. The model sees the same discriminations over and over instead of
+new ones.
+
+| id | task | what it buys | gate | status |
+|----|------|--------------|------|--------|
+| P11.1 | Reshuffle between epochs | every epoch presents new negative combinations; standard practice (`shuffle=True`) that we skipped | batch composition provably differs across epochs; recall improves or is explained | todo |
+| P11.2 | Hard negative mining | InfoNCE learns most from negatives it nearly confuses; random in-batch negatives are mostly trivially easy | mined-negative run beats random-negative run on the same holdout | todo |
+| P11.3 | Curriculum over negative difficulty | easy discriminations first, fine ones later -- "dog, then Belgian Malinois vs other dogs" | staged difficulty beats constant difficulty at equal step count | todo |
+
+PRIOR ART -- this is established, not novel, which is good news: epoch reshuffling is
+universal; progressive hard-negative mining is the core of DPR, ANCE and RocketQA, where
+each round mines negatives the current model ranks highly but that are wrong.
+
+SEQUENCING, per the operator: land conventional training correctly FIRST, then add these
+and measure whether each helps. P11.1 is cheap and fixes a defect, so it can go early.
+P11.2/P11.3 are experiments and must be gated on a working baseline -- otherwise a gain
+cannot be attributed.
+
 ## P9 — Modern training stack
 
 Make training, fine-tuning and quantization idempotent, parameterised, pausable, resumable
