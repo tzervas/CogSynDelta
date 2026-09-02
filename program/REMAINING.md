@@ -69,6 +69,38 @@ Fix direction: include something that moves when the data pipeline moves -- the 
 fingerprint already recorded in receipts is the obvious candidate, since it is derived from
 the actual shard list.
 
+## P0.9 — Findings from the corpus survey. These change what our numbers MEAN.
+
+Measured on the 1080 Ti with the project's own encoders (correct for redundancy, explicitly
+NOT used to judge quality). Full results: /mnt/bulk/csd-corpus-analysis/analysis.json
+
+| id | finding | why it matters | status |
+|----|---------|----------------|--------|
+| P0.9a | `code` truncates 93.9% of code-side tokens at max_len=96 (mean 486, p99 3,113) | recall@1 0.977 may be SIGNATURE matching, not body semantics. The encoder sees a def line and a couple more | todo |
+| P0.9b | `retrieve` holdout has 53.7% near-dupes (>=0.90) in train | 0.748 is inflated. But see the split below -- not all of it is leakage | todo |
+| P0.9c | `compress` graded/STS-B gate NEVER RAN (`graded_shards=[]`) | a documented gate that silently did nothing | todo |
+| P0.9d | 646 anchor==positive pairs in compress (0.23%) | a free InfoNCE win that teaches nothing | todo |
+| P0.9e | anchor-only dedup drops valid one-to-many structure | one FiQA question with 23 relevant passages collapses to one, losing 22 real positives | todo |
+
+TWO KINDS OF "LEAKAGE" IN retrieve, and only one is a defect:
+  - genuine paraphrase: "how do you know if..." vs "how to know if...", cos 0.993. Real.
+  - GooAQ template collision: "44 is 25 percent of what number?" vs "...55 percent...",
+    cos 0.995 -- SAME template, DIFFERENT correct answer. That is not duplication; it means
+    the metric is measuring the encoder's failure to distinguish a slot value. Deduplicating
+    it away would hide a real weakness rather than fix one.
+
+CORRECTION TO AN EARLIER CLAIM IN THIS FILE: raw CodeSearchNet is BALANCED -- top repo
+2.44%, 13,581 unique repos. The "1,626 of 3,000 rows are pandas" figure was a pre-shuffle
+HEAD artifact, not a property of the corpus. The P0.6 defect was real (the holdout was 2
+repos) but the corpus was always diverse; the earlier wording overstated it.
+
+CROSS-DATASET, for anything added later:
+  - staged `snli` is 100% already inside all-nli. It would add ZERO new pairs.
+  - APPS and CodeContests share 17.8% of problems at cos>=0.90, INVISIBLE to hashing because
+    CodeContests prefixes every description with "<id>_<letter>. <Title> - ". Dedupe on the
+    stripped description.
+  - SQuAD/HotpotQA share 95.9% of article titles. Dedupe by title, not passage hash.
+
 ## P1 — Repo hygiene. Nearly done.
 
 | id | task | gate | status |
