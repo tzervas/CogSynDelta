@@ -56,6 +56,18 @@ class PretrainConfig:
     region: str
     pair_columns: tuple[str, str]
     shards: list[str]
+    extra_sources: list[dict] = field(default_factory=list)
+    """Additional corpora with DIFFERENT column names, each optionally capped.
+
+    A region's data rarely comes from one place with one schema: `retrieve` draws
+    (query, passage) from FiQA, (query, answer) from Natural Questions and
+    (question, answer) from GooAQ. Each entry is
+    {"shards": [...], "columns": [left, right], "limit": int}.
+
+    `limit` exists for BALANCE, not speed. GooAQ alone is 3,012,496 pairs -- 96% of
+    everything available to `retrieve` -- and training uncapped would produce a GooAQ
+    model wearing a retrieval region's name.
+    """
     steps: int = 2000
     batch_size: int = 256
     lr: float = 3e-4
@@ -392,9 +404,28 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     device = _resolve_device(cfg.device)
     tok = Tokenizer.from_file(cfg.tokenizer_path)
 
-    all_pairs = load_pairs(
-        cfg.shards, cfg.pair_columns, limit=cfg.steps * cfg.batch_size + cfg.holdout_pairs
-    )
+    budget = cfg.steps * cfg.batch_size + cfg.holdout_pairs
+    all_pairs = load_pairs(cfg.shards, cfg.pair_columns, limit=budget)
+    source_counts = {"primary": len(all_pairs)}
+    for source in cfg.extra_sources:
+        cap = source.get("limit") or 0
+        got = load_pairs(
+            source["shards"],
+            tuple(source["columns"]),
+            limit=cap if cap else budget,
+        )
+        source_counts[f"{source['columns'][0]}->{source['columns'][1]}"] = len(got)
+        all_pairs.extend(got)
+    if len(cfg.extra_sources) > 1 or cfg.extra_sources:
+        # Interleave rather than concatenate. Contiguous blocks mean an InfoNCE batch is
+        # drawn from ONE source, so its negatives are all same-domain -- an easier task
+        # that inflates in-batch accuracy while teaching the model less.
+        import random as _random
+
+        # S311: a seeded shuffle of training data, not a cryptographic context.
+        # secrets.SystemRandom would destroy the reproducibility the receipt promises,
+        # and two checkpoints are not comparable if their data order is not.
+        _random.Random(cfg.seed).shuffle(all_pairs)  # noqa: S311
     if len(all_pairs) < cfg.holdout_pairs * 2:
         raise ValueError(f"only {len(all_pairs)} pairs; need at least {cfg.holdout_pairs * 2}")
 
@@ -521,6 +552,7 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
             "shards": [Path(s).name for s in cfg.shards],
             "fingerprint": _fingerprint_corpus(cfg.shards),
             "pair_columns": list(cfg.pair_columns),
+            "sources": source_counts,
             "train_pairs": len(train_pairs),
             "holdout_pairs": len(holdout),
             "duplicates_removed": duplicates_removed,
