@@ -13,6 +13,18 @@ Checkpoints defaulted to a relative path, so three parallel runs wrote 184 MB fi
 a session scratchpad on /tmp and filled the filesystem to 0 bytes free. Durable paths are
 now explicit and default to real storage, never a temp directory.
 
+Separately: three runs died today to session churn and a missing dependency group, and
+every one of them restarted from step 0 -- pretrain.py had no resume path, and the
+checkpoint interval was `steps // 3` (three checkpoints across an 8000-step run) even
+where it did. Both are fixed: `pretrain_region`/`pretrain_vl_region` now resume
+automatically from the newest checkpoint whose config fingerprint matches the one being
+requested (model, optimizer momentum, RNG state, and the untrained baseline all carry
+forward -- see `regions/pretrain.py`'s module comment), refuse outright if the fingerprint
+does not match, and this runner checkpoints every `CHECKPOINT_EVERY` steps regardless of
+total run length. A resumed region logs it and the receipt records it
+(`resumed`/`resumed_from_step`), so an operator reading either the console output or a
+receipt afterwards can tell a resumed run from a fresh one.
+
 MEASURING THE RIGHT THING
 Every run evaluates the UNTRAINED model first. On CodeSearchNet a random-init encoder
 scores recall@1 0.40 from lexical overlap alone, and early training DESTROYS that before
@@ -39,6 +51,28 @@ from pathlib import Path
 # Durable, never a temp dir. /tmp filled at 0 bytes free when checkpoints landed there.
 DEFAULT_STATE = Path("/akula-data/csd")
 CORPUS = Path("/mnt/fleet-datasets/csd")
+
+CHECKPOINT_EVERY = 200
+"""Steps between checkpoints, for every region this runner drives (text and visual).
+
+Was `max(1, steps // 3)` -- three checkpoints across an 8000-step run. Training died
+three times in one day to session churn and a missing dependency group, and every time
+restarted from step 0 because that interval is too coarse AND because pretrain.py had no
+resume path at all (fixed separately; this is just the interval).
+
+Chosen from measurements taken on this fleet today, not guessed:
+  - step time: code 0.131s, retrieve 0.069s, vl_latent 0.062s, compress 0.042s
+    (slowest to fastest; from today's receipts' elapsed_s / steps)
+  - checkpoint write: ~0.07s for a 192MB tensor blob, measured on /akula-data's own
+    NVMe (torch.save + os.replace)
+
+At 200 steps, the worst case is losing ~26s of the slowest region's compute (`code`,
+200 * 0.131s) -- comfortably "minutes, not everything" with margin to spare -- while
+write overhead stays under 2% of wall time even for the fastest region (`compress`,
+0.07s / (200 * 0.042s) =~ 0.8%). Checkpointing is not the IO-bound side of this trade at
+any interval this coarse; the loss-on-crash side is what the interval actually trades
+against.
+"""
 
 
 def _shards(pattern: str) -> list[str]:
@@ -184,12 +218,23 @@ def run_region(
         eval_every=max(1, steps // 6),
         warmup_steps=max(50, steps // 15),
         lr=3e-4,
-        checkpoint_every=max(1, steps // 3),
+        checkpoint_every=min(CHECKPOINT_EVERY, max(1, steps // 3)),
         encoder=TextEncoderConfig(dim=256, depth=4, n_heads=4, max_len=96),
         out_dir=str(state / "receipts"),
     )
     started = time.time()
     receipt = pretrain_region(cfg)
+    # pretrain_region already logged the resume decision as it happened; this repeats
+    # it as a one-line summary so an operator scanning the whole run's output (or the
+    # receipt itself, via `resumed`/`resumed_from_step`) does not have to scroll back.
+    if receipt.get("resumed"):
+        print(
+            f"    resumed from step {receipt['resumed_from_step']}/{steps} "
+            f"(checkpoint from a matching config)",
+            flush=True,
+        )
+    else:
+        print("    fresh run (no matching checkpoint found)", flush=True)
     b, h = receipt["untrained_baseline"], receipt["held_out"]
     print(
         f"    untrained r@1={b['recall@1']:.4f} r@10={b['recall@10']:.4f}  ->  "
@@ -240,12 +285,20 @@ def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> 
         batch_size=batch,
         warmup_steps=max(50, steps // 15),
         eval_every=max(1, steps // 8),
-        checkpoint_every=max(1, steps // 3),
+        checkpoint_every=min(CHECKPOINT_EVERY, max(1, steps // 3)),
         jepa=JEPAConfig(),
         out_dir=str(state / "receipts"),
     )
     started = time.time()
     receipt = pretrain_vl_region(cfg)
+    if receipt.get("resumed"):
+        print(
+            f"    resumed from step {receipt['resumed_from_step']}/{steps} "
+            f"(checkpoint from a matching config)",
+            flush=True,
+        )
+    else:
+        print("    fresh run (no matching checkpoint found)", flush=True)
     b, h = receipt["untrained_baseline"], receipt["held_out"]
     print(
         f"    probe  untrained top1={b['top1']:.4f} top5={b['top5']:.4f}  ->  "
@@ -355,6 +408,11 @@ def main() -> int:
             "held_out": receipt["held_out"],
             "beats_untrained": beats,
             "gate": "pass" if passed else "FAIL",
+            # Also in the per-region receipt (`resumed`/`resumed_from_step`), duplicated
+            # here so the run-level summary alone tells a resumed region from a fresh
+            # one without opening the region's own receipt.
+            "resumed": receipt.get("resumed", False),
+            "resumed_from_step": receipt.get("resumed_from_step", 0),
         }
         if not passed:
             # Do not advance a region that has not beaten its own initialisation. It has

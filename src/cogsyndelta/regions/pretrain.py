@@ -46,6 +46,7 @@ from cogsyndelta.eval import (
     recall_at_k,
     spearman_correlation,
 )
+from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
 from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig, info_nce
 
 
@@ -477,8 +478,123 @@ def build_splits(
     )
 
 
+# ---------------------------------------------------------------------------------------
+# Resumable checkpointing.
+#
+# A checkpoint that omits any of {model, optimizer, step, RNG state, the untrained
+# baseline, a config fingerprint} produces a resumed run that either silently diverges
+# from an uninterrupted one, or is unjudgeable because `beats_untrained` would be
+# comparing a partially-trained model against itself. Everything below exists to make
+# sure none of those five is ever missing.
+# ---------------------------------------------------------------------------------------
+
+_CHECKPOINT_KEEP = 3
+"""Periodic checkpoints kept alongside `final.pt`, oldest deleted first.
+
+At the runner's checkpoint_every=200 (scripts/csd-train-all.py), 3 buys ~600 steps of
+rollback headroom -- if the single newest checkpoint were ever suspect (e.g. written
+right as something started going wrong), the previous two are still there. At
+measured checkpoint size (~184-192MB), that is under 600MB per region: immaterial
+against the 417GB free on /akula-data at the time this was written, and small next to
+the 8000-step runs' own multi-hundred-MB-per-region footprint either way.
+"""
+
+
+def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
+    """The config fields that must match for a checkpoint to be a valid continuation.
+
+    Deliberately excludes purely administrative fields that do not change what is being
+    trained or measured: `out_dir`, `checkpoint_every`, `eval_every`, `device`. Every
+    field kept here -- steps, batch_size, lr, warmup, grad_clip, max_len, seed,
+    holdout_pairs, the encoder shape, the pair columns, the shard list, the tokenizer,
+    the graded set -- changes the run itself, so a checkpoint trained under a different
+    value of any of them is not a continuation of what `cfg` describes.
+    """
+    return {
+        "region": cfg.region,
+        "pair_columns": list(cfg.pair_columns),
+        "shards": sorted(cfg.shards),
+        "extra_sources": cfg.extra_sources,
+        "steps": cfg.steps,
+        "batch_size": cfg.batch_size,
+        "lr": cfg.lr,
+        "warmup_steps": cfg.warmup_steps,
+        "grad_clip": cfg.grad_clip,
+        "max_len": cfg.max_len,
+        "seed": cfg.seed,
+        "holdout_pairs": cfg.holdout_pairs,
+        "encoder": asdict(cfg.encoder),
+        "tokenizer_path": cfg.tokenizer_path,
+        "graded_shards": sorted(cfg.graded_shards),
+        "graded_columns": list(cfg.graded_columns),
+        "graded_name": cfg.graded_name,
+    }
+
+
+def _config_fingerprint(cfg: PretrainConfig) -> str:
+    """Hash the resume-relevant config fields into one comparable value."""
+    payload = json.dumps(_resume_fields(cfg), sort_keys=True, default=str)
+    return hashlib.blake2b(payload.encode(), digest_size=16).hexdigest()
+
+
+def _checkpoint_payload(
+    *,
+    step: int,
+    model: TextEncoder,
+    opt: torch.optim.Optimizer,
+    encoder_cfg: TextEncoderConfig,
+    fingerprint: str,
+    fields: dict[str, Any],
+    baseline: dict[str, float],
+    graded_baseline: dict[str, float],
+    history: list[dict[str, float]],
+    elapsed_s: float,
+) -> dict[str, Any]:
+    """Everything needed to continue training identically to an uninterrupted run.
+
+    `step` counts COMPLETED optimizer updates: resuming means training
+    `range(step, cfg.steps)`. This redefines what the pre-resume checkpoint format's
+    `step` key meant (periodic checkpoints stored the 0-indexed loop variable; the old
+    `final.pt` stored `cfg.steps` -- the two were never on the same convention). That is
+    safe to redefine because the only external readers of these files
+    (regions/retrieve.py, scripts/csd-quantize.py, scripts/csd-benchmark.py) read only
+    `model` and `config`, never `step`; those two keys keep their pre-existing names and
+    shapes unchanged.
+
+    `rng_state`/`cuda_rng_state` capture the torch RNG so a resumed run consumes
+    randomness from exactly where an uninterrupted run would have been, rather than
+    restarting the RNG stream from `cfg.seed`. The text harness's own batch order does
+    not depend on it (the offset is a deterministic function of `step`, not sampled),
+    but nothing here should rely on that staying true of every training loop that ever
+    calls this -- so it is saved and restored unconditionally.
+    """
+    return {
+        "schema": "csd-pretrain-checkpoint/v1",
+        "step": step,
+        "model": model.state_dict(),
+        "opt": opt.state_dict(),
+        "config": asdict(encoder_cfg),
+        "config_fingerprint": fingerprint,
+        "config_fields": fields,
+        "rng_state": torch.get_rng_state(),
+        "cuda_rng_state": (torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None),
+        "untrained_baseline": baseline,
+        "untrained_graded_baseline": graded_baseline,
+        "history": history,
+        "elapsed_s": elapsed_s,
+    }
+
+
 def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     """Train one region in isolation and write a receipt.
+
+    Resumable: if ``{out_dir}/{region}-checkpoints`` holds a checkpoint trained under an
+    IDENTICAL config (:func:`_config_fingerprint`), training continues from it --
+    model, optimizer momentum, RNG state, accumulated history and the untrained baseline
+    all carry forward rather than being re-measured or restarted. A checkpoint trained
+    under a DIFFERENT config is refused outright (see
+    :func:`cogsyndelta.regions._checkpoint.load_resumable`) rather than silently adopted
+    or silently ignored.
 
     Returns:
         The receipt dict, also written to ``{out_dir}/{region}-{timestamp}.json``.
@@ -499,17 +615,42 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     params = sum(p.numel() for p in model.parameters())
 
     ckpt_dir = Path(cfg.out_dir) / f"{cfg.region}-checkpoints"
+    fingerprint = _config_fingerprint(cfg)
+    fields = _resume_fields(cfg)
+    resume = load_resumable(ckpt_dir, fingerprint, fields)
 
-    # The untrained model is a real baseline, not a formality: lexical overlap alone
-    # scores recall@1 ~0.40 here. A trained model that does not beat this has not learned,
-    # it has merely rearranged. Recorded so the comparison cannot be skipped.
-    baseline = evaluate(model, tok, holdout, cfg.max_len, device)
-    graded_baseline = evaluate_graded(model, tok, graded, cfg.max_len, device) if graded else {}
+    if resume is None:
+        start_step = 0
+        history: list[dict[str, float]] = []
+        prior_elapsed = 0.0
+        # The untrained model is a real baseline, not a formality: lexical overlap alone
+        # scores recall@1 ~0.40 here. A trained model that does not beat this has not
+        # learned, it has merely rearranged. Recorded so the comparison cannot be
+        # skipped -- and, on a RESUMED run, never re-measured (see below): the model is
+        # no longer untrained, so re-measuring here would compare it against itself.
+        baseline = evaluate(model, tok, holdout, cfg.max_len, device)
+        graded_baseline = evaluate_graded(model, tok, graded, cfg.max_len, device) if graded else {}
+        print(f"    {cfg.region}: no valid checkpoint in {ckpt_dir} -- starting fresh", flush=True)
+    else:
+        model.load_state_dict(resume["model"])
+        opt.load_state_dict(resume["opt"])
+        torch.set_rng_state(resume["rng_state"])
+        if resume.get("cuda_rng_state") is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(resume["cuda_rng_state"])
+        start_step = resume["step"]
+        history = resume.get("history", [])
+        prior_elapsed = resume.get("elapsed_s", 0.0)
+        baseline = resume["untrained_baseline"]
+        graded_baseline = resume.get("untrained_graded_baseline", {})
+        print(
+            f"    {cfg.region}: RESUMING from {resume['_path']} at step "
+            f"{start_step}/{cfg.steps} (prior elapsed {prior_elapsed:.0f}s)",
+            flush=True,
+        )
 
-    history: list[dict[str, float]] = []
-    started = time.time()
+    session_start = time.time()
     model.train()
-    for step in range(cfg.steps):
+    for step in range(start_step, cfg.steps):
         for group in opt.param_groups:
             group["lr"] = _lr_at(step, cfg)
         lo = (step * cfg.batch_size) % max(1, len(train_pairs) - cfg.batch_size)
@@ -540,18 +681,24 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
             )
 
         if cfg.checkpoint_every and step and step % cfg.checkpoint_every == 0:
-            ckpt_dir.mkdir(parents=True, exist_ok=True)
-            torch.save(
-                {
-                    "step": step,
-                    "model": model.state_dict(),
-                    "opt": opt.state_dict(),
-                    "config": asdict(encoder_cfg),
-                },
+            atomic_save(
+                _checkpoint_payload(
+                    step=step + 1,
+                    model=model,
+                    opt=opt,
+                    encoder_cfg=encoder_cfg,
+                    fingerprint=fingerprint,
+                    fields=fields,
+                    baseline=baseline,
+                    graded_baseline=graded_baseline,
+                    history=history,
+                    elapsed_s=prior_elapsed + (time.time() - session_start),
+                ),
                 ckpt_dir / f"step-{step:06d}.pt",
             )
+            rotate_checkpoints(ckpt_dir, _CHECKPOINT_KEEP)
 
-    elapsed = time.time() - started
+    elapsed = prior_elapsed + (time.time() - session_start)
     final = evaluate(model, tok, holdout, cfg.max_len, device)
     graded_final = evaluate_graded(model, tok, graded, cfg.max_len, device) if graded else {}
 
@@ -561,16 +708,22 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     # task-specific evaluation (see regions/retrieve.py, which ranks against the full
     # corpus rather than a held-out batch) need to load exactly these weights.
     final_ckpt = ckpt_dir / "final.pt"
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {
-            "step": cfg.steps,
-            "model": model.state_dict(),
-            "opt": opt.state_dict(),
-            "config": asdict(encoder_cfg),
-        },
+    atomic_save(
+        _checkpoint_payload(
+            step=cfg.steps,
+            model=model,
+            opt=opt,
+            encoder_cfg=encoder_cfg,
+            fingerprint=fingerprint,
+            fields=fields,
+            baseline=baseline,
+            graded_baseline=graded_baseline,
+            history=history,
+            elapsed_s=elapsed,
+        ),
         final_ckpt,
     )
+    rotate_checkpoints(ckpt_dir, _CHECKPOINT_KEEP)
 
     receipt: dict[str, Any] = {
         "schema": "csd-pretrain-receipt/v1",
@@ -596,6 +749,12 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         "checkpoint": str(final_ckpt),
         "device": str(device),
         "elapsed_s": round(elapsed, 1),
+        # Lets an operator reading only the receipt tell a resumed run from a fresh one,
+        # and from which step -- without this, a receipt with a suspiciously short
+        # elapsed_s for its step count looks like a measurement error rather than what
+        # it is.
+        "resumed": resume is not None,
+        "resumed_from_step": (resume["step"] if resume is not None else 0),
         "history": history,
         "untrained_baseline": baseline,
         "held_out": final,

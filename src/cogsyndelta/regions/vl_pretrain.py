@@ -35,12 +35,15 @@ on out-of-domain fiqa.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import math
+import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -48,6 +51,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig
+from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
 
 
 @dataclass
@@ -141,8 +145,25 @@ def _decode_split(
 
     x = np.stack(images).transpose(0, 3, 1, 2)  # NHWC -> NCHW
     y = np.asarray(labels, dtype=np.int64)
-    np.save(xf, x)
-    np.save(yf, y)
+    # Same failure mode as an interrupted training checkpoint, at smaller scale: a crash
+    # partway through np.save would otherwise leave a truncated .npy under the cache's
+    # real name, and every future run would then fail (or worse, silently mis-decode)
+    # trying to load it. Write elsewhere, then rename into place once each file is
+    # complete -- os.replace on the same filesystem is atomic, so a reader only ever
+    # sees a complete file or none at all. Passing an open file OBJECT (rather than a
+    # path string) to np.save stops it appending its own ".npy" to the temp name.
+    tmp_x = cache / f".{xf.name}.tmp-{os.getpid()}"
+    tmp_y = cache / f".{yf.name}.tmp-{os.getpid()}"
+    try:
+        with open(tmp_x, "wb") as f:
+            np.save(f, x)
+        with open(tmp_y, "wb") as f:
+            np.save(f, y)
+        tmp_x.replace(xf)  # same-filesystem rename; POSIX guarantees this is atomic
+        tmp_y.replace(yf)
+    finally:
+        tmp_x.unlink(missing_ok=True)
+        tmp_y.unlink(missing_ok=True)
     return torch.from_numpy(x), torch.from_numpy(y)
 
 
@@ -222,8 +243,142 @@ def _ema_at(step: int, cfg: VLPretrainConfig) -> float:
     return cfg.jepa.ema_base + (cfg.jepa.ema_final - cfg.jepa.ema_base) * p
 
 
+# ---------------------------------------------------------------------------------------
+# Resumable checkpointing.
+#
+# Same contract as regions/pretrain.py (see its module comment), same shared mechanics
+# (cogsyndelta.regions._checkpoint), but two things genuinely differ here and each gets
+# separate handling rather than being forced into the text harness's shape:
+#
+# 1. BATCH ORDER IS SAMPLED, NOT DETERMINISTIC. The text harness picks batch `step` by
+#    `(step * batch_size) % len(train_pairs)` -- a pure function of `step`, so restoring
+#    `step` alone reproduces the batch sequence. This harness instead draws
+#    `torch.randint(..., generator=gen)` from a LOCAL `torch.Generator` that evolves
+#    every call. Re-seeding `gen` from `cfg.seed` on resume would REPLAY the same batch
+#    sequence from the beginning rather than continuing it, so `gen`'s state is part of
+#    the checkpoint, not just `step`.
+# 2. `sample_masks` (in `IJEPA.forward`, called with `generator=None` from the training
+#    loop) draws from the GLOBAL default RNG for its per-step mask sampling -- a second,
+#    independent randomness source from `gen` above. `_linear_probe`'s `nn.Linear` head
+#    also draws its initial weights from the same global RNG, and that call happens
+#    again after training for the FINAL probe metrics -- so unlike the text harness
+#    (which has no randomness in its forward pass at all and is provably insensitive to
+#    `rng_state`), a resumed run's global RNG state has to land in exactly the state an
+#    uninterrupted run's would have, or the final probe numbers will not match.
+#
+# The EMA target encoder needs NO separate handling: `IJEPA.__init__` sets
+# `self.target_encoder = copy.deepcopy(self.encoder)` as a plain submodule attribute, so
+# PyTorch's normal submodule registration already puts its parameters and buffers into
+# `model.state_dict()` under the `target_encoder.` prefix. Saving `model.state_dict()`
+# therefore already carries it.
+#
+# The decoded-image cache (`_decode_split`'s `.npy` files) needs no place in the
+# checkpoint at all: it is a deterministic, content-addressed memoisation of the RAW
+# INPUT DATA keyed by (shards, size, limit, column), not training state, and any change
+# to those inputs already produces a different cache file. It has its own atomicity fix
+# above for the same reason `_atomic_save` exists, but it is not part of resumability.
+# ---------------------------------------------------------------------------------------
+
+_CHECKPOINT_KEEP = 3
+"""Same figure and justification as regions/pretrain.py's `_CHECKPOINT_KEEP`: at the
+runner's checkpoint_every=200, this buys ~600 steps of rollback headroom at under 600MB
+per region -- immaterial against the measured 417GB free on /akula-data."""
+
+
+def _resume_fields(cfg: VLPretrainConfig) -> dict[str, Any]:
+    """The config fields that must match for a checkpoint to be a valid continuation.
+
+    Excludes administrative fields that do not change what is trained or measured:
+    `eval_every`, `checkpoint_every`, `device`, `cache_dir`, `out_dir`.
+    """
+    return {
+        "region": cfg.region,
+        "train_shards": sorted(cfg.train_shards),
+        "probe_train_shards": sorted(cfg.probe_train_shards),
+        "probe_eval_shards": sorted(cfg.probe_eval_shards),
+        "transfer_shards": sorted(cfg.transfer_shards),
+        "image_column": cfg.image_column,
+        "label_column": cfg.label_column,
+        "transfer_image_column": cfg.transfer_image_column,
+        "transfer_label_column": cfg.transfer_label_column,
+        "steps": cfg.steps,
+        "batch_size": cfg.batch_size,
+        "lr": cfg.lr,
+        "warmup_steps": cfg.warmup_steps,
+        "grad_clip": cfg.grad_clip,
+        "weight_decay": cfg.weight_decay,
+        "seed": cfg.seed,
+        "train_limit": cfg.train_limit,
+        "probe_limit": cfg.probe_limit,
+        "probe_steps": cfg.probe_steps,
+        "probe_lr": cfg.probe_lr,
+        "jepa": asdict(cfg.jepa),
+    }
+
+
+def _config_fingerprint(cfg: VLPretrainConfig) -> str:
+    """Hash the resume-relevant config fields into one comparable value."""
+    payload = json.dumps(_resume_fields(cfg), sort_keys=True, default=str)
+    return hashlib.blake2b(payload.encode(), digest_size=16).hexdigest()
+
+
+def _checkpoint_payload(
+    *,
+    step: int,
+    model: IJEPA,
+    opt: torch.optim.Optimizer,
+    gen: torch.Generator,
+    jepa_cfg: JEPAConfig,
+    fingerprint: str,
+    fields: dict[str, Any],
+    baseline: dict[str, float],
+    baseline_transfer: dict[str, float] | None,
+    history: list[dict],
+    elapsed_s: float,
+    started_at: float,
+) -> dict[str, Any]:
+    """Everything needed to continue training identically to an uninterrupted run.
+
+    `step` counts COMPLETED optimiser updates (the training loop here is 1-indexed:
+    `for step in range(1, cfg.steps + 1)`, so after the iteration where the loop
+    variable equals `step`, exactly `step` updates are done) -- resuming means training
+    `range(step + 1, cfg.steps + 1)`. This is a different arithmetic offset from
+    regions/pretrain.py's 0-indexed loop even though both `step` fields mean "count of
+    completed updates"; see that module's `_checkpoint_payload` docstring for why the
+    two harnesses' loops are not on the same convention and are not being unified here.
+
+    `gen_state` and `rng_state`/`cuda_rng_state` are two DIFFERENT randomness sources
+    (see the module comment above) and both are required for a resumed run to match an
+    uninterrupted one, not just for defence in depth as in the text harness.
+    """
+    return {
+        "schema": "csd-vl-pretrain-checkpoint/v1",
+        "step": step,
+        "model": model.state_dict(),
+        "opt": opt.state_dict(),
+        "config": asdict(jepa_cfg),
+        "config_fingerprint": fingerprint,
+        "config_fields": fields,
+        "gen_state": gen.get_state(),
+        "rng_state": torch.get_rng_state(),
+        "cuda_rng_state": (torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None),
+        "untrained_baseline": baseline,
+        "untrained_baseline_transfer": baseline_transfer,
+        "history": history,
+        "elapsed_s": elapsed_s,
+        "started_at": started_at,
+    }
+
+
 def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
-    """Train the visual region and return a receipt. Never gates on the loss."""
+    """Train the visual region and return a receipt. Never gates on the loss.
+
+    Resumable on the same contract as :func:`cogsyndelta.regions.pretrain.pretrain_region`
+    -- see the module comment above for the two places this harness genuinely differs
+    (sampled batch order, a second RNG stream feeding both mask sampling and the linear
+    probe's head init) and why the EMA target encoder and the decoded-image cache need no
+    special handling.
+    """
     torch.manual_seed(cfg.seed)
     device = _resolve_device(cfg.device)
     cache = Path(cfg.cache_dir)
@@ -255,53 +410,82 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
 
     model = IJEPA(cfg.jepa).to(device)
     params = sum(p.numel() for p in model.parameters())
-
-    # Baseline BEFORE a single optimiser step. Everything is judged against this.
-    base_feats_tr = _features(model, px_tr, device)
-    base_feats_ev = _features(model, px_ev, device)
-    baseline = _linear_probe(
-        base_feats_tr,
-        py_tr,
-        base_feats_ev,
-        py_ev,
-        n_classes,
-        device,
-        cfg.probe_steps,
-        cfg.probe_lr,
-        cfg.seed,
-    )
-    with torch.no_grad():
-        probe_batch = _to_float(x_tr[: cfg.batch_size], device)
-        baseline["rep_std"] = model.target_encoder(probe_batch).mean(dim=1).std(dim=0).mean().item()
-
-    baseline_transfer = None
-    if transfer:
-        ttr, tytr, tev, tyev, tn = transfer
-        baseline_transfer = _linear_probe(
-            _features(model, ttr, device),
-            tytr,
-            _features(model, tev, device),
-            tyev,
-            tn,
-            device,
-            cfg.probe_steps,
-            cfg.probe_lr,
-            cfg.seed,
-        )
-
     opt = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
         lr=cfg.lr,
         weight_decay=cfg.weight_decay,
     )
     gen = torch.Generator().manual_seed(cfg.seed)
-    ckpt_dir = Path(cfg.out_dir) / f"{cfg.region}-checkpoints"
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-    history: list[dict] = []
-    started = time.time()
+    ckpt_dir = Path(cfg.out_dir) / f"{cfg.region}-checkpoints"
+    fingerprint = _config_fingerprint(cfg)
+    fields = _resume_fields(cfg)
+    resume = load_resumable(ckpt_dir, fingerprint, fields)
+
+    if resume is None:
+        start_step = 1  # loop is 1-indexed; nothing completed yet.
+        history: list[dict] = []
+        prior_elapsed = 0.0
+        started_at = time.time()
+        # Baseline BEFORE a single optimiser step. Everything is judged against this,
+        # and -- on a RESUMED run -- never re-measured (see below): the model is no
+        # longer untrained, so re-measuring here would compare it against itself.
+        base_feats_tr = _features(model, px_tr, device)
+        base_feats_ev = _features(model, px_ev, device)
+        baseline = _linear_probe(
+            base_feats_tr,
+            py_tr,
+            base_feats_ev,
+            py_ev,
+            n_classes,
+            device,
+            cfg.probe_steps,
+            cfg.probe_lr,
+            cfg.seed,
+        )
+        with torch.no_grad():
+            probe_batch = _to_float(x_tr[: cfg.batch_size], device)
+            baseline["rep_std"] = (
+                model.target_encoder(probe_batch).mean(dim=1).std(dim=0).mean().item()
+            )
+
+        baseline_transfer = None
+        if transfer:
+            ttr, tytr, tev, tyev, tn = transfer
+            baseline_transfer = _linear_probe(
+                _features(model, ttr, device),
+                tytr,
+                _features(model, tev, device),
+                tyev,
+                tn,
+                device,
+                cfg.probe_steps,
+                cfg.probe_lr,
+                cfg.seed,
+            )
+        print(f"    {cfg.region}: no valid checkpoint in {ckpt_dir} -- starting fresh", flush=True)
+    else:
+        model.load_state_dict(resume["model"])
+        opt.load_state_dict(resume["opt"])
+        gen.set_state(resume["gen_state"])
+        torch.set_rng_state(resume["rng_state"])
+        if resume.get("cuda_rng_state") is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(resume["cuda_rng_state"])
+        start_step = resume["step"] + 1
+        history = resume.get("history", [])
+        prior_elapsed = resume.get("elapsed_s", 0.0)
+        started_at = resume.get("started_at", time.time())
+        baseline = resume["untrained_baseline"]
+        baseline_transfer = resume.get("untrained_baseline_transfer")
+        print(
+            f"    {cfg.region}: RESUMING from {resume['_path']} at step "
+            f"{start_step}/{cfg.steps} (prior elapsed {prior_elapsed:.0f}s)",
+            flush=True,
+        )
+
+    session_start = time.time()
     model.train()
-    for step in range(1, cfg.steps + 1):
+    for step in range(start_step, cfg.steps + 1):
         for group in opt.param_groups:
             group["lr"] = _lr_at(step, cfg)
         idx = torch.randint(0, x_tr.size(0), (cfg.batch_size,), generator=gen)
@@ -319,10 +503,26 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
                 flush=True,
             )
         if step % cfg.checkpoint_every == 0 or step == cfg.steps:
-            torch.save(
-                {"step": step, "model": model.state_dict(), "config": asdict(cfg.jepa)},
+            atomic_save(
+                _checkpoint_payload(
+                    step=step,
+                    model=model,
+                    opt=opt,
+                    gen=gen,
+                    jepa_cfg=cfg.jepa,
+                    fingerprint=fingerprint,
+                    fields=fields,
+                    baseline=baseline,
+                    baseline_transfer=baseline_transfer,
+                    history=history,
+                    elapsed_s=prior_elapsed + (time.time() - session_start),
+                    started_at=started_at,
+                ),
                 ckpt_dir / f"step-{step}.pt",
             )
+            rotate_checkpoints(ckpt_dir, _CHECKPOINT_KEEP)
+
+    elapsed_total = prior_elapsed + (time.time() - session_start)
 
     final = _linear_probe(
         _features(model, px_tr, device),
@@ -375,8 +575,10 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     receipt = {
         "region": cfg.region,
         "objective": "I-JEPA latent prediction; gated on linear probe, never on loss",
-        "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
-        "seconds": round(time.time() - started, 1),
+        "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at)),
+        # Cumulative TRAINING time across every session, not wall time since
+        # `started_at` -- the latter would count a crash-to-resume gap as compute.
+        "seconds": round(elapsed_total, 1),
         "device": str(device),
         "parameters": params,
         "train_images": int(x_tr.size(0)),
@@ -389,11 +591,14 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         "collapse_ratio": round(collapse_ratio, 4),
         "collapsed": collapsed,
         "history": history,
+        # Lets an operator reading only the receipt tell a resumed run from a fresh one.
+        "resumed": resume is not None,
+        "resumed_from_step": (resume["step"] if resume is not None else 0),
         "beats_untrained": beats,
     }
     out = Path(cfg.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    path = out / f"{cfg.region}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(started))}.json"
+    path = out / f"{cfg.region}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
     path.write_text(json.dumps(receipt, indent=2) + "\n")
     receipt["receipt_path"] = str(path)
     return receipt
