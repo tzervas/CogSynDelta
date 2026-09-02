@@ -42,13 +42,34 @@ licence-verified datasets across 6 domains, none fetched.
 
 | id | task | gate | status |
 |----|------|------|--------|
-| P2.1 | Fetch the catalogued datasets to /bulk/csd-corpus | manifests written, row counts recorded | partial — 8/11 fetched, 19 GB; apps, hotpotqa, banking77 errored |
+| P2.1 | Fetch the catalogued datasets to /bulk/csd-corpus | manifests written, row counts recorded | done — 12 manifests, 20 GB, 6.2M rows |
 | P2.2 | Wire classify + reason regions into the runner | dry-run resolves shards for both | todo |
 | P2.3 | Train the new regions | receipts with `beats_untrained` | todo |
 
 Licence gate is structural: entries not marked TRAIN_OK are refused and there is no
 override flag. A mirror's tag is not evidence about its upstream — BeIR/scifact is tagged
 cc-by-sa-4.0 while allenai/scifact, which it mirrors, is cc-by-nc-2.0.
+
+### P2.1 notes — three fetch failures and what they actually were
+
+Worth keeping, because two are a general pattern that will recur.
+
+`datasets` 5.0.1 REFUSES to execute remote loading scripts. Any HF dataset whose repo is
+just a `*.py` builder now fails with "Dataset scripts are no longer supported". Two of the
+three failures were this, with different resolutions:
+  - codeparrot/apps had an HF-bot Parquet conversion, so the entry pins
+    `revision="refs/convert/parquet"`.
+  - PolyAI/banking77 had NO conversion. Its script only downloaded two CSVs from GitHub, so
+    the entry now points at those URLs through the PACKAGED `csv` loader -- a loader that
+    ships with the library, not remote code, so it stays inside the ban's intent rather
+    than around it. That GitHub repo's LICENSE was checked directly (CC BY 4.0) and agrees
+    with the catalogue verdict.
+
+BeIR datasets have NO `train` split. hotpotqa is two configs, `corpus` and `queries`, with
+relevance judgements in a SEPARATE repo (BeIR/hotpotqa-qrels). The old single entry
+described a joined form that never existed. It is now two entries, and the corpus+queries+
+qrels join is documented as a caveat rather than forced into a fetch loop that does not fit
+it. Expect the same shape from any other BeIR-family dataset.
 
 ## P3 — Visual region maturation
 
