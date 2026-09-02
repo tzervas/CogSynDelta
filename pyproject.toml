@@ -211,6 +211,9 @@ no_implicit_optional = false
 exclude = ["tests/", "benchmarks/", "examples/", "scripts/"]
 
 [tool.pytest.ini_options]
+markers = [
+  "cpu: runs on CPU only; no GPU required",
+]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
