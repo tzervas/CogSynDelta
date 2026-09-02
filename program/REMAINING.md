@@ -7,6 +7,38 @@ Status: `todo` | `wip` | `done` | `blocked` | `deferred`
 
 ---
 
+## SESSION HANDOFF — read this first
+
+State is committed here and in docs/design/. Nothing depends on a conversation surviving.
+
+**The pattern that produced most of this session's findings:** a guard correct in reasoning
+and wrong in scope, reporting success it could not have detected the absence of. Four
+instances, none found by reading code — all found by measuring the world:
+  1. the contamination guard cannot fire (dedup and the check use the SAME hash, so overlap
+     is empty by construction, always) -- P0.10
+  2. the corpus shuffle applied across sources but never within one
+  3. the offload manifest hashed files the transfer excluded, so it could never match
+  4. `_decode_split`'s cache key uses PYTHONHASHSEED-salted `hash()`, so it never hits
+
+**Verify a guard by constructing the case it exists to reject and asserting it fails.**
+tests/test_guards_can_fail.py exists for this.
+
+**Nearly every defect was data or measurement, not modelling.** `compress` went
+0.2578 -> 0.4961 -> 0.7070 with no modelling change -- only fixing what it was fed.
+
+**In a shared tree, `git add X && git commit` sweeps in whatever another agent staged.**
+Use `git commit -m "..." -- PATH`. That mistake was made twice today.
+
+## P0.10 — Guards that cannot fire
+
+| id | defect | status |
+|----|--------|--------|
+| P0.10a | contamination guard vacuous -- same hash as dedup | fix dispatched |
+| P0.10b | `_fingerprint_corpus` omits extra_sources; covers ~3% of `retrieve` | fix dispatched |
+| P0.10c | caps truncate rather than sample (prefix, not a sample) | fix dispatched |
+| P0.10d | `_decode_split` cache never hits (salted hash) | fix dispatched |
+| P0.10e | tests asserting every guard CAN fail | fix dispatched |
+
 ## P0 — Correctness debt. Blocks everything downstream.
 
 Nothing measured before P0.1 lands is trustworthy: the text encoder attended to padding, so
