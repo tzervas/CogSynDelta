@@ -62,8 +62,17 @@ REGIONS: dict[str, tuple[list[SourceSpec], str]] = {
         "docstring <-> function; NOT next-token over GitHub",
     ),
     "compress": (
-        [("region/compress/all-nli/**/train*.parquet", ("premise", "hypothesis"), 0)],
-        "neighbours stay neighbours in a short latent",
+        # all-nli ships FOUR configs under one directory, with four different schemas AND
+        # four different meanings. A `**` glob crosses them, which is how this region was
+        # last trained on `pair-class` unfiltered -- an even three-way split of entailment,
+        # neutral and contradiction. Two thirds of its "positives" were therefore neutral
+        # or contradictory: the model was taught that "a person on a horse jumps over a
+        # broken down airplane" belongs next to "a person is at a diner, ordering an
+        # omelette". That is why compress scored 0.26 while code scored 0.96 -- a poisoned
+        # objective, not a harder task. `pair/` is the same corpus pre-filtered to
+        # entailment only, so the config is pinned explicitly and never globbed.
+        [("region/compress/all-nli/pair/train*.parquet", ("anchor", "positive"), 0)],
+        "neighbours stay neighbours in a short latent; all-nli entailment pairs only",
     ),
     "retrieve": (
         [
@@ -74,6 +83,27 @@ REGIONS: dict[str, tuple[list[SourceSpec], str]] = {
         "query -> passage rank; multi-source, gooaq capped for balance",
     ),
 }
+
+
+def _schema_mismatch(shards: list[str], cols: tuple[str, str]) -> str | None:
+    """Return a description if any shard lacks the requested columns, else None."""
+    try:
+        import pyarrow.parquet as pq
+    except ImportError:
+        return None  # cannot verify without pyarrow; the trainer will still raise
+    for shard in shards:
+        try:
+            names = set(pq.ParquetFile(shard).schema_arrow.names)
+        except Exception as exc:  # unreadable shard is itself a selection-time problem
+            return f"{Path(shard).name}: unreadable ({type(exc).__name__})"
+        missing = [c for c in cols if c not in names]
+        if missing:
+            return (
+                f"{Path(shard).parent.name}/{Path(shard).name} lacks {missing}; "
+                f"has {sorted(names)}. A glob spanning multiple dataset configs is "
+                f"almost certainly the cause -- pin the config explicitly."
+            )
+    return None
 
 
 def run_region(
@@ -90,6 +120,15 @@ def run_region(
             shards = shards[:shard_limit]
         if not shards:
             print(f"    source MISSING: {glob_pat}", flush=True)
+            continue
+        # Fail loudly if a glob spans shards with different schemas. This is what silently
+        # poisoned `compress`: the failure surfaced 40 minutes into training as a KeyError
+        # on shard 2, and before that it surfaced not at all -- it just trained on the
+        # wrong pairs. Checking the columns exist in EVERY shard makes it a selection-time
+        # error with a name, not a runtime surprise or a quiet corruption.
+        bad = _schema_mismatch(shards, cols)
+        if bad:
+            print(f"    source REJECTED: {glob_pat}\n      {bad}", flush=True)
             continue
         resolved.append((glob_pat, cols, cap))
         print(f"    {len(shards):>2} shard(s)  {cols}  cap={cap or 'none'}  {glob_pat}", flush=True)
