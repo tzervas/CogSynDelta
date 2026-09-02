@@ -78,6 +78,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Train softmax gate with Switch aux load-balance (MoE, not mHC)",
     )
     _add_device(train_route)
+    _add_stream(train_route)
     train_route.add_argument("--steps", type=int, default=40)
     train_route.add_argument("--batch-size", type=int, default=8)
     train_route.add_argument("--aux-coef", type=float, default=1.0)
@@ -184,7 +185,12 @@ def main(argv: list[str] | None = None) -> int:
         cfg.route_train.batch_size = args.batch_size
         cfg.route_train.aux_coef = args.aux_coef
         cfg.route_train.train_regions = not args.gate_only
-        result = train_softmax_router(cfg.route_train, ctx, seed=args.seed)
+        result = train_softmax_router(
+            cfg.route_train,
+            ctx,
+            seed=args.seed,
+            stream_source=_stream_for(args, cfg.route_train.stream_dim, ctx),
+        )
         aux_ok = math.isfinite(result["last_aux_lb"])
         load_vals = list(result["load"].values())
         split = all(v > 0.0 for v in load_vals)
@@ -193,6 +199,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "device": result["device"],
+                    "stream": result["stream"],
                     "first_loss": result["first_loss"],
                     "last_loss": result["last_loss"],
                     "improved": improved,

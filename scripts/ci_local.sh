@@ -117,7 +117,7 @@ if [[ -f src/cogsyndelta/poc/route.py ]]; then
 fi
 if [[ -f src/cogsyndelta/poc/train_route.py ]]; then
     run "poc cli train-route" uv run --no-sync python -m cogsyndelta.poc.cli train-route \
-        --device cpu --steps 10
+        --device cpu --steps 10 --stream synthetic
 fi
 
 if [[ "${POC_ONLY}" -eq 0 ]]; then

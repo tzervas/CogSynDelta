@@ -100,7 +100,8 @@ def test_train_route_loss_decreases_cuda() -> None:
         aux_coef=1.0,
     )
     ctx = DeviceContext.resolve("cuda")
-    result = train_softmax_router(cfg, ctx, seed=42)
+    stream = SyntheticStream(cfg.stream_dim, ctx.device, seed=42)
+    result = train_softmax_router(cfg, ctx, seed=42, stream_source=stream)
     assert result["device"].startswith("cuda")
     assert result["last_loss"] < result["first_loss"], (
         f"first={result['first_loss']:.4f} last={result['last_loss']:.4f}"
