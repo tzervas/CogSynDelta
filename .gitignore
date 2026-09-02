@@ -138,6 +138,9 @@ celerybeat.pid
 .env
 .envrc
 .venv
+# Isolated environment scripts/ci_local.sh uses so it never prunes the shared .venv
+# (see the isolation comment in scripts/ci_local.sh for why this exists).
+.venv-ci
 env/
 venv/
 ENV/
