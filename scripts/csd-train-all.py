@@ -150,10 +150,24 @@ def _shards(pattern: str) -> list[str]:
 # guess.
 SourceSpec = tuple[str, tuple[str, str], int]
 
-REGIONS: dict[str, tuple[list[SourceSpec], str]] = {
+# The third element of each entry is the region's DEFAULT max_len: how many tokens of
+# each side the tokenizer keeps before truncating, and the width the encoder's
+# positional table is sized to (see run_region -- one value feeds both). 96 for every
+# region today, matching every receipt on disk; changing a default here would silently
+# move future numbers, which is why `--max-len` exists as a per-invocation override
+# instead.
+#
+# `code` is the one region where 96 is known to matter: program/REMAINING.md P0.9a
+# measured 93.9% of code-side token sequences exceeding 96 tokens (mean 486, p99 3,113),
+# so the encoder sees a `def` line and a line or two of body, then nothing. The reported
+# recall@1 there (0.9863 at steps=4000, batch=1280) may therefore be signature matching
+# rather than function-body semantics -- `--max-len 256 --regions code` is the arm that
+# tests it, at whatever `--batch` the longer sequences still fit in.
+REGIONS: dict[str, tuple[list[SourceSpec], str, int]] = {
     "code": (
         [("region/code/codesearchnet-python/**/*.parquet", ("docstring", "code"), 0)],
         "docstring <-> function; NOT next-token over GitHub",
+        96,
     ),
     "compress": (
         # all-nli ships FOUR configs under one directory, with four different schemas AND
@@ -167,6 +181,7 @@ REGIONS: dict[str, tuple[list[SourceSpec], str]] = {
         # entailment only, so the config is pinned explicitly and never globbed.
         [("region/compress/all-nli/pair/train*.parquet", ("anchor", "positive"), 0)],
         "neighbours stay neighbours in a short latent; all-nli entailment pairs only",
+        96,
     ),
     "retrieve": (
         [
@@ -175,6 +190,7 @@ REGIONS: dict[str, tuple[list[SourceSpec], str]] = {
             ("region/retrieve/gooaq/**/train*.parquet", ("question", "answer"), 400_000),
         ],
         "query -> passage rank; multi-source, gooaq capped for balance",
+        96,
     ),
 }
 
@@ -220,7 +236,14 @@ def _schema_mismatch(shards: list[str], cols: tuple[str, str]) -> str | None:
 
 
 def run_region(
-    name: str, state: Path, steps: int, batch: int, shard_limit: int, dry: bool, bf16: bool = True
+    name: str,
+    state: Path,
+    steps: int,
+    batch: int,
+    shard_limit: int,
+    dry: bool,
+    bf16: bool = True,
+    max_len: int | None = None,
 ) -> dict | None:
     """Train one region and return its receipt.
 
@@ -235,11 +258,18 @@ def run_region(
             the fp32 arm -- the only way to tell "bf16 cost recall" apart from "the batch
             or the schedule did", which is a question that has to be answerable from the
             runner rather than from a one-off script nobody can rerun.
+        max_len: Override this region's default max_len (see `REGIONS`). None keeps the
+            region's own default. Feeds BOTH `PretrainConfig.max_len` (tokenisation
+            truncation) and `TextEncoderConfig.max_len` (the positional table's width,
+            and the hard ceiling `TextEncoder.forward` raises past) from the same value
+            -- see the comment at the `cfg = PretrainConfig(...)` call below for why
+            those two must never be set independently.
 
     Returns:
         The receipt, or None when the region has no usable sources or `dry` is set.
     """
-    sources, note = REGIONS[name]
+    sources, note, default_max_len = REGIONS[name]
+    resolved_max_len = default_max_len if max_len is None else max_len
     print(f"\n=== {name} — {note}", flush=True)
 
     resolved: list[SourceSpec] = []
@@ -270,7 +300,8 @@ def run_region(
     # first ten lines of output rather than in the wall clock an hour later.
     print(
         f"    steps={steps} batch={batch} lr={lr_for_batch(batch):.2e} "
-        f"pair_draws={steps * batch:,}",
+        f"pair_draws={steps * batch:,} max_len={resolved_max_len}"
+        + (f" (default {default_max_len})" if resolved_max_len != default_max_len else ""),
         flush=True,
     )
     if dry:
@@ -297,13 +328,22 @@ def run_region(
         extra_sources=extra_sources,
         steps=steps,
         batch_size=batch,
-        max_len=96,
+        # ONE value feeds both PretrainConfig.max_len and TextEncoderConfig.max_len
+        # below, deliberately -- they look independent but are not. PretrainConfig.max_len
+        # is what `corpus_token_cache`/`evaluate` truncate to; TextEncoderConfig.max_len
+        # sizes `pos_embed` and is the ceiling `TextEncoder.forward` raises past. Setting
+        # PretrainConfig's higher than the encoder's would not fail at construction -- it
+        # would tokenise longer sequences than the encoder can accept and raise on the
+        # first batch whose truncated width exceeds the encoder's table. Setting it lower
+        # would silently defeat a longer-context run: tokenisation would still cap at the
+        # old length, so the encoder's extra positional capacity would never be exercised.
+        max_len=resolved_max_len,
         holdout_pairs=512,
         eval_every=max(1, steps // 6),
         warmup_steps=max(50, steps // 15),
         lr=lr_for_batch(batch),
         checkpoint_every=min(CHECKPOINT_EVERY, max(1, steps // 3)),
-        encoder=TextEncoderConfig(dim=256, depth=4, n_heads=4, max_len=96),
+        encoder=TextEncoderConfig(dim=256, depth=4, n_heads=4, max_len=resolved_max_len),
         bf16=bf16,
         out_dir=str(state / "receipts"),
     )
@@ -445,6 +485,21 @@ def main() -> int:
         action="store_true",
         help="train the text regions in fp32 (the A/B arm for a recall change)",
     )
+    ap.add_argument(
+        "--max-len",
+        type=int,
+        default=None,
+        help=(
+            "override every selected region's max_len for this invocation -- tokens kept "
+            "before truncation, feeding both the tokenizer cache and the encoder's "
+            "positional table (see REGIONS / run_region). None keeps each region's own "
+            "default (96 today, for every region). Exists for the P0.9a experiment: "
+            "`code` truncates 93.9%% of its code-side sequences at 96 tokens, so its "
+            "recall@1 may reflect signature matching rather than body semantics -- "
+            "`--regions code --max-len 256` (at a batch the longer sequences fit in) is "
+            "the arm that tests it. See program/REMAINING.md."
+        ),
+    )
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     _require_train_deps(args.dry_run)
@@ -484,6 +539,7 @@ def main() -> int:
                     args.shard_limit,
                     args.dry_run,
                     bf16=not args.no_bf16,
+                    max_len=args.max_len,
                 )
         except Exception as exc:
             print(f"  {name}: FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)

@@ -178,6 +178,31 @@ described a joined form that never existed. It is now two entries, and the corpu
 qrels join is documented as a caveat rather than forced into a fetch loop that does not fit
 it. Expect the same shape from any other BeIR-family dataset.
 
+### Corpus provenance: two hard rules
+
+**PROVENANCE IS CAPTURED AT SOURCING TIME, NOT RECONSTRUCTED.**
+Licence, attribution, citation, source URL and retrieval date are recorded at the moment of
+fetch. Once you hold a directory of files, that information is unrecoverable -- no later
+stage can infer it. This makes acquisition the highest-stakes step in any ingest pipeline,
+not the most mechanical one. Every downstream transformation (resize, crop, dedup, format
+conversion, tokenisation) must carry the record forward or the pipeline has wasted every
+stage before the one that dropped it.
+
+**THE GENERATING MODEL IS PART OF THE PROVENANCE CHAIN.**
+Any model used to generate, label, caption, filter or enrich data contributes its own terms
+to the result. Two live instances:
+  - SWIM-IR's queries are PaLM-2 outputs over CC-BY-SA Wikipedia passages. The dataset has
+    TWO stacked provenance questions -- the passages' licence, and whether a provider's terms
+    attach to generated text -- and the licence tag captures only the first.
+  - Labelling a clean image corpus with an ImageNet-trained classifier reintroduces exactly
+    the provenance question the clean corpus was built to avoid.
+
+CONSEQUENCE FOR THIS PROJECT: generate and label with PERMISSIVELY-LICENSED LOCAL models,
+not hosted APIs. Slower per token, unencumbered output. For a corpus intended for
+publication that trade is correct, and it closes the loop -- open-weights models building the
+corpus that trains an open-weights model, with no provenance question anywhere in the chain.
+The fleet already has the hardware and llama-rag is now on-demand rather than pinned.
+
 ## P2.5 — Broad corpus build-out. Licence-aligned, non-overlapping, multi-TB.
 
 STORAGE IS NOT THE CONSTRAINT. /bulk is 5.9 TB at ~14% used. Terabytes are fine. Old
