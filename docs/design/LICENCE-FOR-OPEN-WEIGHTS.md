@@ -1004,3 +1004,312 @@ measurements read shards already on disk.
 | code repo licences | `gh api repos/{owner}/{name}` over 150 head + 150 random repos |
 | training costs | `/akula-data/csd/receipts/*.json`, `elapsed_s` |
 | probe head not published | read `regions/vl_pretrain.py::_linear_probe` and `_checkpoint_payload` |
+
+
+---
+
+## Replacement vision corpora
+
+**Status:** this section only. It does not touch anything above. `scripts/csd-corpus-expand.py`
+is untouched, no dataset was downloaded, and this ran no GPU work — a VL training run is
+live on gpu5080 and the 3090 Ti has other work.
+
+**Method, same discipline as the rest of the audit:** for every candidate below, the HF
+mirror's licence tag was checked, then the TRUE upstream (paper, official project page, or
+GitHub `LICENSE` file) was fetched independently and quoted. A tag is not evidence about its
+upstream, and this section found **two more confirmed mismatches** doing exactly that check
+(`ylecun/mnist`, `vincent-espitalier/K-MNIST-CSV`, both below) — on top of the eight already
+on record for this project, and a third oddity (`bazyl/GTSRB`, tagged `gpl-3.0` for no
+traceable reason).
+
+**Constraint relaxed for this section, by explicit operator instruction:** a composite of
+several narrow, cleanly-licensed corpora is fully acceptable in place of one broad one.
+"I'm entirely okay with changing to different datasets and using more datasets to get
+accomplished what could be done with fewer datasets with different licenses. Licence
+compliance outweighs corpus-count convenience." Everything below is organised around that.
+
+### Candidate table
+
+Verdict vocabulary is the same four categories defined earlier in this document, with
+`BLOCKING (unresolved)` used where the chain isn't contradictory the way tiny-imagenet's is
+— it's just that no permissive grant was ever located, or the grant found does not clearly
+cover the relevant use.
+
+#### Clean at both mirror and upstream
+
+| dataset | licence: mirror tag → upstream verified | images | native resolution | domain | verdict |
+|---|---|---|---|---|---|
+| `zalando-datasets/fashion_mnist` | `mit` → **MIT**, `github.com/zalandoresearch/fashion-mnist/LICENSE`, verbatim MIT text, "Copyright © 2017 Zalando SE" | 70,000 (60k/10k) | 28×28 grayscale | garment product photos, 10 classes | **PERMISSIVE_OK** |
+| `timm/eurosat-rgb` | `mit` → **MIT**, `github.com/phelber/EuroSAT` README: "The dataset is licensed under the MIT license." Underlying Sentinel-2 imagery is separately covered by the EU's own **open** data policy — see note below | 27,000 (16.2k/5.4k/5.4k) | **native 64×64×3 RGB** | Sentinel-2 satellite land-use, 10 classes | **PERMISSIVE_OK** |
+| `1aurent/PatchCamelyon` | `cc0-1.0` → **CC0**, `github.com/basveeling/pcam` README: "The data is provided under the CC0 License, following the license of Camelyon16." (Camelyon16's own site is a JS-rendered SPA that could not be independently re-fetched in this sandbox — see caveats) | 327,680 (262,144/32,768/32,768, canonical PCam split) | 96×96 RGB → downsample to 64 | histopathology, binary tumour/no-tumour | **PERMISSIVE_OK** |
+| Shapes3D (`google-deepmind/3d-shapes`; pixel mirror `eurecom-ds/shapes3d`, tag-matching mirror `galilai-group/shapes3d`) | `apache-2.0` (on the tagged mirror) → **Apache License 2.0**, full text fetched verbatim from `raw.githubusercontent.com/google-deepmind/3d-shapes/master/LICENSE` | 480,000 | **native 64×64×3 RGB, exact match** | synthetic 3D-rendered single-object scenes (shape/hue/scale/orientation), no fixed class labels | **PERMISSIVE_OK** |
+| dSprites (`google-deepmind/dsprites-dataset`; pixel mirror `eurecom-ds/dsprites`) | none on the pixel-bearing mirror → **Apache License 2.0**, full text fetched verbatim from `raw.githubusercontent.com/google-deepmind/dsprites-dataset/master/LICENSE` | 737,280 | **native 64×64, exact match** | synthetic flat white silhouettes on black, 1 channel | **PERMISSIVE_OK**, but see the visual-complexity caveat below |
+| `nyuuzyou/pxhere` | `cc0-1.0` → **CC0**, `pxhere.com/en/terms` upload clause: "By uploading, You release Images under Creative Commons CC0 into the public domain… You grant anyone the right to use this work for any purpose, without any conditions" — a platform-enforced condition of every upload, not a metadata tag over content that was never uniformly licensed | ≈1.1M | full camera resolution (e.g. 3264×2448) → downsample to 64 | general stock photography (nature, people, urban, objects, animals, landscapes); free-text tags, no fixed classes | **PERMISSIVE_OK** — the closest thing found to natural-photo breadth |
+| `biglam/british-library-book-images` | `cc0-1.0` → **Public Domain Mark**, British Library / Flickr Commons "1 Million Images from Scanned Books" deposit, "no known copyright restrictions"; corroborated circumstantially (works c.1510–1900, independently public domain by age; well-documented named GLAM maintainer) rather than by a fresh primary-source fetch — `bl.uk`/Flickr Commons pages were unreachable from this sandbox | 1,080,814 (across `embellishments`/`plates`/`medium`/`covers` configs) | full scan resolution (e.g. 2565×1539) → downsample to 64 | book illustrations, plates, covers, engravings — **not photography** | **PERMISSIVE_OK**, narrow stylistic domain |
+| `AI-Lab-Makerere/beans` (`ibean`) | `mit` → **MIT**, `github.com/AI-Lab-Makerere/ibean` states "License: MIT" | 1,295 (1034/133/128) | photographic, variable → resize to 64 | bean-leaf disease photos, 3 classes | **PERMISSIVE_OK**, too small to matter at scale |
+| `google/quickdraw` (pixel mirror `Xenova/quickdraw`; presplit `Xenova/quickdraw-small`, untagged but same lineage) | `cc-by-4.0` → **CC BY 4.0**, `github.com/googlecreativelab/quickdraw-dataset`: "This data made available by Google, Inc. under the Creative Commons Attribution 4.0 International license." | 50,426,266 (or 4.5M/250k/250k presplit) | **native 28×28 grayscale bitmap** → upscale to 64 | free-hand sketches, **345 categories** | **ATTRIBUTION** |
+| CLEVR (`laion/clevr-webdataset`, ships `LICENSE.txt`+`COPYRIGHT.txt` in-repo; also `dpdl-benchmark/clevr`) | none on HF tag → **CC BY 4.0** for the image data, confirmed live at `cs.stanford.edu/people/jcjohns/clevr/` ("The dataset is released under the Creative Commons CC BY 4.0 license.") and in-repo `COPYRIGHT.txt` ("CLEVR (c) 2017, Facebook, Inc."). The **generation code** (`facebookresearch/clevr-dataset-gen`) is separately **BSD** — two licences, don't read only the code repo | 100,000 (70k/15k/15k) | 480×320 RGB → downsample to 64 | synthetic 3D-rendered multi-object scenes, shading + soft shadows + metal reflections | **ATTRIBUTION** |
+| Caltech-101 (`HuggingFaceM4/Caltech-101` tag; pixel-bearing but untagged `clip-benchmark/wds_vtab-caltech101`) | `cc-by-4.0` → **CC BY 4.0**, CaltechDATA institutional repository `data.caltech.edu/records/mzrjq-6wc02`: "The Creative Commons Attribution license allows re-distribution and re-use… on the condition that the creator is appropriately credited." (Caltech's 2022 re-deposit of record; the original 2003/2004 release carried no formal licence — the institutional CC-BY-4.0 deposit is the operative one now) | ≈9,146 (101 categories + background/clutter) | variable, ≈300×200 avg → resize to 64 | **natural everyday-object photography**, real classes | **ATTRIBUTION** — see mirror caveat below |
+| Caltech-256 | no matching pixel-bearing HF mirror found → **CC BY 4.0**, same CaltechDATA pattern, `data.caltech.edu/records/nyy15-4j048` | ≈30,607 (257 categories) | variable → resize to 64 | **natural everyday-object photography**, real classes | **ATTRIBUTION** — use the official CaltechDATA archive; no HF mirror carries a matching tag |
+
+#### Share-alike (usable, but not "clean"; excluded from the composite below)
+
+| dataset | licence: mirror tag → upstream verified | images | native resolution | domain | verdict |
+|---|---|---|---|---|---|
+| `timm/oxford-iiit-pet` | `cc-by-sa-4.0` → **CC BY-SA 4.0**, confirmed live at `robots.ox.ac.uk/~vgg/data/pets/`: "available… under a Creative Commons Attribution-ShareAlike 4.0 International License." Matches — no mismatch here, just share-alike | 7,349 (3680/3669) | variable, resize to 64 | pet photos, 37 classes | **SHARE_ALIKE**, and too small regardless |
+| `ylecun/mnist` | `mit` (**wrong**) → **CC BY-SA 3.0**. `yann.lecun.com/exdb/mnist/` is currently unreachable (empty directory, both direct and via a text-proxy fetch); corroborated by two independent secondary quotes of LeCun & Cortes' own stated terms — Keras's docs and Keras's own source code, both verbatim: "MNIST dataset is made available under the terms of the [Creative Commons Attribution-Share Alike 3.0 license]" | 70,000 (60k/10k) | 28×28 grayscale | handwritten digits, 10 classes | **SHARE_ALIKE** — mismatch, ninth-and-tenth case for this project's mirror-vs-upstream tally |
+| `vincent-espitalier/K-MNIST-CSV` | `cc-by-4.0` (**wrong**) → **CC BY-SA 4.0**, `github.com/rois-codh/kmnist` README, verbatim: "Both the dataset itself and the contents of this repository are licensed under a permissive CC BY-SA 4.0 license" | 70,000 (60k/10k) | 28×28 grayscale | Kuzushiji character images, 10 classes | **SHARE_ALIKE** — mismatch |
+
+#### Unresolved — not recommended, not cleanly BLOCKING either
+
+| dataset | what's actually known | verdict |
+|---|---|---|
+| EMNIST (`Royc30ne/emnist-{balanced,digits,byclass}` tag `mit`; `giulioappetito/emnist-letters` tag `gpl`) | Both tags are self-declared and unsupported by anything found. True upstream is Cohen et al. (arXiv:1702.05373), built on **NIST Special Database 19**. NIST's own copyright policy distinguishes ordinary (uncopyrightable) government works from "Standard Reference Data" compilations, over which the Secretary of Commerce *does* assert copyright — and SD19 is catalogued under NIST's SRD namespace. Whether SD19 falls on the public-domain or the copyrighted-SRD side of that line was **not resolved** by this search. The uploaders' own READMEs hedge ("co-located for non-profit usage… if there are any conflicts of copyright, please contact me to delete it") rather than assert a grant. `giulioappetito/emnist-letters` additionally has no label column and a row count far short of standard EMNIST-Letters — a data-integrity problem independent of licensing. | **BLOCKING (unresolved)** |
+| GTSRB (`bazyl/GTSRB` tag `gpl-3.0`, others untagged) | The `gpl-3.0` tag traces to the uploader's personal mirror, not the institute — a confirmed false tag, not a real mismatch to carry forward. True upstream, `benchmark.ini.rub.de`: "The data is free to use. However, we cordially ask you to cite the following publication if you do." That is not a named permissive licence — no MIT/BSD/CC0/CC-BY grant, no explicit redistribution right. | **BLOCKING (unresolved)** |
+| `poloclub/diffusiondb` | Licence text itself is maximally clean and matches at both levels: **CC0-1.0** for the data, **MIT** for the code, both confirmed at `github.com/poloclub/diffusiondb`. But the images are Stable Diffusion outputs, and SD was trained on LAION-derived scraped web imagery of contested and unresolved copyright status. DiffusionDB's own CC0 grant is real but can only cover what its authors actually hold rights to — it cannot certify the underlying generative model's training legality, which is a live, unresolved question well outside this document's scope. Real pixels are present (2M–14M images, variable resolution ~512×512–768), diversity is very high, and no per-photographer trap applies (this is a different shape of problem entirely). | **UNCLEAR** — recommend excluding from a "definitely clean" composite for now; flag alongside the CC BY-SA derivative-work question elsewhere in this document as a second unresolved-provenance class, not a licence-text problem |
+
+#### Ruled out — for the record
+
+| dataset | true upstream finding | verdict |
+|---|---|---|
+| `imageomics/TreeOfLife-200M` | Its **own** "Licensing Information" section states the compilation-level CC0 tag sits over a knowing mix of CC0/CC-BY/CC-BY-NC/CC-BY-NC-SA/CC-BY-NC-ND content from GBIF/EOL/BIOSCAN/FathomNet, filtered to none of them. This is the exact mixed-per-contributor trap that already ruled out COCO and red_caps, and the dataset's own documentation admits it rather than requiring inference. Independently disqualifying: it ships **metadata only** (`catalog.parquet` has no image column); actual pixels require external re-download from four different providers' own infrastructure. | **BLOCKING**, two independent reasons |
+| STL-10 | `cs.stanford.edu/~acoates/stl10/`: "Images were acquired from labeled examples on ImageNet." Same root cause as tiny-imagenet. No licence text anywhere on the page. | **BLOCKING** |
+| SVHN | Archived `ufldl.stanford.edu/housenumbers/`: "(Note: for non-commercial use only)." HF's own community card repeats it. One mirror (`Genius-Society/svhn`) wrongly tags `mit`. | **BLOCKING** |
+| Food-101 | `data.vision.ee.ethz.ch/cvl/datasets_extra/food-101/` states no licence at all; `source_datasets: extended|other-foodspotting` — images are individually-submitted foodspotting.com user photos, the same per-photographer pattern that already ruled out COCO/red_caps. | **BLOCKING** |
+| Places365 | Archived `places2.csail.mit.edu`: "for academic research and education purposes." Two obscure mirrors wrongly tag `mit`. | **BLOCKING** |
+| CIFAR-10 | Identical provenance to CIFAR-100, already BLOCKING above: "a labeled subset of the 80 million tiny images dataset," no licence text at the source, underlying corpus formally withdrawn. | **BLOCKING** |
+| DTD | `robots.ox.ac.uk/~vgg/data/dtd/`: "This data is made available to the computer vision community for research purposes." | **BLOCKING** |
+| Open Images | Google's own facts-and-figures page: "The images are listed as having a CC BY 2.0 license… we make no representations or warranties regarding the license status of each image and you should verify the license for each image yourself." Google explicitly declines to assert a uniform grant — same mixed-per-photographer shape as COCO/red_caps, just stated more candidly. | **BLOCKING** |
+
+### A note on EuroSAT's Sentinel provenance, since it's the same kind of chain that broke GooAQ and tiny-imagenet — and this time it resolves clean
+
+The generic ESA website terms (`sentinels.copernicus.eu/web/sentinel/terms-conditions`) say the
+site's own content is for "non-commercial use" and forbids redistribution — which, read
+carelessly, looks like the GooAQ contradiction again. But that page governs the **website**,
+not the **data**. The actual data-governing instrument is a separate EU legal instrument,
+fetched directly as a PDF and converted with `pdftotext`:
+
+> *"EU law grants free access to Copernicus Sentinel Data and Service Information for the
+> purpose of the following use in so far as it is lawful: (a) reproduction; (b) distribution;
+> (c) communication to the public; (d) adaptation, modification and combination with other
+> data and information…"*
+> — **"Legal notice on the use of Copernicus Sentinel Data and Service Information,"**
+> European Commission, per Commission Delegated Regulation (EU) No 1159/2013,
+> `sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice`
+
+with one attribution condition attached: distributing Sentinel data requires the notice
+`"Copernicus Sentinel data [Year]"`, or `"Contains modified Copernicus Sentinel data [Year]"`
+if adapted. EuroSAT's own MIT tag covers phelber's compiled/labelled 64×64 patches; this
+underlying-imagery notice is an easy addition to the same attribution block already drafted
+elsewhere in this document, not a conflict with it.
+
+### Recommended pretrain + probe pairing
+
+**Recommended composite pretraining mix** — six domains, none of them individually broad
+enough to matter alone, deliberately **capped rather than used at full size**, for reasons
+covered in the balance discussion below:
+
+| domain | source | recommended cap | of how many available | native res → target |
+|---|---|---|---|---|
+| general photography | `nyuuzyou/pxhere` | 100,000 | ≈1.1M | full-res → 64 |
+| histopathology | `1aurent/PatchCamelyon` | 100,000 | 327,680 | 96 → 64 |
+| synthetic 3D render | Shapes3D | 100,000 | 480,000 | 64 (exact) |
+| synthetic 3D multi-object scene | CLEVR | 100,000 | 100,000 (all of it) | 480×320 → 64 |
+| garment product photo | Fashion-MNIST | 70,000 (all of it) | 70,000 | 28 → 64 |
+| satellite land-use | `timm/eurosat-rgb` | 27,000 (all of it) | 27,000 | 64 (exact) |
+| **total** | | **≈497,000** | | six visually distinct, licence-clean domains |
+
+A stricter-balance variant — cap everything to EuroSAT's own ceiling (~27,000 per domain,
+≈162,000 total) — is closer to tiny-imagenet's original 100,000-image scale and worth running
+as a comparison point; the table above is the "use more of what's available and cap only the
+largest sources" reading of the composite instruction. Both are cheap to try; see the
+experiment design below for why trying both is the honest move rather than picking one.
+
+**Recommended probe pairing — kept structurally separate from pretraining, on purpose:**
+
+- **Primary transfer probe: Quick Draw** (CC BY 4.0), held out entirely from pretraining.
+  345 classes, huge N, a different visual domain (line drawings, not photographs) from
+  everything in the pretrain mix — this plays tiny-imagenet's-transfer-probe role
+  (cifar100's old job) with a clean licence and far more classes.
+- **Secondary transfer probe: Caltech-256** (CC BY 4.0 via CaltechDATA), also held out
+  entirely from pretraining, specifically so it can occupy the role tiny-imagenet's own
+  domain used to occupy — natural everyday-object photography with real class structure.
+  This is the closest surviving thing to what CIFAR-100 was actually testing, and unlike
+  CIFAR-100 its licence is clean. The "eval-only, no parameter published" argument this
+  document already verified for CIFAR-100 by reading `_linear_probe` and
+  `_checkpoint_payload` applies unchanged here — the mechanism is dataset-agnostic, only the
+  corpus name changes.
+- **Tertiary in-domain probe: EuroSAT's own held-out test split** (10 classes) — the same
+  structural role tiny-imagenet's own valid split played originally: a sanity check that
+  pretraining produced *any* separable features, independent of transfer.
+
+**Reasoning:** I-JEPA pretraining doesn't need labels, so the pretrain-side choices were
+driven by scale, licence cleanliness, and domain diversity. The probe-side choices were
+driven by the opposite: fixed classes, a genuine held-out split, and — per this document's
+own stated preference — a *different* dataset than pretraining, because that's what actually
+measures transfer rather than memorisation. Keeping Quick Draw and Caltech-256 out of
+`train_shards` entirely preserves that distinction instead of quietly eroding it.
+
+### Is mixing these domains in one I-JEPA run sound, or does it fragment the encoder?
+
+This was checked against the actual code, not against I-JEPA in the abstract, because the
+answer depends on specifics this codebase already has.
+
+**What the loss actually asks for.** I-JEPA's context→target prediction is entirely
+intra-image — `vl_pretrain.py`'s own docstring states the target is "features from the EMA
+target encoder," predicted from a context block of the *same* image. There is no point in
+the loss where one image's content is asked to predict another's. So the sharpest version of
+the concern — "masked tissue predicted from surrounding farmland" — does not occur at the
+level of an individual loss term; no example is ever scored against another domain's content.
+
+**Where the real risk actually lives, and it's worse here than it would be for a large
+model.** Two things found directly in `vl_pretrain.py` matter:
+
+1. `_to_float` hardcodes ImageNet's mean/std (`[0.485, 0.456, 0.406]` / `[0.229, 0.224,
+   0.225]`) and applies it to every image regardless of source. Histopathology stain colour,
+   satellite-derived RGB composites, and line-drawing whites-and-blacks do not share
+   ImageNet's colour statistics; none of them get domain-appropriate normalisation today.
+2. Batch sampling is `torch.randint(0, x_tr.size(0), (cfg.batch_size,), generator=gen)` over
+   the single tensor `_decode_split` produces by **concatenating every shard with no domain
+   weighting at all.** Per-domain exposure in every batch is exactly proportional to that
+   domain's raw row count among the shards handed to the run.
+
+Combined with a genuinely small shared encoder (22.9M parameters in the current run, `dim=384,
+depth=6`), the mechanism that should worry this project is **gradient interference / shared-
+capacity competition across domains with different low-level statistics** — the same
+phenomenon documented broadly in multi-task and continual learning (catastrophic
+interference, gradient conflict between dissimilar tasks) — rather than literal
+contradictory labels. This is a real, well-documented *class* of effect; whether it bites
+*at this scale, for this specific domain mix* is not something I can confirm from the
+literature, because I found no study of JEPA-style pretraining across this particular kind
+of domain heterogeneity (histopathology + satellite + garments + synthetic renders + natural
+photos) at a ~20M-parameter scale. Anyone claiming otherwise would be guessing; I'd rather
+say so than manufacture a citation.
+
+**On staged (per-domain, then combined) versus naive union, specifically:** the coordinator's
+hypothesis — that heterogeneity reads as noise before the encoder can tell domains apart, and
+as information afterward — is mechanistically plausible but rests on a premise this model may
+not be able to afford: telling domains apart at all costs representational capacity, and a
+6-layer, 384-dim encoder has much less of it to spend on that than a foundation-scale model
+would. If the encoder never budgets capacity for domain identity, the proposed benefit of
+staging (heterogeneity becoming information once domains are distinguishable) has nowhere to
+land. I found nothing in the literature that settles this either way for a model this small,
+and nothing JEPA-specific in either direction. **I'm not confident enough to recommend staging
+over union, or union over staging — this should be measured, not guessed**, and the fleet
+already has the instrument to measure it cheaply:
+
+**Proposed experiment** (not run — no GPU work was in scope here):
+
+| run | what it isolates | how |
+|---|---|---|
+| A. naive union | baseline | pool all six domains' shards as `train_shards` at the capped sizes above, uncapped-relative-sampling, train once, probe |
+| B. balanced union | balance, independent of order | same pool, but every domain pre-truncated/replicated to equal row count before decoding — needs zero code changes, only different shard files fed in |
+| C. staged → combined | ordering | pretrain sequentially per domain for an equal step budget each, then a final combined phase on B's balanced pool — approximate today by chaining `--resume` across domain-specific configs if `load_resumable`'s fingerprint allows it, otherwise a small harness change |
+
+Score all three identically with what already exists: the untrained-vs-trained probe gate,
+`rep_std` (already instrumented, catches collapse), and both transfer probes above. Add one
+cheap diagnostic that reuses `_linear_probe` completely unchanged — a **domain-identity
+probe**: give it a `domain_id` label instead of a class label, known for free at
+corpus-assembly time. High domain-identity accuracy partway through training would support
+the coordinator's premise; if it stays low throughout, this encoder isn't budgeting capacity
+to distinguish domains, and staging is unlikely to unlock the benefit it's meant to. This
+also happens to be the exact experiment CSD would eventually want anyway if the goal is
+"recognise that one frame contains several different kinds of thing" — the domain-identity
+probe is a primitive version of that.
+
+Cost: each configuration is one `vl_latent` run. The one currently on record took 497 seconds;
+three to four configurations at comparable budgets is on the order of 30–60 minutes total —
+trivial against the 43-minute full-fleet baseline already established elsewhere in this
+document, and not run here.
+
+**On domain balance, independent of ordering — this one I can answer with more confidence,
+because it's visible directly in the code rather than inferred from adjacent literature.**
+Yes, it matters on its own, and it matters *now*, regardless of what the staging experiment
+finds. A naive union at the FULL available sizes found in this search (pxhere ≈1.1M,
+PatchCamelyon 327,680, Shapes3D 480,000, CLEVR 100,000, Fashion-MNIST 70,000, EuroSAT 27,000)
+would — given `torch.randint` over the concatenated pool — put EuroSAT under 2% of every
+batch and Fashion-MNIST around 3%. That is not a vague risk; it is the direct, predictable
+behaviour of the code as written, and it is exactly the failure the coordinator named: an
+encoder that is functionally a pxhere-and-histopathology encoder that happened to see a
+little satellite and garment imagery. The capped composite recommended above (~100k ceiling
+on the three largest sources) is a first-order fix for this, achievable with **zero code
+changes** — it only requires not handing the harness the full row counts. A proper
+frequency-weighted or temperature-scaled sampler (the general pattern used for imbalanced
+multilingual/multi-domain corpora elsewhere in ML, not something specific to this codebase)
+would do this more precisely than capping shard sizes up front, but would need a small
+addition to `_decode_split` or the training loop, which is out of scope for this document.
+
+### What capability is lost, next to tiny-imagenet — stated plainly
+
+tiny-imagenet gave `vl_latent` 100,000 images natively at 64×64, 200 real-world object/animal
+classes at 500 images/class, drawn from a single coherent photographic domain with real
+lighting, pose, and texture variation. That is precisely the thing this search could not find
+a clean replacement for.
+
+- **pxhere gets closest to photographic diversity** but has no class structure at all — free
+  text tags only, no controlled category balance, and (being general stock photography) very
+  likely skewed toward landscapes and travel rather than the graspable everyday objects
+  ImageNet-style benchmarks emphasise. It cannot be probed on; it can only be pretrained on.
+- **Caltech-101/256 have the right structure** — real object categories, real photographs —
+  but at roughly a third (Caltech-256, 30,607 images / 257 categories, ≈119/class) to a tenth
+  (Caltech-101, 9,146 / 101 categories, ≈90/class) of tiny-imagenet's *density*, well short of
+  its 500/class, and native resolution is full-photo scale rather than already-curated 64×64,
+  meaning more information is thrown away at resize time than tiny-imagenet ever had to
+  discard.
+- **Nothing else in this table is photographic at all** in the ImageNet sense: satellite,
+  histopathology, synthetic 3D renders, sketches, garment product shots, and book engravings
+  are all genuinely different domains, not substitutes for "photograph of an everyday object
+  or animal."
+
+**The honest statement the task asked for:** there is no permissively-licensed replacement of
+tiny-imagenet's specific breadth — balanced, dense, natural-object-category photography at
+100k+ scale — because that combination of properties essentially doesn't exist outside the
+ImageNet lineage under a clean licence. The composite above buys breadth **across** visually
+distinct domains (a model that has seen satellite imagery, tissue imagery, sketches, product
+photography, and general photography) at the cost of depth **within** the one domain
+(everyday-object photography) that ImageNet-family benchmarks were built to measure and that
+most vision transfer-learning literature actually cares about. A `vl_latent` pretrained on
+this composite should be expected to be **measurably weaker at fine-grained natural-object
+recognition and generalisation** than the current unreleasable model — that is the real price
+of the licence-clean requirement, not a rounding error, and it should be reported as such
+rather than smoothed over.
+
+### What I could not determine, in this section
+
+0. **PatchCamelyon's "following the license of Camelyon16" claim** — Camelyon16's own site
+   (`camelyon16.grand-challenge.org`) is a JS-rendered single-page app; a static fetch returns
+   no content, and the GigaDB mirror is equally JS-rendered. The claim rests on `pcam`'s own
+   README, a primary source from the dataset's actual creator, but was not independently
+   re-derived from Camelyon16's own licensing statement.
+1. **The British Library CC0 claim** could not be re-fetched fresh from `bl.uk` or Flickr
+   Commons directly (both blocked/unreachable from this sandbox); it rests on the HF card's
+   own detailed account plus circumstantial corroboration (pre-1900 publication dates,
+   independently public domain by age; a named, identifiable GLAM data maintainer with
+   unusually specific sourcing).
+2. **NIST SD19's Standard-Reference-Data-vs-public-domain status**, which the entire EMNIST
+   family's licence question rests on. Genuinely unresolved, not merely unverified — NIST's
+   own policy distinguishes the two categories without stating which one SD19 falls into.
+3. **Whether "free to use, please cite" (GTSRB) supports a redistribution grant for derived
+   model weights at all**, as opposed to merely permitting use. No formal licence exists to
+   answer this either way.
+4. **DiffusionDB's generative-provenance question** — whether Stable Diffusion's own training
+   corpus taints the copyright status of its outputs — is explicitly outside what any licence
+   text can settle, and outside this document's scope. Flagged as the same *class* of
+   unresolved question as the CC BY-SA derivative-work question already open elsewhere in this
+   document, not resolved by analogy to it.
+5. **Whether `HuggingFaceM4/Caltech-101`'s script-based loader still resolves** to a live data
+   source — it uses a legacy `datasets`-library loading script rather than shipping parquet
+   directly, and this was not tested since downloading was out of scope. `data.caltech.edu`'s
+   own CC-BY-4.0 archive is the more durable source if a mirror needs rebuilding.
+6. **No clean pixel-bearing HF mirror was found for Caltech-256** carrying a licence tag that
+   matches the verified CaltechDATA upstream. The dataset should be built from
+   `data.caltech.edu/records/nyy15-4j048` directly rather than trusted from an arbitrary
+   untagged third-party mirror.
+7. **Whether staged (per-domain, then combined) pretraining actually outperforms naive or
+   balanced union for this model at this scale** — addressed above with a proposed experiment
+   rather than an answer, because no literature or mechanism argument found here settles it.
+8. **Whether `Xenova/quickdraw-small` (untagged) genuinely inherits the CC BY 4.0 of its
+   sibling `Xenova/quickdraw`** (same uploader, same underlying Google data, tagged correctly)
+   — very likely, given the shared lineage, but not independently confirmed for that specific
+   repo id.
+
