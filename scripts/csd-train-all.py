@@ -272,6 +272,29 @@ def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> 
     return receipt
 
 
+def _require_train_deps(dry: bool) -> None:
+    """Fail immediately, and by name, when the train dependency group is absent.
+
+    tokenizers and pyarrow live in the `train` group, so `uv run` without it starts the
+    run, loads the corpus list, prints a plausible banner, and only then dies on an import
+    forty seconds in -- with a message naming a module rather than the invocation. An
+    unattended run just records three gate failures that look like training problems.
+    """
+    if dry:
+        return
+    missing = []
+    for mod in ("tokenizers", "pyarrow"):
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(mod)
+    if missing:
+        raise SystemExit(
+            f"missing {', '.join(missing)} -- these are in the `train` dependency group.\n"
+            f"Run this as:  uv run --group train python {sys.argv[0]} ...",
+        )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", default=str(DEFAULT_STATE))
@@ -281,6 +304,7 @@ def main() -> int:
     ap.add_argument("--regions", default="code,compress")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+    _require_train_deps(args.dry_run)
 
     state = Path(args.state)
     if not args.dry_run:
