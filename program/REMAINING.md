@@ -7,6 +7,47 @@ Status: `todo` | `wip` | `done` | `blocked` | `deferred`
 
 ---
 
+## SCALE TARGET AND PHASES — the current model is a TOY, deliberately
+
+Today: ~87M parameters across all regions, ~450 MB fp32. **Target: as close to a 30B-class
+model as reasonably achievable.** The present size is scaffolding to get the architecture
+right the first time, not the deliverable. Judge current work on whether the STRUCTURE is
+correct, not on its numbers.
+
+**THE ARITHMETIC MAKES QUANTISATION LOAD-BEARING, not incidental:**
+    30B fp32                    120 GB   impossible on consumer hardware
+    30B bf16                     60 GB   still impossible
+    30B at 8 bits                30 GB   two cards
+    30B at 4 bits                15 GB   marginal on a 16 GB card
+    30B at 3.27 bits           ~12.3 GB  FITS, with ~4 GB left for activations
+3.27 effective bits/param is not aspirational -- it is the measured figure from this
+project's own PTQ receipts (9.5-9.8x compression at under 1 point of recall). The
+sensitivity-driven mixed-width work is what makes the deployment target reachable at all.
+
+**WHERE MEMORY PRESSURE ACTUALLY LANDS AT SCALE:** at 30B with long context and vision,
+ACTIVATION and KV memory dominate WEIGHT memory. The levers there are per-region context
+budgets and selective activation, not weight paging. Dynamic paging is planned, not built --
+design the seam for it, implement when the constraint is measured rather than anticipated.
+
+**TRAINING PHASES, including one not previously recorded:**
+    1. per-region pretraining          faculties trained individually        <- current
+    2. interconnect training           learned scheduler; needs (1) to exist
+    3. WHOLE-MIND DYNAMIC TRAINING     everything trained together WITH the
+                                       interconnect already trained. Not previously
+                                       recorded anywhere. This is where the composed
+                                       system becomes more than its parts, and it is
+                                       probably where most of the growth in parameters,
+                                       layers and region types happens.
+    4. fine-tune, then quantise        in that order; PTQ is post-training by definition
+
+**LONG CONTEXT IS A FIRST-CLASS GOAL, and primarily VISUAL.** Large context capability, done
+efficiently, across discrete tokens but PRIMARILY vision, image and video. That is consistent
+with the earlier finding that vision may be the cheaper channel per unit of
+decision-relevant information -- a screenshot carries more than 64 tokens of prose.
+
+**WHAT THE OPERATOR ACTUALLY OPTIMISES FOR:** performance, efficiency, functionality, skill,
+capability, tools. Not benchmark rank. Weigh design decisions against those.
+
 ## REGION TAXONOMY — the architecture is BRAIN-ANALOGOUS, not task-analogous
 
 **The test for a well-formed region: what FACULTY does it provide? Not what dataset does it
