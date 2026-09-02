@@ -7,6 +7,54 @@ Status: `todo` | `wip` | `done` | `blocked` | `deferred`
 
 ---
 
+## REGION TAXONOMY — the architecture is BRAIN-ANALOGOUS, not task-analogous
+
+**The test for a well-formed region: what FACULTY does it provide? Not what dataset does it
+train on.** A banking-intent classifier answers the second and not the first, so it is not a
+region. At most it is an evaluation probe for whatever language or semantic faculty exists.
+
+INTENDED REGION SHAPE, operator's framing:
+  reasoning / logic centre       inference, deduction, working through a problem
+  hippocampus                    memory: encoding, consolidation, retrieval
+  visual cortex                  vision, latent visual reasoning
+  auditory cortex                sound
+  speech / language centre       language production and comprehension
+  numeric / math centre          quantity, arithmetic, symbolic manipulation
+  WHITE MATTER                   high-bandwidth interconnect shunting representations
+                                 BETWEEN regions -- not a router, not dispatch
+  frontal cortex                 unification of regional outputs into one coherent state
+  plus AI-specific regions       the architecture is not required to be a literal brain
+
+WHAT THIS INVALIDATES IN THE CURRENT TREE:
+  classify_banking77    NOT A REGION. 77 banking intents is a domain, not a faculty.
+                        Trained and gated (0.8453 top-1 vs 0.0130 chance) -- the model is
+                        fine, the framing is wrong. Demote to a probe or fold into a
+                        language/semantic region.
+  classify_go_emotions  Same problem, though affect is closer to a real faculty (limbic).
+                        Decide whether it is a region or a probe.
+  code                  Is this a faculty, or a domain of the language centre? Probably the
+                        latter, which means `code` is a specialisation of language rather
+                        than a peer of it.
+  compress / retrieve   Both look hippocampal -- consolidation and retrieval are two
+                        operations of ONE memory faculty, not two regions. Worth deciding
+                        deliberately rather than inheriting from how they were built.
+  vl_latent             Correct as-is. Visual cortex.
+  reason                Correct as-is. Reasoning centre.
+
+TWO COMPONENTS WITH NO CURRENT ANALOGUE, and both are architectural rather than incidental:
+  - WHITE MATTER. The router as designed is DISPATCH: pick a region, send the query. White
+    matter is concurrent high-bandwidth transfer of representations between regions. Its
+    bandwidth and topology are architectural facts, not routing policy. Different component,
+    different training, currently unspecified.
+  - FRONTAL-CORTEX UNIFICATION. Composition has been treated as "regions plus a router".
+    Unification is a faculty in its own right: integrating several regions' outputs into one
+    coherent state. P5's gates were written against the router framing and need revisiting.
+
+ACTION: config/mind/csd-regions.json declares `role` per region. Every role must name a
+FACULTY. Any region whose role reads as a dataset or a domain is misframed and should be
+demoted, merged, or renamed before the router is built -- the router dispatches BY these
+declarations, so a wrong name propagates into every routing decision.
+
 ## SESSION HANDOFF — read this first
 
 State is committed here and in docs/design/. Nothing depends on a conversation surviving.
