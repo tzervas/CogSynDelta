@@ -58,9 +58,17 @@ class Dataset:
     repo_id: str
     region: str
     license: str
-    """The license string actually observed, not inferred from a family or a mirror."""
+    """The license string actually observed on the dataset card."""
     verdict: str
     why: str
+    upstream: str = ""
+    """What the ORIGINAL source says, when it is not the same repo as the card.
+
+    A mirror's tag is not evidence about its upstream. Measured on this fleet:
+    BeIR/scifact is tagged cc-by-sa-4.0 while allenai/scifact, the dataset it mirrors,
+    is tagged cc-by-nc-2.0. Anything re-hosting someone else's corpus must record what
+    the original says here, or it stays REJECTED.
+    """
     config: str = ""
     splits: tuple[str, ...] = ("train",)
     caveat: str = ""
@@ -76,33 +84,147 @@ class Dataset:
 # must carry an observed license string and a verdict; unverified entries are REJECTED
 # rather than fetched, so an unattended run cannot quietly widen the licence surface.
 CATALOGUE: list[Dataset] = [
+    # --- code -------------------------------------------------------------------------
+    Dataset(
+        repo_id="codeparrot/apps",
+        region="code",
+        license="mit (verified via HF dataset_info tags)",
+        verdict=TRAIN_OK,
+        why="10k Python problem/solution pairs with test cases; clean MIT",
+        columns=("question", "solutions"),
+        caveat="solutions and input_output are JSON-encoded strings; ~1235 test rows have no solution",
+    ),
+    Dataset(
+        repo_id="deepmind/code_contests",
+        region="code",
+        license="cc-by-4.0 (verified via HF dataset_info tags)",
+        verdict=TRAIN_OK,
+        why="competitive programming descriptions with multi-language solutions",
+        columns=("description", "solutions"),
+        caveat="carries incorrect_solutions too; exclude them or the region learns wrong code. CC-BY requires attribution",
+    ),
+    # --- retrieval --------------------------------------------------------------------
+    Dataset(
+        repo_id="rajpurkar/squad",
+        region="retrieve",
+        license="cc-by-sa-4.0 (verified via HF dataset_info tags)",
+        verdict=TRAIN_OK,
+        why="single-hop Wikipedia QA; broadens beyond finance and web answers",
+        columns=("question", "context"),
+        caveat="share-alike obligation attaches to derivatives of the data itself",
+    ),
+    Dataset(
+        repo_id="BeIR/hotpotqa",
+        region="retrieve",
+        license="cc-by-sa-4.0 (HF card)",
+        upstream="hotpotqa.github.io states CC BY-SA 4.0 — mirror and source AGREE",
+        verdict=TRAIN_OK,
+        why="multi-hop retrieval, a reasoning shape absent from the current mix",
+        columns=("query", "passage"),
+        caveat="corpus/queries/qrels ship separately and must be joined before use",
+    ),
+    # --- semantic similarity ----------------------------------------------------------
+    Dataset(
+        repo_id="stanfordnlp/snli",
+        region="compress",
+        license="cc-by-sa-4.0 (verified via HF dataset_info tags)",
+        verdict=TRAIN_OK,
+        why="entailment pairs; the same objective all-nli's pair config serves",
+        columns=("premise", "hypothesis"),
+        caveat=(
+            "NOT pre-filtered: label 0=entailment 1=neutral 2=contradiction, -1=no consensus. "
+            "MUST filter to label==0. Training on it unfiltered is exactly the mistake that "
+            "held compress at 0.26"
+        ),
+    ),
+    # --- classification / utility models ----------------------------------------------
+    Dataset(
+        repo_id="PolyAI/banking77",
+        region="classify",
+        license="cc-by-4.0 (verified via HF dataset_info tags)",
+        verdict=TRAIN_OK,
+        why="77 fine-grained intents; sized for the tiny classifiers CSD wants",
+        columns=("text", "label"),
+    ),
+    Dataset(
+        repo_id="google-research-datasets/go_emotions",
+        region="classify",
+        license="apache-2.0 (verified via HF dataset_info tags)",
+        verdict=TRAIN_OK,
+        config="simplified",
+        why="27 emotions plus neutral; a second classifier task with a clean licence",
+        columns=("text", "labels"),
+        caveat="multi-label, not single-label; example_very_unclear rows are annotator-flagged noise",
+    ),
+    # --- math / reasoning -------------------------------------------------------------
+    Dataset(
+        repo_id="openai/gsm8k",
+        region="reason",
+        config="main",
+        license="mit (verified via HF dataset_info tags)",
+        verdict=TRAIN_OK,
+        why="human-authored step-by-step arithmetic; no third-party competition provenance",
+        columns=("question", "answer"),
+    ),
+    Dataset(
+        repo_id="deepmind/aqua_rat",
+        region="reason",
+        config="raw",
+        license="apache-2.0 (verified via HF dataset_info tags)",
+        verdict=TRAIN_OK,
+        why="algebraic reasoning with natural-language rationales; a different shape to GSM8K",
+        columns=("question", "rationale"),
+    ),
+    # --- vision -----------------------------------------------------------------------
+    Dataset(
+        repo_id="timm/oxford-iiit-pet",
+        region="vl",
+        license="cc-by-sa-4.0 (verified via HF dataset_info tags)",
+        verdict=TRAIN_OK,
+        why="37-class fine-grained classification with parquet-embedded images",
+        columns=("image", "label"),
+        caveat="native resolution varies 114-3260px; the loader must resize",
+    ),
+    Dataset(
+        repo_id="zalando-datasets/fashion_mnist",
+        region="vl",
+        license="mit (verified via HF dataset_info tags)",
+        verdict=TRAIN_OK,
+        why="clean-licence 28x28 classification; a cheap probe target",
+        columns=("image", "label"),
+    ),
+    # --- REFUSED. Kept in the catalogue on purpose: a rejection nobody can see is a
+    #     rejection that gets made again. ------------------------------------------------
     Dataset(
         repo_id="code-search-net/code_search_net",
         region="code",
         config="go",
-        license="MIT (dataset card: license: mit)",
-        verdict=TRAIN_OK,
-        why="same corpus and licence as the Python config already trained on; adds a second language",
-        columns=("func_documentation_string", "func_code_string"),
-        caveat="configs are per-language; never glob across them, the schemas match but the domains do not",
-    ),
-    Dataset(
-        repo_id="code-search-net/code_search_net",
-        region="code",
-        config="java",
-        license="MIT (dataset card: license: mit)",
-        verdict=TRAIN_OK,
-        why="third language for the code region; broadens beyond Python-only docstring pairs",
-        columns=("func_documentation_string", "func_code_string"),
-    ),
-    Dataset(
-        repo_id="sentence-transformers/quora-duplicates",
-        region="compress",
-        config="pair",
-        license="UNVERIFIED — pending card check",
+        license="other (verified via HF dataset_info tags — NOT mit)",
+        upstream="CodeSearchNet filtered only for repos permitting REDISTRIBUTION, which is "
+        "not a commercial-use grant, and the dataset carries no per-row licence column",
         verdict=REJECTED,
-        why="paraphrase pairs would suit compress, but the licence has not been observed yet",
-        caveat="promote to TRAIN_OK only after reading the card and the upstream Quora terms",
+        why="an earlier revision of this file claimed 'mit' here. That string was never "
+        "observed; HF reports 'other'. The Python config already training the `code` "
+        "region has the same unresolved status",
+    ),
+    Dataset(
+        repo_id="BeIR/scifact",
+        region="retrieve",
+        license="cc-by-sa-4.0 (HF card)",
+        upstream="allenai/scifact, the dataset this mirrors, is tagged cc-by-nc-2.0 — "
+        "NON-COMMERCIAL. The mirror's tag contradicts its own source",
+        verdict=REJECTED,
+        why="proof that a mirror's licence tag is not evidence about the corpus it mirrors",
+    ),
+    Dataset(
+        repo_id="hendrycks/competition_math",
+        region="reason",
+        license="mit (card) — but access is disabled on HF",
+        upstream="under an active DMCA takedown tied to its AoPS competition-problem "
+        "provenance; the MIT tag covers the repo's scripts, not the problem text",
+        verdict=REJECTED,
+        why="a live copyright dispute is not cured by a permissive tag on a repackaging. "
+        "The same applies to MATH-derived subsets of otherwise-clean datasets",
     ),
 ]
 
