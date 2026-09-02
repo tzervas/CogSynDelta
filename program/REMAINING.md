@@ -102,11 +102,27 @@ BASELINE rather than the trained score. The trained model is better with more co
 (0.9805 -> 0.9941) against a harder problem. On learned gain over baseline, longer context
 wins decisively: 0.902 against 0.752.
 
-Harder task, higher absolute score, bigger gain -- the encoder was starved of context, not
-cheating. And it is direct support for P11.4: if 256 beats 96 this clearly at 2.2x wall
-clock, a SCHEDULE (96 -> 256 -> longer) is worth building rather than picking a bigger
-constant, because the cheap early phase costs little and the expensive phase is where the
-gain is.
+WHAT THIS SUPPORTS, stated narrowly: truncation at 96 was NOT the mechanism producing the
+high number. 0.9863 can be trusted.
+
+WHAT IT DOES NOT SUPPORT -- an earlier version of this entry overclaimed "the encoder was
+starved of context". Two corrections:
+  - recall was ALREADY above 98% at 96 tokens and rose to 99.4%. That is 10 wrong of 512
+    becoming 3 wrong of 512 on a single seed against a 512-pair holdout. Modest and
+    directionally consistent, not dramatic.
+  - the baseline drop happens because the UNTRAINED model now sees ~2.7x more, noisier
+    tokens, diluting the lexical overlap that gives a random-init encoder any recall at all.
+    That is a legitimate consequence of more context, not proof that a shortcut was removed.
+
+STILL OPEN: 55.8% of code-side sequences exceed 256 tokens, so this tested "meaningfully
+more context", not "whole function bodies". A decisive test of body semantics needs 512+.
+And a 512-way retrieval across 443 diverse repos may simply be solvable from name and
+signature cues -- this experiment does not rule that out.
+
+Measured memory, correcting the quadratic estimate: this model is shallow (dim 256, depth 4)
+so linear-in-T terms matter as much as attention. bf16 at batch 512 measured 3,959 MiB at
+max_len 96 and 10,105 MiB at 256 -- about 2.6x, not the ~7x a purely quadratic argument
+predicts.
 
 TWO KINDS OF "LEAKAGE" IN retrieve, and only one is a defect:
   - genuine paraphrase: "how do you know if..." vs "how to know if...", cos 0.993. Real.
