@@ -1,0 +1,12 @@
+[Unit]
+Description=Check daily whether the homelab SSD needs relief
+
+[Timer]
+# Daily, not hourly: this moves hundreds of gigabytes when it does act, and the pressure
+# it relieves builds over weeks. 04:00 keeps it clear of interactive work.
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=Reap regenerable training artifacts from temp filesystems
+Documentation=file:///home/kang/code/personal/tzervas/CogSynDelta/scripts/csd-tmp-reaper.py
+
+[Service]
+Type=oneshot
+# Only acts when free space is low, so a healthy filesystem is untouched. Durable roots
+# (/akula-data, /bulk, /data, the repo) are excluded in the script, not here -- keeping
+# that policy next to the deletion logic rather than in a unit file nobody reads.
+ExecStart=/usr/bin/python3 /home/kang/code/personal/tzervas/CogSynDelta/scripts/csd-tmp-reaper.py --min-free-gb 5 --apply
+Nice=10
+IOSchedulingClass=idle
