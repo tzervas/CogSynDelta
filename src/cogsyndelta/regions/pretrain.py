@@ -32,6 +32,7 @@ import hashlib
 import json
 import math
 import time
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -39,7 +40,12 @@ from typing import Any
 import torch
 from tokenizers import Tokenizer
 
-from cogsyndelta.corpus import CORPUS_FINGERPRINT_SCHEME, fingerprint_corpus
+from cogsyndelta.corpus import (
+    CORPUS_FINGERPRINT_SCHEME,
+    fingerprint_corpus,
+    reservoir_sample,
+    sampling_rng,
+)
 from cogsyndelta.eval import (
     assert_no_pair_contamination,
     contamination_report,
@@ -71,6 +77,10 @@ class PretrainConfig:
     `limit` exists for BALANCE, not speed. GooAQ alone is 3,012,496 pairs -- 96% of
     everything available to `retrieve` -- and training uncapped would produce a GooAQ
     model wearing a retrieval region's name.
+
+    A cap SAMPLES the whole source (seeded reservoir, see :func:`load_pairs`). It used to
+    take the first `limit` rows in file order, which made a balance decision an arbitrary
+    one -- the corpus was then defined by whatever ordering the shards happened to have.
     """
     steps: int = 2000
     batch_size: int = 256
@@ -164,24 +174,15 @@ def _tokenize(tok: Tokenizer, texts: list[str], max_len: int, device: torch.devi
     return ids.to(device), mask.to(device)
 
 
-def load_pairs(
-    shards: list[str], columns: tuple[str, str], limit: int | None = None
-) -> list[tuple[str, str]]:
-    """Stream (anchor, positive) pairs from parquet shards.
+def _iter_pairs(shards: list[str], columns: tuple[str, str]) -> Iterator[tuple[str, str]]:
+    """Yield every (anchor, positive) pair in the source, in shard order.
 
-    Args:
-        shards: Parquet paths.
-        columns: The two text columns forming a pair.
-        limit: Stop after this many pairs.
-
-    Returns:
-        Pairs with both sides non-empty. Empty sides are dropped rather than encoded as
-        blanks -- a blank positive is a free win for the loss and teaches nothing.
+    Pairs with an empty side are dropped rather than encoded as blanks -- a blank
+    positive is a free win for the loss and teaches nothing.
     """
     import pyarrow.parquet as pq
 
     left, right = columns
-    pairs: list[tuple[str, str]] = []
     for path in shards:
         pf = pq.ParquetFile(path)
         for batch in pf.iter_batches(batch_size=1000, columns=list(columns)):
@@ -189,10 +190,45 @@ def load_pairs(
             b_col = batch.column(right).to_pylist()
             for a, b in zip(a_col, b_col, strict=True):
                 if a and b and a.strip() and b.strip():
-                    pairs.append((a, b))
-                    if limit is not None and len(pairs) >= limit:
-                        return pairs
-    return pairs
+                    yield (a, b)
+
+
+def load_pairs(
+    shards: list[str], columns: tuple[str, str], limit: int | None = None, *, seed: int = 0
+) -> list[tuple[str, str]]:
+    """Load (anchor, positive) pairs from parquet shards, SAMPLING when a cap applies.
+
+    A cap here is a balance decision -- `PretrainConfig.extra_sources` says so explicitly:
+    gooaq alone is 3,012,496 pairs, 96% of everything `retrieve` can see, and training
+    uncapped would produce a gooaq model wearing a retrieval region's name. This used to
+    `return` the moment `limit` pairs had been collected, which made every such decision
+    "take the first N rows in file order" instead: gooaq's 400,000 was the first 13.3% of
+    the file, inheriting whatever ordering that file happened to have. `build_splits`
+    shuffles AFTER the cap, so no downstream step could repair it, and the holdout was
+    drawn from the same prefix.
+
+    Reservoir sampling gives every row an equal chance regardless of position, and the
+    generator is derived from `seed` (see :func:`cogsyndelta.corpus.sampling_rng`) so two
+    runs of the same config still get the same rows -- receipts carry corpus fingerprints
+    and would mean nothing otherwise.
+
+    COSTS A FULL PASS over each capped source, where the old truncation stopped early.
+    That is unavoidable: a uniform sample cannot be drawn without seeing the population.
+    Memory is unchanged at O(limit).
+
+    Args:
+        shards: Parquet paths.
+        columns: The two text columns forming a pair.
+        limit: Cap. `None` or 0 loads every pair.
+        seed: The run seed; decides which rows a cap keeps.
+
+    Returns:
+        Pairs with both sides non-empty, sampled uniformly when a cap binds.
+    """
+    stream = _iter_pairs(shards, columns)
+    if not limit or limit < 0:
+        return list(stream)
+    return reservoir_sample(stream, limit, sampling_rng(seed, shards, columns))
 
 
 def _pair_key(left: str, right: str) -> str:
@@ -230,6 +266,12 @@ def load_graded_pairs(
         Triples with both sides non-empty and a non-null score. A null score is dropped
         rather than defaulted to zero -- a defaulted score is a human judgement the human
         never made, and it would move the correlation.
+
+    Note:
+        `limit` here still TRUNCATES, unlike :func:`load_pairs`, which samples. That is
+        deliberate and narrow: nothing passes a limit (a graded eval set is used whole,
+        and `_prepare_graded` calls this with none), so there is no balance decision here
+        to get wrong. Give this the same treatment before capping a graded set for real.
     """
     import pyarrow.parquet as pq
 
@@ -421,7 +463,7 @@ def build_splits(
         ``(holdout, train_pairs, meta)``.
     """
     budget = cfg.steps * cfg.batch_size + cfg.holdout_pairs
-    all_pairs = load_pairs(cfg.shards, cfg.pair_columns, limit=budget)
+    all_pairs = load_pairs(cfg.shards, cfg.pair_columns, limit=budget, seed=cfg.seed)
     source_counts = {"primary": len(all_pairs)}
     for source in cfg.extra_sources:
         cap = source.get("limit") or 0
@@ -429,6 +471,7 @@ def build_splits(
             source["shards"],
             tuple(source["columns"]),
             limit=cap if cap else budget,
+            seed=cfg.seed,
         )
         source_counts[f"{source['columns'][0]}->{source['columns'][1]}"] = len(got)
         all_pairs.extend(got)
@@ -520,6 +563,13 @@ def build_splits(
             "source_counts": source_counts,
             "duplicates_removed": duplicates_removed,
             "contamination": contamination,
+            # B4 in docs/design/CORPUS-CONTRACT.md: "a cap whose method is unrecorded is
+            # not a cap". A receipt that records only the realised row count cannot tell
+            # a sample from a prefix, and those are different corpora.
+            "cap_sampling": {
+                "method": "reservoir (Algorithm R), one pass over every row of each source",
+                "seed": cfg.seed,
+            },
         },
     )
 
@@ -845,6 +895,7 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
             "fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
             "pair_columns": list(cfg.pair_columns),
             "sources": source_counts,
+            "cap_sampling": split_meta["cap_sampling"],
             "train_pairs": len(train_pairs),
             "holdout_pairs": len(holdout),
             "duplicates_removed": duplicates_removed,

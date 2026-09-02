@@ -1,4 +1,4 @@
-"""Corpus identity: what a receipt means when it says "this is the data I trained on".
+"""Corpus identity and corpus sampling: which rows a run used, and how it chose them.
 
 WHY THIS IS ITS OWN TOP-LEVEL MODULE
 `scripts/csd-quantize.py` HARD-FAILS on a fingerprint mismatch, because a quantization
@@ -24,11 +24,22 @@ Including every source changes the value for every existing receipt, which is ex
 situation where a bare mismatch is the wrong error: it says "your corpus drifted" when
 what changed is the arithmetic. Hence `CORPUS_FINGERPRINT_SCHEME`, recorded next to the
 fingerprint, and :func:`verify_corpus_fingerprint`, which distinguishes the two cases.
+
+WHY THE SAMPLER IS IN THE SAME FILE
+A cap and a fingerprint answer the same question from two sides: WHICH ROWS did this run
+train on. `load_pairs` used to answer it with "the first N in file order", so every
+"balance cap" in the system was a prefix and the corpus was defined by whatever ordering
+a shard happened to have. :func:`reservoir_sample` makes a cap mean a sample, and
+:func:`sampling_rng` makes that sample reproducible from the run seed -- which it has to
+be, because a receipt promises two runs of the same config are comparable.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
+import random
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -143,3 +154,69 @@ def verify_corpus_fingerprint(corpus: dict[str, Any], rebuilt: str, region: str)
             f"{recorded}. The held-out split would differ from the one training was judged "
             f"on, making any quantization comparison meaningless."
         )
+
+
+def sampling_rng(seed: int, shards: list[str], columns: Sequence[str]) -> random.Random:
+    """A per-source generator derived from the run seed.
+
+    Per-source rather than one shared generator: two sources drawn from the same stream
+    of randomness would have their accept/reject decisions correlated by row index, which
+    is a coupling nobody asked for and nobody would think to look for. Deriving the seed
+    from the run seed plus the source's identity makes each source's sample independent
+    while keeping the whole thing reproducible from `cfg.seed` alone.
+
+    Args:
+        seed: The run seed, straight from the config.
+        shards: The source's shard paths; only basenames are used, so moving a corpus
+            between mounts does not change which rows it yields.
+        columns: The columns read from that source.
+
+    Returns:
+        A seeded :class:`random.Random`.
+    """
+    payload = json.dumps(
+        {
+            "seed": seed,
+            "shards": sorted(Path(s).name for s in shards),
+            "columns": list(columns),
+        },
+        sort_keys=True,
+    )
+    derived = hashlib.blake2b(payload.encode("utf-8", "replace"), digest_size=8).digest()
+    return random.Random(int.from_bytes(derived, "big"))  # noqa: S311
+
+
+def reservoir_sample[T](stream: Iterable[T], limit: int, rng: random.Random) -> list[T]:
+    """Take a uniform sample of ``limit`` items from a stream of unknown length, in one pass.
+
+    Algorithm R. Every item in the source has the same probability of being kept,
+    whatever its position, which is the entire difference from "return as soon as the
+    limit is reached": that took the first ``limit`` rows in shard order, so a cap
+    justified as BALANCE silently became "whatever ordering this file happens to have".
+    Measured consequence: gooaq's 400,000-row cap was the first 13.3% of a 3,012,496-row
+    corpus, and `build_splits`' shuffle runs AFTER the cap, so nothing downstream could
+    repair it.
+
+    Costs a full pass over the source. That is the price of the correction and it is
+    unavoidable -- a uniform sample cannot be drawn without seeing what it is sampling
+    from. Memory stays O(limit), the same as before.
+
+    Args:
+        stream: Items in a deterministic order.
+        limit: How many to keep. Fewer items than that returns all of them, unsampled.
+        rng: A seeded generator; see :func:`sampling_rng`. Reproducibility is
+            load-bearing here -- receipts carry corpus fingerprints and two runs of the
+            same config must be comparable.
+
+    Returns:
+        Up to ``limit`` items, in an order determined by the stream and the generator.
+    """
+    reservoir: list[T] = []
+    for seen, item in enumerate(stream):
+        if seen < limit:
+            reservoir.append(item)
+            continue
+        index = rng.randrange(seen + 1)
+        if index < limit:
+            reservoir[index] = item
+    return reservoir

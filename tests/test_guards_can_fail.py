@@ -308,3 +308,97 @@ def test_a_scheme_change_reports_itself_rather_than_looking_like_corpus_drift() 
     verify_corpus_fingerprint(same_scheme, "0123456789abcdef", "retrieve")
     # A receipt with no fingerprint at all predates the check entirely; nothing to verify.
     verify_corpus_fingerprint({}, "fedcba9876543210", "retrieve")
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 3 -- a cap meant "take a prefix", never "take a sample".
+# ---------------------------------------------------------------------------------------
+
+
+def _skewed_stream(head: int, tail: int) -> list[str]:
+    """`head` rows of one group followed by `tail` of another -- a corpus's natural order.
+
+    Real shards look like this: gooaq, CodeSearchNet (long contiguous runs of one repo),
+    any corpus written per-source or per-shard. A prefix of such a file is not a sample
+    of it, and that is precisely the fact the old cap ignored.
+    """
+    return [f"head-{i}" for i in range(head)] + [f"tail-{i}" for i in range(tail)]
+
+
+def test_a_cap_samples_the_whole_source_instead_of_taking_a_prefix() -> None:
+    """The measured defect, in miniature: gooaq's 400,000 cap was the FIRST 13.3% of the file.
+
+    Taking a prefix here would return 400 `head` rows and zero `tail` rows. A uniform
+    sample must land near the population share instead -- 400 of 3,000 rows, ~13% head.
+    """
+    from cogsyndelta.corpus import reservoir_sample, sampling_rng
+
+    population = _skewed_stream(400, 2600)
+    sample = reservoir_sample(
+        iter(population), 400, sampling_rng(0, ["gooaq-0.parquet"], ["q", "a"])
+    )
+
+    assert len(sample) == 400
+    head_share = sum(1 for row in sample if row.startswith("head-")) / len(sample)
+    assert head_share < 0.5, f"cap took a prefix: {head_share:.0%} of the sample is the file head"
+    assert 0.05 < head_share < 0.25, (
+        f"sample is not near the 13.3% population share: {head_share:.0%}"
+    )
+
+
+def test_the_sample_is_reproducible_and_seed_dependent() -> None:
+    """Reproducibility is load-bearing: receipts carry corpus fingerprints and two runs of
+    the same config have to be comparable. A cap that sampled differently every run would
+    make every receipt a one-off."""
+    from cogsyndelta.corpus import reservoir_sample, sampling_rng
+
+    population = _skewed_stream(400, 2600)
+    shards, columns = ["gooaq-0.parquet"], ["q", "a"]
+
+    first = reservoir_sample(iter(population), 400, sampling_rng(0, shards, columns))
+    again = reservoir_sample(iter(population), 400, sampling_rng(0, shards, columns))
+    other_seed = reservoir_sample(iter(population), 400, sampling_rng(1, shards, columns))
+
+    assert first == again
+    assert first != other_seed
+
+
+def test_two_sources_do_not_sample_in_lockstep() -> None:
+    """Sources get independent generators, so their accept/reject decisions are not
+    correlated by row index -- a coupling nobody would think to look for."""
+    from cogsyndelta.corpus import reservoir_sample, sampling_rng
+
+    population = _skewed_stream(400, 2600)
+    gooaq = reservoir_sample(
+        iter(population), 400, sampling_rng(0, ["gooaq-0.parquet"], ["q", "a"])
+    )
+    nq = reservoir_sample(iter(population), 400, sampling_rng(0, ["nq-0.parquet"], ["q", "a"]))
+    assert gooaq != nq
+
+
+def test_a_cap_larger_than_the_source_keeps_everything_in_order() -> None:
+    """The common case must be untouched: no cap binding means no sampling at all."""
+    from cogsyndelta.corpus import reservoir_sample, sampling_rng
+
+    population = _skewed_stream(10, 10)
+    kept = reservoir_sample(iter(population), 500, sampling_rng(0, ["x.parquet"], ["a", "b"]))
+    assert kept == population
+
+
+def test_load_pairs_cap_spans_the_whole_shard(tmp_path) -> None:
+    """End to end through parquet: the cap must not inherit the file's ordering."""
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import load_pairs
+
+    groups = _skewed_stream(200, 1300)
+    shard = tmp_path / "skewed.parquet"
+    _write_pairs(shard, groups, [f"positive for {row}" for row in groups])
+
+    pairs = load_pairs([str(shard)], ("a", "b"), limit=200, seed=0)
+    assert len(pairs) == 200
+    heads = sum(1 for anchor, _ in pairs if anchor.startswith("head-"))
+    # The pre-fix `return`-on-limit gave 200 heads out of 200. 200 of 1,500 rows are
+    # heads, so a sample should hold roughly 27.
+    assert heads < 100, f"load_pairs took a prefix: {heads}/200 rows are the file head"
+    assert load_pairs([str(shard)], ("a", "b"), limit=200, seed=0) == pairs
