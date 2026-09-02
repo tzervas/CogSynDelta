@@ -9,5 +9,6 @@ steps 1-3 would invert the curriculum.
 """
 
 from cogsyndelta.model.causal_lm import CausalLM, CausalLMConfig
+from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig, ViTEncoder
 
-__all__ = ["CausalLM", "CausalLMConfig"]
+__all__ = ["IJEPA", "CausalLM", "CausalLMConfig", "JEPAConfig", "ViTEncoder"]
