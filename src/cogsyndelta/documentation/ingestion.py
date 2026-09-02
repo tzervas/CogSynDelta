@@ -7,11 +7,26 @@ and official documentation sites, then preparing it for the RAG system.
 import json
 import re
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 from llama_index.core import Document
+
+
+def _checked_urlopen(url_or_req, *, timeout: int = 10):
+    """urlopen restricted to http/https.
+
+    Bare urlopen honours file:, ftp: and custom schemes, so a URL that reaches this
+    from config or an API response can read local files. Validate before opening.
+    """
+    target = url_or_req if isinstance(url_or_req, str) else url_or_req.full_url
+    scheme = urllib.parse.urlparse(target).scheme.lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(f"refusing non-http(s) URL scheme {scheme!r}: {target}")
+    # Scheme is validated immediately above; this IS the guard.
+    return urllib.request.urlopen(url_or_req, timeout=timeout)  # nosec B310
 
 
 class DocumentIngestionPipeline:
@@ -44,7 +59,7 @@ class DocumentIngestionPipeline:
         url += "/json"
 
         try:
-            with urllib.request.urlopen(url, timeout=10) as response:
+            with _checked_urlopen(url, timeout=10) as response:
                 data = json.loads(response.read())
                 actual_version = data["info"]["version"]
                 return data, actual_version
@@ -66,7 +81,7 @@ class DocumentIngestionPipeline:
         url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/tags/{tag}"
 
         try:
-            with urllib.request.urlopen(url, timeout=10) as response:
+            with _checked_urlopen(url, timeout=10) as response:
                 data = json.loads(response.read())
                 return data.get("body", "")
         except Exception as e:
@@ -83,7 +98,7 @@ class DocumentIngestionPipeline:
             Content as string or None
         """
         try:
-            with urllib.request.urlopen(url, timeout=30) as response:
+            with _checked_urlopen(url, timeout=30) as response:
                 content = response.read()
                 # Try to decode as UTF-8
                 return content.decode("utf-8", errors="ignore")

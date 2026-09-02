@@ -57,3 +57,30 @@ def test_latent_vae_is_cognitive_region() -> None:
     assert isinstance(recon, torch.Tensor)
     assert mu.shape[-1] == 4
     assert logvar.shape[-1] == 4
+
+
+def test_calibrated_quant_fidelity_is_monotonic_in_bits() -> None:
+    """More bits must never mean worse fidelity.
+
+    Regression: the code was clamped to (1 << bits) - 1 and then cast to uint8
+    unconditionally, so any bits > 8 truncated mod 256 with no error and no warning --
+    the blob still reconstructed to plausible-looking numbers. CompressionConfig allows
+    quant_bits ge=2 le=16, so `poc.cli compress --bits 12` reached it directly.
+    Measured before the fix: bits=8 -> 0.99999, bits=12 -> 0.050, bits=16 -> 0.021.
+    """
+    torch.manual_seed(0)
+    x = torch.randn(64, 128)
+
+    fidelities = []
+    for bits in (2, 4, 8, 12, 16):
+        compactor = CalibratedQuantCompactor(bits=bits)
+        blob = compactor.compact(x)
+        recon = compactor.reconstruct(blob)
+        fid = torch.nn.functional.cosine_similarity(x.flatten(), recon.flatten(), dim=0).item()
+        fidelities.append((bits, fid))
+
+    for bits, fid in fidelities:
+        assert fid > 0.9, f"bits={bits} produced fidelity {fid:.4f}; likely dtype truncation"
+
+    ordered = [f for _, f in fidelities]
+    assert ordered == sorted(ordered), f"fidelity not monotonic in bits: {fidelities}"

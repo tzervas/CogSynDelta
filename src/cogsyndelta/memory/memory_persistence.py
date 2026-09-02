@@ -46,6 +46,39 @@ DEFAULT_GPU_TIMEOUT_S = 3600.0
 # Module logger with skip tracking for graceful degradation
 _logger = get_logger(__name__)
 
+
+# --- restricted unpickling ------------------------------------------------------------
+# These files are self-written, but "self-written" is a property of the current
+# deployment, not of the format. A bare pickle.load turns any writable path into code
+# execution, so the reader is constrained to the classes these payloads actually hold.
+_SAFE_PICKLE_GLOBALS: dict[str, set[str]] = {
+    "torch": {"Tensor", "Size", "device", "dtype"},
+    "torch._utils": {"_rebuild_tensor", "_rebuild_tensor_v2", "_rebuild_device_tensor_from_numpy"},
+    "torch.storage": {"_load_from_bytes", "TypedStorage", "UntypedStorage"},
+    "collections": {"deque", "OrderedDict", "defaultdict"},
+    "datetime": {"datetime", "timedelta", "date", "time", "timezone"},
+    "cogsyndelta.memory.memory_persistence": {"MemoryMetadata"},
+}
+
+
+class _RestrictedUnpickler(pickle.Unpickler):
+    """Unpickler that refuses any global outside _SAFE_PICKLE_GLOBALS."""
+
+    def find_class(self, module: str, name: str) -> Any:
+        allowed = _SAFE_PICKLE_GLOBALS.get(module)
+        if allowed is not None and name in allowed:
+            return super().find_class(module, name)
+        raise pickle.UnpicklingError(
+            f"refusing to unpickle {module}.{name}: not in the memory-store allow-list. "
+            "If this is a legitimate new field, add it to _SAFE_PICKLE_GLOBALS explicitly."
+        )
+
+
+def _safe_pickle_load(fh: Any) -> Any:
+    """pickle.load restricted to the memory store's own types."""
+    return _RestrictedUnpickler(fh).load()
+
+
 # Import dense differential encoding
 try:
     from cogsyndelta.memory.dense_embeddings import DenseDifferentialMemoryStore
@@ -469,7 +502,7 @@ class PersistentMemoryBank(nn.Module):
                 filename = self.long_term_index[mem_hash]
                 try:
                     with open(filename, "rb") as f:
-                        data = pickle.load(f)
+                        data = _safe_pickle_load(f)
                         retrieved_list.append(data["embedding"].to(query.device))
                         metadata_list.append(data["metadata"])
                 except (FileNotFoundError, pickle.UnpicklingError, KeyError) as e:
@@ -509,7 +542,7 @@ class PersistentMemoryBank(nn.Module):
     def load_checkpoint(self, checkpoint_path: str) -> None:
         """Load temporal continuity checkpoint."""
         with open(checkpoint_path, "rb") as f:
-            checkpoint = pickle.load(f)
+            checkpoint = _safe_pickle_load(f)
 
         self.working_memory = checkpoint["working_memory"].to(self.working_memory.device)
         self.working_metadata = checkpoint["working_metadata"]

@@ -200,7 +200,14 @@ class CalibratedQuantCompactor:
         vmin = x_cpu.min(dim=0).values
         vmax = x_cpu.max(dim=0).values
         scale = (vmax - vmin).clamp_min(1e-8) / self._levels
-        q = torch.round((x_cpu - vmin) / scale).clamp(0, self._levels).to(torch.uint8)
+        # Storage dtype must hold self._levels. bits<=8 fits uint8; 9..16 needs uint16.
+        # Casting a 12- or 16-bit code to uint8 truncates mod 256 SILENTLY -- no error,
+        # no warning, just a corrupted blob that still reconstructs to plausible-looking
+        # numbers. Measured before this fix: bits=12 -> fidelity 0.050, bits=16 -> 0.021,
+        # while bits=8 gave 0.99999. CompressionConfig.quant_bits allows ge=2, le=16, so
+        # that path was reachable straight from `poc.cli compress --bits 12`.
+        store_dtype = torch.uint8 if self.bits <= 8 else torch.uint16
+        q = torch.round((x_cpu - vmin) / scale).clamp(0, self._levels).to(store_dtype)
         buf = io.BytesIO()
         torch.save(
             {
