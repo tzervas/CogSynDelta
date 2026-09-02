@@ -15,6 +15,8 @@ every metric was batch-composition dependent.
 | id | task | gate | status |
 |----|------|------|--------|
 | P0.1 | Retrain code, compress, retrieve with attention masking fixed | 3 receipts, all `beats_untrained` true | wip |
+| P0.6 | **Make the corpus shuffle unconditional** | code's holdout spans >2 repos; batch negatives are cross-repo | todo — BLOCKS P0.2/P0.3 |
+| P0.7 | Retrain code + compress AGAIN after P0.6 | receipts on a representative holdout | todo |
 | P0.2 | Re-run benchmark battery on retrained regions | eval receipts written, anisotropy < 0.9 | todo |
 | P0.3 | Re-run PTQ against retrained fp32 baselines | quant receipts, drop within 0.01 | todo |
 | P0.4 | Fix csd-storage-tier verification | manifest honours the SAME excludes as the rsync | done — homelab SSD 1.5T -> 2.1T free |
@@ -25,6 +27,31 @@ every metric was batch-composition dependent.
 receipts/checkpoints/manifest.json/*.log, but the manifest hashes every file on both sides,
 so a mismatch is guaranteed. The hot copy was correctly kept. Fix the comparison, re-verify,
 and only then reclaim. Do NOT delete anything until a corrected manifest matches.
+
+### P0.6 detail — the measurement is not what it looks like
+
+`build_splits` shuffles only when `extra_sources` is non-empty:
+
+    if len(cfg.extra_sources) > 1 or cfg.extra_sources:
+
+`code` and `compress` have ONE source each, so they are never shuffled. `retrieve` has
+three, so it is. Measured consequence for `code`:
+
+  - the first 3000 rows of shard 0 span 5 repositories; pandas-dev/pandas alone is 1626
+  - **the first 512 rows -- the entire holdout -- span 2 repositories**
+
+So recall@1 0.9355 is "tell pandas docstrings apart from each other", not "retrieve the
+right function from Python". The in-batch negatives are same-repo and therefore easy, and
+the held-out set is a domain-shifted slice rather than a sample.
+
+The comment directly above that conditional already states the principle -- contiguous
+blocks make negatives same-domain, which "inflates in-batch accuracy while teaching the
+model less". The reasoning was correct and the condition was wrong: it applies the fix
+ACROSS sources and never WITHIN one.
+
+Fix is a one-line condition change, but it invalidates every single-source number measured
+so far. `retrieve` is unaffected. Do NOT compare a post-fix `code` number against 0.9355 or
+0.9590 as though the difference were caused by training.
 
 ## P1 — Repo hygiene. Nearly done.
 
