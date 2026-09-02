@@ -222,8 +222,6 @@ COVERAGE NEEDED, per region and then for the composed model:
 | P2.5c | Fetch, with per-source caps | no source exceeds its cap; balance recorded in the receipt | todo |
 | P2.5d | Reserve non-overlapping material for the composed model | held-out from every region's training set | todo |
 
-NOTE: session rate limit hit 2026-09-02 (resets 10pm ET). Dispatch P2.5 work after reset
-rather than starting agents that will die half-finished.
 
 ## P3 — Visual region maturation
 
