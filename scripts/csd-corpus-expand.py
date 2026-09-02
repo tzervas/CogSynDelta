@@ -283,13 +283,22 @@ def fetch(ds: Dataset, token: str | None, apply: bool, max_used_fraction: float)
     ds.local.mkdir(parents=True, exist_ok=True)
     started = time.time()
     rows = 0
-    for split in ds.splits:
-        data = load_dataset(
-            ds.repo_id, ds.config or None, split=split, token=token, streaming=False
-        )
-        out = ds.local / f"{split}.parquet"
-        data.to_parquet(str(out))
-        rows += data.num_rows
+    try:
+        for split in ds.splits:
+            data = load_dataset(
+                ds.repo_id, ds.config or None, split=split, token=token, streaming=False
+            )
+            out = ds.local / f"{split}.parquet"
+            data.to_parquet(str(out))
+            rows += data.num_rows
+    except Exception as exc:
+        # A dataset already on disk with no MANIFEST.json still reads as "not present"
+        # (see is_present()), so a retry after this is fixed re-fetches cleanly -- this
+        # does not touch the licence gate, it only stops one entry's failure from
+        # aborting every entry after it in the catalogue.
+        res["status"] = "error"
+        res["reason"] = f"{type(exc).__name__}: {exc}"
+        return res
     manifest = {
         **asdict(ds),
         "fetched_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -331,13 +340,19 @@ def main() -> int:
 
     token = os.environ.get("HF_TOKEN")
     wanted = {r.strip() for r in args.regions.split(",") if r.strip()}
-    ok = refused = 0
+    ok = refused = errored = 0
     for ds in CATALOGUE:
         if wanted and ds.region not in wanted:
             continue
         res = fetch(ds, token, args.apply, args.max_used_fraction)
         status = res["status"]
-        mark = {"fetched": "+", "present": "=", "would fetch": ".", "REFUSED": "!"}.get(status, "?")
+        mark = {
+            "fetched": "+",
+            "present": "=",
+            "would fetch": ".",
+            "REFUSED": "!",
+            "error": "x",
+        }.get(status, "?")
         label = f"{ds.repo_id}" + (f":{ds.config}" if ds.config else "")
         print(f"  {mark} {ds.region:<10} {label:<46} {status}")
         if "reason" in res:
@@ -346,8 +361,10 @@ def main() -> int:
             ok += 1
         elif status == "REFUSED":
             refused += 1
+        elif status == "error":
+            errored += 1
 
-    print(f"\n  {ok} usable, {refused} refused on licence grounds")
+    print(f"\n  {ok} usable, {refused} refused on licence grounds, {errored} errored")
     return 0
 
 
