@@ -80,6 +80,22 @@ class PretrainConfig:
     2h of GPU time that could have been the next experiment."""
     max_len: int = 128
     seed: int = 0
+    bf16: bool = True
+    """Run the forward and backward under `torch.autocast(dtype=torch.bfloat16)`.
+
+    Measured 1.98x at two independent batch sizes on the 3090 Ti (sm_86), with activation
+    memory at 0.573x. Autocast, never `model.to(torch.bfloat16)`: master weights, the
+    optimizer, the gradient clip and the saved `state_dict` all stay fp32, so a
+    checkpoint written here still loads and evaluates on the fleet's 1080 Ti (sm_61,
+    which has no bf16 at all) and post-training quantization sees exactly what it saw
+    before. Ignored -- silently, and correctly -- on any device without bf16 support;
+    such a run simply trains in fp32 at roughly twice the step time.
+
+    True by default because it is the right choice on every card the fleet trains on
+    today, and settable because it is the one change in this file that could plausibly
+    cost accuracy: `False` is the A/B arm that separates "bf16 hurt recall" from
+    "something else did".
+    """
     device: str = "auto"
     eval_every: int = 100
     holdout_pairs: int = 512
@@ -543,6 +559,12 @@ def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
         "grad_clip": cfg.grad_clip,
         "max_len": cfg.max_len,
         "seed": cfg.seed,
+        # Precision is a resume-relevant field, not an administrative one: continuing an
+        # fp32-trained checkpoint under bf16 (or the reverse) is a different run from
+        # either, and the whole point of this dict is to refuse exactly that rather than
+        # produce a model that is neither. The refusal names the field, so an operator
+        # who meant it can move the checkpoint aside and start fresh.
+        "bf16": cfg.bf16,
         "holdout_pairs": cfg.holdout_pairs,
         "encoder": asdict(cfg.encoder),
         "tokenizer_path": cfg.tokenizer_path,
@@ -697,6 +719,18 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     )
     tokenise_s = time.time() - tokenise_start
 
+    # bf16 for the forward and backward; fp32 for everything that is kept or judged.
+    # Gated on the DEVICE rather than assumed: Pascal (sm_61, the fleet's 1080 Ti) has no
+    # bf16, and a run there must fall back to fp32 instead of failing or -- worse --
+    # emulating it slowly. `torch.autocast` is re-entrant, so one context object is
+    # constructed here and re-entered per step rather than rebuilt 8,000 times.
+    amp = cfg.bf16 and device.type == "cuda" and torch.cuda.is_bf16_supported()
+    autocast = torch.autocast(device.type, dtype=torch.bfloat16, enabled=amp)
+    if cfg.bf16 and not amp:
+        print(
+            f"    {cfg.region}: bf16 requested but unsupported on {device}; using fp32", flush=True
+        )
+
     session_start = time.time()
     model.train()
     for step in range(start_step, cfg.steps):
@@ -711,7 +745,13 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         # in tests/test_token_cache.py. The tokenizer is out of the loop entirely.
         a_ids, a_mask = anchor_tokens.batch(lo, hi, device)
         p_ids, p_mask = positive_tokens.batch(lo, hi, device)
-        loss, stats = info_nce(model(a_ids, a_mask), model(p_ids, p_mask))
+        # `info_nce` casts back to fp32 for `normalize` and the logits matmul; autocast
+        # covers the two encoder towers, which is where the FLOPs are. `backward` is
+        # deliberately OUTSIDE the context -- autocast is a forward-only decision, and
+        # the gradients it produces are already fp32 against fp32 master weights, so no
+        # `GradScaler` is needed (that is fp16's problem; bf16 has fp32's exponent range).
+        with autocast:
+            loss, stats = info_nce(model(a_ids, a_mask), model(p_ids, p_mask))
         opt.zero_grad()
         loss.backward()
         if cfg.grad_clip > 0:
@@ -807,6 +847,17 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         # `ragged_ratio` is the guard on the padding trap -- it is the fraction of
         # `n_texts * max_len` actually stored, so a value at 1.0 means something padded
         # the corpus up front and the GPU is now chewing padding.
+        # Recorded because "what precision was this trained in" is the first question
+        # asked of any receipt whose recall moved, and reconstructing it from a config
+        # flag plus the device's capabilities is exactly the kind of inference that goes
+        # wrong a month later.
+        "precision": {
+            "autocast": "bf16" if amp else "fp32",
+            "requested_bf16": cfg.bf16,
+            "master_weights": "fp32",
+            "logits": "fp32 (forced in info_nce)",
+            "eval": "fp32",
+        },
         "tokenisation": {
             "mode": "pre-tokenised ragged corpus cache",
             "prepare_s": round(tokenise_s, 2),

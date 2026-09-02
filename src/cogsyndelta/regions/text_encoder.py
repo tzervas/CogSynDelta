@@ -152,6 +152,10 @@ def info_nce(
     function for a docstring, and the docstring for a function. Training one direction
     only produces an encoder that is good at one and mediocre at the other.
 
+    The loss is computed in fp32 whatever dtype the encoders produced. That is not
+    defensive habit; it is required once the forward runs under bf16 autocast, and the
+    comment on the cast below says exactly why.
+
     Args:
         anchors: ``[B, D]``.
         positives: ``[B, D]``, aligned with ``anchors``.
@@ -168,8 +172,20 @@ def info_nce(
     if anchors.size(0) < 2:
         raise ValueError("InfoNCE needs at least 2 examples: with one there are no negatives")
 
-    a = F.normalize(anchors, dim=-1)
-    p = F.normalize(positives, dim=-1)
+    # fp32 FOR THE LOSS, ALWAYS -- including under a bf16 autocast around the encoders.
+    # bf16 carries 8 mantissa bits, and these logits are divided by temperature=0.05,
+    # i.e. multiplied by 20, so a unit-cosine logit lands near +-20 where the bf16 quantum
+    # is ~0.125. A softmax over a batch of 1,280 classes on logits that coarse is a real
+    # perturbation of the ranking, and it would surface as a quiet recall loss that looks
+    # exactly like seed variance. `F.cross_entropy` is on autocast's fp32 promote-list and
+    # upcasts itself; the matmul feeding it does NOT, which is the half that has to be
+    # forced here. It also keeps `emb_std` -- the collapse signal -- an fp32 number.
+    #
+    # The cost is nil twice over: `.float()` on an fp32 tensor returns it unchanged, so
+    # the fp32 path is bit-identical to before this line existed, and at batch 1,280 the
+    # matmul is 0.4 GFLOP against a step that already does hundreds.
+    a = F.normalize(anchors.float(), dim=-1)
+    p = F.normalize(positives.float(), dim=-1)
     logits = (a @ p.T) / temperature
     labels = torch.arange(a.size(0), device=a.device)
 
