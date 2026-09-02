@@ -5,12 +5,10 @@ from cogsyndelta.poc.train import train_latent_vae_on_public_split
 @pytest.mark.cpu
 def test_latent_vae_pretrain_loss_decreases_on_wikitext2_train():
     torch.manual_seed(42)
-    config = {
-        'input_dim': 1024,  # Adjust based on PoC
-        'batch_size': 8,
-        'steps': 20,
-        'split': 'train'
-    }
-    result = train_latent_vae_on_public_split(config)
-    assert result['last_loss'] < result['first_loss'], 'Loss did not decrease'
-    assert result['split'] == 'train', 'Incorrect split'
+    result = train_latent_vae_on_public_split(
+        input_dim=768,  # Adjust this based on the actual input dimension of your PoC
+        steps=20,
+        batch_size=8
+    )
+    assert result['last_loss'] < result['first_loss'], "Loss did not decrease"
+    assert result['split'] == 'train', "Split is not 'train'"
