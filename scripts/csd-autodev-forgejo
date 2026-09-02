@@ -163,13 +163,13 @@ def cmd_wait(ns: argparse.Namespace) -> int:
     """Poll combined status. Does not merge. Honest red stays red."""
     repo = repo_id(ns.repo)
     deadline = time.time() + ns.timeout
-    last = ""
+    last: object = object()  # sentinel; no state value can equal it
     while time.time() < deadline:
         code, body = api("GET", f"/repos/{repo}/commits/{ns.sha}/status")
         state = body.get("state") if isinstance(body, dict) else "error"
         if state != last:
             print(json.dumps({"http": code, "state": state}), flush=True)
-            last = str(state)
+            last = state
         if state in {"success", "failure", "error"}:
             return 0 if state == "success" else 1
         time.sleep(ns.poll)
@@ -243,7 +243,18 @@ def evaluate_gate(
 
 
 def required_contexts(repo: str, branch: str) -> list[str]:
-    """Branch-protection status contexts; empty means all posted checks."""
+    """Branch-protection status contexts; empty means all posted checks.
+
+    CSD_REQUIRED_CONTEXTS (comma-separated) overrides the API. Needed because
+    this repo has no branch protection rules -- the endpoint returns [] for an
+    owner token and 403 for the autodev token -- so the gate fell back to
+    judging every posted status, including ones that are `skipped` by design
+    and always will be. That made the gate unsatisfiable no matter how green
+    the real checks went.
+    """
+    override = os.environ.get("CSD_REQUIRED_CONTEXTS", "").strip()
+    if override:
+        return [c.strip() for c in override.split(",") if c.strip()]
     _code, body = api("GET", f"/repos/{repo}/branch_protections")
     if not isinstance(body, list):
         return []

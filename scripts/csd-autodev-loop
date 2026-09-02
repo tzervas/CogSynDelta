@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -49,6 +50,29 @@ LOCAL_WF = "csd-python-first-drive.yml"
 PING_MAX = 2048
 STALL_N = 2
 IDENTITY = "autodev"
+
+
+def _flag(name: str, default: str = "0") -> bool:
+    raw = os.environ.get(name, default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def need_grok_enabled() -> bool:
+    """Feature flag. Default off: autodev must not wake hosted Grok."""
+    return _flag("CSD_NEED_GROK") or _flag("CSD_NEED_GROK_ENABLED")
+
+
+def stop_retry_enabled() -> bool:
+    """Old stall-stop. Default off."""
+    return _flag("CSD_STOP_RETRY")
+
+
+def approach_retries() -> int:
+    try:
+        n = int(os.environ.get("CSD_APPROACH_RETRIES", "3"))
+    except ValueError:
+        n = 3
+    return max(1, n)
 
 
 def _read_json(path: Path) -> dict:
@@ -368,7 +392,39 @@ def apply_proposal(payload: dict, dest: Path, worktree: str | None = None) -> di
         return {"ok": False, "error": "escaped worktree"}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(str(payload.get("content")), encoding="utf-8")
-    return {"ok": True, "wrote": str(target), "path": rel}
+    norm = normalize_python(target)
+    return {"ok": True, "wrote": str(target), "path": rel, "normalized": norm}
+
+
+RUFF_PIN = os.environ.get("CSD_RUFF_PIN", "ruff@0.14.13")
+
+
+def normalize_python(target: Path) -> dict:
+    """Format generated Python before it is committed.
+
+    CI lints what we write with a pinned ruff (.github/workflows/ci.yml
+    RUFF_VERSION). Model output routinely lands with unsorted imports (I001)
+    and no trailing newline (W292), which fails `ruff check` and
+    `ruff format --check` deterministically -- so every iteration burned on a
+    self-inflicted red the loop could never clear by rewriting the test.
+    Normalize at the source instead. Pin matches CI so local and CI agree.
+    """
+    if target.suffix != ".py":
+        return {"skipped": "not python"}
+    text = target.read_text(encoding="utf-8")
+    if text and not text.endswith("\n"):
+        target.write_text(text + "\n", encoding="utf-8")
+    uvx = shutil.which("uvx")
+    if not uvx:
+        return {"normalized": "newline-only", "note": "uvx absent"}
+    out: dict = {}
+    for label, argv in (
+        ("check", [uvx, RUFF_PIN, "check", "--fix", "--quiet", str(target)]),
+        ("format", [uvx, RUFF_PIN, "format", "--quiet", str(target)]),
+    ):
+        rc, _text = _run(argv, timeout=180)
+        out[label] = rc
+    return {"normalized": "ruff", "rc": out}
 
 
 def beat(extra: dict | None = None) -> None:
@@ -386,7 +442,8 @@ def beat(extra: dict | None = None) -> None:
         "cluster": cluster_view(),
         "ti": ti_ok(),
         "need_grok": {
-            "need": mailbox.get("need") is True,
+            "need": False if not need_grok_enabled() else mailbox.get("need") is True,
+            "enabled": need_grok_enabled(),
             "path": str(GROK_NEED),
         },
     }
@@ -399,11 +456,17 @@ def beat(extra: dict | None = None) -> None:
 
 
 def ensure_idle_ping() -> None:
-    """Create the mailbox so GET /api/grok-need always has a file."""
+    """Create or force-clear the mailbox. Flag off always writes need=false."""
+    GROK_NEED.parent.mkdir(parents=True, exist_ok=True)
+    if not need_grok_enabled():
+        GROK_NEED.write_text(
+            json.dumps({"need": False, "enabled": False}) + "\n",
+            encoding="utf-8",
+        )
+        return
     if GROK_NEED.is_file():
         return
-    GROK_NEED.parent.mkdir(parents=True, exist_ok=True)
-    GROK_NEED.write_text(json.dumps({"need": False}) + "\n", encoding="utf-8")
+    GROK_NEED.write_text(json.dumps({"need": False, "enabled": True}) + "\n", encoding="utf-8")
 
 
 def cap_ping(rec: dict) -> dict:
@@ -455,7 +518,9 @@ def write_need_grok(
     paths: list[str] | None = None,
     tried: list[str] | None = None,
 ) -> dict:
-    """Write the operator-wakes mailbox. Never spawn grok or attach dumps."""
+    """Write the operator-wakes mailbox. No-op when CSD_NEED_GROK is off."""
+    if not need_grok_enabled():
+        return {"need": False, "enabled": False, "identity": IDENTITY}
     ensure_idle_ping()
     fp = ping_fingerprint(goal, blocker, question)
     cur = _read_json(GROK_NEED)
@@ -501,6 +566,8 @@ def maybe_ping_stall(
     paths: list[str] | None = None,
     tried: list[str] | None = None,
 ) -> dict:
+    if not need_grok_enabled() or not stop_retry_enabled():
+        return {"need": False, "enabled": False, "stop_retry": False, "n": 0}
     n = note_stall(ping_fingerprint(goal, blocker, question))
     if n < STALL_N:
         return {"need": False, "n": n}
@@ -570,17 +637,34 @@ def git_cmd(args: list[str], cwd: Path) -> dict:
     return {"ok": rc == 0, "rc": rc, "stdout": text}
 
 
+def _last_json_object(text: str) -> dict:
+    """Return the LAST complete JSON object in *text*.
+
+    `csd-autodev-forgejo wait` prints one object per state change
+    (pending -> failure), so its output holds several. Decoding from the first
+    "{" to EOF raises "Extra data", which silently discarded the CI result and
+    left the loop blind to its own red checks -- the `wait state=` in the logs.
+    """
+    decoder = json.JSONDecoder()
+    idx = 0
+    last: dict = {}
+    while True:
+        start = text.find("{", idx)
+        if start < 0:
+            return last
+        try:
+            obj, end = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            idx = start + 1
+            continue
+        if isinstance(obj, dict):
+            last = obj
+        idx = end
+
+
 def forgejo_cmd(args: list[str], timeout: int = 90) -> dict:
     rc, text = _run([str(FORGEJO_CLI), *args], timeout=timeout)
-    rec: dict = {}
-    start = text.find("{")
-    if start >= 0:
-        try:
-            rec = json.loads(text[start:])
-        except json.JSONDecodeError:
-            rec = {}
-    if not isinstance(rec, dict):
-        rec = {}
+    rec = _last_json_object(text)
     rec.setdefault("ok", rc == 0)
     rec["rc"] = rc
     return rec
@@ -743,8 +827,9 @@ def follow_pr(last: dict) -> dict:
     }
 
 
-def implement(goal: str) -> dict:
+def implement(goal: str, extra: dict | None = None) -> dict:
     """One local/code slice. No WAN. No hosted Grok."""
+    extra = extra or {}
     dest = dest_worktree(goal)
     slice_pack = ""
     if is_region_pretrain(goal) and REGION_PACK.is_file():
@@ -773,6 +858,11 @@ def implement(goal: str) -> dict:
         + "Handoff (trim):\n"
         + (HAND.read_text(encoding="utf-8")[:1800] if HAND.is_file() else "")
     )
+    if extra.get("change_approach"):
+        brief += (
+            f"\nCHANGE APPROACH (id={int(extra.get('approach_id') or 0)}). "
+            "Do not repeat the previous patch. Different file or different fix.\n"
+        )
     rc, text = _run(
         [str(QUEUE), "complete", "--kind", "autodev", "--prompt", brief, "--timeout", "240"],
         timeout=260,
@@ -780,7 +870,29 @@ def implement(goal: str) -> dict:
     return {"rc": rc, "text": text[:8000]}
 
 
-def tick() -> dict:
+def plan_next_approach(last: dict, rec: dict) -> dict:
+    """After N fails of one tactic, change approach. Do not stop the worker."""
+    sha = str(rec.get("sha") or "")
+    same = bool(sha) and sha == str(last.get("implemented_sha") or "")
+    fails = int(last.get("approach_fails") or 0)
+    aid = int(last.get("approach_id") or 0)
+    if same:
+        fails += 1
+    else:
+        fails = 1
+    change = same and fails >= approach_retries()
+    out = {
+        "approach_fails": 0 if change else fails,
+        "approach_id": aid + 1 if change else aid,
+        "change_approach": change,
+        "last_error": str(rec.get("state") or rec.get("error") or "ci-failure"),
+    }
+    if change or not same:
+        out["retry_implement"] = True
+    return out
+
+
+def tick() -> dict:  # noqa: PLR0911 - guard-style early exits; nesting these reads worse
     """One autodev cycle: pick, implement or wait, land, merge-when-green."""
     ensure_idle_ping()
     ensure_steer_cluster()
@@ -791,13 +903,17 @@ def tick() -> dict:
     if steered_pause():
         return {"ok": True, "skipped": "steer.pause"}
     last = _read_json(HEART).get("last") if isinstance(_read_json(HEART).get("last"), dict) else {}
+    inflight_extra: dict = {}
     if last.get("number") and last.get("sha") and not last.get("merged"):
         rec = follow_pr(last)
         rec["goal"] = str(last.get("goal") or next_open_goal())
         rec["ti"] = ti_ok()
         if rec.get("merged") and rec.get("required_ran"):
             rec["next_goal"] = advance_next_goal(str(rec.get("goal") or ""))
-        elif rec.get("failed"):
+            beat({"last": rec})
+            return rec
+        if rec.get("failed"):
+            rec.update(plan_next_approach(last, rec))
             rec["ping"] = maybe_ping_stall(
                 str(rec.get("goal") or ""),
                 "required pytest red",
@@ -806,12 +922,18 @@ def tick() -> dict:
                 paths=["scripts/csd-autodev-loop"],
                 tried=["forgejo/status", "forgejo/wait", "merge-gate"],
             )
-        beat({"last": rec})
-        return rec
-    goal = next_open_goal()
+            if rec.get("retry_implement"):
+                inflight_extra = rec
+            else:
+                beat({"last": rec})
+                return rec
+        else:
+            beat({"last": rec})
+            return rec
+    goal = str(inflight_extra.get("goal") or next_open_goal())
     if not goal:
         return {"ok": True, "skipped": "no open goal"}
-    impl = implement(goal)
+    impl = implement(goal, inflight_extra)
     if impl.get("rc") != 0:
         wf = launch_local_workflow(goal, "queue-failed")
         rec = {
