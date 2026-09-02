@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -44,9 +45,14 @@ class PretrainConfig:
     region: str
     pair_columns: tuple[str, str]
     shards: list[str]
-    steps: int = 500
-    batch_size: int = 64
+    steps: int = 2000
+    batch_size: int = 256
     lr: float = 3e-4
+    warmup_steps: int = 200
+    grad_clip: float = 1.0
+    checkpoint_every: int = 500
+    """0 disables. Long GPU runs need resumability; a 2h run lost to a transient is
+    2h of GPU time that could have been the next experiment."""
     max_len: int = 128
     seed: int = 0
     device: str = "auto"
@@ -55,6 +61,20 @@ class PretrainConfig:
     encoder: TextEncoderConfig = field(default_factory=lambda: TextEncoderConfig(dim=256, depth=4))
     tokenizer_path: str = "/mnt/fleet-datasets/tritter/gpt2_tokenizer.json"
     out_dir: str = "receipts"
+
+
+def _lr_at(step: int, cfg: PretrainConfig) -> float:
+    """Linear warmup then cosine decay.
+
+    Warmup is not decoration here. Measured on CodeSearchNet: a random-init encoder
+    already scores recall@1 0.40 from lexical overlap, and stepping straight in at peak
+    LR destroys that before anything replaces it -- recall fell to 0.02 and never
+    recovered. Warmup lets the model leave that basin gradually.
+    """
+    if step < cfg.warmup_steps:
+        return cfg.lr * step / max(1, cfg.warmup_steps)
+    progress = (step - cfg.warmup_steps) / max(1, cfg.steps - cfg.warmup_steps)
+    return cfg.lr * 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
 
 
 def _resolve_device(spec: str) -> torch.device:
@@ -217,10 +237,19 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     params = sum(p.numel() for p in model.parameters())
 
+    ckpt_dir = Path(cfg.out_dir) / f"{cfg.region}-checkpoints"
+
+    # The untrained model is a real baseline, not a formality: lexical overlap alone
+    # scores recall@1 ~0.40 here. A trained model that does not beat this has not learned,
+    # it has merely rearranged. Recorded so the comparison cannot be skipped.
+    baseline = evaluate(model, tok, holdout, cfg.max_len, device)
+
     history: list[dict[str, float]] = []
     started = time.time()
     model.train()
     for step in range(cfg.steps):
+        for group in opt.param_groups:
+            group["lr"] = _lr_at(step, cfg)
         lo = (step * cfg.batch_size) % max(1, len(train_pairs) - cfg.batch_size)
         chunk = train_pairs[lo : lo + cfg.batch_size]
         if len(chunk) < 2:
@@ -230,9 +259,33 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         loss, stats = info_nce(model(a_ids, a_mask), model(p_ids, p_mask))
         opt.zero_grad()
         loss.backward()
+        if cfg.grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
         opt.step()
+
         if step % cfg.eval_every == 0 or step == cfg.steps - 1:
-            history.append({"step": float(step), **stats})
+            held = evaluate(model, tok, holdout, cfg.max_len, device)
+            history.append(
+                {
+                    "step": float(step),
+                    "lr": _lr_at(step, cfg),
+                    **stats,
+                    "held_recall@1": held["recall@1"],
+                    "held_recall@10": held["recall@10"],
+                }
+            )
+
+        if cfg.checkpoint_every and step and step % cfg.checkpoint_every == 0:
+            ckpt_dir.mkdir(parents=True, exist_ok=True)
+            torch.save(
+                {
+                    "step": step,
+                    "model": model.state_dict(),
+                    "opt": opt.state_dict(),
+                    "config": asdict(encoder_cfg),
+                },
+                ckpt_dir / f"step-{step:06d}.pt",
+            )
 
     elapsed = time.time() - started
     final = evaluate(model, tok, holdout, cfg.max_len, device)
@@ -259,7 +312,12 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         "device": str(device),
         "elapsed_s": round(elapsed, 1),
         "history": history,
+        "untrained_baseline": baseline,
         "held_out": final,
+        "beats_untrained": {
+            "recall@1": final["recall@1"] > baseline["recall@1"],
+            "recall@10": final["recall@10"] > baseline["recall@10"],
+        },
         "capability_per_param": final["recall@1"] / (params / 1e6) if params else 0.0,
     }
 
