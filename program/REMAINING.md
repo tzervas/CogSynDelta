@@ -285,6 +285,42 @@ the design's mistakes into a language where they are more expensive to fix. CSD 
 is the reference implementation that makes the Rust version a translation rather than a
 redesign.
 
+## P14 — Model instantiation policy (its own repo)
+
+Manifests make this possible: once a model's resources are DECLARED, they are something you
+can write policy against. Without manifests there is nothing to enforce on.
+
+THE CONTROLS WANTED: who may instantiate which model, for what purpose, for how long, with
+how much resource.
+
+PRIMITIVES ALREADY ON THIS FLEET -- generalise these, do not invent parallel machinery:
+| control | what already exists |
+|---------|--------------------|
+| by whom | SOPS/age scoping in ~/.secrets/.sops.yaml. It already excludes gpu5080 from `git/*`, and an agent honoured that today rather than shipping a token there. |
+| how much | systemd cgroup limits per unit (MemoryMax, CPUQuota, DeviceAllow); k3s ResourceQuota for containerised work |
+| isolation | rootless podman with --cap-drop=ALL, already the fleet convention |
+| how long | systemd RuntimeMaxSec; the on-demand llama-rag.service pattern |
+| audit | receipts, the Prometheus exporter, and Loki already on homelab |
+
+INDUSTRY STANDARD TOOLS worth evaluating rather than hand-rolling: OPA/Rego or Cedar for
+policy decisions, Kyverno if enforcement lands in k3s, SPIFFE/SPIRE for workload identity.
+The measure of success is that a rejected instantiation says WHICH rule refused it and why.
+
+NOTE ON GPU QUOTAS specifically: the 3090 Ti and 5080 are consumer cards -- no MIG, so a GPU
+cannot be hard-partitioned between workloads the way an A100 can. Enforcement there is
+cooperative (a memory fraction a process sets on itself, as the corpus-analysis job did) or
+coarse (one job per card, which is what the fleet does today). Do not design assuming
+hardware isolation that does not exist on this hardware.
+
+| id | task | status |
+|----|------|--------|
+| P14.1 | Its own private repo, GitHub + Forgejo | todo |
+| P14.2 | Policy schema over the manifest fields | todo — depends on the manifest design |
+| P14.3 | Enforcement at instantiation | todo |
+
+DEPENDS ON: the manifest design. Policy without a declared resource envelope has nothing to
+evaluate.
+
 ### Forgejo organisation map
 
 Three orgs already exist on git.vectorweight.com, so new repos go INTO them rather than
