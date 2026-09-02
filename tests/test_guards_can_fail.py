@@ -31,6 +31,7 @@ from cogsyndelta.eval import (
     assert_no_contamination,
     assert_no_pair_contamination,
     pair_contamination_report,
+    screen_pair_contamination,
 )
 
 pytestmark = pytest.mark.cpu
@@ -149,6 +150,43 @@ def _write_pairs(path, anchors: list[str], positives: list[str]) -> None:
     pq.write_table(pa.table({"a": anchors, "b": positives}), path)
 
 
+def test_a_stray_leak_is_removed_from_training_and_counted_rather_than_tolerated() -> None:
+    """The common real case: `compress` leaks 1 held-out pair of 512, `retrieve` 35.
+
+    Refusing outright there would block a region from training over a handful of rows,
+    which is the pressure that ends with someone raising a tolerance. So the colliding
+    TRAINING rows go (the holdout is never touched) and the receipt keeps the PRE-removal
+    figure -- a report generated after cleanup would show a zero indistinguishable from a
+    corpus that never leaked, which is the failure this whole file is about.
+    """
+    leak = ("how do you know if a mango is ripe", "press it gently near the stem")
+    train = [*_clean_pairs(200), leak]
+    held_out = [
+        *_clean_pairs(5, tag="eval"),
+        ("how to know if a mango is ripe", "you press it gently near the stem"),
+    ]
+
+    kept, report = screen_pair_contamination(train, held_out)
+
+    assert leak not in kept, "the leaked training row is still in the training set"
+    assert len(kept) == len(train) - 1, "removal took rows it should not have"
+    assert report["train_pairs_removed"] == 1
+    # Measured BEFORE the removal: the receipt has to say what leaked.
+    assert report["channels"]["pair_content"]["overlap"] == 1
+
+
+def test_a_corpus_that_is_mostly_duplicates_is_refused_instead_of_cleaned() -> None:
+    """Removal is a repair for strays. Deleting most of training until the eval looks
+    clean is laundering, and the ceiling is on how much of TRAINING a repair deletes --
+    not on how much of the holdout leaked, which would have refused `retrieve` outright
+    over 35 rows of 505,216."""
+    duplicated = [(f"how do you know if item {i} is ready", f"answer {i}") for i in range(50)]
+    held_out = [(f"how to know if item {i} is ready", f"answer {i}") for i in range(50)]
+
+    with pytest.raises(ValueError, match="deleting the corpus"):
+        screen_pair_contamination(duplicated, held_out)
+
+
 def test_build_splits_refuses_a_corpus_whose_holdout_is_paraphrased_in_train(tmp_path) -> None:
     """End to end: the guard must stop `build_splits`, not merely be callable.
 
@@ -157,6 +195,9 @@ def test_build_splits_refuses_a_corpus_whose_holdout_is_paraphrased_in_train(tmp
       - anchor dedup keeps both (their exact normalised anchors differ), which is why the
         old anchor-only guard passed this corpus with `overlap: 0`;
       - whichever twin lands in the holdout has its sibling in train.
+
+    Every row here is a duplicate, so repairing it would delete the training set -- far
+    past the removal ceiling -- and the run stops.
     """
     pytest.importorskip("pyarrow", reason="train group not installed")
     pytest.importorskip("tokenizers", reason="train group not installed")
@@ -181,7 +222,7 @@ def test_build_splits_refuses_a_corpus_whose_holdout_is_paraphrased_in_train(tmp
         holdout_pairs=20,
         seed=0,
     )
-    with pytest.raises(ValueError, match="pair_content"):
+    with pytest.raises(ValueError, match="deleting the corpus"):
         build_splits(cfg)
 
 
@@ -210,6 +251,7 @@ def test_build_splits_still_accepts_a_clean_corpus(tmp_path) -> None:
     holdout, train_pairs, meta = build_splits(cfg)
     assert len(holdout) == 20
     assert len(train_pairs) == 180
+    assert meta["contamination"]["train_pairs_removed"] == 0
     # The channel the pre-fix guard used is still reported -- and still zero. Kept
     # visible precisely so nobody reads that zero as evidence again.
     assert meta["contamination"]["channels"]["anchor_exact"]["overlap"] == 0
