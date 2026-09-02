@@ -78,8 +78,10 @@ def quantize_tensor(w: torch.Tensor, bits: int) -> QuantizedTensor:
     vmin = flat.min(dim=1).values
     vmax = flat.max(dim=1).values
     scale = ((vmax - vmin) / levels).clamp_min(1e-12)
-    codes = torch.round((flat - vmin.unsqueeze(1)) / scale.unsqueeze(1))
-    codes = codes.clamp(0, levels).to(torch.int32).numpy().astype(np.uint16)
+    rounded = torch.round((flat - vmin.unsqueeze(1)) / scale.unsqueeze(1))
+    # Separate name rather than rebinding: the tensor and the numpy array are different
+    # types, and reusing one variable for both hides that from the checker.
+    codes = rounded.clamp(0, levels).to(torch.int32).numpy().astype(np.uint16)
     return QuantizedTensor(
         codes=pack_codes(codes, bits),
         scale=scale.numpy().astype(np.float32),

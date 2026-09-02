@@ -121,14 +121,18 @@ def _decode_split(
             raw = rec["bytes"] if isinstance(rec, dict) else rec
             if raw is None:
                 continue
-            with Image.open(io.BytesIO(raw)) as im:
+            with Image.open(io.BytesIO(raw)) as handle:
                 # convert("RGB") is not optional: cifar100 and tiny-imagenet are RGB in
                 # every sample checked, but a single greyscale image would otherwise
                 # produce a [1,H,W] tensor and break the batch stack at an unrelated line.
-                im = im.convert("RGB")
-                if im.size != (size, size):
-                    im = im.resize((size, size), Image.BICUBIC)
-                images.append(np.asarray(im, dtype=np.uint8))
+                # Bound to a new name because open() yields ImageFile and convert() yields
+                # Image -- rebinding one variable across both conceals the change.
+                rgb = handle.convert("RGB")
+                if rgb.size != (size, size):
+                    # Image.BICUBIC is the pre-Pillow-10 spelling and survives only as a
+                    # deprecation shim; Resampling is the supported location.
+                    rgb = rgb.resize((size, size), Image.Resampling.BICUBIC)
+                images.append(np.asarray(rgb, dtype=np.uint8))
             labels.append(int(lab))
             if limit and len(images) >= limit:
                 break
