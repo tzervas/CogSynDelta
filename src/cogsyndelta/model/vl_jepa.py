@@ -118,15 +118,37 @@ class ViTBlock(nn.Module):
         hidden = int(dim * mlp_ratio)
         self.mlp = nn.Sequential(nn.Linear(dim, hidden), nn.GELU(), nn.Linear(hidden, dim))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Attend over all positions, then apply the MLP, both on residual paths."""
+    def forward(
+        self, x: torch.Tensor, key_padding_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Attend over all positions, then apply the MLP, both on residual paths.
+
+        Args:
+            x: ``[B, N, D]``.
+            key_padding_mask: Optional ``[B, N]``, 1 for real positions and 0 for padding.
+                Images have no padding and pass None; text does, and must not.
+
+        Returns:
+            ``[B, N, D]``.
+        """
         b, n, _ = x.shape
         h = self.norm1(x)
         q, k, v = self.qkv(h).chunk(3, dim=-1)
         q = q.view(b, n, self.n_heads, self.head_dim).transpose(1, 2)
         k = k.view(b, n, self.n_heads, self.head_dim).transpose(1, 2)
         v = v.view(b, n, self.n_heads, self.head_dim).transpose(1, 2)
-        attended = F.scaled_dot_product_attention(q, k, v, is_causal=False)
+        attn_mask = None
+        if key_padding_mask is not None:
+            keep = key_padding_mask.bool()
+            # A row that is entirely padding would softmax over all -inf and produce NaN.
+            # Keeping position 0 attendable costs nothing -- the pool masks that row out
+            # anyway -- and turns a silent NaN cascade into a no-op.
+            empty = ~keep.any(dim=1)
+            if empty.any():
+                keep = keep.clone()
+                keep[empty, 0] = True
+            attn_mask = keep[:, None, None, :]
+        attended = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, is_causal=False)
         x = x + self.proj(attended.transpose(1, 2).contiguous().view(b, n, -1))
         return x + self.mlp(self.norm2(x))
 

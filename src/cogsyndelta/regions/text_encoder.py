@@ -105,7 +105,12 @@ class TextEncoder(nn.Module):
 
         h = self.embed(input_ids) + self.pos_embed[:, :t]
         for block in self.blocks:
-            h = block(h)
+            # The mask goes into ATTENTION, not just the pool. Without it every real token
+            # attends to padding, so the same sentence encodes differently depending on how
+            # much padding its batch happened to carry -- measured at cosine 0.958 between
+            # identical inputs padded to 6 and 66 positions. _tokenize pads to the longest
+            # item in the batch, so that made every result batch-composition dependent.
+            h = block(h, attention_mask)
         h = self.norm(h)
 
         if attention_mask is None:
