@@ -31,16 +31,21 @@ jobs:
       - name: Run gitleaks
         run: |
           set -euo pipefail
-          if command -v gitleaks >/dev/null 2>&1; then
-            gitleaks detect --source . --verbose --redact
-          elif command -v docker >/dev/null 2>&1; then
-            docker run --rm -v "$PWD:/path" zricethezav/gitleaks:latest detect --source=/path --verbose --redact
-          elif command -v podman >/dev/null 2>&1; then
-            podman run --rm -v "$PWD:/path:ro" docker.io/zricethezav/gitleaks:latest detect --source=/path --verbose --redact
-          else
-            echo "gitleaks not available on runner — FAIL (honest security gate)" >&2
-            exit 1
+          # The job container ships no gitleaks, docker or podman, so the previous
+          # probe-and-exit-1 made this gate permanently red -- which trains people to
+          # ignore it. Fetch the tool instead. Still fails closed: a download failure or
+          # a finding both exit non-zero, so red continues to mean something.
+          # Pinned on purpose; a floating security gate changes behaviour unreviewed.
+          GITLEAKS_VERSION="8.30.1"
+          if ! command -v gitleaks >/dev/null 2>&1; then
+            TOOLS="$(mktemp -d)"
+            curl -fsSL -o "$TOOLS/gitleaks.tar.gz" \
+              "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+            tar xzf "$TOOLS/gitleaks.tar.gz" -C "$TOOLS" gitleaks
+            export PATH="$TOOLS:$PATH"
           fi
+          gitleaks version
+          gitleaks detect --source . --verbose --redact
 
   trivy-fs:
     name: trivy filesystem (vuln+secret+license)
@@ -51,10 +56,17 @@ jobs:
       - name: Trivy fs
         run: |
           set -euo pipefail
+          # Same reasoning as the gitleaks gate above: fetch rather than be permanently
+          # red. Fail-closed is preserved -- --exit-code 1 below still fails on findings.
+          TRIVY_VERSION="0.74.0"
           if ! command -v trivy >/dev/null 2>&1; then
-            echo "trivy missing on runner — FAIL (honest security gate)" >&2
-            exit 1
+            TOOLS="$(mktemp -d)"
+            curl -fsSL -o "$TOOLS/trivy.tar.gz" \
+              "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+            tar xzf "$TOOLS/trivy.tar.gz" -C "$TOOLS" trivy
+            export PATH="$TOOLS:$PATH"
           fi
+          trivy --version
           trivy fs --scanners vuln,secret,license \
             --severity HIGH,CRITICAL \
             --skip-dirs .git --skip-dirs target --skip-dirs node_modules --skip-dirs .venv \
