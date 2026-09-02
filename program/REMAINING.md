@@ -64,6 +64,26 @@ TWO COMPONENTS WITH NO CURRENT ANALOGUE, and both are architectural rather than 
       (c) both: learned connectivity, with gating layered on where it earns its cost
     P4 is currently written as a discrete router, which is option (a)'s alternative rather
     than a step toward it. Revisit before building.
+
+    **THE INTERCONNECT IS WHAT WIRES THE SUBMODELS INTO A COHESIVE SINGLE MIND.** It is not
+    plumbing between components -- it is the centre of gravity of the architecture. The
+    regions are faculties; the interconnect is what makes them ONE MIND rather than seven
+    models behind a switchboard.
+
+    Three consequences, all of which change current plans:
+      1. THE COMPOSE PHASE IS TRAINING THE INTERCONNECT, not evaluating regions together.
+         P5's gates measure whether composition beats individual regions -- that is a
+         RESULT, not the thing being built. P5 currently has no training step at all.
+      2. THE RESERVED CORPUS IS THE INTERCONNECT'S TRAINING DATA. P2.5d exists so the
+         composed model sees material no region has seen, but its real purpose is sharper
+         than "non-overlapping": the interconnect must learn to route and integrate on data
+         where NO SINGLE REGION ALREADY HAS THE ANSWER MEMORISED. Otherwise it learns to
+         forward to whichever region already knows, which is dispatch, not integration.
+      3. REGIONS MAY NEED TO BE TRAINED KNOWING THEY WILL BE WIRED. A region trained in
+         isolation optimises to solve its task ALONE. If the interconnect unifies them, a
+         region's objective arguably should account for contributing to a shared state
+         rather than producing a standalone answer. Every region trained so far was trained
+         in isolation.
   - FRONTAL-CORTEX UNIFICATION. Composition has been treated as "regions plus a router".
     Unification is a faculty in its own right: integrating several regions' outputs into one
     coherent state. P5's gates were written against the router framing and need revisiting.
