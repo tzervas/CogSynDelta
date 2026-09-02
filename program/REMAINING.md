@@ -438,6 +438,54 @@ operator's -- owned by dark-harold), gha-runner-ctl, slovo, python-field-notes,
 ap-fleet-work-images, self-hosted-ai, range, rust-ai-core, pybench, bitnet-quantize,
 notes-sandbox. Those are the candidates for placement.
 
+## P15 — The long arc (operator vision, context not backlog)
+
+Recorded so the near-term work stays pointed at it. None of this is scheduled.
+
+**Visual scale-out.** Compressed screenshot corpora over Grokipedia and other sources, so
+the model reasons about rendered information rather than only prose. Connects to the P12
+argument that vision may be the cheaper channel per unit of decision-relevant information.
+
+**Polyglot specialisation, deliberately narrow.** Rust, Python, TypeScript, quantum
+languages, and eventually mycelium. The specialisation targets are software engineering, AI
+engineering, architecture, research and design -- broad competence with deep spikes, not
+uniform mediocrity.
+
+**Mycelium as a first-class training target.** The language is designed to be natively good
+for AI without being machine-first: one language that sugars up to human-readable and
+lowers mechanically to machine-level, with no separate DSLs or paradigms. Training a model
+on a language built to be AI-legible is a genuinely different proposition from training it
+on one that merely tolerates AI.
+
+**Embodiment.** Display-out plus keystroke control, then camera and audio, then a robot.
+The architecture has to be efficient enough to run at the edge, which is why the ternary
+direction matters -- a hybrid of trits and trytes rather than single-trit, targeting
+insanely efficient edge inference that still scales up to a data centre.
+
+**Developmental curriculum for alignment, not just capability.** Train in phases the way
+children are educated: age-appropriate material first, complexity introduced progressively,
+so a baseline human-aligned moral sense is baked in LOW rather than bolted on as a filter.
+The hypothesis is that safety established during formation is more robust than safety
+imposed afterwards. This is P11/P12 curriculum work aimed at values rather than difficulty.
+
+**Context-aware refusal.** The target is a model that distinguishes "help me stop this
+attack" from "help me run one" -- refusing accurately rather than refusing broadly. A model
+that blocks defensive security work during a live incident has failed; so has one that
+cannot tell the two apart. This is a CAPABILITY, not a filter, and it needs the reasoning
+the rest of the architecture is for.
+
+**Persona basin ablation as a release step.** Remove every persona basin except the target
+one, so undesired behaviour is not merely suppressed but absent -- nothing for a malicious
+user to steer the model into. NOT GREENFIELD: akula-ai-platform already has
+`config/abliterate/` and `make abliterate` targets. That tooling identifies and removes
+directions in activation space; this extends it from "remove refusal" to "leave only the
+intended basin", applied as a final production-readiness wrap.
+
+WHY THIS SHAPES THE NEAR-TERM WORK: an architecture you can interrogate layer by layer is a
+precondition for all of it. You cannot ablate a basin you cannot locate, curriculum-train
+values you cannot measure, or trust a refusal you cannot explain. That is the same reason
+regions are trained and gated individually and every number carries a receipt.
+
 ## P8 — Deferred by explicit operator decision
 
 - Recursive/looped latent transformers
