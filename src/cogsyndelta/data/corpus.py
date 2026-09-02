@@ -31,10 +31,17 @@ import os
 import random
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pyarrow.parquet as pq
 import torch
-from tokenizers import Tokenizer
+
+# pyarrow and tokenizers live in the `train` dependency group, which CI does not install.
+# They were imported at module scope, which made `import cogsyndelta.data` -- and so
+# anything importing a sibling module in this package -- fail outright on a runner that
+# has only `dev`. Importing them where they are used keeps the package importable and
+# still fails loudly, at the call that actually needs the corpus.
+if TYPE_CHECKING:
+    from tokenizers import Tokenizer
 
 # The fleet export. Override for a different mount or a local copy.
 DEFAULT_CORPUS_ROOT = Path(os.environ.get("CSD_CORPUS_ROOT", "/mnt/fleet-datasets/tritter"))
@@ -88,6 +95,8 @@ def load_tokenizer(name: str = "gpt2") -> Tokenizer:
     Returns:
         A ``tokenizers.Tokenizer``.
     """
+    from tokenizers import Tokenizer
+
     if name not in TOKENIZERS:
         raise KeyError(f"unknown tokenizer {name!r}; have {sorted(TOKENIZERS)}")
     path = corpus_root() / TOKENIZERS[name]
@@ -133,6 +142,8 @@ def iter_documents(
     Yields:
         One document string at a time.
     """
+    import pyarrow.parquet as pq
+
     _, column, has_splits = CORPORA[corpus]
     paths = shards if shards is not None else shard_paths(corpus)
 
