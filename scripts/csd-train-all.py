@@ -220,9 +220,25 @@ def _schema_mismatch(shards: list[str], cols: tuple[str, str]) -> str | None:
 
 
 def run_region(
-    name: str, state: Path, steps: int, batch: int, shard_limit: int, dry: bool
+    name: str, state: Path, steps: int, batch: int, shard_limit: int, dry: bool, bf16: bool = True
 ) -> dict | None:
-    """Train one region and return its receipt."""
+    """Train one region and return its receipt.
+
+    Args:
+        name: Region key in `REGIONS`.
+        state: Durable state directory; receipts and checkpoints land under it.
+        steps: Optimizer steps.
+        batch: Physical batch size; also sets `lr` (see :func:`lr_for_batch`).
+        shard_limit: Keep only this many shards of an uncapped source; 0 means all.
+        dry: Resolve and print the sources, then stop without training.
+        bf16: Run the forward under bf16 autocast where the device supports it. False is
+            the fp32 arm -- the only way to tell "bf16 cost recall" apart from "the batch
+            or the schedule did", which is a question that has to be answerable from the
+            runner rather than from a one-off script nobody can rerun.
+
+    Returns:
+        The receipt, or None when the region has no usable sources or `dry` is set.
+    """
     sources, note = REGIONS[name]
     print(f"\n=== {name} — {note}", flush=True)
 
@@ -288,6 +304,7 @@ def run_region(
         lr=lr_for_batch(batch),
         checkpoint_every=min(CHECKPOINT_EVERY, max(1, steps // 3)),
         encoder=TextEncoderConfig(dim=256, depth=4, n_heads=4, max_len=96),
+        bf16=bf16,
         out_dir=str(state / "receipts"),
     )
     started = time.time()
@@ -423,6 +440,11 @@ def main() -> int:
     ap.add_argument("--batch", type=int, default=DEFAULT_BATCH)
     ap.add_argument("--shard-limit", type=int, default=2, help="0 = all shards")
     ap.add_argument("--regions", default="code,compress")
+    ap.add_argument(
+        "--no-bf16",
+        action="store_true",
+        help="train the text regions in fp32 (the A/B arm for a recall change)",
+    )
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     _require_train_deps(args.dry_run)
@@ -455,7 +477,13 @@ def main() -> int:
                 receipt = run_vl_region(name, state, args.steps, args.batch, args.dry_run)
             else:
                 receipt = run_region(
-                    name, state, args.steps, args.batch, args.shard_limit, args.dry_run
+                    name,
+                    state,
+                    args.steps,
+                    args.batch,
+                    args.shard_limit,
+                    args.dry_run,
+                    bf16=not args.no_bf16,
                 )
         except Exception as exc:
             print(f"  {name}: FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
