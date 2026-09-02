@@ -178,6 +178,53 @@ described a joined form that never existed. It is now two entries, and the corpu
 qrels join is documented as a caveat rather than forced into a fetch loop that does not fit
 it. Expect the same shape from any other BeIR-family dataset.
 
+## P2.5 — Broad corpus build-out. Licence-aligned, non-overlapping, multi-TB.
+
+STORAGE IS NOT THE CONSTRAINT. /bulk is 5.9 TB at ~14% used. Terabytes are fine. Old
+datasets on the spinning array may be offloaded to HF, stowed, or deleted once superseded.
+
+THE THREE HARD REQUIREMENTS, in priority order:
+
+1. LICENCE-ALIGNED FOR MIT OPEN WEIGHTS. Not merely "may I train on it" -- may a derived
+   model be redistributed permissively. Apache-2.0 / MIT / BSD / CC0 / ODC-BY verified at
+   BOTH mirror and upstream. Eight audited cases exist where a mirror claims more than its
+   upstream grants, so a card tag alone is never sufficient.
+
+2. NON-OVERLAPPING. This is now MEASURABLE rather than assumed, and the tooling exists
+   (/mnt/bulk/csd-corpus-analysis/). Two demonstrations of why it matters:
+     - staged `snli` is 100% contained in all-nli -- it would have added ZERO pairs
+     - APPS and CodeContests share 17.8% of problems, INVISIBLE to hashing because one
+       prefixes every description with "<id>_<letter>. <Title> - "
+   Every candidate gets an overlap check against what is already held, BEFORE download.
+   Downloading a terabyte of duplicate is worse than downloading nothing.
+
+3. NO SINGLE-CORPUS DOMINANCE. `retrieve` is already 77.8% GooAQ, 19.5% NQ, 2.7% FiQA while
+   being EVALUATED on financial-domain FiQA. That is training on one distribution and
+   measuring on another. Caps exist for exactly this and must be set per source, not
+   globally.
+
+COVERAGE NEEDED, per region and then for the composed model:
+  code      currently CodeSearchNet Python only, and licence-REJECTED at that. Needs
+            multi-language and permissively licensed
+  retrieve  the P2.4 mix (gooaq upstream, esci, mr-tydi) replaces the CC-BY-SA set
+  compress  all-nli has no licence tag and MultiNLI carries restricted genres. Needs a
+            permissive paraphrase/entailment source
+  vl        BLOCKED pending the licence audit -- tiny-imagenet may be ImageNet-derived
+  classify  banking77 + go_emotions are clean; more breadth wanted
+  reason    gsm8k + aqua_rat are clean; the MATH family is DMCA-encumbered
+  compose   the CSD model itself needs material that does NOT overlap what the regions
+            trained on, or the composed evaluation is contaminated by construction
+
+| id | task | gate | status |
+|----|------|------|--------|
+| P2.5a | Overlap-check tooling as a reusable gate | a candidate is rejected on measured overlap, not judgement | todo |
+| P2.5b | Per-region licence-clean candidate lists | every entry verified at upstream | todo |
+| P2.5c | Fetch, with per-source caps | no source exceeds its cap; balance recorded in the receipt | todo |
+| P2.5d | Reserve non-overlapping material for the composed model | held-out from every region's training set | todo |
+
+NOTE: session rate limit hit 2026-09-02 (resets 10pm ET). Dispatch P2.5 work after reset
+rather than starting agents that will die half-finished.
+
 ## P3 — Visual region maturation
 
 `vl_latent` passed its gates but weakly: probe top-1 0.0606 on 200 classes, and the run used
