@@ -272,6 +272,7 @@ hybrid predictive training approach itself.
 | P13.1 | Revive the hybrid predictive training approach | exists in both Python and Rust; did not work due to underlying issues and gaps. Diagnose the gaps BEFORE porting -- a rewrite that carries the original defect forward is worse than the original |
 | P13.2 | Modernise the surrounding stack | the ecosystem moved substantially in ~2 years; some parts refactor, some want reimplementing |
 | P13.3 | Full Rust stack | model, training, quant, fine-tune, orchestration |
+| P13.4 | Forgejo repos for everything, under the right orgs | see org map below; blocked on the P13.1 catalogue so placement is informed rather than guessed |
 
 NOT STARTING FROM ZERO. The operator already has a substantial Rust ML ecosystem on this
 fleet, all now private: rust-ai-core, bitnet-rs, ternary-rs, triton-bridge-rs (CUDA driver
@@ -283,6 +284,28 @@ WHY THIS ORDER IS RIGHT, not just preference: a Rust rewrite of an unproven desi
 the design's mistakes into a language where they are more expensive to fix. CSD in Python
 is the reference implementation that makes the Rust version a translation rather than a
 redesign.
+
+### Forgejo organisation map
+
+Three orgs already exist on git.vectorweight.com, so new repos go INTO them rather than
+flat under `tzervas`:
+
+| org | purpose |
+|-----|---------|
+| aphelion | primary org; mirrors Aphelion-Development |
+| cabal-collective | self-hosted Cabal agent work, CPU runners |
+| mycelium | the mycelium language and its `mycelium-*` Rust crates |
+
+TOKEN SCOPES -- this will bite anyone who does not know it:
+`git/tzervas-forgejo` is PUSH-ONLY. It has no `read:user` and no `read:organization`, so
+listing orgs or creating repos with it returns a 403 that names a missing scope rather than
+a permission problem. Use `git/cabal-forgejo-admin` for anything beyond pushing to an
+existing repo.
+
+Eleven repos currently live on GitHub with no Forgejo counterpart: anemochory (NOT the
+operator's -- owned by dark-harold), gha-runner-ctl, slovo, python-field-notes,
+ap-fleet-work-images, self-hosted-ai, range, rust-ai-core, pybench, bitnet-quantize,
+notes-sandbox. Those are the candidates for placement.
 
 ## P8 — Deferred by explicit operator decision
 
