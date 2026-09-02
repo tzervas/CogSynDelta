@@ -101,6 +101,38 @@ CROSS-DATASET, for anything added later:
     stripped description.
   - SQuAD/HotpotQA share 95.9% of article titles. Dedupe by title, not passage hash.
 
+## P2.4 — Licence-clean retrieval mix for MIT open-weights
+
+AUDITED at mirror AND upstream. A clean >100k-pair mix exists.
+
+| dataset | pairs | licence, both ends verified |
+|---------|-------|-----------------------------|
+| allenai/gooaq | 3,112,679 | Apache-2.0 (upstream LICENSE file read) |
+| tasksource/esci | 2,027,874 | Apache-2.0 (amazon-science/esci-data LICENSE read) |
+| castorini/mr-tydi | ~167k | Apache-2.0, built on tydiqa which is also Apache-2.0 |
+| miracl/miracl | ~40k queries | Apache-2.0 -- under 100k queries, flagged honestly |
+| THUIR/T2Ranking | 258k queries | Apache-2.0 in README ONLY; LICENSE file 404s. Verify before use |
+
+IMMEDIATE ACTION: we source gooaq and natural-questions from the `sentence-transformers`
+mirrors. EVERY dataset under that account declares NO LICENCE -- all 75. The upstream
+`allenai/gooaq` is Apache-2.0 with a real LICENSE file. Same data, actual licence. Switch.
+
+WHAT THIS REPLACES: squad, hotpotqa and natural-questions are all CC-BY-SA. Under an MIT
+open-weights release, share-alike propagation to derived weights is the open question the
+licence audit is assessing. The mix above avoids it entirely.
+
+MIRROR-MORE-PERMISSIVE-THAN-UPSTREAM, now demonstrably systemic rather than incidental:
+  unicamp-dl/mmarco          Apache-2.0 asserted over MS MARCO's non-commercial terms
+  nthakur/msmarco-sampled-*  CC-BY-SA-3.0 over the same NC upstream
+  facebook/kilt_tasks        MIT over CC-BY-SA and unknown constituents
+  xanhho/2WikiMultihopQA     Apache-2.0 where upstream states no licence at all
+  mandarjoshi90 README       "Apache 2.0 applies to the data" while the project site says
+                             "UW does not own the copyright of the questions and documents"
+  allenai/peS2o              flat ODC-BY over S2 Data the S2 licence says may be CC-BY-NC
+  lucadiliello/newsqa        redistributes CNN text with no licence, where upstream says it
+                             "cannot be made directly available due to legal reasons"
+  INVERSE: mteb/nq           CC-BY-NC-SA-3.0 where upstream NQ is CC-BY-SA-3.0, no NC
+
 ## P1 — Repo hygiene. Nearly done.
 
 | id | task | gate | status |
