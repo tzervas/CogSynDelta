@@ -147,6 +147,10 @@ def sincos_pos_embed(n_patches: int, dim: int) -> torch.Tensor:
 class ViTEncoder(nn.Module):
     """Vision transformer over patch embeddings."""
 
+    # register_buffer types the attribute as Tensor | Module; declaring it narrows
+    # the type so .expand/indexing type-check.
+    pos_embed: torch.Tensor
+
     def __init__(self, cfg: JEPAConfig) -> None:
         """Build patch embedding, blocks and final norm."""
         super().__init__()
@@ -189,6 +193,8 @@ class JEPAPredictor(nn.Module):
     load-bearing: an equally wide predictor lets the encoder settle on identity, which
     is one of the three routes to collapse.
     """
+
+    pos_embed: torch.Tensor
 
     def __init__(self, cfg: JEPAConfig) -> None:
         """Build the projection in, the blocks, and the projection back out."""
@@ -302,8 +308,12 @@ class IJEPA(nn.Module):
             self.target_encoder.parameters(), self.encoder.parameters(), strict=True
         ):
             tgt.mul_(m).add_(src.detach(), alpha=1.0 - m)
-        for tgt, src in zip(self.target_encoder.buffers(), self.encoder.buffers(), strict=True):
-            tgt.copy_(src)
+        # Distinct names from the parameter loop above: parameters() yields Parameter
+        # and buffers() yields Tensor, so reusing tgt/src conflates two types.
+        for tgt_buf, src_buf in zip(
+            self.target_encoder.buffers(), self.encoder.buffers(), strict=True
+        ):
+            tgt_buf.copy_(src_buf)
 
     def forward(
         self, images: torch.Tensor, generator: torch.Generator | None = None
