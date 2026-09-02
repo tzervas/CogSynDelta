@@ -31,7 +31,7 @@ import os
 import shutil
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 
@@ -73,6 +73,27 @@ class Dataset:
     splits: tuple[str, ...] = ("train",)
     caveat: str = ""
     columns: tuple[str, ...] = ()
+    revision: str = ""
+    """Pin a non-default git revision on the Hub.
+
+    Exists for repos that still carry a legacy Python loading script: `datasets>=4`
+    refuses to execute those ("Dataset scripts are no longer supported"), but HF's own
+    conversion bot has already re-published many of them as Parquet under the
+    `refs/convert/parquet` ref. Measured on this fleet: codeparrot/apps needs this;
+    PolyAI/banking77 has no such ref (see `data_files`).
+    """
+    data_files: dict[str, str] = field(default_factory=dict)
+    """Escape hatch keyed by split name, for a repo whose ONLY content is a retired
+    loading script with no Parquet conversion available, where the script itself does
+    nothing but download plain files from a fixed public URL. Set this to those URLs and
+    `fetch` reads them through `builder` (a packaged loader shipped with `datasets`
+    itself, e.g. "csv") instead of through `repo_id` -- the packaged loaders are not
+    remote code and are unaffected by the script ban. Measured on this fleet:
+    PolyAI/banking77's script does nothing but fetch two CSVs from
+    github.com/PolyAI-LDN/task-specific-datasets.
+    """
+    builder: str = "csv"
+    """Which packaged `datasets` loader to use with `data_files`. Ignored otherwise."""
 
     @property
     def local(self) -> Path:
@@ -92,7 +113,16 @@ CATALOGUE: list[Dataset] = [
         verdict=TRAIN_OK,
         why="10k Python problem/solution pairs with test cases; clean MIT",
         columns=("question", "solutions"),
-        caveat="solutions and input_output are JSON-encoded strings; ~1235 test rows have no solution",
+        revision="refs/convert/parquet",
+        caveat=(
+            "repo root is a legacy apps.py loading script (train.jsonl/test.jsonl are "
+            "gated behind it) -- datasets 5.0.1 refuses to run it: 'Dataset scripts are no "
+            "longer supported, but found apps.py'. Fetch pins revision=refs/convert/parquet, "
+            "HF's own auto-converted Parquet mirror of the same data (config='default', "
+            "verified to carry the same 7 columns: problem_id/question/solutions/"
+            "input_output/difficulty/url/starter_code). solutions and input_output are "
+            "JSON-encoded strings; ~1235 test rows have no solution"
+        ),
     ),
     Dataset(
         repo_id="deepmind/code_contests",
@@ -113,15 +143,46 @@ CATALOGUE: list[Dataset] = [
         columns=("question", "context"),
         caveat="share-alike obligation attaches to derivatives of the data itself",
     ),
+    # BeIR/hotpotqa has no "train" split at all -- it is published as two SEPARATE
+    # configs, "corpus" (each split literally named after its config) and "queries", with
+    # relevance judgements in a THIRD, companion repo (BeIR/hotpotqa-qrels: config
+    # "default", splits train/validation/test, columns corpus-id/query-id/score, also
+    # cc-by-sa-4.0 and also agreeing with hotpotqa.github.io). The original entry's
+    # splits=("train",) default and columns=("query","passage") described the joined
+    # form nobody had built, not anything the repo actually serves -- that is why fetch
+    # raised `ValueError: Config name is missing. Please pick one among the available
+    # configs: ['corpus', 'queries']`. Fetching corpus and queries is a clean fit for the
+    # existing one-config-per-entry fetch(); the corpus+queries+qrels JOIN into
+    # query-passage training pairs is not, and is left to a runner (fetch
+    # BeIR/hotpotqa-qrels separately, then join on query-id/corpus-id).
     Dataset(
         repo_id="BeIR/hotpotqa",
         region="retrieve",
         license="cc-by-sa-4.0 (HF card)",
         upstream="hotpotqa.github.io states CC BY-SA 4.0 — mirror and source AGREE",
         verdict=TRAIN_OK,
+        config="corpus",
+        splits=("corpus",),
         why="multi-hop retrieval, a reasoning shape absent from the current mix",
-        columns=("query", "passage"),
-        caveat="corpus/queries/qrels ship separately and must be joined before use",
+        columns=("_id", "title", "text"),
+        caveat=(
+            "this is the passage pool only. queries ship as the sibling 'queries' config "
+            "below; relevance judgements ship in the separate BeIR/hotpotqa-qrels repo and "
+            "are NOT fetched by this entry -- join corpus-id/query-id from qrels against "
+            "these two before using this as query-passage training pairs"
+        ),
+    ),
+    Dataset(
+        repo_id="BeIR/hotpotqa",
+        region="retrieve",
+        license="cc-by-sa-4.0 (HF card)",
+        upstream="hotpotqa.github.io states CC BY-SA 4.0 — mirror and source AGREE",
+        verdict=TRAIN_OK,
+        config="queries",
+        splits=("queries",),
+        why="query side of the multi-hop retrieval pair; see the 'corpus' config above",
+        columns=("_id", "text"),
+        caveat="join against BeIR/hotpotqa-qrels and the 'corpus' config entry before use",
     ),
     # --- semantic similarity ----------------------------------------------------------
     Dataset(
@@ -142,9 +203,28 @@ CATALOGUE: list[Dataset] = [
         repo_id="PolyAI/banking77",
         region="classify",
         license="cc-by-4.0 (verified via HF dataset_info tags)",
+        upstream="github.com/PolyAI-LDN/task-specific-datasets LICENSE file is Creative "
+        "Commons Attribution 4.0 International — mirror and source AGREE",
         verdict=TRAIN_OK,
         why="77 fine-grained intents; sized for the tiny classifiers CSD wants",
-        columns=("text", "label"),
+        splits=("train", "test"),
+        columns=("text", "category"),
+        data_files={
+            "train": "https://raw.githubusercontent.com/PolyAI-LDN/"
+            "task-specific-datasets/master/banking_data/train.csv",
+            "test": "https://raw.githubusercontent.com/PolyAI-LDN/"
+            "task-specific-datasets/master/banking_data/test.csv",
+        },
+        caveat=(
+            "repo root is a legacy banking77.py loading script with NO "
+            "refs/convert/parquet mirror available -- datasets 5.0.1 refuses to run it: "
+            "'Dataset scripts are no longer supported, but found banking77.py'. Read the "
+            "script: it does nothing but download these same two CSVs from "
+            "PolyAI-LDN/task-specific-datasets on GitHub, so fetch reads them directly via "
+            "the built-in 'csv' loader instead (verified: 10003 train rows, columns "
+            "text/category). Column is the raw 'category' string label ('card_arrival' "
+            "etc), not the retired script's int-encoded ClassLabel 'label'"
+        ),
     ),
     Dataset(
         repo_id="google-research-datasets/go_emotions",
@@ -285,9 +365,27 @@ def fetch(ds: Dataset, token: str | None, apply: bool, max_used_fraction: float)
     rows = 0
     try:
         for split in ds.splits:
-            data = load_dataset(
-                ds.repo_id, ds.config or None, split=split, token=token, streaming=False
-            )
+            if ds.data_files:
+                # Escape hatch: repo_id has no usable loading path on the Hub (retired
+                # script, no parquet conversion), but the script's own only job was
+                # downloading a plain file from a fixed URL -- so read it directly
+                # through a packaged loader instead of executing remote code.
+                data = load_dataset(
+                    ds.builder,
+                    data_files={split: ds.data_files[split]},
+                    split=split,
+                    token=token,
+                    streaming=False,
+                )
+            else:
+                data = load_dataset(
+                    ds.repo_id,
+                    ds.config or None,
+                    split=split,
+                    revision=ds.revision or None,
+                    token=token,
+                    streaming=False,
+                )
             out = ds.local / f"{split}.parquet"
             data.to_parquet(str(out))
             rows += data.num_rows
