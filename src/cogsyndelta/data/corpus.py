@@ -190,6 +190,7 @@ def iter_token_windows(
     width = seq_len + 1
 
     def drain_one() -> torch.Tensor:
+        """Pop a uniformly random window via swap-with-last, which is O(1)."""
         idx = rng.randrange(len(buffer))
         buffer[idx], buffer[-1] = buffer[-1], buffer[idx]
         return buffer.pop()

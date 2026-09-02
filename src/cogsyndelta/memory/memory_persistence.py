@@ -65,6 +65,7 @@ class _RestrictedUnpickler(pickle.Unpickler):
     """Unpickler that refuses any global outside _SAFE_PICKLE_GLOBALS."""
 
     def find_class(self, module: str, name: str) -> Any:
+        """Resolve a pickled global, refusing anything outside the allow-list."""
         allowed = _SAFE_PICKLE_GLOBALS.get(module)
         if allowed is not None and name in allowed:
             return super().find_class(module, name)

@@ -63,11 +63,13 @@ class CausalLMConfig:
     tie_embeddings: bool = True
 
     def __post_init__(self) -> None:
+        """Reject a config whose dim is not divisible by n_heads."""
         if self.dim % self.n_heads != 0:
             raise ValueError(f"dim {self.dim} must be divisible by n_heads {self.n_heads}")
 
     @property
     def head_dim(self) -> int:
+        """Width of a single attention head."""
         return self.dim // self.n_heads
 
 
@@ -75,11 +77,13 @@ class RMSNorm(nn.Module):
     """Root-mean-square layer norm (no mean subtraction, no bias)."""
 
     def __init__(self, dim: int, eps: float = 1e-6) -> None:
+        """Build an RMSNorm over ``dim`` features."""
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Normalise ``x`` by its root-mean-square and scale."""
         # Compute in fp32: under autocast the reciprocal-sqrt of a mean of squares is a
         # common place for bf16 to lose enough precision to destabilise training.
         dtype = x.dtype
@@ -117,6 +121,7 @@ class CausalSelfAttention(nn.Module):
     """Multi-head causal self-attention with RoPE."""
 
     def __init__(self, cfg: CausalLMConfig) -> None:
+        """Build causal self-attention from a model config."""
         super().__init__()
         self.n_heads = cfg.n_heads
         self.head_dim = cfg.head_dim
@@ -125,6 +130,7 @@ class CausalSelfAttention(nn.Module):
         self.dropout = cfg.dropout
 
     def forward(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+        """Attend over ``x`` ``[B, T, D]`` with RoPE-rotated queries and keys."""
         b, t, _ = x.shape
         q, k, v = self.qkv(x).chunk(3, dim=-1)
         q = q.view(b, t, self.n_heads, self.head_dim).transpose(1, 2)
@@ -147,12 +153,14 @@ class SwiGLU(nn.Module):
     """Gated feed-forward block. This is the slot regions will later occupy."""
 
     def __init__(self, dim: int, hidden: int) -> None:
+        """Build a SwiGLU block projecting ``dim`` -> ``hidden`` -> ``dim``."""
         super().__init__()
         self.gate = nn.Linear(dim, hidden, bias=False)
         self.up = nn.Linear(dim, hidden, bias=False)
         self.down = nn.Linear(hidden, dim, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply the gated feed-forward transform."""
         return self.down(F.silu(self.gate(x)) * self.up(x))
 
 
@@ -160,6 +168,7 @@ class Block(nn.Module):
     """Pre-norm transformer block."""
 
     def __init__(self, cfg: CausalLMConfig) -> None:
+        """Build one pre-norm block: attention, then gated feed-forward."""
         super().__init__()
         hidden = int(cfg.dim * cfg.ffn_mult)
         hidden = 64 * ((hidden + 63) // 64)  # round up for kernel-friendly shapes
@@ -169,6 +178,7 @@ class Block(nn.Module):
         self.ffn = SwiGLU(cfg.dim, hidden)
 
     def forward(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+        """Run attention then feed-forward, each on its own residual path."""
         x = x + self.attn(self.attn_norm(x), cos, sin)
         return x + self.ffn(self.ffn_norm(x))
 
@@ -177,6 +187,7 @@ class CausalLM(nn.Module):
     """Small decoder-only language model."""
 
     def __init__(self, cfg: CausalLMConfig) -> None:
+        """Build the model, tie the head to the embedding, and cache RoPE tables."""
         super().__init__()
         self.cfg = cfg
         self.embed = nn.Embedding(cfg.vocab_size, cfg.dim)
@@ -201,6 +212,7 @@ class CausalLM(nn.Module):
 
     @staticmethod
     def _init_weights(module: nn.Module) -> None:
+        """Normal(0, 0.02) init for Linear and Embedding; zero bias."""
         if isinstance(module, nn.Linear):
             nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:

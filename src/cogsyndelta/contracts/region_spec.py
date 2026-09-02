@@ -98,6 +98,8 @@ class RegionSpec:
     README's nine-region brain lineup exists because intent had nowhere honest to live."""
 
     def __post_init__(self) -> None:
+        """Reject a spec that cannot build: empty name, non-positive dims, or a
+        latent_vae with no latent_dim."""
         if not self.name:
             raise ValueError("region name must be non-empty")
         if self.stream_dim <= 0 or self.hidden_dim <= 0:
@@ -117,6 +119,8 @@ class MindSpec:
     notes: str = ""
 
     def __post_init__(self) -> None:
+        """Reject duplicate region names, stream-width disagreement, and out-of-range
+        top_k -- all of which are shape errors that would otherwise surface much later."""
         names = [r.name for r in self.regions]
         dupes = {n for n in names if names.count(n) > 1}
         if dupes:
@@ -133,9 +137,11 @@ class MindSpec:
 
     @property
     def live_regions(self) -> list[RegionSpec]:
+        """Regions marked implemented. Declared-but-unbuilt regions are excluded."""
         return [r for r in self.regions if r.live]
 
     def to_json(self, path: Path | None = None, *, indent: int = 2) -> str:
+        """Serialize the mind. Writes to ``path`` when given; always returns the JSON."""
         payload = json.dumps(asdict(self), indent=indent, sort_keys=False)
         if path is not None:
             path.write_text(payload + "\n")
@@ -143,6 +149,7 @@ class MindSpec:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MindSpec:
+        """Rebuild a MindSpec from parsed JSON, restoring nested pretrain/quant specs."""
         regions = []
         for raw in data.get("regions", []):
             raw = dict(raw)
@@ -165,4 +172,5 @@ class MindSpec:
 
     @classmethod
     def from_json(cls, path: Path) -> MindSpec:
+        """Load a MindSpec from a JSON file."""
         return cls.from_dict(json.loads(Path(path).read_text()))
