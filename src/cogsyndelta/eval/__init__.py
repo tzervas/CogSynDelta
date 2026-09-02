@@ -8,6 +8,7 @@ from cogsyndelta.eval.metrics import (
     mean_reciprocal_rank,
     recall_at_k,
     representation_std,
+    spearman_correlation,
     token_weighted_perplexity,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "mean_reciprocal_rank",
     "recall_at_k",
     "representation_std",
+    "spearman_correlation",
     "token_weighted_perplexity",
 ]

@@ -167,6 +167,83 @@ def mean_reciprocal_rank(scores: torch.Tensor, relevant: torch.Tensor) -> float:
     return (1.0 / ranks.float()).mean().item()
 
 
+def _average_ranks(values: Sequence[float]) -> list[float]:
+    """Ascending ranks, with tied values sharing their average rank.
+
+    Ties are not an edge case for graded similarity data, they are most of it: STS-B
+    validation carries 1500 pairs over 64 distinct scores, and its largest tie group is
+    139 pairs all annotated 0.0. Ranking those by array position would invent an ordering
+    the annotators never gave and move the correlation for a reason that has nothing to
+    do with the model.
+
+    Args:
+        values: Numbers to rank.
+
+    Returns:
+        One rank per input, in input order, 1-based.
+    """
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    start = 0
+    while start < len(order):
+        stop = start
+        while stop + 1 < len(order) and values[order[stop + 1]] == values[order[start]]:
+            stop += 1
+        shared = (start + stop) / 2.0 + 1.0
+        for pos in range(start, stop + 1):
+            ranks[order[pos]] = shared
+        start = stop + 1
+    return ranks
+
+
+def spearman_correlation(predicted: Sequence[float], gold: Sequence[float]) -> float:
+    """Spearman rank correlation: Pearson over average ranks.
+
+    This is the held-out metric for any region judged on GRADED similarity rather than
+    retrieval. Cosine similarity and a human 0-1 score do not share a scale and are not
+    linearly related, so Pearson on the raw values would penalise a model that ranks every
+    pair correctly but compresses its cosines into a narrow band -- which small encoders
+    always do. Rank correlation asks only the question the region's job actually poses:
+    do neighbours stay neighbours, in order.
+
+    Implemented here rather than pulled from scipy: this is the whole of it, and scipy
+    would be a new dependency on every host and CI job for one function.
+
+    Args:
+        predicted: Model scores, e.g. cosine similarities.
+        gold: Human scores, aligned with ``predicted``.
+
+    Returns:
+        Correlation in ``[-1, 1]``. Returns 0.0 when either side is constant -- see below.
+
+    Raises:
+        ValueError: If the sequences differ in length or hold fewer than two points.
+    """
+    if len(predicted) != len(gold):
+        raise ValueError(f"{len(predicted)} predictions vs {len(gold)} gold scores")
+    if len(predicted) < 2:
+        raise ValueError("rank correlation needs at least 2 points")
+
+    rank_p = _average_ranks(predicted)
+    rank_g = _average_ranks(gold)
+    n = len(rank_p)
+    mean_p = sum(rank_p) / n
+    mean_g = sum(rank_g) / n
+    cov = sum((a - mean_p) * (b - mean_g) for a, b in zip(rank_p, rank_g, strict=True))
+    var_p = sum((a - mean_p) ** 2 for a in rank_p)
+    var_g = sum((b - mean_g) ** 2 for b in rank_g)
+
+    # A constant side has no ranking to correlate with, so the coefficient is undefined.
+    # 0.0 is the honest report -- "no monotone relationship detectable" -- and it is what
+    # a fully collapsed encoder deserves: every pair scored identically is not a perfect
+    # correlation. Raising instead would abort a training run at exactly the moment the
+    # collapse it is meant to detect had happened. Report emb_std alongside this to tell
+    # "collapsed" apart from "uncorrelated".
+    if var_p <= 0.0 or var_g <= 0.0:
+        return 0.0
+    return cov / math.sqrt(var_p * var_g)
+
+
 def representation_std(embeddings: torch.Tensor) -> float:
     """Per-feature standard deviation across the batch, averaged.
 

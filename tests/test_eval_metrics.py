@@ -19,6 +19,7 @@ from cogsyndelta.eval import (
     mean_reciprocal_rank,
     recall_at_k,
     representation_std,
+    spearman_correlation,
     token_weighted_perplexity,
 )
 
@@ -133,3 +134,53 @@ def test_compare_reports_a_clean_win() -> None:
     )
     assert result["regressions"] == []
     assert result["verdict"] == "no regression"
+
+
+@pytest.mark.cpu
+def test_spearman_is_monotone_not_linear() -> None:
+    """Rank correlation must be blind to the scale a model happens to use.
+
+    This is the whole reason the compress region is judged on Spearman rather than
+    Pearson: a small encoder that ranks every pair correctly still squeezes its cosines
+    into a narrow band, and Pearson would score that squeeze as a failure.
+    """
+    gold = [0.0, 0.25, 0.5, 0.75, 1.0]
+    squeezed = [0.80, 0.81, 0.82, 0.83, 0.84]
+    assert spearman_correlation(squeezed, gold) == pytest.approx(1.0)
+    assert spearman_correlation(list(reversed(squeezed)), gold) == pytest.approx(-1.0)
+
+
+@pytest.mark.cpu
+def test_spearman_averages_tied_ranks() -> None:
+    """Ties are most of the data, not an edge case.
+
+    STS-B validation has 1500 pairs over 64 distinct scores; 139 of them are annotated
+    0.0. Breaking those ties by array position invents an ordering the annotators never
+    gave. Checked against the closed form for this case: with gold ranks [1.5, 1.5, 3, 4]
+    against predicted ranks [1, 2, 3, 4], rho = 0.9486832980505138.
+    """
+    gold = [1.0, 1.0, 2.0, 3.0]
+    predicted = [0.1, 0.2, 0.3, 0.4]
+    assert spearman_correlation(predicted, gold) == pytest.approx(0.9486832980505138)
+
+    # Position-based tie breaking would give exactly 1.0 here. It must not.
+    assert spearman_correlation(predicted, gold) < 1.0
+
+
+@pytest.mark.cpu
+def test_spearman_reports_zero_for_a_collapsed_prediction() -> None:
+    """A constant prediction is not a perfect correlation.
+
+    A fully collapsed encoder scores every pair identically. Returning 0.0 rather than
+    raising keeps a long training run alive so the collapse is recorded next to emb_std
+    instead of aborting the run that was measuring it.
+    """
+    assert spearman_correlation([0.5] * 6, [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]) == 0.0
+
+
+@pytest.mark.cpu
+def test_spearman_refuses_input_it_cannot_correlate() -> None:
+    with pytest.raises(ValueError, match="predictions vs"):
+        spearman_correlation([0.1, 0.2], [0.1])
+    with pytest.raises(ValueError, match="at least 2"):
+        spearman_correlation([0.1], [0.1])
