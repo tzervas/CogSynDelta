@@ -394,16 +394,20 @@ def _prepare_graded(
     return kept, report
 
 
-def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
-    """Train one region in isolation and write a receipt.
+def build_splits(
+    cfg: PretrainConfig,
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]], dict[str, Any]]:
+    """Load, interleave, deduplicate and split a region's corpus.
+
+    This is the ONE definition of a region's held-out set. Post-training quantization has
+    to score against exactly the pairs training was judged on, and a second implementation
+    of "load, shuffle, dedup, take the first 512" would drift from this one the moment
+    either changed -- silently, since both would still produce 512 plausible pairs and a
+    plausible recall figure. The comparison would simply stop meaning anything.
 
     Returns:
-        The receipt dict, also written to ``{out_dir}/{region}-{timestamp}.json``.
+        ``(holdout, train_pairs, meta)``.
     """
-    torch.manual_seed(cfg.seed)
-    device = _resolve_device(cfg.device)
-    tok = Tokenizer.from_file(cfg.tokenizer_path)
-
     budget = cfg.steps * cfg.batch_size + cfg.holdout_pairs
     all_pairs = load_pairs(cfg.shards, cfg.pair_columns, limit=budget)
     source_counts = {"primary": len(all_pairs)}
@@ -462,6 +466,31 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     # Contamination is checked BEFORE any training happens, so a dirty split stops the
     # run rather than producing a number nobody can trust.
     contamination = assert_no_contamination([a for a, _ in train_pairs], [a for a, _ in holdout])
+    return (
+        holdout,
+        train_pairs,
+        {
+            "source_counts": source_counts,
+            "duplicates_removed": duplicates_removed,
+            "contamination": contamination,
+        },
+    )
+
+
+def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
+    """Train one region in isolation and write a receipt.
+
+    Returns:
+        The receipt dict, also written to ``{out_dir}/{region}-{timestamp}.json``.
+    """
+    torch.manual_seed(cfg.seed)
+    device = _resolve_device(cfg.device)
+    tok = Tokenizer.from_file(cfg.tokenizer_path)
+
+    holdout, train_pairs, split_meta = build_splits(cfg)
+    source_counts = split_meta["source_counts"]
+    duplicates_removed = split_meta["duplicates_removed"]
+    contamination = split_meta["contamination"]
     graded, graded_report = _prepare_graded(cfg, train_pairs)
 
     encoder_cfg = TextEncoderConfig(**{**asdict(cfg.encoder), "vocab_size": tok.get_vocab_size()})
