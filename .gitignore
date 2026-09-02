@@ -217,6 +217,11 @@ __marimo__/
 checkpoints/
 *.ckpt
 *.safetensors
+# The region pretrain harness writes {out_dir}/{region}-checkpoints/, which `checkpoints/`
+# does not match, and torch.save defaults to .pt, which *.pth does not match. Running it
+# with the default out_dir puts a 64 MB blob per region straight into git status.
+*-checkpoints/
+*.pt
 
 # Memory persistence files
 memory_storage/
