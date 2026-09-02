@@ -305,7 +305,26 @@ new ones.
 |----|------|--------------|------|--------|
 | P11.1 | Reshuffle between epochs | every epoch presents new negative combinations; standard practice (`shuffle=True`) that we skipped | batch composition provably differs across epochs; recall improves or is explained | todo |
 | P11.2 | Hard negative mining | InfoNCE learns most from negatives it nearly confuses; random in-batch negatives are mostly trivially easy | mined-negative run beats random-negative run on the same holdout | todo |
+| P11.4 | Progressive sequence length ("crawl, walk, run") | short context early, longer context later. Reframes max_len from a binary choice into a schedule | staged-length run matches or beats a fixed-length run at equal compute | todo |
+| P11.5 | Progressive visual resolution | same principle for images: small crops early, larger views later, so the visual region eventually reasons over a whole screenshot rather than a tile | staged-resolution beats fixed at equal compute | todo |
 | P11.3 | Curriculum over negative difficulty | easy discriminations first, fine ones later -- "dog, then Belgian Malinois vs other dogs" | staged difficulty beats constant difficulty at equal step count | todo |
+
+PROGRESSIVE LENGTH IS ESTABLISHED PRACTICE, and it reframes P0.9a. The max_len question is
+not "96 or 256" -- it is "96 THEN 256". Training short first is cheaper (attention is
+quadratic in sequence length) and the model learns local structure before being asked to
+integrate a whole function. Long-context models are routinely trained this way: a base
+context first, extended later, rather than paying quadratic cost from step one.
+
+The same argument extends to vision: small crops early, whole screenshots later. That is
+the concrete mechanism behind the operator's goal of a model that reads a full display --
+you do not start it there, you get it there.
+
+COROLLARY FOR CORPUS SELECTION: many clean datasets beat few dirty ones. The operator is
+explicit that swapping to more datasets to satisfy licensing is fine -- "I'm entirely okay
+with changing to different datasets and using more datasets to get accomplished what could
+be done with fewer datasets with different licenses". Trusted and unpoisoned is the bar;
+source count is not. This materially widens the replacement search for BLOCKING corpora,
+since a composite of narrow clean sets can substitute for one broad encumbered one.
 
 PRIOR ART -- this is established, not novel, which is good news: epoch reshuffling is
 universal; progressive hard-negative mining is the core of DPR, ANCE and RocketQA, where
