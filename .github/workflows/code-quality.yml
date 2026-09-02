@@ -22,19 +22,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install uv
+      - name: Verify uv (baked into job image)
         run: |
-          # setup-uv@v7 as mirrored on data.forgejo.org fails to unpack uv
-          # ("tar failed with exit code 2") from both its mirror and the GitHub
-          # fallback, so uv never lands on PATH. The installer is one call to a
-          # host CI already reaches, and honours the same UV_VERSION pin.
-          VER="${{ env.UV_VERSION }}"
-          if [ -n "$VER" ]; then
-            curl -LsSf "https://astral.sh/uv/${VER}/install.sh" | sh
-          else
-            curl -LsSf https://astral.sh/uv/install.sh | sh
-          fi
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
       - name: Set up Python
         run: uv python install 3.12
@@ -74,19 +70,15 @@ jobs:
         with:
           fetch-depth: 0  # Full history for better analysis
 
-      - name: Install uv
+      - name: Verify uv (baked into job image)
         run: |
-          # setup-uv@v7 as mirrored on data.forgejo.org fails to unpack uv
-          # ("tar failed with exit code 2") from both its mirror and the GitHub
-          # fallback, so uv never lands on PATH. The installer is one call to a
-          # host CI already reaches, and honours the same UV_VERSION pin.
-          VER="${{ env.UV_VERSION }}"
-          if [ -n "$VER" ]; then
-            curl -LsSf "https://astral.sh/uv/${VER}/install.sh" | sh
-          else
-            curl -LsSf https://astral.sh/uv/install.sh | sh
-          fi
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
       - name: Set up Python
         run: uv python install 3.12
@@ -124,19 +116,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install uv
+      - name: Verify uv (baked into job image)
         run: |
-          # setup-uv@v7 as mirrored on data.forgejo.org fails to unpack uv
-          # ("tar failed with exit code 2") from both its mirror and the GitHub
-          # fallback, so uv never lands on PATH. The installer is one call to a
-          # host CI already reaches, and honours the same UV_VERSION pin.
-          VER="${{ env.UV_VERSION }}"
-          if [ -n "$VER" ]; then
-            curl -LsSf "https://astral.sh/uv/${VER}/install.sh" | sh
-          else
-            curl -LsSf https://astral.sh/uv/install.sh | sh
-          fi
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
       - name: Set up Python
         run: uv python install 3.12

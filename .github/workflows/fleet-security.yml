@@ -36,14 +36,8 @@ jobs:
           # ignore it. Fetch the tool instead. Still fails closed: a download failure or
           # a finding both exit non-zero, so red continues to mean something.
           # Pinned on purpose; a floating security gate changes behaviour unreviewed.
-          GITLEAKS_VERSION="8.30.1"
-          if ! command -v gitleaks >/dev/null 2>&1; then
-            TOOLS="$(mktemp -d)"
-            curl -fsSL -o "$TOOLS/gitleaks.tar.gz" \
-              "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-            tar xzf "$TOOLS/gitleaks.tar.gz" -C "$TOOLS" gitleaks
-            export PATH="$TOOLS:$PATH"
-          fi
+          command -v gitleaks >/dev/null 2>&1 || {
+            echo "gitleaks missing — job image is not fleet-ci-base" >&2; exit 1; }
           gitleaks version
           gitleaks detect --source . --verbose --redact
 
@@ -58,14 +52,8 @@ jobs:
           set -euo pipefail
           # Same reasoning as the gitleaks gate above: fetch rather than be permanently
           # red. Fail-closed is preserved -- --exit-code 1 below still fails on findings.
-          TRIVY_VERSION="0.74.0"
-          if ! command -v trivy >/dev/null 2>&1; then
-            TOOLS="$(mktemp -d)"
-            curl -fsSL -o "$TOOLS/trivy.tar.gz" \
-              "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
-            tar xzf "$TOOLS/trivy.tar.gz" -C "$TOOLS" trivy
-            export PATH="$TOOLS:$PATH"
-          fi
+          command -v trivy >/dev/null 2>&1 || {
+            echo "trivy missing — job image is not fleet-ci-base" >&2; exit 1; }
           trivy --version
           trivy fs --scanners vuln,secret,license \
             --severity HIGH,CRITICAL \
