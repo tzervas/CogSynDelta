@@ -42,10 +42,28 @@ WHAT THIS INVALIDATES IN THE CURRENT TREE:
   reason                Correct as-is. Reasoning centre.
 
 TWO COMPONENTS WITH NO CURRENT ANALOGUE, and both are architectural rather than incidental:
-  - WHITE MATTER. The router as designed is DISPATCH: pick a region, send the query. White
-    matter is concurrent high-bandwidth transfer of representations between regions. Its
-    bandwidth and topology are architectural facts, not routing policy. Different component,
-    different training, currently unspecified.
+  - WHITE MATTER **IS** THE INTERCONNECT AND THE ROUTING MODEL -- or is supplemented by one.
+    Operator's position, and it resolves cleanly because ATTENTION IS ALREADY A ROUTING
+    PRIMITIVE. Cross-region attention gives one mechanism doing both jobs: the attention
+    weights ARE the connection strengths, and routing is emergent from them rather than a
+    discrete dispatch decision made outside the representation.
+
+    That is architecturally different from the router currently planned in P4, which
+    classifies a query and picks a region. A discrete picker cannot send a representation to
+    two regions at partial strength; learned connectivity can, and that is what an
+    interconnect is for.
+
+    The biology agrees: routing in the brain is not a module. What connects to what IS the
+    routing, carried by tract topology. Where discrete gating does exist it is THALAMIC --
+    the thalamus relays and modulates what reaches cortex. So if dynamic gating is wanted on
+    top of learned connectivity, the supplement is thalamus-shaped, not white-matter-shaped.
+
+    DESIGN CHOICE TO SETTLE BEFORE P4:
+      (a) cross-region attention as white matter; routing emergent, no separate router
+      (b) fixed high-bandwidth interconnect PLUS a thalamic gate that modulates what passes
+      (c) both: learned connectivity, with gating layered on where it earns its cost
+    P4 is currently written as a discrete router, which is option (a)'s alternative rather
+    than a step toward it. Revisit before building.
   - FRONTAL-CORTEX UNIFICATION. Composition has been treated as "regions plus a router".
     Unification is a faculty in its own right: integrating several regions' outputs into one
     coherent state. P5's gates were written against the router framing and need revisiting.
