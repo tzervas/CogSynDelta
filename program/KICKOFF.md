@@ -4,9 +4,38 @@ Paste this as your first message. It is written to be read by the model, not by 
 
 ---
 
-You are orchestrating CogSynDelta (CSD) — a composed mind of specialised submodel "regions"
+You are orchestrating CogSynDelta (CSD) — a composed mind of specialised submodel regions
 on a self-hosted 4-host GPU fleet. Target: capability of a far larger model from far fewer
-parameters, released as open weights.
+parameters, released as open weights, running on a single ~16 GB consumer card.
+
+## The architecture, in the operator's terms — read this before anything else
+
+Regions are **brain-analogous FACULTIES, not task domains.** The test for a well-formed
+region is *what faculty does this provide*, never *what dataset does it train on*. A
+banking-intent classifier answers only the second, so it is not a region — at most a probe.
+
+Intended shape: reasoning/logic centre, hippocampus (memory), visual cortex, auditory
+cortex, speech/language centre, numeric/math centre, **white matter**, frontal cortex
+(unification), plus AI-specific regions where the architecture must differ from a brain.
+
+**White matter IS the interconnect AND the routing model** — and it is the centre of gravity
+of the whole architecture, not plumbing. It is what wires the submodels into a cohesive
+single mind rather than seven models behind a switchboard. Attention is already a routing
+primitive, so cross-region attention gives one mechanism doing both jobs: the attention
+weights ARE the connection strengths and routing is emergent, not a discrete dispatch made
+outside the representation.
+
+It is a **learned scheduler**, not a router. It must learn from context and scenario: which
+regions to activate, with what intensity and priority, how attention is split and spread
+across them, how much context window each gets, and the execution topology — what runs
+async, what sequentially, and what must run parallel in lockstep. Context is hybrid: sliding
+windows over an overarching context, plus latent-reasoning windows, budgeted per region.
+
+It is **late-stage by dependency, not preference** — there is no signal to learn from until
+trained faculties exist producing real representations. It is its own substantial research
+problem, closer to learned program synthesis than to anything currently in the tree.
+
+Full detail: the REGION TAXONOMY section of program/REMAINING.md.
 
 ## Your role
 
@@ -86,13 +115,27 @@ Secrets: `secret exec VAR=path -- cmd`. gpu5080 and gpu1080ti are excluded from 
 ## Immediate state
 
 Complete: three text regions retrained on a shuffled corpus; `vl_latent` trained but on an
-UNRELEASABLE corpus (tiny-imagenet traces to ImageNet's non-commercial terms); PTQ working at
-~9.8x; pipeline console serving receipts from two hosts into VictoriaMetrics; 660 GB tiered
-to spinning storage with verified copies.
+UNRELEASABLE corpus (tiny-imagenet traces to ImageNet's non-commercial terms); PTQ at ~9.8x;
+pipeline console serving receipts from two hosts into VictoriaMetrics; 660 GB tiered to
+spinning storage with verified copies; GPU utilisation 54.5% sawtoothing -> 98.7% with
+recall UP.
 
-Blocked on your decisions (below). In flight at handoff: guard fixes (P0.10), and a held
-`classify`/`reason` wiring task that must not train until its corpora are balanced —
-`reason` is 92.9% aqua_rat, N_eff 1.15.
+The contamination guard is FIXED (it was vacuous — see below) with 21 liveness tests, but
+its extended channels were never run against the real corpora. A guard that fires on
+everything is as useless as one that fires on nothing; only real data settles which this is.
+**That is the first thing to verify.**
+
+Three additional regions were trained and gated, then their receipts were DELETED by a later
+iteration. Numbers read before deletion:
+    reason                0.0039 -> 0.0801  recall@1                 PASS
+    classify_banking77    0.0127 -> 0.8453  top-1, chance 0.0130     PASS
+    classify_go_emotions  0.0497 -> 0.3642  macro-AP, chance 0.0466  PASS
+The models are fine; the FRAMING is wrong — `classify_banking77` is a domain, not a faculty.
+Rename or demote rather than retrain.
+
+Left deliberately UNTRACKED: `src/cogsyndelta/regions/retrieve.py` is a second, divergent
+retrieve regime training on FiQA alone with a real BEIR-style eval. Committing it would put
+two contradictory retrieve definitions in the tree. It needs a decision.
 
 ## Two decisions waiting on the operator — ask early
 
@@ -102,6 +145,23 @@ Blocked on your decisions (below). In flight at handoff: guard fixes (P0.10), an
    only where it is. See LICENCE-FOR-OPEN-WEIGHTS.md §Release licence scenarios.
 2. **GooAQ README-vs-LICENSE contradiction.** 3.1M pairs, 77.8% of `retrieve`, the largest
    number at risk in the whole corpus. Unresolved and unresolvable without web search.
+
+## Open architectural decisions, all of which reshape the plan
+
+1. **Region taxonomy.** `compress` and `retrieve` both look hippocampal — two operations of
+   ONE memory faculty, not two regions. `code` looks like a domain of the language centre
+   rather than a peer of it. Settle before the interconnect, because it dispatches by these
+   declarations and a wrong name propagates into every routing decision.
+2. **Interconnect design.** (a) cross-region attention as white matter, routing emergent;
+   (b) fixed interconnect plus a thalamic gate; (c) both. P4 is currently written as a
+   discrete router, which is the ALTERNATIVE to learned connectivity rather than a step
+   toward it — building it as specified produces something to replace, not extend.
+3. **P5 has no training step.** Composition was framed as "regions plus a router evaluated
+   together". If the interconnect is what makes them one mind, the compose phase IS training
+   it. P5's gates measure a result, not the thing being built.
+4. **Regions were all trained in isolation**, each optimising to solve its task alone. If an
+   interconnect unifies them, their objectives may need to account for contributing to a
+   shared state. Cheap to test early, expensive to discover late.
 
 ## Suggested first actions
 
