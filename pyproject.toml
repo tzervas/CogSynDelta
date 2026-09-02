@@ -100,6 +100,18 @@ cogsyndelta-benchmark = "benchmarks.run:main"
 cogsyndelta-poc = "cogsyndelta.poc.cli:main"
 
 [dependency-groups]
+# Real training deps. Deliberately a separate group, not core: CI never trains, and
+# pulling pyarrow + tokenizers into every lint job costs minutes for nothing. Training
+# hosts run `uv sync --group train`.
+#
+#   pyarrow    the corpus on /mnt/fleet-datasets is 1654 parquet shards; without this
+#              the repo cannot open a single one of them
+#   tokenizers real BPE. The GPT-2 and Pythia tokenizer JSONs already sit on the export,
+#              so this needs no download and no transformers dependency.
+train = [
+    "pyarrow>=18.0.0,<24.0.0",
+    "tokenizers>=0.20.0,<1.0.0",
+]
 dev = [
     "pytest>=8.0.0,<10.0.0",
     "pytest-cov>=5.0.0,<8.0.0",

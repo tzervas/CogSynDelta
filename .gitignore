@@ -207,7 +207,10 @@ marimo/_lsp/
 __marimo__/
 
 # Data directories
-data/
+# Anchored to the repo root on purpose. A bare `data/` matches a directory of
+# that name at ANY depth, which silently swallowed the src/cogsyndelta/data/
+# source package -- committed code that simply never appeared in git status.
+/data/
 *.pth
 
 # Model checkpoints and weights
