@@ -115,6 +115,12 @@ docs = [
 ]
 
 [tool.uv]
+# CI runs `uv sync --no-sources`, which drops the [tool.uv.sources] cu128 pins and
+# resolves torch/torchvision off the CPU index. With only an upper bound that selected
+# torchvision 0.24.1, which publishes win_arm64 wheels ONLY - so every linux x86_64 job
+# failed at install. Requiring the target platform makes uv resolve to a version that
+# actually has a linux x86_64 wheel.
+required-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 add-bounds = "major"
 python-preference = "managed"
 python-downloads = "automatic"
