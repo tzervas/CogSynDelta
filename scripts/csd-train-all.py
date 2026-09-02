@@ -36,14 +36,17 @@ SIZING, learned by measurement rather than assumed:
     code       214,813 pairs -> recall@1 0.94
     compress   277,269 pairs -> recall@1 0.26
     retrieve     4,986 pairs -> recall@1 0.006   (data-starved, not a training failure)
-Batch 256 with warmup matters as much as step count: the negatives in InfoNCE ARE the
-batch, so a small batch gives a weak signal regardless of how long it runs.
+Batch size with warmup matters as much as step count: the negatives in InfoNCE ARE the
+batch, so a small batch gives a weak signal regardless of how long it runs. Those three
+numbers were measured at batch 256; DEFAULT_BATCH is now 1,280 (see its docstring), and
+`lr` is derived from it rather than fixed.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -51,6 +54,63 @@ from pathlib import Path
 # Durable, never a temp dir. /tmp filled at 0 bytes free when checkpoints landed there.
 DEFAULT_STATE = Path("/akula-data/csd")
 CORPUS = Path("/mnt/fleet-datasets/csd")
+
+BASE_BATCH = 256
+BASE_LR = 3e-4
+"""The batch/LR pair every text-region receipt before 2026-09-02 was trained at.
+
+Kept as the reference point for :func:`lr_for_batch` rather than as the batch anyone
+should still use. It is what `DEFAULT_BATCH` is scaled FROM, so a future change to the
+batch does not silently change the learning rate as well.
+"""
+
+DEFAULT_BATCH = 1280
+"""Physical batch for the text regions, chosen by probing the card rather than fitting.
+
+In symmetric InfoNCE over in-batch negatives, THE NEGATIVES ARE THE BATCH: each anchor
+discriminates its positive against `B - 1` others, and the loss can lower-bound the
+mutual information by at most `log B`. At 256 that ceiling is 5.55 nats; at 1,280 it is
+7.15. This is a quality lever first and a throughput lever a distant second -- measured
+`code` throughput only rises from 3,353 to 3,752 pairs/s across the same change, because
+once the tokenizer is out of the loop (see regions/_tokencache.py) the GPU is already
+saturated and a bigger batch does the same FLOPs per pair.
+
+Probed on the 3090 Ti (23,028 MiB, sharing the card with a ~922 MiB KDE desktop), fp32,
+`code`, max_len 96, measuring peak allocated and the whole card's peak from nvidia-smi:
+
+    batch   peak allocated    whole card    % of card
+      256        3,475 MiB     4,996 MiB        21.7%
+      512        6,715 MiB     8,188 MiB        35.6%
+     1024       13,163 MiB    14,888 MiB        64.7%
+     1280       16,386 MiB    18,350 MiB        79.7%   <- DEFAULT_BATCH
+     1536       19,611 MiB    21,738 MiB        94.4%
+
+1,536 fits, and a memory model fitted at 256/512 predicts every row above within 0.4%
+(`233 + 12.66 * B` MiB allocated). It is still the wrong default: at 94.4% of the card
+there is no room for the desktop to open a window, for an eval at a larger holdout, or
+for a second job to share the GPU, and the failure mode is an OOM tens of minutes into
+a run. 1,280 leaves ~4.7 GiB free and gives up 0.2 nats of ceiling for it.
+"""
+
+
+def lr_for_batch(batch: int) -> float:
+    """Scale the learning rate with the square root of the batch size.
+
+    Args:
+        batch: The physical batch size the run will use.
+
+    Returns:
+        The learning rate for that batch.
+
+    A larger batch gives a lower-variance gradient estimate, so the step can be larger;
+    `sqrt(B / B0)` is the standard rule for an adaptive optimizer (AdamW here), where
+    linear scaling -- which is the rule for plain SGD -- overshoots. Holding `lr` at its
+    256-batch value while raising the batch 5x would be a real change to the run and an
+    invisible one, since nothing in the receipt would say the effective step size had
+    fallen; deriving it here means the receipt's `lr` always matches its `batch_size`.
+    """
+    return BASE_LR * math.sqrt(batch / BASE_BATCH)
+
 
 CHECKPOINT_EVERY = 200
 """Steps between checkpoints, for every region this runner drives (text and visual).
@@ -188,7 +248,15 @@ def run_region(
     if not resolved:
         print(f"    no usable sources — skipping {name}", flush=True)
         return None
-    print(f"    steps={steps} batch={batch}", flush=True)
+    # Pair-draws, not steps, is what is held constant when the batch changes: at
+    # batch 256 an 8,000-step run drew 2.05M pairs, and the same 2.05M is 1,600 steps
+    # at 1,280. Printing it makes a run that quietly does 5x the work visible in the
+    # first ten lines of output rather than in the wall clock an hour later.
+    print(
+        f"    steps={steps} batch={batch} lr={lr_for_batch(batch):.2e} "
+        f"pair_draws={steps * batch:,}",
+        flush=True,
+    )
     if dry:
         return None
 
@@ -217,7 +285,7 @@ def run_region(
         holdout_pairs=512,
         eval_every=max(1, steps // 6),
         warmup_steps=max(50, steps // 15),
-        lr=3e-4,
+        lr=lr_for_batch(batch),
         checkpoint_every=min(CHECKPOINT_EVERY, max(1, steps // 3)),
         encoder=TextEncoderConfig(dim=256, depth=4, n_heads=4, max_len=96),
         out_dir=str(state / "receipts"),
@@ -352,7 +420,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", default=str(DEFAULT_STATE))
     ap.add_argument("--steps", type=int, default=6000)
-    ap.add_argument("--batch", type=int, default=256)
+    ap.add_argument("--batch", type=int, default=DEFAULT_BATCH)
     ap.add_argument("--shard-limit", type=int, default=2, help="0 = all shards")
     ap.add_argument("--regions", default="code,compress")
     ap.add_argument("--dry-run", action="store_true")
