@@ -232,7 +232,7 @@ every metric was batch-composition dependent.
 | P0.4 | Fix csd-storage-tier verification | manifest honours the SAME excludes as the rsync | done — homelab SSD 1.5T -> 2.1T free |
 | P0.4b | Sample-verify the cold copy is readable (parquet footers) since it is now the only copy | a stratified sample of at least 5% of parquet files per dataset (17 datasets under `tritter/pretrain`, 1654 parquet files total) opens with pyarrow and reports a row count; every file that fails is listed and re-fetched onto `gpu5080:/bulk`; the paths+sizes digest recomputed with `_manifest_cmd()` equals `7300c204` (self-consistency only, not a content check) | todo |
 | P0.5 | Commit the train-dependency guard in csd-train-all.py | committed, gate green | done |
-| P0.11 | Retrain code/compress/retrieve with the fixed guard so receipts carry the multi-channel report (see P0.10 extended channels above) | 3 receipts with `contamination.channels` present and `gated_channels` reported | wip |
+| P0.11 | Retrain code/compress/retrieve with the fixed guard so receipts carry the multi-channel report (see P0.10 extended channels above) | 3 receipts with `contamination.channels` present and `gated_channels` reported | done — `code-20260903T115858Z.json`, `compress-20260903T120818Z.json`, `retrieve-20260903T121603Z.json` all carry `contamination.channels`; `gated_channels` is `["pair_exact", "pair_content"]` (non-null) in all three, matching each other — checked directly against the compress receipt because it had been reported as null, and it is not. `reason` (aqua_rat) is outside this row's stated 3-receipt scope, but also picked up a receipt with the same guard at `reason-20260903T123431Z.json`; it still trains from a flat `limit: 4982` extra_source rather than the W2a union-burn ledger's fingerprint set, so a further re-run against the corrected clean pool remains open separately from P0.11 |
 | P0.12 | Eval/quant receipts must record a checkpoint content hash, not a mutable path | receipt names a sha256 that matches the file it was computed from | todo |
 
 **P0.1 detail.** 2f1202b's `_beats_untrained_gate` classifies `untrained_baseline["recall@1"] == 0.0`
@@ -242,12 +242,12 @@ as a broken eval, and both retrieve receipts on disk (`retrieve-20260902T165842Z
 P0.1 is two-thirds green (code, compress) plus one receipt to regenerate; P0.11 covers
 the retrieve retrain.
 
-P0.11 evidence for `todo` (not `wip`): none of `code-20260902T210830Z.json`,
-`compress-20260902T211539Z.json`, `retrieve-20260902T203759Z.json` carries
-`contamination.channels` or `gated_channels`, and `ps -eo pid,etime,cmd` on both
-akula-prime .98 and gpu5080 .251 shows no `csd-train`/pretrain process running --
-akula-prime shows only `scripts/model-pipeline-console` (pid 2423667), gpu5080 shows
-nothing matching. No retrain against the fixed guard has been dispatched anywhere yet.
+P0.11 evidence for `done`: the retrain against the fixed guard was dispatched and landed.
+`code-20260903T115858Z.json`, `compress-20260903T120818Z.json` and
+`retrieve-20260903T121603Z.json` each carry `contamination.channels` with `gated_channels`
+`["pair_exact", "pair_content"]`. This supersedes the earlier `todo` evidence, which was read
+off the pre-fix receipts (`code-20260902T210830Z.json`, `compress-20260902T211539Z.json`,
+`retrieve-20260902T203759Z.json`) and a process check with no retrain running at the time.
 
 P0.12 evidence: the code-eval receipt (14:37) and code-quant receipt (14:15) both name
 `code-checkpoints/final.pt`, whose mtime is 17:08 -- the file they name was overwritten
@@ -336,7 +336,7 @@ NOT used to judge quality). Full results: /mnt/bulk/csd-corpus-analysis/analysis
 |----|---------|----------------|--------|
 | P0.9a | `code` truncates 93.9% of code-side tokens at max_len=96 | ANSWERED — see below. Truncation inflated the BASELINE, not the trained score | done |
 | P0.9b | `retrieve` holdout has 53.7% near-dupes (>=0.90) in train | 0.748 is inflated. But see the split below -- not all of it is leakage | todo |
-| P0.9c | `compress` graded/STS-B gate ran once at 11:36 (spearman 0.4956, `receipts/compress-20260902T153612Z.json`) then silently stopped when `csd-train-all.py` became the runner (`842db5e`); `graded_shards` is set only at `regions/compress.py:88` | a documented gate that silently stopped running, not one that never ran | wip — graded gate restored in 7ab9abc/a5d2206 (guard mutation-tested), graded_shards is set by scripts/csd-train-all.py (run_region) as well as regions/compress.py; NO receipt on disk yet carries graded_held_out from the restored path — the re-run of compress (P0.11) closes it |
+| P0.9c | `compress` graded/STS-B gate ran once at 11:36 (spearman 0.4956, `receipts/compress-20260902T153612Z.json`) then silently stopped when `csd-train-all.py` became the runner (`842db5e`); `graded_shards` is set only at `regions/compress.py:88` | a documented gate that silently stopped running, not one that never ran | done — graded gate restored in 7ab9abc/a5d2206 (guard mutation-tested), graded_shards is set by scripts/csd-train-all.py (run_region) as well as regions/compress.py; the P0.11 re-run of compress closed it: `receipts/compress-20260903T120818Z.json` carries `graded_held_out.spearman 0.7588` (n_pairs 1498) against `untrained_graded_baseline.spearman 0.0846`, `beats_untrained.spearman: true`, `code_revision 9df6526` |
 | P0.9d | 646 anchor==positive pairs in compress (0.23%) | a free InfoNCE win that teaches nothing | todo |
 | P0.9e | anchor-only dedup drops valid one-to-many structure | one FiQA question with 23 relevant passages collapses to one, losing 22 real positives | todo |
 

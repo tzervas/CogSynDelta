@@ -1,6 +1,6 @@
 # Region Taxonomy and the White-Matter Interconnect
 
-**Status:** design draft, **REVISION 3.2**, for operator ratification. Nothing here is applied.
+**Status:** design draft, **REVISION 3.3**, for operator ratification. Nothing here is applied.
 No config, script, checkpoint or program file is modified by this document, and the JSON diff
 in §1.4 is shown so it can be reviewed, not so it can be run.
 
@@ -63,13 +63,44 @@ operator ruling defers audio to a production phase** — *"we can wait to add au
 feature once it proves out without audio"* `[OP: csd-multimodal-io-intent.md]` — so `auditory`
 and `speech_output` become **DECLARED SEAMS** with their interface, objective family and runtime
 output block **kept as declared**, rows A0–A3 move to §4.1's *Production phase: audio* subsection
-behind a blocking gate, and **v1 stays at FOUR participants and SIX ablation pairs**
+behind a blocking gate, and **v1 stays at FOUR participants and SIX ablation pairs** (**superseded in revision 3.3 by DEC-49, which admits `episodic_store` and makes it five and ten**)
 (**DEC-48**, amending DEC-43 and DEC-44). **(3) The latent-space reasoning invariant is recorded
 as DEC-47** and given a gate in W9: no inter-region path may carry discrete token ids, and the
 constructed violation must be refused. Revision 3.1 was attacked by a third skeptic pass
 (`attack-skeptic-31.md`, S1–S21); its disposition is §10.4 and its fixes are cited as
 `[S31-n fixed]`. **S1 and S2 are resolved BY the deferral rather than by a recount**, and §11 R4
 says so explicitly rather than restating either finding for `R = 5`.
+
+**What revision 3.3 changes.** Three operator rulings and one contract extraction. No restructure;
+every change is cited in place with `[OP: file-name]` for the ruling and a `file:line` for the
+contract. **(1) DEC-32 IS SUPERSEDED.** The operator ruled that `episodic_store` must be built and
+backed rather than dropped — *"So that will have to have the episodic store created to back it
+rather than just dropping it. It should have partition, capacity, integration contract"*
+`[OP: csd-episodic-store-required.md]`. **DEC-49** reinstates DEC-10's shape: the store is a
+**REQUIRED** region, **BUILT in phase 2**, a workspace participant with its own budget `b_store`.
+Its contract is taken from the operator's `memory-gate` / `memory-gate-rs` repositories where those
+repositories specify it — partition, importance-scored eviction, lifecycle, durability oracles,
+retrieval-into-context — each clause carrying the extraction's `file:line` (§1.3). Where the repos
+are **silent**, nothing is invented: the six gaps are listed for operator deliberation in §8's
+**Episodic store contract gaps** block, each with what the repos say, what CSD needs and a
+recommended default. The threat pass's findings against the store (§9.9 B2) become the **acceptance
+gates of the build**, not reasons to defer it. **Consequence: v1 has FIVE participants and TEN
+ablation pairs**, and every count that depends on that is restated in the same breath — §2.3's
+parameter total, §2.4/§2.6's collapse floor (`η/R` = **3.0%** at `R = 5`), §2.7.3's G3′ criterion
+(**≥ 7 of 10**, null rate **0.1719**), §2.7.7's cost model, §5.4's item shapes and sealed counts,
+and §5.4's reserve size. **The store is admitted by S1's own fix (b)** — as a participant whose
+pairs are counted — which required declaring the item shapes S1 said a bare fifth participant would
+lack: **X7** and **X8**, recall-dependent episodes (§5.4). **(2) The INCREMENTAL INTEGRATION
+PROTOCOL becomes a named procedure, DEC-50** `[OP: csd-incremental-integration-protocol.md]`: train
+the submodel alone, retrain the interconnect with it admitted, then whole-mind unified training —
+and **rows E0/E1/E2 are its first instance** (§4.1). DEC-26's 2–5% interconnect cap is what makes
+step 2 cheap. **(3) The downstream bar is named, DEC-51** `[OP: csd-mycelium-downstream-goal.md]`:
+after W10, a **Mycelium readiness assessment** (row **M0**) with a pre-registered pass-rate margin,
+and the explicit open question — measured, not assumed — of whether CSD handles RAG natively as a
+skill. **What this revision does NOT do:** it does not reopen W1/W1d, DEC-48's audio deferral, or
+any licence verdict. It makes the programme **larger**, like revision 3.1 and unlike revision 3:
+§4.3's phase-2 bill rises from ≈ 6–11 to **≈ 7–13 GPU-hours**, and §5.4's reservation total from
+56,320 to **67,584** items, which tightens §9.2's already-open funding risk rather than closing it.
 
 **Scope:** what each region *is* as a faculty; what white matter is, mechanically; what it
 emits and how a runtime executes it; how it is trained and on what; the experiment that
@@ -93,6 +124,24 @@ contract in `src/cogsyndelta/contracts/region.py`.
 | **[V]** | Verified by me in this session by reading the named file. |
 | **[V\*]** | Verified in a file by a surveying agent with a `file:line` citation **and** independently reproduced by at least two of the three architecture proposals or by a judge who re-checked it. Treated as fact; not re-read by me. |
 | **[I]** | Inferred — reasoning over [V] or [V\*] facts. Argued where it is load-bearing. |
+
+**One extension to `[V]` in revision 3.3, stated so the tag does not quietly widen.** §1.3's
+`episodic_store` cell cites `file:line` in **another repository** — the operator's `memory-gate`
+(HEAD `2c11c3f`) and `memory-gate-rs` (HEAD `4b9f60d`) — read by a contract-extraction scout, not
+by me in this tree. Those citations still carry `[V]`, because the standard `[V]` sets is *a named
+file was read at a named line*, and that standard is met. **What is added is the repo and the HEAD
+beside the claim**, so a re-check is possible; a `[V]` with no tree named would be a weaker claim
+wearing the same tag. **`[V]` citations into that tree appear nowhere else in this document.**
+
+**A second extension, admitted rather than performed silently** `[S33-9 fixed]`. §8's gaps block
+and §1.3's `episodic_store` cell both need to cite an **absence** — *"no `user_id` field exists"*,
+*"zero hits for `overlay` across both `src/` trees"* — and an absence has no `file:line` to name,
+so it cannot meet `[V]`'s own standard of *a named file was read at a named line*. These now carry
+**`[V-abs]`** instead: same evidentiary weight (the scout, or I, actually ran the read or the
+grep), but a different tag, so a reader scanning for citations that can be re-opened at a specific
+line is not misled into thinking one exists here. **`[V-abs]`'s standard: the grep or exhaustive
+read that produced the zero-hit result is named beside the tag**, the same way a tree is named
+beside a cross-repo `[V]`.
 
 Nothing in this document is asserted from a document that a measurement contradicts. Where a
 number is disputed between sources, both are given and the conservative one is adopted.
@@ -133,7 +182,7 @@ gate added or changed below carries the construction that makes it fail.
 | **DEC-07** | `residual_mlp` → retired; the residual path is a primitive of every block | §1 |
 | **DEC-08** | `stream_vae` → retired as a region, promoted to a **tract codec** primitive | §1 |
 | **DEC-09** | untracked `regions/retrieve.py` → **split**: adopt its BEIR eval, retire its FiQA-only training regime | §1 |
-| **DEC-10** | `episodic_store` → the AI-specific region. **SUPERSEDED BY DEC-32 in revision 2:** its contract is written now, it is a `placeholder` at v1, and it is not a phase-2 participant | §1.3 |
+| **DEC-10** | `episodic_store` → the AI-specific region. Superseded by DEC-32 in revision 2; **REINSTATED IN ITS ORIGINAL SHAPE BY DEC-49 in revision 3.3** — a required, writable, non-parametric region participating in the workspace with its own budget `b_store` | §1.3 |
 | **DEC-11** | `docs/program/CSD-BRAIN-REGIONS.md` → retired, its four unique decisions re-homed | §1.5 |
 | **DEC-12** | `core/` (1,320 lines) → **harvested and marked superseded in the module docstring; not imported, not deleted** | §1.6 |
 | **DEC-13** | Operator decision **D1** answered: **(c)**, with the division of labour fixed by *when* each half runs | §2.1 |
@@ -155,28 +204,32 @@ gate added or changed below carries the construction that makes it fail.
 | **DEC-29** | Phase 3 uses **region-granular pipeline parallel**, microbatch ≤ 256 cross-host | §6.7 |
 | **DEC-30** | The receipt reports **two verdicts** — integration, and scheduling — never one number | §2.7.6 |
 | **DEC-31** | **Release licence: the strictest input sets the term.** The composed mind is **NC**; `memory` inherits `retrieve`'s NC term from GooAQ. Per-region tiers matter only for standalone shipping | §1.2, §5.7 |
-| **DEC-32** | `episodic_store` is **demoted to `placeholder` at v1**. Its capacity, eviction, partition and write-admission contract is written now and is its build trigger. v1 has **4 active participants → 6 ablation pairs** | §1.3, §2.7.7, §9.9 |
+| **DEC-32** | ~~`episodic_store` is **demoted to `placeholder` at v1**~~ — **SUPERSEDED BY DEC-49 in revision 3.3, by operator ruling.** What survives it: the contract-first discipline (nothing is `built` without a write policy, a receipt and a gate) and the three controls it wrote (bounded capacity, declared eviction, server-derived partition key), all of which DEC-49 keeps and sharpens. What does not survive: the demotion, the build trigger, and `R = 4` | §1.3, §2.7.7, §9.9 |
 | **DEC-33** | **Memory-gate overlays** are the dynamic-paging seam's first client: tiered residency, fingerprint-bound attach, loud disconnect, strictest-input licence. A first-class manifest artifact type | §6.6, §7.3 |
 | **DEC-34** | **`visual`'s deployed half is the EMA `target_encoder`**, not the context encoder. Verified: `IJEPA.encode` is `target_encoder.embed` and every visual number in the tree is that network | §1.2, §2.3 |
 | **DEC-35** | **W1 is measured and its rule fired: the central bet is dead as trained.** A token-aware retrain (W4, then W7) is **mandatory before W5**, with the objective and gate specified. **Amended in revision 3: the verdict is PROVISIONAL PENDING W1d**, because it is definition-dependent — participation ratio kills the bet, entropy-effective rank does not `[N3 fixed]`. **RESOLVED in revision 3.2: W1d has run and CONFIRMS W1** (clean for `code`, `compress`, `vl_latent`; **CONFIRMED-BUT-NOISY** for `retrieve`), **no region OVERTURNED**, the retrains are **LICENSED**, and the **penultimate-block fallback is dead — `L_token` attaches at the FINAL block** | §4.0, §4.1 |
 | **DEC-36** | **Admission never sets a baseline.** NSRS thresholds are calibrated on a split that is not graded; B1/B2 are recomputed on the graded split by a separate forward pass; τ is stated in chance-normalised units per bin | §5.3, §2.7.1 |
-| **DEC-37** | **G3′ is the synergy conjunction**, not the mean interaction: `Δ_A > 0` **and** `Δ_B > 0` **and** `I > 0`, per pair. The redundancy quadrant is reported as `REDUNDANT` and is a **FAIL**. **Amended in revision 3:** all six ablation pairs carry a declared item shape and a printed sealed-item count, and a redundant *corpus* is separated from a broken *statistic* `[N2 fixed] [N6 fixed]` | §2.7.3, §5.4 |
+| **DEC-37** | **G3′ is the synergy conjunction**, not the mean interaction: `Δ_A > 0` **and** `Δ_B > 0` **and** `I > 0`, per pair. The redundancy quadrant is reported as `REDUNDANT` and is a **FAIL**. **Amended in revision 3:** every ablation pair carries a declared item shape and a printed sealed-item count, and a redundant *corpus* is separated from a broken *statistic* `[N2 fixed] [N6 fixed]`. **Amended again in revision 3.3 (DEC-49):** `R = 5` ⇒ **ten** pairs, criterion **≥ 7 of 10**, null rate **0.1719**, with the two new shapes **X7/X8** declared so the denominator is not padded with pairs that cannot pass | §2.7.3, §5.4 |
 | **DEC-38** | **Reservation is at source-row fingerprint granularity**, not composite-hash granularity; train/eval splits and bootstraps are by source row | §5.6, §5.4 |
 | **DEC-39** | **Keyed split assignment.** `split = HMAC(k_split, source_row_fingerprint) mod N`, `k_split` held outside every path an agent can write. No key ⇒ the loader refuses to build a split | §5.6 |
 | **DEC-40** | **One `load_checkpoint()`** in `src/`, `weights_only=True` hardcoded, manifest SHA-256 verified before the file is opened, enforced by a CI lint rule. **Revision 3 gives it a row (W0c) and a named owner** `[N10c fixed]` | §9.9, §4.1 |
 | **DEC-41** | **The v1 read-out is a ranking head** over a declared candidate set; abstention is an explicit **NULL candidate**, not a new head. B1/B2/G2 are defined in that metric | §2.6, §2.7.1 |
-| **DEC-42** | **The aqua_rat recovery burns the UNION of both possible draws** — the reservoir draw at `seed = 0` **and** the first 4,982 rows in shard order — because the sampling algorithm changed at `c42203c` and no surviving receipt records `cap_sampling`. Cost: at most 4,982 further rows of the 92,485 the recovery marked clean. A ledger that contains only one draw **fails** W2a `[N1 fixed]` | §5.1, §4.1 |
+| **DEC-42** | **The aqua_rat recovery burns the UNION of every draw the ledger discovers** — the reservoir draw **R** at `seed = 0`, the prefix draw **P** (the first 4,982 rows in shard order), **and, per W2a's actual run (branch `feat/w2a-ledger-recovery`, `c6ea587`, approved), a third on-disk derived sample D3** it found under `reason/aqua_rat-raw/derived/` — because the sampling algorithm changed at `c42203c`, no surviving receipt records `cap_sampling`, and a discovered artefact of ambiguous provenance is exactly the case this decision exists to catch. **Measured, not bounded: the three-draw union is 13,946 of 97,467; clean is 83,521** `[V*, burned-aqua_rat.jsonl.manifest.json]`. A ledger that omits **any discovered draw** **fails** W2a `[N1 fixed]` | §5.1, §4.1 |
 | **DEC-43** | **`auditory` is a DECLARED SEAM, deferred to a production phase — AMENDED BY DEC-48.** Revision 3.1 made it required-in-phase-1; the operator's later ruling the same day defers it. What stays declared, so nothing is redesigned later: the interface (patch tokens over spectrogram frames, byte-identical to `visual`'s), the objective family (masked latent prediction) and the completed corpus audit. What moves: rows **A0–A3**, now **deferred**, `blocked_by` *the composed mind passes W6 without audio; operator go* `[OP: csd-multimodal-io-intent.md]` | §1.3, §1.4, §4.1 *Production phase: audio* |
 | **DEC-44** | **`speech_output` is a DECLARED SEAM on the language centre, deferred — AMENDED BY DEC-48.** One generative trunk emitting **text tokens and a discrete speech-token stream** stays the declared shape, and the **`Schedule`'s output-modality field and the §2.5 output block are KEPT AS DECLARED NOW**, precisely so the runtime contract does not change when audio is picked up. It is a **head, not a region and not a participant**: `emits: null`, `parent: language_code`, and `language_code` carries `heads: [text, speech]` `[S31-12 fixed]`. **Image output stays a declared seam** | §1.3, §2.5, §4.1 A2 |
 | **DEC-45** | **The audio licence tiers, under DEC-31's strictest-input rule — now groundwork for a deferred phase.** Both clean tiers are **CC BY 4.0**, not *"MIT / CC BY"*: CC BY is the strictest input in each mix, MIT is unreachable, and a slash is two verdicts rather than one `[S31-6 fixed]`. **HiFiTTS-2 is excluded and the exclusion is declared** `[S31-20 fixed]`. The NC options still cost **nothing at the composed tier**, because the composed model is already CC BY-NC-SA via `memory`. **ND (TED-LIUM) is outside the NC-tolerant policy** (OD-10); Common Voice is a **consent-hygiene** class, not a licence class (OD-11) | §5.7, §8 |
 | **DEC-46** | **LibriVox is ONE provenance group** for B1/B2, not ten datasets. Ten of the sixteen audited speech corpora draw on the same volunteer public-domain-audiobook pool, so a mix picked per dataset name is a monoculture wearing ten names. The cap is applied to the **group**, before any source is sized. **Amended in revision 3.2:** the balance conclusion is **`[I]` and cap-dependent, not a finding** — `N_eff ≥ 3` holds only at a per-group cap of order a few hundred hours and fails at 1,000 h `[S31-2 fixed]`; B1/B2 are share statistics and are computed **in hours**, over **both** mixes, against **both** the 0.50 hard line and the 0.40 operating cap `[S31-5 fixed] [S31-14 fixed] [S31-15 fixed]`; and the group count is *seven provenance groups, of which five carry no NC term* `[S31-13 fixed]` | §5.7, §4.1 A0 |
 | **DEC-47** | **THE LATENT-SPACE REASONING INVARIANT.** Encoders convert each modality (text tokens, image patches, later audio frames) into **latents**; from that point on **nothing is re-serialised to discrete tokens until the read-out**. Reasoning happens in the white-matter workspace latents, and **the scheduler's iteration depth IS the latent-reasoning loop** (its future form is the deferred recurrent-depth direction, §6.9). Regions exchange **latents only** — write-back conditioning prefixes are latents, and no region emits text to another region. **Output modality is chosen at the frontal read-out** (DEC-44, §2.5): emission is a decoder choice, not a property of the reasoning. *"Discrete latent concepts"* is a hypothesis about **representation**, not a licence for a token bottleneck — quantised concept codes are a candidate **tract codec** in the retired `stream_vae` slot (DEC-08), and continuous latents stay the default until measured. **Gate (W9): a runtime assertion that no inter-region path carries discrete token ids, with the constructed violation refused** `[OP: csd-latent-space-reasoning-invariant.md]` | §2.2, §2.4, §2.5, §4.1 W9, §6.9 |
 | **DEC-48** | **AUDIO IS A PRODUCTION-PHASE FEATURE. Supersedes DEC-43 and DEC-44 as *required in phase 1*.** Operator ruling, later the same day: *"we can wait to add audio as a future feature once it proves out without audio. that will be more of a production phase implementation"* `[OP: csd-multimodal-io-intent.md]`. `auditory` and `speech_output` become **declared seams** — interface, objective family and runtime output block kept — and rows **A0–A3** are **deferred**, `blocked_by` *the composed mind passes W6 without audio; operator go*. **v1 therefore has FOUR participants and SIX ablation pairs, unchanged.** The audio licence audit and the A0 catalogue work stay as **completed groundwork** | §1.3, §4.1, §4.3, §5.7 |
+| **DEC-49** | **`episodic_store` IS REQUIRED AND IS BUILT IN PHASE 2. Supersedes DEC-32; reinstates DEC-10's shape.** Operator ruling: *"So that will have to have the episodic store created to back it rather than just dropping it. It should have partition, capacity, integration contract"* `[OP: csd-episodic-store-required.md]`. The store is a **workspace participant with its own budget `b_store`**, its contract taken clause-by-clause from `memory-gate` / `memory-gate-rs` where those repos specify it and **left open, not invented, where they are silent** (§8's gaps block). **`R = 5`, ten ablation pairs, G3′ ≥ 7 of 10 at null rate 0.1719**, collapse floor `η/R` = **3.0%**. Rows **E0/E1/E2**. §9.9 B2's threat findings are the **acceptance gates** | §1.3, §1.4, §2.3, §2.7.3, §2.7.7, §4.1, §5.4, §6.8, §8, §9.9 |
+| **DEC-50** | **THE INCREMENTAL INTEGRATION PROTOCOL** — a named, three-step procedure for admitting or changing any submodel: (1) train the submodel **alone** under phase-1 discipline against its own untrained baseline; (2) **retrain the interconnect** with it admitted (white matter A→B→C→D, regions frozen), gated on G2 + composed-metric improvement + non-zero attention mass to the new region, **else revert**; (3) **whole-mind unified training** under the monotone-improvement rule. **DEC-26's 2–5% cap is what makes step 2 cheap.** E0/E1/E2 are its first instance `[OP: csd-incremental-integration-protocol.md]` | §4.1, §6.4, §4.1 P5′ |
+| **DEC-51** | **THE DOWNSTREAM BAR IS MYCELIUM, AND IT IS A MEASUREMENT.** CSD's success criterion is not a benchmark but whether it can act as the development engine for the Mycelium functional value-semantic language project. Row **M0**, after W10: a task suite drawn from the Mycelium repo with ground truth from its own tests, CSD vs a comparable open model, on the 5080 and the 3090 Ti with RAG via the 1080 Ti helper, **gate = a pre-registered pass-rate margin**. The **open question is whether CSD does RAG natively as a skill** (`memory` + `episodic_store` end to end) — an arm of the experiment, never an assumption `[OP: csd-mycelium-downstream-goal.md]` | §4.1 M0, §9.14 |
 
 **The index is in numeric order** `[S31-17 fixed]`. Revision 3.1 appended DEC-43 to DEC-46 *before*
 the DEC-42 row revision 3 had added, so the table read DEC-41, 43, 44, 45, 46, 42. It is the
 document's lookup table and a lookup table out of order is a small defect that costs a reader the
-one thing the table exists to give them.
+one thing the table exists to give them. **Revision 3.3 adds DEC-49, DEC-50 and DEC-51 in numeric
+order**, which for once is also append order; the ordering was re-checked rather than assumed.
 
 ---
 
@@ -210,7 +263,7 @@ region) · **BUILD** (new).
 | 8 | `residual_mlp` | **RETIRE** | none | Its own docstring: *"Paired with LatentVAE so softmax routing is a real choice, not a stub"* [V\*]. It exists to give a router two things to choose between. Its declared corpus is `"synthetic"` and its trigger is the fallback path [V]. The residual path survives as `x + f(x)` inside every block. |
 | 9 | `stream_vae` | **RETIRE as region → PRIMITIVE: tract codec** | none | A bottleneck codec, declared corpus `"synthetic"` [V]. Promoted: per-tract bandwidth can be spent as *fewer tokens* (`b_r`) or *lower rank per token* (a codec on the tract). It becomes `interconnect.primitives[]`. |
 | 10 | untracked `regions/retrieve.py` | **SPLIT** | — | Not a region. Its BEIR-style eval against the real 57,638-passage FiQA pool with a BM25 reference **becomes `memory`'s gate**; its FiQA-only training regime (14,131 pairs, single source) is **retired** — single-source training is what produced every existing B1 failure. Closes operator decision **D6**. |
-| +1 | — | **DECLARE: `episodic_store`** (revision 1 said BUILD) | AI-specific | A non-parametric, writable key/value store over workspace latents. **DEC-32 demotes it to `placeholder` at v1** — no write policy without `salience`, empty at iteration 0, no receipt, no gate, and the only cross-request writable object in the design. Its capacity, eviction and partition contract is written now and is its build trigger. **Consequence: R = 4 participants, 6 ablation pairs, not 5 and 10** `[A17 fixed]`. See §1.3. |
+| +1 | — | **BUILD: `episodic_store`** (revision 1 said BUILD, revision 2 demoted it, **revision 3.3 reinstates it by operator ruling**) | AI-specific | A non-parametric, writable key/value store over workspace latents. **DEC-49 makes it REQUIRED and BUILT IN PHASE 2** `[OP: csd-episodic-store-required.md]`, with the partition / capacity / eviction / lifecycle / integration contract taken from `memory-gate` and `memory-gate-rs` clause by clause and the residue listed as open gaps rather than invented (§8). **Consequence: R = 5 participants, 10 ablation pairs**, and A17's defect is closed the only way that keeps the count honest — by **declaring the store's item shapes (X7, X8)**, not by excluding it. Rows **E0/E1/E2**. See §1.3. |
 
 **Why #10 splits rather than winning outright.** Its own docstring argues, correctly, that
 *"recall@10 out of 512 and recall@10 out of 57,638 are different measurements that happen to
@@ -227,7 +280,7 @@ instrument has no headroom for an interconnect to occupy, so it cannot measure c
 | **white matter** | **BUILD NOW** | §2. It is the centre of gravity, and it is late *by dependency*, not by priority. Its dependencies now exist. |
 | **frontal cortex** | **BUILD NOW**, inside white matter, with its own objective | §3.1. |
 | **thalamus** | **BUILD NOW** as afferent-bandwidth gating; content gating is a declared seam | §3.2. |
-| **`episodic_store`** (AI-specific) | **DEC-32 — PLACEHOLDER at v1; contract written now, build trigger stated. This supersedes DEC-10** | Revision 1 shipped it as `status: built` with no write policy, no signal, no receipt and no gate — *the exact defect DEC-07 and DEC-08 retire `residual_mlp` and `stream_vae` for* `[A17 fixed]`. Its write rule depended on `salience`, which is itself a placeholder; at iteration 0 the store is empty; and a single-item eval forward pass has nothing to read. It is also the **only writable, cross-request object in the architecture**, and revision 1's §9.9 attack table did not mention it `[A28 fixed] [T2 fixed]`. **What is decided now, so that building it is a specification and not a design exercise:** (1) parametric cost is two 512×512 projections = **524,288** params; the store itself is data. (2) **Capacity is bounded and eviction is FIFO-by-default**, both declared in the manifest — `token_budget.max` bounds what is *read*, never what is *stored*. (3) **Partition key is derived server-side from the authenticated principal**, never from the request and never from the `Schedule`; the `Schedule` may request *budget* and may never name a *namespace*. Unauthenticated or unknown principal ⇒ empty partition ⇒ the mind degrades to the no-store configuration, which is exactly phase A — a known-good, already-benchmarked state, which is what makes failing closed acceptable here. (4) **Build trigger:** when `salience` is trained *and* a measured failure mode requires cross-request context. Why it is AI-specific: the hippocampus does pattern separation over a *parametric* trace because biology cannot keep the tensor; an AI can just keep the tensor. **Consequence when built: the store IS the overarching context that the sliding windows slide over** (§6.8). At v1 that requirement is met by the per-region `ctx_r` windows and the workspace latents alone, and §6.8 says so. |
+| **`episodic_store`** (AI-specific) | **DEC-49 — REQUIRED, BUILT IN PHASE 2, a workspace participant with its own budget `b_store`. This supersedes DEC-32 and reinstates DEC-10's shape** | **The ruling, verbatim** `[OP: csd-episodic-store-required.md]`: *"No. So that will have to have the episodic store created to back it rather than just dropping it. It should have partition, capacity, integration contract, and you can look at the memory-gate and memory-gate-rs repos to get an idea of what is intended there because I should have at least in one of those two the contracts for eviction and everything. Capacity is gonna be dynamic based on the GPU that it's running on and how much context is allocated for — like KV cache determining essentially how much free space there is that can be allocated to memory-gate functionality."* **What revision 2 got right and DEC-49 keeps:** a region shipped `status: built` with no write policy, no signal, no receipt and no gate is the `residual_mlp` defect (DEC-07, DEC-08), and DEC-32 was right to refuse it `[A17 fixed]`. **What revision 2 got wrong:** it answered *"unspecified"* with *"deferred"*, when the specification already existed in another of the operator's repositories. **So the store is not deferred; it is specified from the repos and then built.** **PROVENANCE OF EVERY `[V]` IN THIS CELL.** These are `file:line` reads by the contract-extraction scout in **`memory-gate` at `2c11c3f`** (worktree `python-ai/memory-gate-wt-p1-09`, branch `feat/gateway-retrieve-domain`, the strict superset of the P1-01→P1-09 stack) and **`memory-gate-rs` at `4b9f60d`**. They are reads of **another tree, not this one**, and the repo plus HEAD is named so each is re-checkable; the extraction is held at `scratchpad/memgate/memory-gate-contracts.md`. **Where those repos are silent this cell says SILENT and stops** — §8's *Episodic store contract gaps* block carries the six open questions, and nothing there is invented into a contract clause here. **THE CONTRACT, clause by clause.** **(1) Partition — VERIFIED, and it is identity, not a filter.** The unit of storage is keyed by the **composite** `(domain, logical_key)`; a bare logical key is explicitly rejected as a design option [V, `memory_protocols.py:123-125`; `adr/0001:129-133`]. A query **must** name a domain or pass an explicit `global_query=True`, and omitting both raises `MemoryValidationError` [V, `memory_protocols.py:194-217`; `record_validation.py:83-97`]. Cross-domain isolation is **test-pinned**: `test_domain_isolation_same_logical_key` requires the same logical key in two domains to yield two distinct records and never cross-leak on read [V, `tests/storage/test_store_conformance.py:150`]. In Rust the axis is a **closed enum**, not a free string [V, `types.rs:165-208`]. **CSD adopts this as the base axis and adds one segment ahead of it** — `(scope, domain, logical_key)` — where `scope` is the server-derived partition of §9.9 B2. **The axis beyond domain is a GAP, not a decision** (§8 gap (b)). **(2) Eviction — VERIFIED, importance-scored with a GPU-residency bonus and tie-breaks.** `pick_spill_victim` scores each candidate `score = importance`, **`+1.0` if the span is `Residency::Gpu`-tagged**, ties broken by **older timestamp** then lexicographically by key, and the lowest score spills first [V, `storage/tiered.rs:150-178`, spill at `:131-148`]. Overflow at the lower tier **hard-deletes** the lowest-importance rows — the only data-loss path in the store [V, `tiered.rs:180-198`]. Promotion exists and is caller-invoked [V, `tiered.rs:113-121`]. A separate store applies **multiplicative importance decay** as an explicit externally-called step [V, `vsa/holographic_store.rs:314-319`, prune at `:321-338`]. **The Python tier is pure LRU by write order and reads `importance` nowhere** [V, `storage/tiered.py:40-46, 72-73, 145-150`] — the two languages disagree, and **CSD takes the Rust scheme**, because an unscored LRU cannot express the GPU-residency bonus the operator's ruling depends on. **Staleness is a GAP with a strong hint**: the recency fields `access_count` and `last_accessed` are **recorded and never read by eviction** [V, `holographic_store.rs:113-116, 321-338`], which is unfinished wiring rather than a decision `[I]` — so CSD's `score = importance + gpu_resident_bonus − staleness_penalty(last_accessed)` is **designed fresh from an INFERRED intent, not a confirmed one** — the scout classifies this as INFERRED, not VERIFIED (`memory-gate-contracts.md:245-250`), so the `[I]` tag on this clause is load-bearing, not decorative `[S33-4 fixed]`. **§8 gap (a) is EXTENDED to cover the decay function itself, not only the byte unit it evicts to** — a reader who follows the pointer expecting only a capacity question also finds the open staleness question there, stated as such, rather than the requirement arriving with no gap covering it at all. **Test-pinned behaviours to port:** `admit_spills_lowest_importance`, `gpu_hint_protects_from_spill`, `promote_returns_span_to_ram`, `retrieve_merges_tiers`, `disk_prune_drops_lowest` [V, `storage/tiered.rs:292-353`]. **(3) Lifecycle — VERIFIED, and richer than the Rust side.** `start()` binds the store's optional start hook and begins accepting [V, `memory_gateway.py:147-176`]; `learn()` **awaits persist** and returns a `LearnReceipt` that is frozen with `committed: Literal[True]`, so a receipt cannot exist in a non-committed state and there is no droppable fire-and-forget handle [V, `memory_gateway.py:250-317`, receipt at `:35-59`]; `drain()` awaits in-flight learns to a terminal state **without cancelling them** [V, `:177-196`]; `flush()` invokes the backend durability barrier [V, `:198-214`]; `stop()` is **refuse-new → drain → flush → stopped**, re-raising any drain or flush failure as `MemoryDurabilityError` [V, `:216-248`]. **Backpressure is bounded and it refuses rather than queues:** `max_in_flight = 32`, and exceeding it raises `MemoryBackendUnavailableError` **synchronously at submit time** rather than spawning unboundedly [V, `memory_gateway.py:118-133, 361-374`]. **CSD adopts all six verbs and the refusing backpressure unchanged**; a store that queues instead of refusing is a second unbounded object, which is the thing §9.9 B2 exists to prevent. **(4) Durability oracles — VERIFIED, three of them, with different standing.** **In-memory is a conformance oracle and explicitly NOT a durability claim** [V, `spec.md:355-362`]. **SQLite is the local durability oracle**: `journal_mode=WAL` with `synchronous=FULL` **enforced at connect time, raising if it is not FULL** [V, `storage/sqlite.py:599-603`], and `flush()` is an *additional* `PRAGMA wal_checkpoint(FULL)` that the ack does not require [V, `sqlite.py:391, 405-420`]. **Qdrant acks only after the transport upsert returns with `wait=True`** [V, ADR-0003 point 5], and the collection is stamped with embedding model / dimension / metric / namespace / revision and **validated before any user upsert** [V, `storage/qdrant.py:295-303`] — two claims under one citation in the prior revision, correctly split now that each is attributed to what actually supports it `[S33-10 fixed]`. **Ordering is durable-first:** the durable commit precedes the hot placement, so eviction from hot changes residency and never loses an acked write [V, `storage/tiered.py:67-74`]. **CSD adopts the three-oracle ladder as its test matrix** — the same conformance suite parameterised over in-memory, SQLite and the Qdrant fake — and the durable-first ordering as a hard rule. **(5) Retrieval-into-context integration — VERIFIED, and it is the ONLY integration shape that exists.** Before a task, `retrieve_context(query, domain_filter)` returns records that are built into a plain `enhanced_context` mapping; after the task, `learn_from_interaction(...)` writes back [V, `agent_interface.py:75-183, 184-224`]. **No attention-hook and no KV-injection integration exists in either repository** [V-abs, exhaustive read of both `src/` trees]. **This is the clause CSD diverges from and the divergence is named, not hidden:** in CSD the store is read **as a workspace participant through the cross-attention**, not injected into a prompt, because DEC-47 forbids re-serialising to tokens on an inter-region path. The repos supply the **lifecycle and the partition**, not the attachment; the attachment is this document's (§2.3, §2.4). **(6) Index, not bytes — VERIFIED, and it is the shape that keeps the store out of the KV allocator's way.** `Residency::{Gpu,Ram,Disk}` is a **metadata tag on a span**, documented as *"Where a recalled span currently lives. GPU bytes stay in llama.cpp"* [V, `types.rs:414-436`; `storage/tiered.rs:1-8`; `facade/hypha.rs:1-8`]; `mark_gpu(key)` records residency and **moves no bytes** [V, `tiered.rs:99-106`]. **CSD adopts the split**: the store owns an **index and a policy** over latent bytes owned by the runtime, not a second allocator competing for the same VRAM. **What is stored is a GAP** (§8 gap (c)). **(7) Capacity — the repos are SILENT on what the operator asked for, and this is stated rather than papered over.** Every cap in both repos is an **item count**, never bytes and never VRAM: `hot_cap` default 256 [V, `storage/tiered.py:40-51`], `TierBudget{ram_max_items 256, disk_max_items 4096}` [V, `types.rs:458-473`], `max_traces` default 100,000 [V, `holographic_store.rs:33-58`]. **The only VRAM arithmetic in either repo budgets model WEIGHTS, not store capacity**, and it is never wired to any cap: `weight_budget_mib(vram_total_mib, reserve_gpu_kv) = vram_total_mib − display_reserve(2048) − cuda_scratch(1024) − [gpu_kv_reserve (2048)]`, `saturating_sub` to floor at zero, test-pinned at 16,303 MiB ⇒ 11,183 / 13,231 MiB [V, `facade/hypha.rs:114-122`, constants `:13-26`, test `:152-157`]. **So the operator's dynamic capacity has no implementation, no description and not even a TODO in either repo — only a subtractive-reserves SHAPE to borrow.** §8 gap (a) carries the formula and the recommended default; it is **not** asserted as a contract clause here. **WHAT THIS COSTS AND WHAT IT BUYS, in this document's own units.** Parametric cost is **two 512×512 projections `W_k`, `W_v` = 524,288 params** (§2.3) — the store itself is data. It takes a **budget `b_store` on the workspace read simplex**, floored at `η/R = 3.0%` of `B_read = 256`, i.e. **≥ 8 read tokens**, default 32, max 256 (§2.4, §1.4). **`b_store` bounds what is READ; the byte capacity of §8 gap (a) bounds what is STORED; they are different currencies and a receipt that prints one as the other is wrong.** What it buys: **the store IS the overarching context that the per-region sliding windows slide over** (§6.8), which at `R = 4` was a within-request claim only. **WHY IT IS AI-SPECIFIC, unchanged:** the hippocampus does pattern separation over a *parametric* trace because biology cannot keep the tensor; an AI can just keep the tensor. **THE BUILD IS GATED BY THE THREAT MODEL, NOT EXCUSED BY IT** `[A28 fixed] [T2 fixed]`. It remains the **only writable, cross-request object in the architecture**. §9.9 B2's four findings — partition, capacity bound, eviction order, cross-request poisoning fuzz — are the **acceptance gates of rows E0/E1/E2** (§4.1). A store that cannot demonstrate them does not ship, and that is a different sentence from the one DEC-32 wrote, which was that a store that cannot demonstrate them is not built. |
 | **`salience`** (AI-specific / limbic) | **DECLARE the interface; do not train in v1** | The scheduler needs a PRIORITY term; biology supplies priority from valuation; the tree already holds a valuation-adjacent checkpoint (`classify_go_emotions`). `salience.value(emission, control_state) → [B,1]`. Its consumer is the priority ordering in §2.4. This is the one place the brain analogy pays a *mechanical* dividend rather than a naming one. |
 | **language (trunk)** | **PLACEHOLDER, interface declared** | Created when a *second* specialisation exists, so "trunk + adapters" is a measurable claim rather than a rename. Its generative half is `model/causal_lm.py` (283 lines, exists) [V\*] and needs foundation corpora, which are curriculum **step 4** by three independent declarations [V]. |
 | **numeric / math** | **PLACEHOLDER, interface declared** | Blocked on corpus, not design: gsm8k and aqua_rat are both spent (§5.1). `reasoning`'s current corpus straddles this faculty; splitting today starves both halves. Natural source is the reserve's executable items, whose test cases carry exact numeric ground truth. Emits tokens over **values, not BPE pieces** — the clearest cheap divergence from the brain. |
@@ -393,20 +446,35 @@ which the only two with `live: true` are the two nobody trained [V].
 +      "faculty": "ai_specific_episodic",
 +      "kind": "nonparametric_store", "modality": "latent",
 +      "token_dim": 512, "pooled_dim": 512, "emits": "tokens", "accepts_condition": false,
-+      "token_budget": {"min": 0, "default": 32, "max": 256},
-+      "capacity_entries": 65536, "eviction": "fifo",
-+      "partition_key": "server_derived_principal",
-+      "build_trigger": "salience trained AND a measured failure mode requires cross-request
-+                        context. Until then it is not a participant and R = 4.",
++      "token_budget": {"min": 8, "default": 32, "max": 256},
++      "phase": "phase2",
++      "capacity_bytes": "dynamic_per_host_per_tick",
++      "capacity_formula": "max(0, VRAM_total - KV_reserved(context, regions_active)
++                           - activation_reserve - safety_margin)",
++      "eviction": "scored: importance + gpu_resident_bonus - staleness(last_accessed);
++                   ties by older timestamp then key; evict lowest until bytes <= capacity_bytes",
++      "partition_key": ["server_derived_scope", "domain", "logical_key"],
++      "_open": ["capacity_bytes, capacity_formula: GAP (a) -- NOT asserted as a contract clause,
++                see section 8",
++                "eviction's staleness_penalty term: GAP (a) extended to the decay function
++                itself [I], see section 8",
++                "partition_key's server_derived_scope segment: GAP (b) -- a policy question,
++                see section 8"],
++      "durability": ["in_memory(conformance oracle only)", "sqlite(WAL, synchronous=FULL)",
++                     "qdrant(wait=true)"],
++      "lifecycle": ["start", "learn", "drain", "flush", "stop"],
++      "max_in_flight": 32,
 +      "role": "AI-SPECIFIC. A writable key/value store over workspace latents, read by the
-+               workspace as one more participant with its own budget. When built it IS the
++               workspace as one more participant with its own budget b_store. It IS the
 +               overarching context that per-region sliding windows slide over. Parametric cost
-+               is two 512x512 projections; the store is data. PLACEHOLDER AT v1 (DEC-32): no
-+               write policy without `salience`, empty at iteration 0, no receipt, no gate --
-+               and it is the only writable cross-request object in the design, so its capacity,
-+               eviction and per-principal partition are declared here BEFORE it can be built.
-+               The Schedule may request BUDGET; it may never name a NAMESPACE.",
-+      "status": "placeholder"
++               is two 512x512 projections; the store is data. REQUIRED AND BUILT IN PHASE 2
++               (DEC-49, operator ruling): contract taken clause-by-clause from memory-gate /
++               memory-gate-rs, with the open questions listed in section 8 rather than invented.
++               It is the only writable cross-request object in the design, so scope partition,
++               byte capacity and scored eviction are ACCEPTANCE GATES of rows E0/E1/E2, not
++               documentation. The Schedule may request BUDGET; it may never name a NAMESPACE.
++               token_budget bounds what is READ; capacity_bytes bounds what is STORED.",
++      "status": "planned"
 +    },
 +    {
 +      "name": "affect",
@@ -449,7 +517,8 @@ which the only two with `live: true` are the two nobody trained [V].
 +               spectrogram frames -- architecturally identical to visual, so the adapter is
 +               shared, not new. The corpus is catalogued as of
 +               docs/design/AUDIO-CORPUS-AUDIT.md; rows A0m/A0f (manifests, fetch) and A1
-+               build it WHEN THE PRODUCTION PHASE OPENS. Not a v1 participant: R = 4.",
++               build it WHEN THE PRODUCTION PHASE OPENS. Not a v1 participant: R = 5 counts
++               language_code, memory, reasoning, visual and episodic_store (DEC-49).",
 +      "status": "planned"
 +    },
 +    {
@@ -484,6 +553,13 @@ Three properties of this diff worth stating explicitly:
   precedent and it is a **single** entry with a `heads` list. Fixed the same way: `language_code`
   carries `"heads": ["text", "speech"]`, and the `speech_output` row survives only for programme
   tracking, with `emits: null` and `parent: "language_code"` so it cannot be counted.
+- **`episodic_store`'s `capacity_bytes`, `capacity_formula`, `eviction`'s staleness term and
+  `partition_key` are shipped as values, but §1.3's cell states in words that three of the four
+  are NOT asserted as a contract clause here** `[S33-3 fixed]`. A JSON diff that a reader
+  ratifies alongside the prose would otherwise ratify §8 gap (a), gap (b) and the staleness
+  decay term without being told they were the open items. The entry now carries a sibling
+  `"_open"` list naming exactly those four keys against their gap, so the JSON cannot be read as
+  a settled contract on its own.
 - **`status` gains exactly one value in revision 3.1: `planned`** (DEC-43, DEC-44). The
   vocabulary `built | probe | placeholder | primitive | retired` had no word for *required,
   specified, programme row open, not yet trained* — and `placeholder` is the wrong word for a
@@ -491,8 +567,9 @@ Three properties of this diff worth stating explicitly:
   an option, which is the failure this whole taxonomy exercise exists to retire. **The
   difference is checkable, which is the only reason the word is worth adding: a `planned` entry
   has a programme row with a gate that can fail; a `placeholder` has neither.** `auditory` and
-  `speech_output` are `planned`; `episodic_store`, `salience`, `language`, `numeric` and
-  `affect` stay `placeholder`. **Revision 3.2 adds one field rather than a second word:**
+  `speech_output` are `planned`; **`episodic_store` becomes `planned` in revision 3.3** (DEC-49
+  gives it rows E0/E1/E2 with gates that can fail, which is exactly the difference the word was
+  added to mark); `salience`, `language`, `numeric` and `affect` stay `placeholder`. **Revision 3.2 adds one field rather than a second word:**
   `phase: "production"` on the two deferred entries, with `blocked_by` beside it. `planned` still
   means *required, specified, gate written*; `phase` says **when**, and the pair is what keeps
   DEC-48's deferral from quietly reading as a demotion back to `placeholder` (DEC-48).
@@ -507,10 +584,14 @@ Three properties of this diff worth stating explicitly:
   `cfg.dim` (`token_dim`, what the adapter consumes) while `pool()` emits at `out_dim`
   (`pooled_dim`, what every existing receipt is about). They are equal in every current
   checkpoint and will not stay equal.
-- **Two entries move to `placeholder`:** `episodic_store` (DEC-32) and `tract_codec` (A33).
-  Both were `built`/live with no objective, no receipt and no gate. Shipping a thing as built
-  because its interface is written is the defect this whole taxonomy exercise exists to
-  retire, and revision 1 committed it twice.
+- **Two entries moved to `placeholder` in revision 2; one of them moves back out in revision
+  3.3.** `episodic_store` (DEC-32) and `tract_codec` (A33) were both `built`/live with no
+  objective, no receipt and no gate. Shipping a thing as built because its interface is written is
+  the defect this whole taxonomy exercise exists to retire, and revision 1 committed it twice.
+  **`episodic_store` now becomes `planned`, not `built`** (DEC-49): it has a contract, a row and a
+  gate that can fail, and it acquires `status: built` only when E1 and E2 pass. `tract_codec`
+  stays `placeholder`. **The distinction is the whole point of the vocabulary and it is worth
+  restating: `planned` is a promise with a failable gate, `placeholder` is a name.**
 
 ## 1.5 DEC-11 — retire `CSD-BRAIN-REGIONS.md`, re-home its four unique decisions
 
@@ -771,8 +852,11 @@ what makes routing emergent rather than a dispatch decision made outside the rep
 
 ### Parameters at toy scale — tagged per row `[A35 fixed]`, recomputed for the v1 participant list `[A24 fixed]`
 
-The v1 participant list is **four** regions — `language_code`, `memory`, `reasoning` (text, 256)
-and `visual` (384) — because `episodic_store` is a placeholder (DEC-32). Revision 1's table
+The v1 participant list is **five** participants — `language_code`, `memory`, `reasoning`
+(text, 256), `visual` (384) and **`episodic_store`** (latent, 512), the last reinstated by DEC-49.
+**Four of the five carry an adapter; the store carries two projections instead**, because it emits
+at the workspace dimension already and needs no dimension change — which is why the adapter row and
+the store row are separate lines below rather than one line of five. Revision 1's table
 billed **six** text adapters against three text participants and then carried the sum forward as
 `[V*]` "measured"; the surplus was `3 × (256×512 + 512) = 394,752` params, propagating into the
 total, the composed-mind table, the 347 MB figure, the 35.4 MB figure and §6.4's cap arithmetic.
@@ -783,20 +867,25 @@ total, the composed-mind table, the 347 MB figure, the 35.4 MB figure and §6.4'
 | frontal read-out (attention-pool + MLP) | 3,150,848 | [V\*] | 11.7% |
 | thalamic controller (2 blocks @256 + heads) | ≈1,588,007 | **[I]** — measured at 3 heads; this design has 4, so ±0.1M | 5.9% |
 | conditioning prefixes (write-back: 3×256 + 1×384 token_dim, `n_cond=8`) | 4,727,808 | [V\*] | 17.6% |
-| region adapters (**3** × 256→512, 1 × 384→512) | **591,872** | [I] — arithmetic over the v1 list | 2.2% |
-| ~~`episodic_store` read/write projections~~ | ~~524,288~~ | not in v1 (DEC-32) | — |
+| region adapters (**3** × 256→512, 1 × 384→512) | **591,872** | [I] — arithmetic over the four *encoding* participants | 2.2% |
+| **`episodic_store` read/write projections** (`W_k`, `W_v`, 512×512) | **524,288** | [I] — **restored by DEC-49**; was struck out under DEC-32 | 1.9% |
 | latent bank `64 × 512` + final norm + type embeddings | 37,376 | [V\*] | 0.1% |
-| **WHITE MATTER v1 TOTAL** | **26,899,751** | **[I]** — a sum over an `[I]` row is `[I]`, not `[V*]` | |
+| **WHITE MATTER v1 TOTAL** | **27,424,039** | **[I]** — a sum over an `[I]` row is `[I]`, not `[V*]`. Was 26,899,751 under DEC-32 | |
 
 **Re-instantiate at the design's actual configuration (4 controller heads, this participant
 list) before this total is carried anywhere.** That is W0's second deliverable and it costs
-seconds; until it is done, `26,899,751` is a projection, not a measurement.
+seconds; until it is done, `27,424,039` is a projection, not a measurement. **W0's
+re-instantiation now covers five participants**, and the store's two projections are part of what
+it must instantiate — a re-instantiation that silently drops the participant this revision added
+would reproduce exactly the surplus-adapter defect A24 was raised for.
 
 Calibration: a text region is 16,021,248 params of which **12,865,792 (80.30%) is the token
 embedding table** and only **3,155,456 (19.70%) is compute** [V\*]. **White matter is 8.5× a
 region's compute parameters.** It is the centre of gravity in arithmetic, not only in framing.
 
-**Composed mind v1, deployable** (one half of `visual` dropped, probes excluded, no store):
+**Composed mind v1, deployable** (one half of `visual` dropped, probes excluded, **store
+included as of DEC-49** — its parametric cost is inside white matter, its *data* is not a model
+parameter and is budgeted in bytes under §8 gap (a) instead):
 
 | | params | tag |
 |---|---|---|
@@ -804,8 +893,14 @@ region's compute parameters.** It is the centre of gravity in arithmetic, not on
 | `memory` (merged trunk + 2 heads) | 16,152,320 | [V\*] |
 | `reasoning` | 16,021,248 | [V\*] |
 | `visual` (**EMA target encoder only**, DEC-34) | 10,712,448 | [V\*] |
-| **white matter** | 26,899,751 | [I] |
-| **TOTAL** | **85,807,015** — 343 MB fp32 · **35.0 MB at the measured 3.27 effective bits/param** | [I] |
+| **white matter** (incl. the store's two projections) | 27,424,039 | [I] |
+| **TOTAL** | **86,331,303** — 345 MB fp32 · **35.3 MB at the measured 3.2675 effective bits/param** | [I] |
+
+**The store costs 524,288 params, 0.6% of the mind, and moves the interconnect's share from 31.4%
+to 31.8%** — which changes nothing about DEC-26, whose 2–5% cap is scoped to ≥1B and is already
+argued at 31.4% for the toy scale (§6.4). The number worth watching is not the parameters; it is
+the **bytes of store data**, which are not in this table at all and are bounded by §8 gap (a)'s
+dynamic capacity rather than by any figure here `[I]`.
 
 Three facts this table encodes and the programme's headline "~87M" does not:
 
@@ -833,11 +928,11 @@ Three facts this table encodes and the programme's headline "~87M" does not:
 
 | | v1 | 30B-class | grows? |
 |---|---|---|---|
-| faculties built | 5 + store | 16–20 incl. specialisations | yes — phase 3 is where region *types* appear |
+| faculties built | 4 encoding faculties + the store = **5 participants** (DEC-49) | 16–20 incl. specialisations | yes — phase 3 is where region *types* appear |
 | params per region | 16.0M (12.9M of it embedding) | ~1.5B | yes |
 | token embedding table | one per text region | **ONE, shared** (DEC-24) | no |
 | workspace `D_w` / latents `L` / depth | 512 / 64 / 4 | 4096 / 256 / 4 | yes |
-| **interconnect params** (at `mlp_ratio 4`, stated in both columns `[A26 fixed]`) | 26.9M (**31.4% of the mind** — see DEC-26) | **1,073,741,824 = 3.6% of 30B** at `D=4096, L_ic=4`; `L_ic=8` = 2.15B = **7.2%, ABOVE the 5% ceiling** | yes, sublinearly |
+| **interconnect params** (at `mlp_ratio 4`, stated in both columns `[A26 fixed]`) | 27.4M (**31.8% of the mind** — see DEC-26) | **1,073,741,824 = 3.6% of 30B** at `D=4096, L_ic=4`; `L_ic=8` = 2.15B = **7.2%, ABOVE the 5% ceiling** | yes, sublinearly |
 | `B_read` (Σ read tokens) | 256 | 4,096 | yes |
 | `B_kv` (Σ region context bytes) | — | **3.29 GiB** (§6.3) | fixed by the card |
 | **the interface** (`tokens()` — position latents, `[DEC-47]` — adapters, `Schedule`) | | **identical** | **no** |
@@ -896,11 +991,16 @@ not support it.
 construction rather than by check.** A softmax cannot sum to more than 1, so no input —
 adversarial or otherwise — can drive the allocation past the card; the floor `η/R` of the
 budget is what stops it starving a region. **The floor is written as the expression and never as
-a constant** `[S31-16 fixed]`: at `η = 0.15` it evaluates to **3.75%** for the v1 `R = 4`, and
-the `3%` revision 3.1 hard-coded is `0.15/5`, i.e. the value for a five-participant mind that
-DEC-32 had already ruled out and DEC-48 has now ruled out again. Every receipt prints the
-evaluated floor **beside its own `R`**, so a count change can never make a constant accidentally
-correct. Grafted from the systems-first proposal, where the
+a constant** `[S31-16 fixed]`: at `η = 0.15` it evaluates to **3.0%** for the v1 `R = 5`
+(DEC-49). **Revision 3.3 is the case that proves why S16's fix was worth making.** Revision 3.1
+hard-coded `3%`, which is `0.15/5`; revision 3.2 corrected it to `3.75%` because `R` was 4; and
+DEC-49 makes `R` five again, so the *value* returns to exactly the number that was wrong two
+revisions ago **for a different reason**. A document carrying the constant would now be
+accidentally right and would have no way to show it. **Only the expression is binding**, and every
+receipt prints the evaluated floor **beside its own `R`**, so a count change can never make a
+constant accidentally correct in either direction. **`b_store` is subject to the same floor:** the
+store's share cannot fall below `η/R · B_read = 0.03 × 256 ≈ 8 read tokens`, which is what makes
+"the store received no attention mass" a *measurement* in E2 rather than a starvation artefact. Grafted from the systems-first proposal, where the
 bound is derived: at `B_kv = 3.0 GiB` and `c_r = 192 KB/token` the floor is **≥ 409 tokens** for
 any active region [V\*].
 
@@ -1057,8 +1157,13 @@ architecture means), apply `TopK_{b_r}`, adapt, concatenate, run one workspace b
 halting, break. Cache each region's `h_r` when its `(ctx_r, cond_r)` is unchanged so a region
 admitted twice is executed once — **the cache is per-request, bounded at `R × n_iter` entries,
 and is destroyed at the end of the request.** It is keyed by attacker-influenced input, so an
-unbounded or cross-request cache would be a second writable object with the same defects as
-`episodic_store` (DEC-32) `[A28 fixed]`.
+unbounded or cross-request cache would be a second writable object with the same trust boundary
+as `episodic_store` — and, unlike the store, **without** the scope partition, the byte capacity and
+the scored eviction DEC-49 makes acceptance gates. **The distinction sharpens under DEC-49 rather
+than dissolving:** the architecture is now allowed exactly **one** cross-request writable object,
+the one with the contract; the `h_r` cache is per-request, bounded at `R × n_iter` entries and
+destroyed at the end of the request, and any proposal to make it survive a request is a proposal to
+build a second store without a contract `[A28 fixed]`.
 
 **The `Schedule` is untrusted data.** It is derived from attacker-influenced input, so the
 runtime validates it before executing it and the model is never trusted to bound its own
@@ -1094,8 +1199,10 @@ phase B's *"full counterfactual"* justification is void precisely for the region
 needs it. Every region **running** is not the same as every region **being observed**.
 
 > **Phase-A pass condition (new):** `min_r mean(a_r)` over held-out items **≥ `η/R`**,
-> evaluated at the receipt's own `R` — **3.75% at v1's `R = 4`**, not the 3% revision 3.1 wrote,
-> which was `R = 5`'s value and therefore **0.75 pp too lenient** `[S31-16 fixed]` —
+> evaluated at the receipt's own `R` — **3.0% at v1's `R = 5`** (DEC-49). The expression is the
+> gate and the value is printed from it; revision 3.1 hard-coded 3%, revision 3.2 corrected it to
+> 3.75% at `R = 4`, and revision 3.3 returns the *value* to 3% at `R = 5` **without returning to
+> the constant** `[S31-16 fixed]` —
 > the same floor the simplex uses elsewhere, with the per-region, per-iteration `a_r` histogram
 > printed in the receipt. **If a region is below the floor, phase B may not distil against that
 > teacher.** Named remedies, in order, each gated on the same floor: per-region attention
@@ -1190,7 +1297,7 @@ lower FLOPs, **or it is reverted to phase C and the receipt says the scheduler i
 Two verdicts, never one (DEC-30).
 
 **Overfit gate, grafted from biology-first and absent from the spine:** train/held-out gap on
-the compose eval must be **< 5 points**. **26,899,751** interconnect parameters (§2.3, recomputed
+the compose eval must be **< 5 points**. **27,424,039** interconnect parameters (§2.3, recomputed
 for the v1 participant list) against a ~51k-item reserve is exactly where a silent memorisation
 result comes from [I]. `[N10d fixed]` — this site and §9.6 carried the superseded 27.8M through
 revision 2 while the appendix carried the correction; both prose sites now match §2.3.
@@ -1281,7 +1388,7 @@ test it should fail [I].
 | gate | statement | test |
 |---|---|---|
 | **G1** routing works | composed > **B1** on the cross-faculty bin | McNemar on discordant pairs, `p < 0.01`, **Holm-corrected across the family** (§2.7.8) |
-| **G2** no composition tax | composed ≥ each faculty's own single-bin score − 1 point | paired, per bin, in DEC-41's metric |
+| **G2** no composition tax | composed ≥ each faculty's own single-bin score − 1 point | paired, per bin, in DEC-41's metric. **`episodic_store` is EXEMPT and the exemption is declared rather than assumed** `[DEC-49]`: it is non-parametric and has no standalone task, so it has no own-bin score to regress against, and a gate applied to a quantity that does not exist is the `residual_mlp` defect in gate form. **Its substitute is E2's gate** — the composed metric improves and the store draws non-zero attention mass — which is a stricter test than G2 because G2 only forbids harm while E2 requires benefit |
 | **G3** integration | composed > **B2** **and** composed > **B2t** | McNemar, `p < 0.01`, Holm-corrected |
 | **G3′** **THE PASS/FAIL** | the **synergy conjunction** below | see 2.7.3 |
 | **G0** the mind is load-bearing | composed > **B3** and composed > **B0u** | paired |
@@ -1344,13 +1451,35 @@ Highly overlapping representations are the textbook redundancy regime.
 > in the receipt as `interaction: REDUNDANT` for that pair. It is **never folded into a mean
 > `I`**, because a mean over quadrants is exactly how the failure hides.
 >
-> **G3′ (pass/fail):** on the cross-faculty bin, **≥ 4 of the 6 pairs** (R = 4 participants,
-> DEC-32) satisfy the conjunction, **under BOTH zero-ablation and content-swap**, with per-pair
-> CIs reported and Holm correction across the family (§2.7.8). The null rate of "≥4 of 6 under
-> a coin flip" is **0.344** and is printed beside the result `[A14 fixed]` — revision 1's
-> "≥6 of 10 positive" had a null rate of **0.377** (`386/1024`) and read as a second,
-> independent requirement while adding almost no evidence to the mean-`I` CI it was conjoined
-> with.
+> **G3′ (pass/fail):** on the cross-faculty bin, **≥ 7 of the 10 pairs** (`R = 5` participants,
+> DEC-49) satisfy the conjunction, **under BOTH zero-ablation and content-swap**, with per-pair
+> CIs reported and Holm correction across the family (§2.7.8). The null rate of "≥7 of 10 under a
+> coin flip" is **0.1719** (`176/1024`) and is printed beside the result `[A14 fixed]`.
+>
+> **THE RULE THAT PICKED `k`, stated because otherwise every participant change is a chance to buy
+> a pass.** Revision 1 wrote "≥6 of 10" at null **0.377**; revision 2 wrote "≥4 of 6" at null
+> **0.344**. Both are *just over half*, and under that habit **adding a participant makes the gate
+> easier**: at ten pairs, "≥6 of 10" would have been a **looser** criterion than the "≥4 of 6" it
+> replaced, arrived at by adding a region. So:
+>
+> **THE RULE: the criterion's null rate is capped at a pre-committed 0.20, and `k` is the smallest
+> value meeting that cap.** It is a **ceiling on the criterion**, not a comparison between
+> revisions, because a comparison rule ratchets forever and eventually names a `k` nobody can
+> reach. **The ceiling is stricter than both predecessors** — revision 1's 0.377 and revision 2's
+> 0.344 **both exceed it** — which is exactly the property that makes a participant change unable
+> to loosen the gate.
+>
+> Applied: at ten pairs, `k = 7` (0.1719), because `k = 6` is 0.377. **The rule binds every
+> restatement in this document and the existing ones are re-derived under it in the same breath:**
+> the **W7v-slip and E1-slip branches** (§5.4) become **≥ 5 of 6** at null **0.109** (`k = 4` is
+> 0.344 and is refused); the **both-slip branch** stays **all 3 of 3** at **0.125**; and **A3's
+> audio pre-specification** (§4.1) becomes **≥ 8 of 12** at null **0.194**, replacing revision
+> 3.2's ≥ 5 of 8 at **0.363**, which the ceiling refuses.
+>
+> **Why this is not gate-inflation.** The bar rises because the *evidence* rises: ten declared item
+> shapes over five participants is more, not less, than six over four, and a criterion whose null
+> rate drifts upward as the mind grows is a criterion that rewards growth rather than integration —
+> which is the exact substitution G3′ exists to detect.
 >
 > **Void conditions (both must hold, or the experiment is reported void):** **B0**'s `I₀` CI
 > contains 0 *with a trained read-out* (`[A11 fixed]`), and **B0d**, the known-dispatch
@@ -1440,24 +1569,36 @@ failure where a dense always-on interconnect passes every quality gate while sch
 exactly the right home for S5, because S5 is a gate and gates get waived — pre-committing its
 threshold makes waiving it a visible decision rather than a silent one.
 
-### 2.7.7 Cost, and what R = 4 changes
+### 2.7.7 Cost, and what R = 5 changes
 
-`episodic_store` is a placeholder at v1 (DEC-32) and audio is deferred to a production phase
-(DEC-48), so **R = 4 active participants → 6 pairs**, not 5 → 10. **Both exclusions are rulings,
-not schedule accidents**, which is what makes the count safe to build a pass/fail on
-`[S31-1 fixed]`. This matters beyond arithmetic: revision 1's *"≥6 of 10 positive"* was computed over
-10 pairs of which **four involved `episodic_store`**, a store that is empty at iteration 0 and
-has no write policy without `salience`. Those four pairs were structurally `I ≈ 0`, so the
-stated criterion silently meant *"all 6 real pairs positive"* — a far harsher bar than the one
-written, arrived at by accident `[A17 fixed]`.
+`episodic_store` is **required and built in phase 2** (DEC-49) and audio is deferred to a production
+phase (DEC-48), so **R = 5 active participants → 10 pairs**. **Both the inclusion and the exclusion
+are rulings, not schedule accidents**, which is what makes the count safe to build a pass/fail on
+`[S31-1 fixed]`.
+
+**A17 is not reopened by this, and the difference is the whole reason the store may be counted.**
+Revision 1's *"≥6 of 10 positive"* was computed over 10 pairs of which **four involved
+`episodic_store`**, a store that was empty at iteration 0 and had no write policy without
+`salience`. Those four pairs were structurally `I ≈ 0`, so the stated criterion silently meant
+*"all 6 real pairs positive"* — a harsher bar than the one written, arrived at by accident
+`[A17 fixed]`. **What DEC-49 changes is not the count but the four pairs' constructibility**: the
+store is built by E1 before W3 constructs items, and §5.4 declares **X7** and **X8**, recall-
+dependent episode shapes in which a fact written in an earlier turn is required by a later one, so
+each of the four store pairs carries **256 sealed items** rather than a structural zero. **This is
+S1's own fix (b) — a participant whose pairs are counted — and it is only admissible because the
+shapes exist.** The test for whether A17 has returned is mechanical and is stated so it can be run:
+**no ablation pair may appear in the denominator without a row in §5.4's shape-to-pair mapping and a
+non-zero sealed count.** Ten pairs, ten mapped, none zero.
 
 ```
-6 pairs × 3 ablation styles (zero, swap-frozen-schedule, swap-reemitted-schedule)
-        × 2,560 sealed eval items × 4 model variants (trained, B0, B0d, B0u)
-        = 184,320 forward passes of a frozen ~86M model
+10 pairs × 3 ablation styles (zero, swap-frozen-schedule, swap-reemitted-schedule)
+         × 3,072 sealed eval items × 4 model variants (trained, B0, B0d, B0u)
+         = 368,640 forward passes of a frozen ~86M model
 ```
 
-At batch 512 that is 360 steps — minutes on the 3090 Ti [V\*].
+At batch 512 that is 720 steps — still minutes on the 3090 Ti [V\*], and **twice revision 3.2's
+184,320**, because both factors grew: ten pairs instead of six, and a sealed half of 3,072 instead
+of 2,560 (§5.4).
 
 **But that counts forward passes only, and the claim built on it was overstated** `[N7 fixed]`.
 Revision 2 read this block as *"the decisive experiment is the cheap one, deliberately: the thing
@@ -1482,22 +1623,32 @@ W8-D (keep phase D or revert to C) and W7 (retrain or not) are model-selection d
 the same items that produce the headline numbers, so the reported effect sizes are optimistically
 biased by an amount nobody could estimate afterward.
 
-1. **Split the compose eval in half at source-row granularity (§5.4).** A **dev half (2,560)**
-   for *every* accept/revert and every threshold decision; a **sealed half (2,560)** opened
-   **exactly once, for W6**. The receipt records the timestamp at which the seal was broken and
+1. **Split the compose eval in half at source-row granularity (§5.4).** A **dev half (3,072)**
+   for *every* accept/revert and every threshold decision; a **sealed half (3,072)** opened
+   **exactly once, for W6** (both were 2,560 before DEC-49 added two cross-faculty bins). The receipt records the timestamp at which the seal was broken and
    the git revision of the code that broke it. A second read of the sealed half is a new
    experiment with a new seal, and it is reported as such.
 2. **Correct for multiplicity** across the interaction tests and the gate family: **Holm** for
    the family-wise claim (G1/G2/G3/G3′), **Benjamini–Hochberg** if the claim is the weaker
    *"most pairs interact"*. **Report per-pair CIs, never only the mean.**
-3. **Print every criterion's null rate beside it.** ≥4 of 6 under a coin flip is 0.344; the
-   ratifying reader should not have to compute that.
+3. **Print every criterion's null rate beside it.** ≥7 of 10 under a coin flip is 0.1719; the
+   ratifying reader should not have to compute that. **And print the null rate of the criterion it
+   replaced beside it**, because §2.7.3's selection rule is a comparison between the two and a
+   reader cannot check a comparison with one of its terms missing.
 4. **Size against the number of decisions.** 5,120 was derived (§5.4) for a *single* per-bin
-   report at ±4.33 pp, not for nine sequential decisions plus six interaction tests. At 2,560
-   per half the per-bin half-width is ±6.1 pp; the sealed half is therefore adequate for the
-   **cross-faculty bin** (1,024 items after the split, ±3.1 pp on the paired comparison that
-   G1/G3 actually run) and **not** adequate for a per-bin breakdown, which is reported from the
-   dev half and labelled as such.
+   report at ±4.33 pp, not for nine sequential decisions plus the interaction tests. **DEC-49
+   re-sizes it**: the compose eval is **6,144**, split **3,072 dev / 3,072 sealed**, because
+   `R = 5` adds two reported cross-faculty bins and the 512-per-bin reporting floor is not
+   negotiable (§5.4). **The per-bin half-width does NOT improve and saying so is the point:** the
+   sealed half grows from 2,560 to 3,072 and the bin count grows from ten to twelve, so each bin
+   still holds **256** items at **±6.1 pp**, exactly as before. What improves is the **aggregate
+   cross-faculty comparison** G1/G3 actually run — 1,536 sealed items instead of 1,024, **±2.5 pp
+   instead of ±3.1 pp**. A bigger eval that is spread over more bins buys nothing per bin, and a
+   revision that reported the total and implied the per-bin figure had improved would be selling
+   the same items twice. **The per-bin breakdown is still reported from the DEV half and labelled
+   as such.** **The number
+   of interaction tests rose from six to ten**, so the Holm family is larger and the correction is
+   correspondingly harsher — stated here rather than discovered at W6.
 
 ---
 
@@ -1889,9 +2040,25 @@ left as a note.
 > W7a and W7v all precede W2b. If a region changes afterwards, admission re-runs and the receipt
 > records which items entered and which left. **Revision 3.1 added two regions and two more ways
 > to trip this rule; DEC-48 removes both.** `auditory` and `speech_output` are **deferred to a
-> production phase**, so the region set frozen before admission is the **four-region** set, `R`
-> stays **4**, and §5.4's six ablation pairs are unchanged. That is now a **ruling**, not a
-> scheduling race that had to be won before W2b `[S31-1 fixed]`. **`speech_output` never bore on
+> production phase**, so the **four encoding regions** frozen before admission are unchanged by
+> audio. That is a **ruling**, not a scheduling race that had to be won before W2b
+> `[S31-1 fixed]`.
+>
+> **DEC-49 ADDS A FIFTH PARTICIPANT AND IT DOES NOT TRIP THIS RULE — which has to be argued,
+> because "it is a participant, therefore it is frozen before W2b" is the obvious reading and it
+> is wrong.** `episodic_store` has **no region weights**: it is non-parametric data plus two
+> projections, and those projections live **inside white matter** (§2.3), trained after admission
+> rather than frozen before it. **So `s_r` is never computed for the store**, and that is an
+> **exemption declared here, not an omission discovered at W2b**: the store is empty at admission
+> time, so an `s_r` for it would measure an empty container.
+>
+> **An exemption without an enforcement point is a hole, so it gets one.** A3's rule already
+> supplies the mechanism — W2b refuses any region whose `status` is not `built` or whose receipt
+> hash does not match the resident weights `[S31-9 fixed]`. **The store is admitted to that check
+> as an explicit exemption keyed on `kind == "nonparametric_store"`, and the exemption is
+> constructed to fail:** attempt admission with a *parametric* region carrying
+> `kind: nonparametric_store` and assert **refusal**, so the exemption cannot be used as a bypass
+> by anything else. **`R` is 5 and §5.4's ten ablation pairs follow from it** `[DEC-49]`. **`speech_output` never bore on
 > this rule for the reason revision 3.1 gave anyway** `[S31-19 fixed]`: it is a head, it adds no
 > participant and no ablation pair, and the only way it could have forced itself before W2b was
 > by changing `language_code`'s **weights** — which, under the frozen-trunk reading its own row
@@ -1912,29 +2079,84 @@ left as a note.
 | **W0** | **Token surface — read "position latents": per-position hidden vectors, not discrete ids `[DEC-47]`. The method name `tokens()` is the API and is NOT renamed.** Split `TextEncoder.forward` at the pooling line; add `tokens()`/`pool()` to `TextEncoder` and `ViTEncoder`; split `native_dim` into `token_dim`/`pooled_dim` (A32); wire `visual`'s `[B,64,384]` first; **and re-instantiate §2.3's parameter table at the design's actual configuration** (4 controller heads, v1 participant list) so the total stops being `[I]`. Retrains nothing. | **Four properties that can actually fail** `[A10 fixed]`, because the `1e-5` equivalence test cannot: `pool()` will contain the *same* masked-mean expression `forward` contains (`src/cogsyndelta/regions/text_encoder.py:117-124` — **`regions/`, not `model/`**, and the quoted comments match verbatim at those lines [V] `[N10e fixed]`), so it compares an expression to itself through the same weights and a pre-existing pooling bug is present identically on both sides. **(i) Pad-invariance:** perturbing embeddings at masked positions must not change `pool()` — the exact bug class the code comment records having been found once (*"Averaging over padding pulls every short text toward the same vector"*). **(ii) Independent reference:** `pool()` equals a separately written numpy masked mean to 1e-6 — two independently-written implementations agreeing is evidence; one agreeing with itself is not. **(iii) Row-permutation, BOTH clauses** `[N10f fixed]`: permuting the **unmasked** positions of `h` **and `mask` together** leaves `pool(h, mask)` unchanged, **and must change `tokens()`**. Revision 2 wrote *"permuting the rows of `h`"* without permuting `mask`, which changes the masked mean — so the property was false as written and the test would have failed on correct code. The second clause is the half A10 asked for and revision 2 dropped: it is what confirms `tokens()` is not already the constant the central bet feared, and after §4.0 it is the cheaper of the two checks that bear on that question. **(iv) Batch-composition invariance:** the same item padded to 6 and to 66 positions pools identically (the regression measured at cosine 0.958). **Keep `‖pool(tokens(x)) − encode(x)‖∞ < 1e-5` on 512 items as a refactor smoke test, and stop claiming it audits the receipts.** | — | todo | any / CPU |
 | **W0c** | **DEC-40 — one `load_checkpoint()`, and the lint rule that keeps it the only one** `[N10c fixed]`. Revision 2 wrote DEC-40 and then routed it to "OD-7", which is the disposition of the untracked working files — a different item. It had no row, no owner and no gate, which is how the durable half of a security fix becomes a paragraph. This is that row. One `load_checkpoint()` in `src/`, the **only** `torch.load` in the repository, `weights_only=True` **hardcoded** (not a default, not a parameter, no override), manifest SHA-256 verified **before the file is opened**, every script importing it. **Owner: the operator, by hand — explicitly NOT autodev**, because DEC-40 is a control on the loader and OD-1 records that autodev's write scope plus merge authority can weaken a guard and its test in one change. No GPU, no dependencies. | **Three, all constructed to fire** `[N10c fixed]`: (i) a **CI lint rule** (ruff or a grep in `code-quality.yml`) fails the build on any `torch.load` outside that module — **verified by adding one in a scratch branch and watching CI go red**, because without that demonstration this is a policy and not a control; (ii) a **hash-mismatch refusal**, given the same negative-test treatment `tests/test_checkpoint_load_security.py` already gives the pickle refusal — flip one byte of a checkpoint, assert `load_checkpoint` raises **and** that nothing was unpickled; (iii) `grep -rn "torch.load" src/ scripts/` returns exactly one hit. | — | todo — **no dependencies, do early** | any / CPU |
 | **W3r** | **Composite frame geometry + minimal renderer + checked-in fixture** `[N5 fixed]`. Revision 2 had W7v's round-trip gate consuming a rendered composite, the renderer as W3's primary deliverable, and W3 `blocked_by: W7v`. **This row is the W3-independent prerequisite both of them need.** It fixes the frame geometry once — `image_size 128`, `patch_size 8` ⇒ `n_patches 256` — records it as the number W7v re-shapes the encoder to and W3 renders against, ships a **minimal deterministic layout engine**, and checks **one hand-built 128×128 four-panel composite into the test fixtures** together with the layout description it was built from. CPU only, no GPU, no dependencies. | The fixture exists and is tracked; the renderer **reproduces it byte-identically** from its layout description (a deterministic layout engine that cannot reproduce its own output is not a ground-truth source); the geometry triple is recorded and propagated to §1.4, §2.3 and §6.1. **Verify by making it fail:** perturb one panel's position in the layout description by one pixel and assert the byte-comparison fails. **Until this row lands, "composite rendering" is NOT in the CPU-parallel column of §4.2** — a four-panel composite at an unfixed geometry is not work, it is a guess. | — | **done — fixture, renderer and both gate tests land at `src/cogsyndelta/vl/composite.py` / `tests/fixtures/composite_4panel.{png,spec.json}`; geometry triple propagated to §1.4, §2.3, §6.1 (this commit)** | 1080 Ti / CPU |
+| **E0** | **Extract and PIN the memory-gate contracts. No GPU, no dependencies — do it with W2a** `[DEC-49] [OP: csd-episodic-store-required.md]`. Port the conformance and tiering tests out of `memory-gate` / `memory-gate-rs` into this tree as **executable contract tests against CSD's own store interface**, before a line of the store is written. The specific tests, named so the row cannot be reported as done by porting something easier: the **domain-isolation** fixture `test_domain_isolation_same_logical_key` [V, `tests/storage/test_store_conformance.py:150`], the **identity** fixtures `test_double_put_same_identity_last_write_wins` and `test_query_requires_domain_or_global_flag` [V, `:170, :188`], the **caller-cannot-mutate** fixture [V, `:299`], and the five Rust eviction fixtures `admit_spills_lowest_importance`, `gpu_hint_protects_from_spill`, `promote_returns_span_to_ram`, `retrieve_merges_tiers`, `disk_prune_drops_lowest` [V, `storage/tiered.rs:292-353`]. **Record which clauses were SILENT** and check the §8 gaps block against the result — E0 is also the row that can prove §8 wrong. | **The gate is that the tests exist and FAIL against an empty implementation, which is the only state in which a contract test is evidence.** Specifically: (i) all **nine named fixtures** (not twelve — the row names nine and the count is corrected to match, rather than leaving three unnamed slots a later pass could fill with easier tests `[S33-5 fixed]`) run and **fail red** against a stub store, and the run is recorded; (ii) **domain isolation** and **eviction order** are among them, so **a store built without them cannot pass this row and therefore cannot reach E1**; (iii) the parameterisation runs the suite against **three backends** — in-memory, SQLite, and the Qdrant fake — because the source suite's own value is that it is backend-independent [V, `tests/storage/test_store_conformance.py:78-299`, parameterized identically across the three backends per ADR-0002/ADR-0003] `[S33-9 fixed]`; (iv) **every clause §1.3 marks `[V]` maps to at least one ported test, and every clause it marks SILENT maps to none** — a test that appears for a silent clause means somebody invented a contract, and the row FAILS. | — **no dependencies, do early** | todo | any / CPU |
 | **W1** | **CONSEQUENCE-3, CHEAP HALF.** Per-region participation-ratio effective rank of `pool()` vs `tokens()` (position latents, `[DEC-47]`); mean pairwise cosine; the `R×R` linear-CKA matrix. | **DONE 2026-09-02. Verdict: BET DEAD for all four production regions — and since 2026-09-02 that verdict is CONFIRMED BY W1d and no longer provisional** (participation-ratio ratios 0.66×, 0.78×, 1.00×, 1.30× against a ≤1.5× dead band); per-item flag fires for `code` and `retrieve`. **Entropy-effective rank on the same surfaces reverses the sign for all four (1.21×, 1.16×, 1.21×, 1.84×)** — a disagreement W1d adjudicated by measuring task performance instead of rank. Both columns and the non-production fifth row are in §4.0; evidence at `docs/design/evidence/w1-token-rank-2026-09-02/`. | — | **done, verdict CONFIRMED** | 3090 `.98` |
 | **W1d** | **CONFIRMATION of W1, run before the retrain was spent** `[A9 fixed]`. **Matched read-out probe:** the same small cross-attention read-out trained three times with identical params/steps/items — arm (a) over the final block's position latents, arm (b) over `pool()` **broadcast to the same `T`**, arm (c) over **penultimate-block** activations — plus within-item vs between-item variance and **both rank definitions on the probe's own activations**. | **DONE 2026-09-02, 116.5 s, read-only on the production checkpoints. W1 is CONFIRMED and no region is OVERTURNED.** `code` +0.00, `compress` −1.76, `vl_latent` −2.93 — all **CONFIRMED**, each passing its own seed self-check; `retrieve` −6.05 **CONFIRMED but the instrument is NOISY**, its seed self-check spreading **2.54 pp > the 2-pp rule**, so it is flagged and never cited as clean. **The sequence-blind arm BEAT the token arm in three of four regions.** **The penultimate fallback is DEAD** (arm (c) worse or noise everywhere; participation-ratio rank 2–4× lower for every text region) — **`L_token` attaches at the FINAL block**. **The token-aware retrains are LICENSED.** Caveats carried: an untrained cross-attention read-out ≈ uniform attention ≈ a linear function of `pool()`, and 600 steps of read-out training slightly **reduced** recall for `code`/`compress`. Evidence at `docs/design/evidence/w1d-readout-probe-2026-09-02/` with sha256s in §4.0. | W0 | **done — retrains licensed** | 3090 `.98` |
 | **W1b** | **Regenerate `reason`'s receipt** before it is frozen and before W7a retrains it. Its receipt was deleted; the r@1 0.0801 figure is prose only. | Receipt exists under `/akula-data/csd/receipts/`, reproduces r@1 ≥ 0.0801 **against an untrained baseline instantiated at a region-specific seed, not seed 0** (§4.0). It **must** carry `corpus.cap_sampling` **and** the drawn `pair_fingerprint`s (W2a), so this loss can never recur. **A frozen region with no receipt cannot be a baseline for anything and cannot be shown not to have regressed.** | — | todo | 3090 `.98` |
-| **W2a** | **Ledger + recovery. Minutes, no GPU, no dependencies — do it first** `[A34 fixed]`. (i) **Verify** the `compose` allocation for `codeparrot/apps` + `deepmind/code_contests` landed — it has (§5.2, and §11 R1). (ii) **Recover the aqua_rat draw, as the UNION of both possible draws** (DEC-42) `[A5 fixed] [N1 fixed]`: compute **draw R** = `load_pairs(["reason/aqua_rat-raw/train.parquet"], ("question","rationale"), 4982, seed=0)` under today's reservoir code, **and draw P** = the **first 4,982 pairs `_iter_pairs` yields in shard order** — what the same call returned before `c42203c` rewrote the cap from prefix-truncation to reservoir sampling. Write `fingerprints(R) ∪ fingerprints(P)` to the ledger as `reason`-burned, record the source file's corpus fingerprint, and **mark the remainder clean**. | **Four checks, all of which must pass** `[N1 fixed]`: (i) the recomputed `fingerprint_corpus` of the parquet on disk today matches; (ii) two consecutive computations of **each** draw return identical fingerprints; (iii) the run genuinely used `seed = 0`; **(iv) THE FOURTH, AND IT IS THE ONE THAT CAN FAIL:** establish which code revision the `reason` run used — checkpoint/receipt mtime against `c42203c`'s commit time (2026-09-02 19:32:52 -0400), or a trainer revision recorded in the checkpoint — **and if it cannot be established, RECORD THAT IT COULD NOT.** Either way the ledger takes the union. **The gate that makes this failable:** W2a asserts `count(ledger ∩ draw R) = 4,982` **and** `count(ledger ∩ draw P) = 4,982` and **refuses to emit a ledger that omits either draw** — a fingerprint set carrying only one draw is a FAIL, not a partial pass. **If any of the four fails, the write-off stands and §5.1 reverts** — this is a test, not an assumption. Then re-derive §5.1 and §9.2. | — | todo — **do first** | 1080 Ti / CPU |
+| **W2a** | **Ledger + recovery. Minutes, no GPU, no dependencies — do it first** `[A34 fixed]`. (i) **Verify** the `compose` allocation for `codeparrot/apps` + `deepmind/code_contests` landed — it has (§5.2, and §11 R1). (ii) **Recover the aqua_rat draw, as the UNION of every draw the run discovers** (DEC-42) `[A5 fixed] [N1 fixed]`: compute **draw R** = `load_pairs(["reason/aqua_rat-raw/train.parquet"], ("question","rationale"), 4982, seed=0)` under today's reservoir code, **draw P** = the **first 4,982 pairs `_iter_pairs` yields in shard order** — what the same call returned before `c42203c` rewrote the cap from prefix-truncation to reservoir sampling — **and, found by the run itself rather than anticipated, draw D3** = the on-disk `reason/aqua_rat-raw/derived/sample-4982-seed0.parquet` (mtime `2026-09-02T23:05:45.957176Z`, sibling `MANIFEST.json` declaring `numpy Generator(PCG64).permutation(n)[:N_SAMPLE]` — a full-corpus shuffle-then-take, not a prefix — both before `b9a082e`'s cap-introducing commit and before `c42203c`). Write `fingerprints(R) ∪ fingerprints(P) ∪ fingerprints(D3)` — and any further draw a directory walk turns up — to the ledger as `reason`-burned, record the source file's corpus fingerprint, and **mark the remainder clean**. **Measured** `[V*, burned-aqua_rat.jsonl.manifest.json]`: `R` 4,982 rows / 4,951 unique; `P` 4,982 / 4,946 unique; `D3` 4,982 / 4,930 unique (4,369 new against `R ∪ P`); union **13,946**; clean **83,521** of 97,467. | **Four checks, all of which must pass, over however many draws are discovered** `[N1 fixed]`: (i) the recomputed `fingerprint_corpus` of the parquet on disk today matches; (ii) two consecutive computations of **each** draw return identical fingerprints; (iii) the run genuinely used `seed = 0`; **(iv) THE FOURTH, AND IT IS THE ONE THAT CAN FAIL:** establish which code revision the `reason` run used — checkpoint/receipt mtime against `c42203c`'s commit time (2026-09-02 19:32:52 -0400), or a trainer revision recorded in the checkpoint — **and if it cannot be established, RECORD THAT IT COULD NOT.** Either way the ledger takes the union. **The gate that makes this failable:** W2a asserts `count(ledger ∩ draw) = 4,982` for **every discovered draw** and **refuses to emit a ledger that omits any of them** — a fingerprint set omitting even one discovered draw is a FAIL, not a partial pass. **If any of the four fails, the write-off stands and §5.1 reverts** — this is a test, not an assumption. Then re-derive §5.1 and §9.2. | — | **done** — branch `feat/w2a-ledger-recovery`, `c6ea587` (approved) | 1080 Ti / CPU |
 | **W2c** | **Measure the two untrained baselines the thresholds rest on** `[A23 fixed] [A13 fixed]`. (i) Instantiate `TextEncoder(vocab 50257, dim 256, depth 4, heads 4)` **at a region-specific seed**, run the `code` in-mixture eval, and settle whether the lexical floor is **0.2285** (the surviving receipt) or **≈0.40** (prose in four files, no artefact). (ii) Re-instantiate `retrieve`'s random encoder and establish a real untrained baseline for the 0.7480 figure, whose recorded baseline is **exactly 0.0000**. | Both numbers exist in receipts. **τ_lo is re-derived from the measured value, per bin, in chance-normalised units** (DEC-36). Whichever documents disagree are corrected. **This blocks W2b:** if the true code-adjacent lexical floor is 0.40, NSRS condition (1) at `τ_lo = 0.35` rejects essentially every row built from `apps`/`code_contests` — the reserve's main source — and the reserve cannot be built from them at all. | W0 | todo | 3090 `.98` |
+| **E1** | **Build the store: partition, byte-capacity, eviction, lifecycle — plus the DYNAMIC-CAPACITY PROBE on both GPUs** `[DEC-49]`. Implement against E0's failing tests: `(scope, domain, logical_key)` identity with the scope segment derived server-side (§9.9 B2); **byte** capacity from §8 gap (a)'s formula computed **per host per scheduler tick**; scored eviction `importance + gpu_resident_bonus − staleness(last_accessed)` with ties by older timestamp then key; the six lifecycle verbs with **refusing** backpressure at `max_in_flight = 32`; SQLite as the durability oracle with in-memory as the conformance oracle. **The store's two projections are NOT trained here** — they are white-matter parameters and E2 trains them. **This row builds a container and proves it is a correct container; it makes no claim about usefulness**, which is E2's job and is the whole point of DEC-50's step separation. | **Four, three of them constructed to fire.** (i) **E0's nine named tests go green** `[S33-5 fixed]`, and the diff that makes them green touches no test file — a fix that edits its own gate is refused. (ii) **THE DYNAMIC-CAPACITY PROBE, and it must produce two DIFFERENT, POSITIVE numbers** `[S33-6 fixed]`: compute capacity from a live `nvidia-smi` plus the scheduler's current KV and activation budgets on **the 3090 Ti (24 GiB) and the 5080 (16 GiB)**, assert the two **differ**, assert **each is `> 0`**, assert each is **respected** — a write that would exceed it triggers eviction rather than an allocation — and assert the value **changes when the active-region set changes**, since the 1080 Ti is preemptible and a capacity fixed at process start is not dynamic. **A probe returning one number for both cards has measured a constant and failed; a probe returning two DIFFERENT numbers where one is zero has also failed** — §9.11 found the residual may round to zero on the 5080, which is W10's deployment card, and "differ" alone passes that case. **Pre-committed branch, so this is not discovered at deployment:** if either card's `capacity_bytes` rounds to zero, gap (a)'s named alternative fires — a fixed **floor**, reserved for the store before the KV budget is computed, sized at `safety_margin`'s order (2 GiB) — and E1's receipt records which of the two (residual or floor) is active on each card, rather than the row passing on a store that has no capacity at all on the card it will actually run on. (iii) **CROSS-REQUEST FUZZ:** ≥10,000 interleaved writes across ≥100 partitions, then a read from every partition; **zero reads return a value written under another scope**, and the negative test is a deliberately mis-derived scope key that **must** produce a cross-partition read so the fuzz is shown to be capable of catching one. (iv) **EVICTION ORDER UNDER A CONSTRUCTED OVERFLOW:** build a working set whose scores are known and whose total exceeds capacity, then assert the survivors are exactly the top-scored set **and** that a GPU-resident low-importance entry outlives a host-resident higher-importance one by exactly the `+1.0` bonus — the behaviour `gpu_hint_protects_from_spill` pins upstream. | **W0**, E0 | todo | 3090 `.98` **and** 5080 `.251` (both, by construction) |
 | **W4** | **Merge `compress` + `retrieve` → `memory`, DESIGNED AS THE FIRST TOKEN-AWARE RETRAIN** so one run serves two rows `[A13 fixed]`. Shared trunk, two heads, joint loss **plus §4.0's `L_decorr` + `L_token` terms**. It is the natural first instance: the merge is a retrain that has to happen anyway, its two parents give it two independent regression checks, and a failure here is diagnosable as *merge* or *objective* by ablating one term. **It is also where DEC-24's shared embedding table first becomes achievable** (§6.2) `[A31 fixed]`. | **All five, pre-registered:** (1) `memory` matches or beats **both** parents on **both** parents' own gates (0.7070 and 0.7070-comparable, and 0.7480 **re-baselined by W2c**); (2) **`recall@10 > 0.20` and `MRR > 0.10`** on the FiQA BEIR eval against the full 57,638-passage pool — the numbers `retrieve.py:384` already states, which revision 1 adopted the eval for and then dropped; (3) **`memory` > BM25** on the same pool and qrels, from the same code path — not "BM25 reported alongside", *beaten*, because *"reporting a win for a loss"* is exactly what that file was written to prevent; (4) **`memory` > its own random-init baseline** on that pool; (5) **§4.0's retrain gate**, both clauses. Saves 15,890,176 params. | W1d, W2c, W1b | todo | 3090 `.98` |
 | **W7a** | **Token-aware retrain of `language_code` and `reasoning`.** Same objective as W4, same harness, one region at a time. | **§4.0's retrain gate, per region, both clauses.** Plus: `language_code`'s r@1 0.9766 must not regress > 1 point, and `reasoning`'s regenerated 0.0801 (W1b) must not regress > 1 point. A region that clears the rank clause and fails the receipt clause is **reverted**, and the receipt says which. | W1d, W1b, W4 | todo | 3090 `.98` |
 | **W7v** | **`visual`: token-aware retrain AND resolution rebuild** `[A4 fixed]`. `visual` **physically cannot ingest a composite image today**: `JEPAConfig(image_size=64, patch_size=8)` and `ViTEncoder` registers a **fixed** sincos `pos_embed` of size `cfg.n_patches = 64` (`model/vl_jepa.py:52-53, 182, 199` [V]), so `h = self.patch_embed(x) + self.pos_embed` is a **shape error** on a larger image, not a slower forward. Meanwhile §5.4's `visual × language_code` and `visual × memory` are **2 of 4 cross-faculty pairs = 1,024 of 2,048 eval items**, and §5.4 itself concedes they are *"unconstructible against 64×64 single-object tiles"*. Revision 1 scheduled no row to build the prerequisite. **This row does it, folded into the retrain that W1's result made mandatory anyway, so the marginal cost is the resolution change and not a separate run.** Re-shape to composite resolution (`image_size 128`, `patch_size 8` ⇒ `n_patches 256`, `pos_embed` regenerated or 2-D interpolated), continue-train, and — if OD-4 is decided that way — swap the corpus in the same run. | New `n_patches`, `kv_bytes_per_token` and `token_budget.max` recorded and propagated to §1.4, §2.3 and §6.1. Probe top1 and cifar100 transfer **do not regress by more than 1 point** against 0.0606 / 0.2625 **measured on the target encoder** (DEC-34), with the untrained baseline re-instantiated at a region-specific seed. **§4.0's retrain gate**, both clauses. **A composite frame renders, encodes and round-trips** — the negative test is that the 64×64 checkpoint **raises** on the same input. **The frame is W3r's checked-in 128×128 fixture, NOT a W3 deliverable** `[N5 fixed]`: revision 2's gate consumed the composite renderer, which is W3's primary deliverable, while W3 was `blocked_by: W7v` — a dependency inversion in which neither row could start. W3r breaks it. | W1d, W3r | todo | 3090 `.98` |
 | **W2b** | **Reserve construction + NSRS admission + the guard** (replaces P2.5d). §5. **Only the BM25 condition (3), the licence audit, dedupe and rendering are CPU-parallel; `s_r` is inference through every frozen region including `memory`, so this row is GPU-blocked** `[A7 fixed]`. | `data/reserve/` + manifest exists; **thresholds frozen from a disjoint calibration split** and the would-have-been-rejected fraction of the graded set reported (DEC-36); every admitted row records `s_r` for all `r` and satisfies the NSRS filter **including the written condition-(2) exemption for the general bin** `[A21 fixed]`; **`RESERVED.jsonl` holds the union of SOURCE-ROW `pair_fingerprint`s, not composite hashes** (DEC-38); the ledger records `compose` for apps + code_contests; apps↔code_contests dedupe at cos ≥ 0.90 run and its 1,784 removals recorded; **keyed split assignment live** (DEC-39). **AND two refusals, both constructed:** (a) a training run seeded with one **directly reserved** row REFUSES TO START; (b) **a training run seeded with a row that a reserved COMPOSITE was built from REFUSES TO START** — the derived case, which is the path that actually leaks `[A6 fixed]`. | W2a, W2c, W4, W7a, W7v | todo — **BLOCKS P2.3** | 1080 Ti / CPU **+ 3090 for `s_r`** |
-| **W3** | **Construct cross-faculty items.** §5.5: executable joins (**sandboxed**, §5.5a), rendered composites, shuffled mismatches. | ≥ 512 admitted items per cross-bin pair for eval **and** ≥ 5,120 per pair for train; every item passes W2b's filter **including the trivial-baseline condition**; **train/eval split at source-row granularity, split key recorded** (DEC-38); provenance chain recorded with **no generating model**, or the model named with revision and licence; **B1/B2 run on the reserve's own generators** and either diversified or waived with a dated waiver naming what the reserve therefore cannot measure `[A16 fixed]`; **the reserve's aqua_rat source-row share is printed against B1's 0.50 hard line and 0.40 operating cap** (§5.1) `[N8 fixed]`. | W2b, W7v, W3r | todo | 1080 Ti / CPU |
+| **W3** | **Construct cross-faculty items, and build the EPISODE HARNESS.** §5.5: executable joins (**sandboxed**, §5.5a), rendered composites, shuffled mismatches, **and §5.5(e)/(e′)'s recall-dependent episodes (X7, X8, X8′)** `[DEC-49]`. **The harness is a named deliverable and not an implied one:** an eval item may be a *sequence* of turns; turn 1's write must commit through the store's `learn()` and return a `LearnReceipt` before turn 2 is scored; the partition is reset between episodes. | ≥ 512 admitted items per cross-bin pair for eval **and** ≥ 5,120 per pair for train; every item passes W2b's filter **including the trivial-baseline condition**; **train/eval split at source-row granularity, split key recorded** (DEC-38); provenance chain recorded with **no generating model**, or the model named with revision and licence; **B1/B2 run on the reserve's own generators** and either diversified or waived with a dated waiver naming what the reserve therefore cannot measure `[A16 fixed]`; **the reserve's aqua_rat source-row share is printed against B1's 0.50 hard line and 0.40 operating cap** (§5.1) `[N8 fixed]`. **Three more, all from DEC-49, all constructed to fire:** (i) **the negative control on every episode** — turn 2 run with turn 1 replaced by an unrelated episode **must FAIL the item**, and an episode that passes it is **rejected at construction**, not discovered at W6; (ii) **no episode's two turns share a source row** under DEC-38, asserted per item, because an episode that leaks against itself cannot be placed on one side of a split; (iii) **the harness resets the store partition between episodes**, verified by re-running one episode and asserting its turn-1-less variant still fails. **If the harness is not delivered, W3 reports `episodic pairs: NOT MEASURED` and §5.4's E1-slip branch fires** — it does not ship six pairs under a ten-pair criterion. | W2b, W7v, W3r, **E1** | todo | 1080 Ti / CPU |
 | **W1c** | **Anisotropy pre-flight.** Effective rank of the concatenated adapted union on 4,096 real mixed items, **on the retrained regions**. | **The statistic is named, because revision 2's threshold named none** `[N3 fixed]`: the number is **entropy-effective rank** (`cogsyndelta.eval.benchmark.effective_rank`), which is the definition behind the "8.7 of 128" prior this row compares against, and **`< 32 of 512` is in those units**. Participation ratio is recorded beside it, and the two are never compared across definitions — W1's pooled **PR**-ranks of 18–45 and its pooled **entropy** ranks of 115–130 (§4.0) are different quantities and revision 2 printed them as comparable. Comparable priors, restated in the right units: 8.7 of 128 on the pooled surface [V\*]; cross-region CKA ≤ 0.336 (§4.0). **If < 32 of 512 in entropy-effective rank, whitening goes into the adapters before W5.** | W4, W7a, W7v | todo | 5080 `.251` |
-| **W5** | **White matter v1, PHASE A (dense).** Workspace + adapters + frontal + `L_unify` + `rank_head` (DEC-41); all regions on; regions frozen **at their retrained checkpoints**; train on W2b/W3. | **G1** composed > B1, McNemar `p<0.01` Holm-corrected. **G2** no faculty's own-bin score drops > 1 point. **G0** composed > **B3** and > trained-**B0u**. **B0** (trained read-out) and **B0d** (dispatch control) recorded in the same receipt. **Phase-A collapse floor:** `min_r mean(a_r) ≥ η/R = 3%` with the per-region `a_r` histogram printed `[A15 fixed]`. **Overfit gate:** train/held-out gap < 5 points. **Every decision on the DEV half only** (§2.7.8). | W3, W1c | todo | 3090 `.98` |
+| **W5** | **White matter v1, PHASE A (dense).** Workspace + adapters + frontal + `L_unify` + `rank_head` (DEC-41); all regions on; regions frozen **at their retrained checkpoints**; train on W2b/W3. | **G1** composed > B1, McNemar `p<0.01` Holm-corrected. **G2** no faculty's own-bin score drops > 1 point. **G0** composed > **B3** and > trained-**B0u**. **B0** (trained read-out) and **B0d** (dispatch control) recorded in the same receipt. **Phase-A collapse floor:** `min_r mean(a_r) ≥ η/R`, printed as the expression **and** as its evaluated value beside the receipt's own `R` (**3.0% at `R = 5`**, DEC-49), with the per-region `a_r` histogram `[A15 fixed] [S31-16 fixed]`. **W5 runs with `R = 4`** — the store is admitted by E2, after this row — **so W5's receipt prints 3.75%, and E2's prints 3.0%; a receipt printing a floor that does not match its own `R` is a FAIL.** **Overfit gate:** train/held-out gap < 5 points. **Every decision on the DEV half only** (§2.7.8). | W3, W1c | todo | 3090 `.98` |
+| **E2** | **Admit the store to the interconnect and RETRAIN WHITE MATTER — step 2 of DEC-50's protocol, and its first instance** `[DEC-50]`. Re-run white-matter phase A with `R = 5`: the store's `W_k`/`W_v` projections join the trainable set, regions stay frozen at their retrained checkpoints, the read simplex is re-floored at `η/R = 3.0%`, and the reserve's episode items (X7/X8) enter the training mix. **DEC-26's 2–5% interconnect cap is what makes this affordable:** the thing being retrained is the smallest trainable object in the mind, which is the property the modular design was bought for. | **Three, and the third is the one that can kill the row.** (i) **G2 holds** — no existing faculty's own-bin score drops more than 1 point against W5's receipt, measured on the **dev half**; the store itself is exempt from G2 and the exemption is §2.7.2's, not a new one. (ii) **The composed metric improves** on the dev half against W5's `R = 4` result — *improves*, not *does not regress*, because a participant that costs budget and returns nothing is a cost. (iii) **NON-ZERO ATTENTION MASS TO THE STORE:** `mean(a_store)` over held-out items is **≥ the collapse floor `η/R` = 3.0%**, with the per-iteration histogram printed. **On any failure the store is REVERTED** — removed from the participant set, `R` returns to 4, §5.4's E1-slip arithmetic fires (six pairs, ≥5 of 6, null 0.109), and the receipt records **which** of the three clauses failed, because "the store did not help" and "the store was never attended to" are different findings with different remedies. **Verify the gate can fail, in-contract** `[S33-7 fixed]`: pinning `b_store` to zero is not a state the system can legally reach — §1.4's `token_budget.min` is 8 and §2.4 floors `b_store` at `η/R · B_read = 0.03 × 256 ≈ 8` read tokens precisely so that "the store received no attention mass" is a measurement rather than a starvation artefact (§2.4). So the falsifier pins `b_store` **at that floor** (8 tokens, the legal minimum, not zero) and feeds episodes constructed with **no recall dependency** — turn 2 answerable from turn 1's context alone — and asserts `mean(a_store)` lands **below** 3.0% despite 8 tokens being available to spend on it: a store with nothing worth attending to should not be attended to, and clause (iii) must report FAIL on that input, not on an input the design already forbids. | **W5**, E1 | todo | 3090 `.98` |
 | **W5b** | **Write-back (conditioning prefixes).** DEC-17. | Conditioned regions' own-bin scores drop ≤ 1 point **and** the composed metric improves, **on the dev half**. **Pre-committed fallback:** on failure, disable write-back, record that phase-2 integration is workspace-internal only, **and apply §2.4's no-write-back consequences — either build the `Ĉ` variant or emit no `edges`, no `lockstep_groups`, and `topology: not demonstrated`** `[A20 fixed]`. Either result is a pass; not running it is the fail. | W5 | todo | 3090 `.98` |
-| **W6** | **THE INTEGRATION TEST. This row opens the sealed half, once.** §2.7. | **G3** composed > **B2** (oracle late fusion) **and** > **B2t** (trained matched-capacity late fusion), McNemar `p<0.01` Holm-corrected. **G3′** the **DEC-37 synergy conjunction** — `Δ_A > 0` and `Δ_B > 0` and `I > 0` per pair, block-bootstrap CI by source row excluding 0 — on **≥4 of 6 pairs**, under **zero-ablation AND both content-swap arms**; any pair in the `REDUNDANT` quadrant is reported as a FAIL for that pair, never averaged away. **G0d** `I₀` (B0, trained read-out) and B0d's `I` both contain 0, **or the experiment is void and is reported void**. **I2′** ordered-pair severance CI excludes 0. **THIS GATE IS THE PROGRAMME'S PASS/FAIL.** Seal-break timestamp and code revision recorded. **The pair count is six and stays six** — DEC-48 defers audio, so no fifth participant reaches this row and the criterion is not restated `[S31-1 fixed]`. **DEC-47's inter-region assertion (W9 (iii)) is enabled for this run** and its result is printed in the receipt: an integration verdict obtained while some path re-tokenised would be a verdict about a different architecture. | W5b | todo | 3090 `.98` |
+| **W6** | **THE INTEGRATION TEST. This row opens the sealed half, once.** §2.7. | **G3** composed > **B2** (oracle late fusion) **and** > **B2t** (trained matched-capacity late fusion), McNemar `p<0.01` Holm-corrected. **G3′** the **DEC-37 synergy conjunction** — `Δ_A > 0` and `Δ_B > 0` and `I > 0` per pair, block-bootstrap CI by source row excluding 0 — on **≥7 of 10 pairs**, under **zero-ablation AND both content-swap arms**; any pair in the `REDUNDANT` quadrant is reported as a FAIL for that pair, never averaged away. **G0d** `I₀` (B0, trained read-out) and B0d's `I` both contain 0, **or the experiment is void and is reported void**. **I2′** ordered-pair severance CI excludes 0. **THIS GATE IS THE PROGRAMME'S PASS/FAIL.** Seal-break timestamp and code revision recorded. **The pair count is TEN** — DEC-49 admits `episodic_store` as a fifth participant *with declared shapes*, DEC-48 keeps audio out, and §2.7.3's selection rule fixes `k` at **7** precisely so that admitting a participant could not loosen the gate `[S31-1 fixed] [DEC-49]`. **The two pre-committed fallbacks — the W7v slip and the E1/harness slip — are in §5.4, they are the ONLY permitted restatements, and each is reported by name in the receipt.** **DEC-47's inter-region assertion (W9 (iii)) is enabled for this run** and its result is printed in the receipt: an integration verdict obtained while some path re-tokenised would be a verdict about a different architecture. **The store's partition isolation assertion (E1) is enabled for this run too** — a cross-episode read during the integration test would make G3′ a measurement of a leak. | W5b, **E2** | todo | 3090 `.98` |
 | **W8** | **Thalamic controller.** Phase B (distil), phase C (sparse), **phase D (task-loss)**. | **B:** `ρ(ŝ,a) > 0.6` held-out, **and no region was below the phase-A collapse floor**, or its `a_r` is excluded from the distillation targets and the receipt says so. **C:** sparse within 2% relative of dense at ≤50% of region-token FLOPs — *FLOPs only; buying accuracy here is a bug report against phase A*. **D:** beats C on the composed metric at equal-or-lower FLOPs, **or is reverted and the receipt says the scheduler is imitative**. `ctx_r ≥ ctx_min` floor verified by **constructing** an adversarial input that tries to starve a region. All accept/revert on the **dev half**. Train on the 3090; **measure on the 5080**. | W6 | todo | 3090 → 5080 `.251` |
 | **W8s** | **Scheduler falsifiers S1–S5** and the **three-verdict receipt** (DEC-30 + T1). | All five reported whatever they say. The receipt carries `integration:`, `scheduling:` **and `trigger_sensitivity:`** as separate verdicts. **S5's rare-token threshold is pre-committed before the run.** | W8 | todo | 5080 `.251` |
 | **W9** | **`Schedule` emission + DAG runtime + validator.** | **Two separate gates, because revision 1's two clauses contradicted each other** `[A29 fixed]` — a run that reproduces the dense path to 1e-4 has not skipped 30% of its iterations. **(i) Runtime correctness:** the DAG executor reproduces the **eager execution of the SAME `Schedule`** to 1e-4 — an implementation-equivalence test that can fail on a real bug. **(ii) Sparsity:** mean iterations down ≥30% **vs dense** at ≤1% score loss — a different comparison against a different reference. Plus: the two topology derivations agree on ≥95% of items **(void, and declared void, under W5b's fallback)**; 10,000-input adversarial fuzz emits **zero** budget-violating graphs; the validator **rejects a `Schedule` carrying a client-supplied `trace_id`**. **(iii) THE LATENT-SPACE INVARIANT, DEC-47:** a runtime assertion that **no inter-region path carries discrete token ids** — every tensor crossing a tract (a region's emitted `h_r`, its adapted form, the workspace latents, and DEC-17's write-back conditioning prefix) is a **float tensor at a declared `*_dim`**, and any integer-typed or vocabulary-indexed payload on such a path **raises**. **Verify it can fail, and this is the clause that makes the invariant a control instead of a convention:** construct the violation — hand the runtime a conditioning prefix built from token **ids** instead of latents, and a region wrapper that returns `argmax` indices from `tokens()` — and assert **both are refused**, in the `tests/test_guards_can_fail.py` pattern. A path nobody has watched refuse a token id is a design intention, not an invariant. | W8s | todo | 5080 `.251` |
-| **W10** | **Composed footprint + PTQ** (was P10.3). | Measured params/bytes at fp32 and after PTQ **on the deployment card**. Per region `D_sched ≤ 0.02` nats **and** composed metric drop ≤ 0.01. Predicted: **85,807,015 params, 343 MB fp32, 35.0 MB at 3.27 bits/param** — restated for the v1 participant list `[A24 fixed]` and to be replaced by W0's re-instantiation. | W9 | todo | 5080 `.251` |
+| **W10** | **Composed footprint + PTQ** (was P10.3). | Measured params/bytes at fp32 and after PTQ **on the deployment card**. Per region `D_sched ≤ 0.02` nats **and** composed metric drop ≤ 0.01. Predicted: **86,331,303 params, 345 MB fp32, 35.3 MB at 3.2675 bits/param** — restated for the **five**-participant v1 list `[A24 fixed] [DEC-49]` and to be replaced by W0's re-instantiation. **The store's DATA is not in that figure and must be reported separately, in bytes, against §8 gap (a)'s dynamic capacity on the deployment card** — a footprint row that reports a mind's parameters and silently omits its store has reported half the deployment. | W9 | todo | 5080 `.251` |
 | **P5′** | **PHASE 3 — whole-mind dynamic training.** Unfreeze. Joint objective over region corpora **and** the reserve, interleaved. Region growth, depth/width growth. | **G2** still holds per bin after unfreezing **AND** G3/G3′ still hold. Each new region beats its own untrained baseline **and** improves the composed metric **and** shows non-zero `Ĉ` to it. Growth increments are reverted if the composed metric does not improve monotonically. **Cross-host activation traffic ≤ 15% of step time** (DEC-29). **DEC-24 binds from here** `[A31 fixed]`. | W10 | blocked | 3090 + 5080, pipeline |
 | **P5′q** | **QUANTISE-BEFORE-WHOLE-MIND, matched, at toy scale** `[OP: csd-quantize-before-whole-mind-training]`. Run the alternative ordering — per-region pretrain → **quantise (and/or fine-tune) the regions** → train the interconnect and run whole-mind dynamic training with regions held quantised — **against the canonical path** (pretrain → interconnect → whole-mind → fine-tune → quantise), matched on data, steps and seeds. The canonical path stays the default at toy size; this row is the experiment, not a substitution. **Design consequence if it wins:** the interconnect must **train against quantised region activations**, so its train-time inputs match deployment — which ties it to **DEC-27** (per-region PTQ sensitivity must be measured *before* regions are frozen, and `D_sched` becomes a training-time quantity as well as a release gate) and to **DEC-29** (it is the ordering that decides whether phase 3 fits at all on 24 GiB and 16 GiB). | **Report all four, per arm:** (1) **peak VRAM during phase 3** — the number the whole experiment exists to move; (2) composed metric vs the canonical run; (3) per-region drop from quantising *before* vs *after*; (4) **capability per parameter and capability per VRAM-GB**, not loss. Each arm gated on its own untrained baseline. **A win is only a win if it survives DEC-27's `D_sched ≤ 0.02` nats per region** — quantising earlier changes region output distributions earlier, so it shifts the schedule earlier too. | W10 | deferred to phase 3 | 3090 + 5080 |
 | **P5′o** | **Memory-gate overlays** — the dynamic-paging seam's first client (DEC-33, §6.6) `[OP: csd-memory-gate-overlays]`. | **An overlay applied and then disconnected reproduces the base model's receipt metrics EXACTLY, and the disconnect is logged.** Plus: an overlay **refuses to attach** to a base checkpoint fingerprint it was not trained against (verified by constructing the mismatch); tiered-residency policy reports hit rate, page-in latency and VRAM held. | W10 | deferred | 5080 `.251` |
 | **P5′s** | **Toy swarm vs comparable models** `[OP: csd-toy-swarm-experiment]`. An N-agent CSD swarm against (a) comparably sized conventional models at the same swarm size and (b) different swarm sizes, across all three GPUs (3090 Ti sm_86 24 GiB, 5080 sm_120 16 GiB, 1080 Ti sm_61 11 GiB). **It consumes two things this document produces: W9's `Schedule` emission and the per-region context/read budgets** — the harness reads those budgets rather than guessing them. | **Hard precondition: phase 3 is green.** Pre-quantisation is acceptable; anything before phase 3 measures a swarm of isolated regions behind a switchboard, which is the wrong thing. **Per-instance KV and activation budgets are computed UP FRONT and the swarm size derived from them, so a run never OOMs mid-experiment.** Capability per parameter and per VRAM-GB, with an untrained-baseline swarm and receipts per run, through the gpu-timeshare scheduler. | P5′ | deferred | all three GPUs |
+| **M0** | **MYCELIUM READINESS ASSESSMENT — the downstream bar, and the row that decides whether any of this was worth building** `[DEC-51] [OP: csd-mycelium-downstream-goal.md]`. Operator: *once CSD is dialed in and proven out on quality, assess whether it can be used to complete the **Mycelium** functional, value-semantic programming-language project.* A task suite drawn **from the Mycelium repository itself** — parse, typecheck, implement, refactor — with **ground truth taken from that repository's own tests**, so the labels are executable and were not written for this experiment. **Deployment shape, as ruled:** CSD on the **5080** and the **3090 Ti**; **RAG via the 1080 Ti** carrying a helper embedding/rerank model for what will not co-reside with CSD on the 3090 Ti. **Two arms, and the second is the open question this row exists to answer:** (a) CSD **with** the 1080 Ti RAG helper; (b) CSD **doing retrieval natively as a skill** — `memory` plus `episodic_store` end to end, no helper. **Whether (b) works is MEASURED, NEVER ASSUMED**, and a design that assumed it would be assuming the most load-bearing claim in the programme. | **Pre-registered before the suite is run, or the row is void.** (i) **A pass-rate margin, registered in writing with the comparison model named, its revision pinned and its licence recorded, BEFORE any CSD run** — CSD vs a comparable open model at comparable deployed size, both on the same tasks, same harness, same retrieval corpus. A margin chosen after seeing a number is not a gate. (ii) **Per-task-class breakdown** — parse / typecheck / implement / refactor reported separately, because a mind that parses well and cannot refactor is not a development engine and an average hides exactly that. (iii) **Arm (b) is reported whatever it says**, with the retrieval quality of the native path measured against the helper path on the same queries; `RAG native: NOT DEMONSTRATED` is a permitted and useful outcome, and it is the one that keeps the 1080 Ti in the deployment. (iv) **The untrained/ablated control is the composed mind with `episodic_store` reverted**, which is the cheapest way to find out whether the store earns its place on a real workload rather than on a constructed one. **Verify the gate can fail:** run the suite against the comparison model twice and assert the margin statistic distinguishes nothing — an instrument that reports a win for a model against itself has been miswired, and this programme has already paid once for a saturated instrument. | **W10** (a proven composed mind, PTQ'd on the deployment card), P5′ | **blocked — long arc** | 5080 `.251` + 3090 `.98`, **RAG on 1080 Ti `.243`** |
 | **P6′** | **Foundation / language trunk.** Unchanged in ordering — step 4, never step 1. Re-scoped: the causal LM is the **language faculty's generative head**, trained as a region under phase-1 discipline, not "foundation training of the whole model". | New prerequisite: **the general bin has a licence verdict** (FineWeb / C4 / Pile have none today [V\*]). **Deferred candidate corpus, recorded so it is not rediscovered:** official language documentation (Python/Rust docs already staged under `official-docs` in the tiered corpus, plus the RAG collections and the vault) — likely as a docs↔API retrieval bin or generative-head material rather than more contrastive pairs; it would require enrichment, structure extraction, version tagging, dedup against the code corpora and a per-doc-set licence verdict under the strictest-input rule. Revisit **only** when this row starts `[OP: csd-official-docs-corpus-idea]`. | W6 | blocked | 3090 + 5080 |
+
+### DEC-50 — the INCREMENTAL INTEGRATION PROTOCOL, and why E0–E2 are three rows and not one
+
+**This is a named procedure, not a description of what E0–E2 happen to do.** Every future region —
+`numeric`, the language trunk, `auditory` when the production phase opens — follows the same three
+rows, and a proposal that adds a region without them is incomplete on its face.
+
+**The operator's statement, which is the source** `[OP: csd-incremental-integration-protocol.md]`:
+
+> *"one of the other benefits of this kind of modular design for the sub models is that if I make
+> architectural changes — since they're all actually unified and called upon and utilized via the
+> interconnect and router — it would likely mean that at least for that first level we would need
+> to train the new memory module or any other module/submodel that we integrate, and then just
+> retrain the interconnect to enable and facilitate leveraging that new module/submodel, and then
+> follow up with the subsequent training for the whole model, like a unified approach."*
+
+**The three steps, each with the gate that lets it fail:**
+
+1. **TRAIN THE SUBMODEL ALONE**, under phase-1 discipline: its own corpus contract, its own
+   contamination channels in the receipt, and it must **beat its own untrained baseline
+   instantiated at a region-specific seed** — never seed 0 (§4.0). *For `episodic_store` this step
+   is a build rather than a train, because the store is non-parametric; the discipline is
+   unchanged and the baseline becomes E0's contract tests failing red against a stub.* **Row E1.**
+2. **RETRAIN THE INTERCONNECT** with the new region admitted: white matter **A (dense) → B (distil)
+   → C (sparse) → D (task-loss)**, regions frozen. **Gates: G2** — no existing faculty regresses
+   more than 1 point on its own bin; **the composed metric improves**; and **the new region shows
+   non-zero connectivity / attention mass**. **Otherwise the region is REVERTED**, and the receipt
+   records which of the three failed. **Row E2.**
+3. **WHOLE-MIND UNIFIED TRAINING** (phase 3) with the new region in place, under the same
+   monotone-improvement rule already written into P5′: growth increments that do not improve the
+   composed metric are reverted. **Row P5′**, which needs no amendment — it already says this.
+
+**Why step 2 is cheap, and this is the load-bearing claim.** **DEC-26 caps the interconnect's
+parameter share at 2–5% of the mind** (scoped to ≥1B; at toy scale it is 31.8%). So the object
+being retrained when a region is added is the **smallest trainable object in the architecture**,
+and the regions — the expensive things — are not touched at all. That is the property the modular
+design was bought for, and DEC-50 is the procedure that spends it. **The reserved corpus is the
+interconnect's own training data**, so step 2 has signal without reaching into any region's corpus
+and without invalidating any region receipt.
+
+**Per-step receipts, so a regression is attributable.** Each of the three steps emits its own
+receipt. If the composed metric falls after a region is added, the receipts say whether it fell at
+the region, at the interconnect retrain, or at the unified pass — **three different findings with
+three different remedies**, and a single end-to-end receipt cannot distinguish them. This is the
+same discipline W4 already uses when it makes a merge and an objective change diagnosable by
+ablating one term.
+
+**What the protocol does NOT license.** It does not license adding a region *because* re-admission
+is cheap. Step 2's second gate is *the composed metric improves* — not *does not regress* — for
+exactly that reason: a participant that consumes read budget and returns nothing is a cost, and
+the cheapness of the retrain is what makes it tempting to keep one anyway.
 
 ### Production phase: audio — DEFERRED rows, kept specified `[DEC-48]`
 
@@ -1972,11 +2194,13 @@ receipt cites it, and it may be deleted without loss.
 | **A0f** | **Audio corpus FETCH** under the audit's recommended v1 mix, with LibriVox capped as ONE provenance group. Wire the fetcher to A0m's manifest, fetch **the clean tier of both mixes**, and compute the balance numbers **on provenance groups, not dataset names**, **in hours** `[S31-14 fixed]`. | **Four, and (ii)–(iv) are constructed to fire.** **(ii)** the fetcher **refuses every source the audit marks BLOCKING**, verified by *constructing* the case: put `agkphysics/AudioSet` in a scratch manifest and assert the fetcher raises and writes **nothing**. **(iii)** **B1 and B2 are computed with LibriVox as ONE group, in HOURS, for BOTH mixes, and printed beside the same statistics computed per dataset name** — the per-name numbers are expected to look fine, and that is the point. **This clause is a PASS/FAIL, not a print** `[S31-2 fixed] [S31-5 fixed] [S31-15 fixed]`: the grouped max share is reported **against both thresholds** — **> 0.50 FAILS the row** (the hard line) and **> 0.40 is a recorded WARNING** (the operating cap), the shape §5.1 already uses for aqua_rat — and a **grouped `N_eff` below 3 FAILS**. The chosen per-group cap `C` is printed with them, because B1/B2 are functions of `C` and a receipt that omits it has reported an opinion. **(iv)** the LibriVox group's **per-speaker hour histogram** is produced and B5's max share printed. **(v)** every fetched source's licence tier is recorded so DEC-45's table can be **recomputed** rather than trusted. **Verify it can fail:** the constructed BLOCKING row, and a scratch mix built per dataset name that the grouped statistic must FAIL while the per-name statistic passes. | **A0m, OD-13, OD-15** (the fetch half is what those two rulings bind; OD-10/11/12/14 concern sources outside the recommended mix and do **not** block it `[S31-7 fixed]`) | **deferred** | 1080 Ti / CPU |
 | **A1** | **`auditory` region pretrain** (DEC-43). Spectrogram-frame patch tokens, masked-latent prediction, the same JEPA harness `visual` uses, over A0f's capped mix. Emits at the shared `tokens()` interface — **position latents, `[DEC-47]`** — so W0 is a prerequisite and the adapter is the one `visual` already has. | **Five, all pre-registered:** (1) **beats its own untrained baseline, instantiated at a region-specific seed and not seed 0** (§4.0); (2) **the contamination channels are present in the receipt** — `corpus.cap_sampling`, the drawn `pair_fingerprint`s and the source-row fingerprints; (3) **anisotropy recorded** — **entropy-effective** rank of `tokens()` on 4,096 real mixed items in W1c's units, printed beside participation ratio, the two never compared across definitions `[N3 fixed]`; (4) the eval split is declared **in the code** as `in-mixture` or `held-out-domain` **before the first receipt**; (5) the licence tier of the mix actually consumed is printed. **Verify the gate can fail:** run the eval against the untrained checkpoint and assert **FAIL**. | A0f, W0, **operator go** | **deferred** | 3090 `.98` |
 | **A2** | **`speech_output` head** (DEC-44). A second head on the generative trunk: BPE text tokens plus a discrete speech-token stream a synthesiser consumes. Trained on **bucket C** of the audit — which is why A0m/A0f's scope covers bucket C `[S31-8 fixed]`. **THE TRUNK IS FROZEN AND THE HEAD IS AN ADAPTER** `[S31-4 fixed]`: revision 3.1 left the trunk's status unstated while asking for a disconnect test that reproduces the text head's receipts *exactly*, and the two readings could not both hold — a trainable trunk makes "exactly" fail on the fourth decimal by construction, a frozen trunk makes it trivially true. The frozen reading is **adopted**, because it is the one that preserves reversibility for OD-15 and matches DEC-33's overlay discipline, which is only correct for a genuinely detachable thing. | **Five.** (i) **intelligibility** — **WER of a fixed, named, frozen reference ASR** over synthesised output on a **held-out** set beats the untrained head's WER by a margin pre-committed before the run; the ASR's model id, revision and licence are recorded and **the same ASR is used for every later comparison**. (ii) **the disconnect test, now well-posed:** with the speech head detached, the text head reproduces its own receipt metrics **bit-exactly on the logits** — which is achievable *because* the trunk is frozen — and the disconnect is logged. (iii) **the licence tier is printed** (OD-15). (iv) the untrained-head baseline is at a region-specific seed. (v) **balance:** the **grouped B1 of the consumed TTS mix is printed and a share > 0.50 FAILs the row** `[S31-5 fixed]` — four of six clean-tier `speech_output` sources (LJSpeech, CSS10, M-AILABS, Hi-Fi TTS) are **one LibriVox group**, leaving VCTK, AISHELL-3 and (NC) Expresso as the only levers, which makes OD-15 a **balance** question and not only a licence one. **Verify it can fail, in two directions** `[S31-18 fixed]`: feed the reference ASR the **untrained** head's output and assert FAIL — *and*, because that construction only proves the comparison is wired, feed the frozen ASR **silence or white noise** and assert **WER ≈ 1.0**. A stub that returns the reference transcript regardless of input passes the first check and then reports a spectacular improvement; this programme has already paid once for a saturated instrument. **A2 does NOT precede W2b** — with the trunk frozen it changes no region's weights, so the `s_r` invalidation rule does not reach it. | A0f, W0, **operator go** | **deferred** | 3090 `.98` |
-| **A3** | **The two audio cross-faculty item shapes for the reserve** (§5.4, §5.5). *`auditory × language_code`*: an A0 transcript-carrying source row yields (spectrogram frames, the transcript span, a **distractor span drawn from a different source row of the same provenance group**), and the item asks which text span the audio realises — built by **pairing existing aligned data**, §5.5(a)'s cleanest tier. *`auditory × visual`*: W3r's checked-in 128×128 composite rendered from a cleared text row, paired with audio of that same row read by a clean-tier speaker, plus a shuffled-mismatch negative. Both obey DEC-38's fingerprint granularity and DEC-39's keyed split. **When this row is picked up it re-opens §5.4's pair arithmetic, and the re-opening is pre-specified rather than left to the day:** adding `auditory` makes the participant set five and the all-pairs set **ten**, of which `auditory × memory` and `auditory × reasoning` have no shape here. **Pre-committed resolution, so nobody re-slices a criterion after a seal:** `auditory` enters as a **non-pair participant** unless A3 also declares shapes for those two, the pair set is held at **6 + 2 = 8**, and G3′'s criterion is restated **in the same breath** as **≥ 5 of 8** with its null rate `P(Bin(8,0.5) ≥ 5) = 0.363` printed beside it `[S31-1 fixed]`. | **Gate.** Items are **constructed** on CPU as soon as A0f lands and **admitted** — NSRS `s_r` for every region *including* `auditory` — only after A1. ≥ 512 admitted items per new pair for eval and ≥ 5,120 per pair for train; **the sealed-item allocation across pairs is recomputed and printed, and the recomputed table must print the cross-faculty sealed TOTAL alongside the per-pair figures so the two are visibly reconciled** `[S31-21 fixed]` — revision 3's per-pair column sums to 1,280 against a 2,560-item sealed half because shapes overlap pairs, and A3 inherits that ambiguity unless it prints both. Every item's provenance chain names its audio source and licence tier. **Verify it can fail, and the refusal now has a key to fire on** `[S31-9 fixed]`: revision 3.1 asked W2b to *"refuse the pair rather than score it against a random encoder"* and named **no field the filter could key on** — a randomly initialised encoder emits outputs and `s_r` is perfectly well defined, just low, so the construction produced a **number** and the gate could not fire. **W2b refuses any region whose `status` is not `built` AND whose receipt path is absent or whose checkpoint hash does not match the resident weights** — which gives §1.4's `planned` a second, mechanical job and gives the `s_r` invalidation rule the enforcement point it otherwise lacks. Construct it: attempt admission with `auditory` at `status: planned` and assert **refusal**, then with a receipt whose hash is flipped and assert **refusal** again. | A0f, A1, W2b, W3r, **operator go** | **deferred** | 1080 Ti / CPU **+ 3090 for `s_r`** |
+| **A3** | **The two audio cross-faculty item shapes for the reserve** (§5.4, §5.5). *`auditory × language_code`*: an A0 transcript-carrying source row yields (spectrogram frames, the transcript span, a **distractor span drawn from a different source row of the same provenance group**), and the item asks which text span the audio realises — built by **pairing existing aligned data**, §5.5(a)'s cleanest tier. *`auditory × visual`*: W3r's checked-in 128×128 composite rendered from a cleared text row, paired with audio of that same row read by a clean-tier speaker, plus a shuffled-mismatch negative. Both obey DEC-38's fingerprint granularity and DEC-39's keyed split. **When this row is picked up it re-opens §5.4's pair arithmetic, and the re-opening is pre-specified rather than left to the day:** adding `auditory` makes the participant set **six** — DEC-49 already made it five — and the all-pairs set **fifteen**, of which `auditory × memory`, `auditory × reasoning` and `auditory × episodic_store` have no shape here. **Pre-committed resolution, restated for the five-participant base because a pre-specification that is not re-derived when its base changes is a stale number waiting to be quoted** `[S31-1 fixed] [DEC-49]`: `auditory` enters as a **non-pair participant** unless A3 also declares shapes for those three, the pair set is held at **10 + 2 = 12**, and G3′'s criterion is restated **in the same breath** as **≥ 8 of 12** with its null rate `P(Bin(12,0.5) ≥ 8) = 0.194` printed beside it — the smallest `k` under §2.7.3's 0.20 ceiling. | **Gate.** Items are **constructed** on CPU as soon as A0f lands and **admitted** — NSRS `s_r` for every region *including* `auditory` — only after A1. ≥ 512 admitted items per new pair for eval and ≥ 5,120 per pair for train; **the sealed-item allocation across pairs is recomputed and printed, and the recomputed table must print the cross-faculty sealed TOTAL alongside the per-pair figures so the two are visibly reconciled** `[S31-21 fixed]` — revision 3's per-pair column sums to 1,280 against a 2,560-item sealed half because shapes overlap pairs, and A3 inherits that ambiguity unless it prints both. Every item's provenance chain names its audio source and licence tier. **Verify it can fail, and the refusal now has a key to fire on** `[S31-9 fixed]`: revision 3.1 asked W2b to *"refuse the pair rather than score it against a random encoder"* and named **no field the filter could key on** — a randomly initialised encoder emits outputs and `s_r` is perfectly well defined, just low, so the construction produced a **number** and the gate could not fire. **W2b refuses any region whose `status` is not `built` AND whose receipt path is absent or whose checkpoint hash does not match the resident weights** — which gives §1.4's `planned` a second, mechanical job and gives the `s_r` invalidation rule the enforcement point it otherwise lacks. Construct it: attempt admission with `auditory` at `status: planned` and assert **refusal**, then with a receipt whose hash is flipped and assert **refusal** again. | A0f, A1, W2b, W3r, **operator go** | **deferred** | 1080 Ti / CPU **+ 3090 for `s_r`** |
 
 **What this subsection deliberately does not do.** It does not schedule audio, does not budget
 GPU-hours for it in §4.3, and does not carry `auditory` into any participant count, pair count,
-collapse floor or licence table for v1. **v1 has four participants and six ablation pairs.**
+collapse floor or licence table for v1. **v1 has FIVE participants and TEN ablation pairs**
+(DEC-49), **none of them audio** — that is what this subsection is asserting, and revision 3.3
+restates the numbers rather than leaving a count that was written when they were four and six.
 
 
 ## 4.2 Consequence-3: what was predicted, what was measured, and what it cost
@@ -2057,7 +2281,7 @@ omitting B2t and B3 entirely. They are enumerated here in the same units as ever
 
 Let **`T_A`** be one W5 phase-A dense white-matter run. It is not yet measured — no white-matter
 run has been done — so it is estimated and then **replaced by the measured number in W5's
-receipt**: 8,000 steps at batch 256 over the 51,200-item reserve, with `R` frozen region forwards
+receipt**: 8,000 steps at batch 256 over the **61,440**-item reserve (§5.4, DEC-49), with `R` frozen region forwards
 plus the workspace per step, i.e. **3–5× a text-region step** whose measured wall-clocks are
 426.7 s / 595.1 s / 1,087.2 s [V\*] ⇒ **`T_A` ≈ 1–2 GPU-hours** [I].
 
@@ -2099,9 +2323,33 @@ and human attention, not compute. The audit is already done, so what the deferra
 is the option value of having had the corpus ready — and the ruling accepts that explicitly:
 *"gotta walk before we run."*
 
+**DEC-49 ADDS ONE ROW TO THIS BILL AND IT IS A FULL WHITE-MATTER RUN.** The episodic store's three
+rows cost, in the same units:
+
+| row | runs | basis | estimate |
+|---|---|---|---|
+| **E0** contract extraction and test port | — | CPU, no model, no data | **zero GPU-hours** |
+| **E1** store build + dynamic-capacity probe + fuzz | — | no training; the probe reads `nvidia-smi` and the scheduler's budgets, the fuzz is 10,000 store operations | **minutes, on two cards** [I] |
+| **E2** interconnect retrain with the store admitted | 1 (+1 revert-and-retry allowance) | **`R = 5` phase A — by definition one `T_A`**, DEC-50 step 2 | **≈ 1.0 `T_A` ⇒ 1–2 h** [I] |
+| **DEC-49 total** | | | **≈ 1–2 GPU-hours on the 3090 Ti [I]** |
+
+**So phase 2's honest total moves from ≈ 6–11 to ≈ 7–13 GPU-hours of 3090 Ti time**: ≈ 3–5 of
+region retrains, ≈ 3–6 of baseline training runs, ≈ 1–2 for E2. **E2 is the one line here that is
+`1.0 T_A` by definition rather than by estimate**, for the same reason B2t is: a phase-A run with
+one more participant is a phase-A run. **The thing that keeps this affordable is DEC-26** — E2
+retrains 27.4M parameters and touches none of the 58.9M in the regions — and that is DEC-50's
+whole argument stated as a bill.
+
+**Two costs of DEC-49 that are NOT GPU-hours and are recorded here so they are not lost:** the
+reserve grows by **11,264 items** (§5.4), which is human and CPU time on construction rather than
+compute; and W3 acquires the **episode harness**, a component this programme has never built,
+which is the likeliest place for the store's four ablation pairs to slip. §5.4 pre-commits the
+branch for that.
+
 **Gate on the estimate itself, so it can fail:** W5 records its measured phase-A wall-clock. **If
 `T_A` exceeds 3 GPU-hours, the baseline set is re-scoped before B2t is launched** and the
-re-scoping is recorded, rather than discovered by a run that does not finish.
+re-scoping is recorded, rather than discovered by a run that does not finish. **E2 inherits the
+same gate**: it is priced in `T_A` and is re-scoped by the same rule.
 
 Against that, the white-matter runs (W5 phase A, W5b, W8 phases B/C/D) are the larger cost and
 were always in the plan. **The programme is still affordable; it is no longer affordable *for
@@ -2120,7 +2368,10 @@ before anything expensive depends on it.
 
 **≈56,320 rows / 23.0%** — verified as a *derivation*, not an assertion: `(7 bins × 512) +
 (3 pairs × 512) = 5,120` eval, `×10` train `= 51,200`, total `56,320`; `56,320 / 244,761 =
-23.0%` [V\*]. The 512 comes from the 95% binomial half-width `1.96·√(0.25/n) = ±4.33 pp` at
+23.0%` [V\*]. **DEC-49 re-derives this at six per-faculty bins and six cross-faculty bins:
+`(6 × 512) + (6 × 512) = 6,144` eval, `×10` train `= 61,440`, total **67,584**; `67,584 / 244,761
+= 27.6%` [I] (§5.4).** The published 23.0% is the *verified original derivation* and is kept as
+such; 27.6% is what the same derivation yields at `R = 5`. The 512 comes from the 95% binomial half-width `1.96·√(0.25/n) = ±4.33 pp` at
 `n = 512`, matching the project's existing `holdout_pairs` convention [V\*].
 
 ### The aqua_rat write-off was wrong, and the sampling code refutes it
@@ -2219,33 +2470,50 @@ cap in `scripts/csd-train-all.py` (19:41:03) — and `2864ecd`, the KICKOFF note
 *"wip(regions): classify and reason wiring, **preserved unvalidated**"*. A history that preserves
 work after the fact does not date the run that produced it.
 
-> ### DEC-42 — burn the UNION of both possible draws, and let the gate fail if it is not there
+> ### DEC-42 — burn the UNION of every draw the ledger discovers, and let the gate fail if one is missing
 >
-> **The ambiguity is not resolvable from artefacts on disk, and it does not need to be.** Both
-> candidate draws are computable today, deterministically, from config alone:
+> **The ambiguity is not resolvable from artefacts on disk, and it does not need to be.** Two
+> candidate draws were anticipated, computable deterministically from config alone:
 >
 > - **draw R** — the reservoir draw: `reservoir_sample(_iter_pairs(...), 4982, sampling_rng(0, ...))`.
 > - **draw P** — the prefix draw: the **first 4,982 pairs `_iter_pairs` yields in shard order**,
 >   which is exactly what the same call returned before `c42203c`.
 >
-> **The ledger takes `fingerprints(R) ∪ fingerprints(P)`.** Both are marked `reason`-burned. No
-> row of ambiguous provenance is ever certified clean.
+> **AMENDED — W2a's actual run (branch `feat/w2a-ledger-recovery`, `c6ea587`, approved) found a
+> third.** A directory walk under `reason/aqua_rat-raw/` turned up an on-disk derived sample,
+> `derived/sample-4982-seed0.parquet` (mtime `2026-09-02T23:05:45.957176Z`, dated before both
+> `b9a082e` — the commit that introduces the `4982` cap — and `c42203c`), with a sibling
+> `MANIFEST.json` declaring `numpy Generator(PCG64).permutation(n)[:N_SAMPLE]`: a full-corpus
+> shuffle-then-take, **not** a prefix in file order, so it is neither R nor P. Its row count
+> matches the cap exactly. **This is precisely the case DEC-42 exists for** — an artefact of
+> ambiguous provenance, neither proven clean nor safely ignored — and the gate below is what
+> caught it: it fails on a ledger omitting *any* discovered draw, so a human did not have to
+> anticipate this one for it to be burned. Call it **draw D3**.
 >
-> **The cost, stated so it can be weighed:** **at most 4,982 further rows of the 92,485 the
-> recovery marked clean** — the union is at most 9,964 of 97,467, and in practice smaller, since
-> Algorithm R fills its reservoir with the prefix and then replaces from it, retaining
-> `4,982² / 97,467 ≈ 255` prefix rows in expectation, so the expected union is ≈ 9,709 [I]. The
-> conservative worst case is carried everywhere below. **The recovery survives at 2.13×; the
-> ambiguity does not.**
+> **The ledger takes `fingerprints(R) ∪ fingerprints(P) ∪ fingerprints(D3)`** — and would take a
+> fourth term if a fourth draw turned up. All three are marked `reason`-burned. No row of
+> ambiguous provenance is ever certified clean.
+>
+> **The cost, measured rather than bounded, now that all three draws have actually been
+> computed** `[V*, burned-aqua_rat.jsonl.manifest.json]`: `R` is 4,982 rows / 4,951 unique
+> fingerprints; `P` is 4,982 / 4,946 unique, of which 4,626 are new against `R`
+> (`|R ∩ P| = 320`, so `|R ∪ P| = 9,577` — *smaller* than the two-draw worst case of 9,964 this
+> section used to carry, and close to the ≈ 9,709 expected value computed under Algorithm R's own
+> retention behaviour `[I]`); `D3` is 4,982 / 4,930 unique, of which **4,369 are new against
+> `R ∪ P`**. **The three-draw union is 13,946 of 97,467, and the clean pool is 83,521** — not "at
+> least", not "at most": this is what the ledger's manifest actually recorded, of the draws
+> discovered to date. The recovery survives at **1.71×** against DEC-49's 61,440-row training
+> need (§5.1, was 1.77× under the two-draw union); the ambiguity does not.
 >
 > **W2a's fourth check, and it is the one that can fail.** Establish the code revision the
 > `reason` run used — receipt or checkpoint mtime against `c42203c`'s commit time, or a trainer
 > revision recorded in the checkpoint — **and if it cannot be established, record that it could
 > not.** *Absence of evidence must not become the evidence.* Either way the union is written.
-> **The gate:** W2a asserts `|ledger ∩ fingerprints(R)| = 4,982` **and**
-> `|ledger ∩ fingerprints(P)| = 4,982`, and **refuses to emit a ledger that omits either draw.**
-> A fingerprint set carrying only one draw is a **FAIL**, not a partial pass. **Verify it by
-> making it fail:** hand the checker a ledger built from draw R alone and assert it refuses.
+> **The gate:** W2a asserts `|ledger ∩ fingerprints(draw)| = 4,982` for **every discovered draw**
+> — `R`, `P`, `D3`, and any further one a directory walk turns up — and **refuses to emit a
+> ledger that omits any of them.** A fingerprint set omitting even one discovered draw is a
+> **FAIL**, not a partial pass. **Verify it by making it fail:** hand the checker a ledger built
+> from draw R alone and assert it refuses.
 
 **W2a tests all four rather than assuming any**, because this is the largest number in this
 section: (i) the recomputed `fingerprint_corpus` of the parquet on disk today matches;
@@ -2260,7 +2528,7 @@ section reverts.**
 
 | source | rows | status |
 |---|---|---|
-| `deepmind/aqua_rat` | 97,467 | **≤ 9,964 BURNED** — the **union** of both candidate draws (DEC-42), recovered by W2a and written to the ledger as `reason`-burned; **≥ 87,503 CLEAN** `[N1 fixed]`. Revision 2 read 4,982 burned / 92,485 clean, which was correct only under an unstated assumption about which sampling algorithm ran |
+| `deepmind/aqua_rat` | 97,467 | **13,946 BURNED** — the **union of the three draws W2a's run discovered** (DEC-42: R, P, and the on-disk derived sample D3), written to the ledger as `reason`-burned; **83,521 CLEAN** `[N1 fixed]` `[V*, burned-aqua_rat.jsonl.manifest.json]`. Revision 3.3 read `≤ 9,964` burned / `≥ 87,503` clean under a two-draw worst case; W2a's actual run found a third draw and measured the union exactly. Revision 2 read 4,982 burned / 92,485 clean, which was correct only under an unstated assumption about which sampling algorithm ran |
 | `go_emotions` | 43,410 | BURNED (trained) |
 | `PolyAI/banking77` | 13,083 | BURNED (10,003 trained; a 3,080-row remainder of a burned source that also fails B5 is not worth having) |
 | `openai/gsm8k` | 7,473 | BURNED (trained uncapped) |
@@ -2269,37 +2537,50 @@ section reverts.**
 | `codeparrot/apps` | 10,000 | clean, **allocated `compose`** (§5.2) |
 
 ```
-truly clean unallocated .......................... 169,047   (was 174,029 before DEC-42)
+truly clean unallocated .......................... 165,065   (was 169,047 at the two-draw union,
+                                                                DEC-42; 174,029 before DEC-42)
   of which fashion_mnist (28x28 greyscale, no text bin can use it)  60,000
-  TEXT-USABLE clean:  aqua_rat recovered, union burned  87,503
+  TEXT-USABLE clean:  aqua_rat recovered, union burned  83,521
                     + code_contests 13,328 + apps 10,000 = 23,328
                     - apps<->code_contests dedupe at cos >= 0.90  -1,784
-  text-usable after dedupe ....................... 109,047   (was 114,029)
+  text-usable after dedupe ....................... 105,065   (was 109,047 at the two-draw
+                                                                union; 114,029 before DEC-42)
 
-reservation required (unchanged sizing) ..........  56,320   of which 51,200 is TRAINING data
-  56,320 as a share of the declared pool .........   23.0%   <- the published figure
-  56,320 as a share of what remains ..............   33.3%   <- the real figure (was 67.6%)
-  text-usable vs the 51,200-row training need ....   2.13x SURPLUS  (was a 2.38x shortfall)
+reservation required, AFTER DEC-49 ...............  67,584   of which 61,440 is TRAINING data
+  67,584 as a share of the declared pool .........   27.6%   (the published 23.0% was for 56,320)
+  67,584 as a share of what remains ..............   40.9%   <- the real figure (was 40.0% at
+                                                                the two-draw union; 33.3% at
+                                                                56,320; 67.6% before the recovery)
+  text-usable vs the 61,440-row training need ....   1.71x SURPLUS  (was 1.77x at the two-draw
+                                                                union; 2.13x at 51,200, and a
+                                                                2.38x SHORTFALL before recovery)
+  ^ DEC-49's two new cross-faculty bins cost 1,024 eval + 10,240 train rows. The surplus is
+    still a surplus; it is a thinner one, and section 9.2 says so.
 
 THE THREE BALANCE NUMBERS, WHICH TRAVEL TOGETHER  [N8 fixed]
-  MAX SOURCE SHARE (aqua_rat), unallocated pool ..   51.8%   <- BINDING. B1 hard line 0.50: FAIL
-  MAX SOURCE SHARE (aqua_rat), text-usable pool ..   80.2%   <- the pool the reserve is drawn from
-  fashion_mnist share of what remains ............   35.5%   <- NOT binding; revision 2 printed
-                                                                only this one against B1
-N_eff of the remaining pool = 1/sum(p^2) .........    2.44   (B2 wants >= 3; still short)
+  MAX SOURCE SHARE (aqua_rat), unallocated pool ..   50.6%   <- BINDING. B1 hard line 0.50: FAIL
+                                                                (was 51.8% at the two-draw union)
+  MAX SOURCE SHARE (aqua_rat), text-usable pool ..   79.5%   <- the pool the reserve is drawn from
+                                                                (was 80.2% at the two-draw union)
+  fashion_mnist share of what remains ............   36.3%   <- NOT binding; revision 2 printed
+                                                                only this one against B1 (was 35.5%)
+N_eff of the remaining pool = 1/sum(p^2) .........    2.47   (B2 wants >= 3; still short;
+                                                                was 2.44 at the two-draw union)
 ```
 
 > **B1 is a MAX-SHARE rule, and after the recovery the maximum is not `fashion_mnist`'s**
 > `[N8 fixed]`. Revision 2 printed `fashion_mnist 34.5% (B1 hard line 0.50, target 0.40)` and a
-> reader scanning that block saw a B1 pass. The binding number is aqua_rat's: **51.8% of the
-> unallocated pool and 80.2% of the text-usable pool, against `CORPUS-CONTRACT.md:1155`'s
+> reader scanning that block saw a B1 pass. The binding number is aqua_rat's: **50.6% of the
+> unallocated pool and 79.5% of the text-usable pool** (was 51.8% / 80.2% at the two-draw union;
+> W2a's actual run found a third draw, DEC-42), **against `CORPUS-CONTRACT.md:1155`'s
 > *"`p < 0.50` is the hard line, `0.40` is the operating cap"* [V].** The recovery therefore
 > **moves the pool from passing B1 to failing it.** The prose said so in two places; the numbers
 > did not, and the numbers are what a ratifier scans.
 >
 > **What is done about it, in order.** (1) **B1 binds on the reserve, not on the pool** — the
 > reserve does not have to consume the pool in proportion. Hold aqua_rat to the **0.40 operating
-> cap of the reserve's source rows**: ≤ 22,528 of 56,320, leaving 33,792 to come from elsewhere.
+> cap of the reserve's source rows**: ≤ 27,033 of 67,584, leaving 40,551 to come from elsewhere
+> (**restated for DEC-49's larger reserve**; it was ≤ 22,528 of 56,320 leaving 33,792).
 > (2) **The non-aqua_rat text-usable pool is 21,544 rows**, so that gap can only be closed by
 > composites over `fashion_mnist` panels and re-used text rows — i.e. **by W3r's renderer, and
 > for the `visual × *` half by W7v.** So B1 compliance for the reserve is **W7v-dependent**, and
@@ -2309,14 +2590,16 @@ N_eff of the remaining pool = 1/sum(p^2) .........    2.44   (B2 wants >= 3; sti
 > waiver is a W3 deliverable (DEC-38), not a footnote. (4) A **third genuine text source** is
 > already named as one of the only true fetches (§5.5); it is what makes (3) unnecessary.
 >
-> **`N_eff` rose from 2.40 to 2.44 and that is not good news.** It rose because the largest
-> source shrank, not because the pool diversified. A diversity statistic that improves when you
-> burn rows is being read wrong; it is printed because B2 asks for it, and it is still short of
-> B2's ≥ 3 either way.
+> **`N_eff` rose from 2.40 to 2.44 to 2.47 and that is not good news.** 2.40 → 2.44 was DEC-42's
+> two-draw union; 2.44 → 2.47 is W2a's actual run finding the third draw, D3, and burning it too.
+> It rose because the largest source shrank each time, not because the pool diversified. A
+> diversity statistic that improves when you burn rows is being read wrong; it is printed
+> because B2 asks for it, and it is still short of B2's ≥ 3 either way.
 
 > **The corpus crisis is downgraded, not dissolved.** A 2.38× shortfall becomes a **2.13×**
-> surplus after DEC-42's union burn, and §9.2 stops being the leading risk. **What does not
-> change:** `N_eff` is 2.44 against B2's ≥ 3, so the reserve still needs either a third genuine
+> surplus after DEC-42's two-draw union burn, and **1.71×** once W2a's run measured the actual
+> three-draw union, and §9.2 stops being the leading risk. **What does not
+> change:** `N_eff` is 2.47 against B2's ≥ 3, so the reserve still needs either a third genuine
 > text source or B2's dated waiver; and the recovered rows are aqua_rat — one source, one domain
 > — so a reserve built mostly from them **fails B1, in the printed numbers and not only in the
 > prose**. The rendered-composite generator is no longer *load-bearing for funding*; it is
@@ -2446,11 +2729,23 @@ Sizing is unchanged in method; bins are re-keyed to faculties, so `k` drops from
 
 | component | items | note |
 |---|---|---|
-| per-faculty eval — `language_code`, `memory`, `reasoning`, `visual`, `affect`(probe), `general` × 512 | 3,072 | 6 bins, not 7. `general`'s target is DEC-41's `NULL` candidate |
-| **cross-faculty eval** — 4 live pairs × 512 | 2,048 | pairs below; **2 of the 4 are blocked until W7v** |
-| **compose eval total** | **5,120** | **split 2,560 dev / 2,560 sealed** (§2.7.8) |
-| **interconnect train, ≥10× eval** | **51,200**, of which **≥60% cross-faculty** | the reframe made this *training* data, not eval padding |
-| **RESERVATION TOTAL** | **56,320** | |
+| per-faculty eval — `language_code`, `memory`, `reasoning`, `visual`, `affect`(probe), `general` × 512 | 3,072 | 6 bins, not 7. `general`'s target is DEC-41's `NULL` candidate. **`episodic_store` gets NO per-faculty bin** — it has no standalone task, which is also why it is exempt from G2 (§2.7.2) `[DEC-49]` |
+| **cross-faculty eval** — **6** reported bins × 512 | **3,072** | pairs below; **2 of the 6 are blocked until W7v**, and **2 are new under DEC-49** |
+| **compose eval total** | **6,144** | **split 3,072 dev / 3,072 sealed** (§2.7.8). Was 5,120 / 2,560 / 2,560 |
+| **interconnect train, ≥10× eval** | **61,440**, of which **≥60% cross-faculty** | the reframe made this *training* data, not eval padding. Was 51,200 |
+| **RESERVATION TOTAL** | **67,584** | **was 56,320** |
+
+> **DEC-49 RAISES THE RESERVE BY 11,264 ITEMS AND THAT IS A COST, NOT AN ADJUSTMENT.** Two new
+> reported cross-faculty bins at the non-negotiable 512-per-bin reporting floor add 1,024 eval
+> items, and the ≥10× training rule carries 10,240 more with them. **Against the recovered pool
+> this is visible arithmetic:** 67,584 of 165,065 clean unallocated is **40.9%** (was 40.0% at the
+> two-draw union, 33.3% before DEC-49), and the training need alone — 61,440 rows — leaves a
+> surplus of **1.71×** against the 105,065 text-usable rows, down from **1.77×** at the two-draw
+> union and **2.13×** before it. **§9.2's funding risk is tightened, not closed**, and the
+> alternative was worse: holding the cross-faculty eval at 2,048 across six bins would put 341
+> items in each, below the reporting floor the whole sizing rests on. **The lever §2.7.8 named for
+> exactly this case is the one that was pulled**, in advance and in writing, rather than as a
+> post-hoc re-slice.
 
 The composed-vs-single comparison is **paired**, so McNemar on discordant pairs is the test and
 512 is a reporting floor per bin, not the resolution of the comparison [V\*].
@@ -2459,7 +2754,7 @@ The composed-vs-single comparison is **paired**, so McNemar on discordant pairs 
 
 Revision 1 split 51,200 train / 5,120 eval at *item* granularity and resampled the bootstrap
 *over items*. Composites are built by choosing `n` panels from a pool of text items, so ~30,720
-cross-faculty training composites drawn from a source pool of 21,544–109,047 rows **reuse each
+cross-faculty training composites drawn from a source pool of 21,544–105,065 rows **reuse each
 row many times**. Three consequences, all of which inflate the result:
 
 1. **Train/eval leakage.** An eval composite will contain panels the model saw inside training
@@ -2486,9 +2781,9 @@ row many times**. Three consequences, all of which inflate the result:
 >   the reserve therefore cannot measure**. B2 already provides for the waiver; using it is
 >   honest, ignoring the rule is not.
 
-**The four live cross-faculty pairs**, re-keyed to the new taxonomy (`compress × retrieve` was
+**The six reported cross-faculty bins**, re-keyed to the new taxonomy (`compress × retrieve` was
 one of the contract's four planned pairs and **the merge makes it intra-region**, so it is
-replaced):
+replaced; the last two are added by DEC-49):
 
 | pair | item shape | status | what no region can do alone |
 |---|---|---|---|
@@ -2496,25 +2791,32 @@ replaced):
 | `memory × reasoning` | multi-hop: retrieve two facts, then combine them | **live** | retrieval alone returns one fact; reasoning alone has no facts |
 | `visual × language_code` | locate an element in a frame, then name or act on it | **BLOCKED until W7v** `[A4 fixed]` | the old `vl × classify`. Unconstructible against 64×64 single-object tiles, and the encoder cannot ingest a larger frame at all |
 | `visual × memory` | given a description, find the *frame* that shows it | **BLOCKED until W7v** | genuinely new, and the one that exercises long **visual** context — the operator's stated primary long-context channel |
+| `episodic_store × memory` | a **two-turn episode**: turn 1 retrieves and commits a fact; turn 2 asks a question answerable only from that fact, which is **absent from turn 2's own context window** | **BLOCKED until E1** `[DEC-49]` | retrieval alone cannot see turn 1; the store alone holds a latent nobody indexed. **This is the pair that makes "recall-dependent" a measurement** |
+| `episodic_store × visual` | a two-turn episode whose turn-1 premise arrives as a **rendered panel** and whose turn-2 premise arrives as text; the answer needs both and is stated on neither | **BLOCKED until E1 + W7v** `[DEC-49]` | the deferred-premise case across modalities — it is also the one that tests whether the store's contents are modality-general or quietly text-shaped |
 
 ### Every ablation pair now has an item shape and a sealed-item count `[N2 fixed]`
 
-**A17's defect returned one level down and this is where it is closed.** Revision 2 demoted
-`episodic_store` so *"≥6 of 10 pairs"* would stop secretly meaning *"all 6 real pairs"*, and
-replaced it with DEC-37's *"≥4 of the 6 pairs"* — over **four** declared cross-faculty item
-shapes. **The participant count is four and stays four** — DEC-32 keeps `episodic_store` out and
-DEC-48 keeps `auditory` out, so no revision of this document may quietly change the denominator
-`[S31-1 fixed]`. The four participants generate **six** pairs, so two of them —
-`language_code × reasoning` and `visual × reasoning` — had **no items that require both
-regions**. For such a pair `Δ_A ≈ Δ_B ≈ 0` on the cross-faculty bin, DEC-37's conjunction fails
-**by construction**, and the pair lands in the named `REDUNDANT` quadrant, which is a FAIL. So
-*"≥4 of 6"* silently meant *"all four constructed pairs must pass"* — arrived at by exactly the
-accident A17 named, in the paragraph that fixed A17. **A pass/fail gate must not depend on a
-reader inferring which pairs an item shape happens to cover, so the mapping is printed.**
+**A17's defect returned one level down and this is where it is closed — and revision 3.3 closes
+it a second time, by construction rather than by exclusion.** Revision 2 demoted `episodic_store`
+so *"≥6 of 10 pairs"* would stop secretly meaning *"all 6 real pairs"*, and replaced it with
+DEC-37's *"≥4 of the 6 pairs"* over four declared shapes. That worked, and it worked by removing a
+participant. **DEC-49 puts the participant back, so the same defect has to be closed the harder
+way: by declaring the shapes.** The rule that governs the denominator is now mechanical and is
+stated so it can be run: **no ablation pair may appear in the denominator without a row in the
+mapping below and a non-zero sealed count.**
 
-**Six item shapes, and the mapping to the six ablation pairs.** Two shapes are three-way and are
-declared as such; the cross-faculty eval budget of **2,048 is unchanged** — the shapes are
-allocated inside the four reported bins, not added to them.
+**The participant count is five and no revision of this document may quietly change it**
+`[S31-1 fixed]`: DEC-49 puts `episodic_store` in, DEC-48 keeps `auditory` out, and both are
+rulings. Five participants generate **ten** pairs. Under revision 3.2's four, two pairs —
+`language_code × reasoning` and `visual × reasoning` — had **no items that require both regions**;
+for such a pair `Δ_A ≈ Δ_B ≈ 0` on the cross-faculty bin, DEC-37's conjunction fails **by
+construction**, the pair lands in the named `REDUNDANT` quadrant, and that is a FAIL. **X2 and X6
+closed those two. X7 and X8 close the four the store adds.**
+
+**Eight item shapes, and the mapping to the ten ablation pairs.** Four shapes are three-way or
+two-turn and are declared as such; **the cross-faculty eval budget rises from 2,048 to 3,072**
+because two reported bins are added at the 512-per-bin floor, and the shapes are allocated inside
+the six reported bins.
 
 | shape | bin it is reported in | eval items | construction (§5.5) | ablation pairs it makes load-bearing |
 |---|---|---:|---|---|
@@ -2524,9 +2826,25 @@ allocated inside the four reported bins, not added to them.
 | **X4** composite locate-then-name | `visual × language_code` | 512 | §5.5(b), needs **W3r** + W7v | {visual, language_code} |
 | **X5** description → frame | `visual × memory` | 256 | §5.5(b), needs **W3r** + W7v | {visual, memory} |
 | **X6** **two-premise numeric composite** — two rendered panels each state one premise; the answer requires combining them and is stated on neither panel | `visual × memory` | 256 | §5.5(b′), **new** `[N2 fixed]` | **{visual, reasoning}** |
+| **X7** **RECALL-DEPENDENT EPISODE, text.** A two-turn episode. **Turn 1** presents a document and asks a question whose answer commits a fact to the store (an API signature, a retrieved passage's key claim). **Turn 2** presents a *different* document and asks a question answerable **only** from turn 1's fact — not in turn 2's context window and not recoverable from turn 2's own corpus. **The negative control is the identical turn 2 with turn 1 replaced by an unrelated episode, and it must FAIL** | `episodic_store × memory` | 512 | §5.5(e), **new** `[DEC-49]` | {episodic_store, memory}, **{episodic_store, language_code}** |
+| **X8** **RECALL-DEPENDENT EPISODE, cross-modal.** The same two-turn shape with turn 1's premise delivered as a **rendered 128×128 panel** (W3r's geometry) and turn 2's as text; the answer combines them and is stated on neither. **Text-only variant X8′ is pre-committed here, not invented later**, for the W7v-slip branch below | `episodic_store × visual` | 512 | §5.5(e′), **new** `[DEC-49]` | {episodic_store, visual}, **{episodic_store, reasoning}** |
 
-**Sealed items per ablation pair** [I], from §2.7.8's split (compose eval 5,120, sealed half
-2,560, of which 1,024 are cross-faculty, i.e. 256 per reported bin):
+> **X7 AND X8 REQUIRE AN EVAL HARNESS THIS PROGRAMME DOES NOT HAVE, AND THAT IS A DELIVERABLE, NOT
+> A FOOTNOTE.** Every other shape here is a single forward pass. A recall-dependent item is an
+> **episode**: turn 1 must run, its write must commit through the store's `learn()` lifecycle, and
+> turn 2 must run against the resulting partition. Revision 2's own objection to the store was that
+> *"a single-item eval forward pass has nothing to read"* — **that objection is correct and is not
+> answered by declaring a shape**; it is answered by building the harness. **W3 gains an episode
+> harness as a named deliverable, with E1 as its prerequisite** (§4.1).
+>
+> **Until the harness exists, the four store pairs are declared, budgeted and constructible — and
+> NOT SCORED.** If W3 reaches its gate without it, the honest report is
+> `episodic pairs: NOT MEASURED`, G3′ falls back to the pre-committed six-pair arithmetic below,
+> and the receipt says which happened. **What is forbidden is the third option**: ten pairs named
+> in the design and six in the denominator, with nobody told.
+
+**Sealed items per ablation pair** [I], from §2.7.8's split (compose eval 6,144, sealed half
+3,072, of which 1,536 are cross-faculty, i.e. 256 per reported bin):
 
 | ablation pair | shapes | sealed items | status |
 |---|---|---:|---|
@@ -2536,31 +2854,53 @@ allocated inside the four reported bins, not added to them.
 | {visual, language_code} | X4 | **256** | blocked until W3r + W7v |
 | {visual, memory} | X5 | **128** | blocked, **thin** |
 | {visual, reasoning} | X6 | **128** | blocked, **thin** |
+| {episodic_store, memory} | X7 | **256** | blocked until **E1 + the episode harness** |
+| {episodic_store, language_code} | X7 | **256** | blocked until **E1 + the episode harness** |
+| {episodic_store, visual} | X8 | **256** | blocked until **E1 + W7v + the harness** |
+| {episodic_store, reasoning} | X8 | **256** | blocked until **E1 + W7v + the harness**; **X8′ carries it under the slip** |
 
-**G3′'s "≥4 of 6" now means what it says**: six pairs, six declared shapes, null rate 0.344
-unchanged. **The three thin pairs are named rather than smoothed over**, and they get a gate:
+**The two cross-faculty totals reconcile and BOTH are printed, because S21 asked for exactly that
+and the same ambiguity would otherwise recur one revision later** `[S31-21 fixed]`: the per-pair
+column sums to **2,304** against a cross-faculty sealed total of **1,536**. They differ because
+**shapes overlap pairs** — X2 is counted in three pairs, X7 and X8 in two each. The **items** are
+1,536; the **pair-memberships** are 2,304. A receipt printing one without the other has published a
+number nobody can check.
+
+**G3′'s "≥7 of 10" means what it says**: ten pairs, eight declared shapes, ten mapped pairs, no
+zero counts, null rate **0.1719**. **The three thin pairs are named rather than smoothed over**,
+and they get a gate:
 **W3 reports each pair's block-bootstrap CI half-width on the DEV half before the seal is
 created.** If any live pair's dev half-width exceeds **±10 pp**, §2.7.8's stated lever fires —
 raise the cross-faculty share of the compose eval — and the reallocation is recorded. **The
 decision is made on the dev half, in advance; it is never a post-hoc re-slicing of the sealed
 half.**
 
-> **If W7v slips, the two `visual × *` bins are dropped from v1 and every count that depends on
-> them is restated in the same breath:** cross-faculty eval falls from 2,048 to 1,024, the
-> compose eval from 5,120 to 4,096, `R` from 4 to 3, the ablation pairs from 6 to 3, and G3′'s
-> criterion from "≥4 of 6" to "**all 3 of 3**" with a null rate of 0.125. That is a materially
+> **If W7v slips, the three `visual × *` bins are dropped from v1 and every count that depends on
+> them is restated in the same breath** — restated again in revision 3.3, because DEC-49 changed
+> every one of the numbers `[DEC-49]`: cross-faculty eval falls from 3,072 to **2,048**, the
+> compose eval from 6,144 to **5,120**, `R` from 5 to **4** (`language_code`, `memory`,
+> `reasoning`, `episodic_store`), the ablation pairs from 10 to **6**, and G3′'s criterion from
+> "≥7 of 10" to "**≥ 5 of 6**" with a null rate of **0.109** — the smallest `k` under §2.7.3's
+> 0.20 null-rate ceiling, which is why it is not the "≥ 4 of 6" (0.344) revision 3.2 used at this
+> pair count. That is a materially
 > harsher pass/fail, and it must be stated as such rather than absorbed.
 >
-> **And "all 3 of 3" must be ACHIEVABLE, which under revision 2 it was not** `[N2 fixed]`. The
-> three surviving pairs are {memory, language_code}, {memory, reasoning} and
-> **{language_code, reasoning}** — and the third had no declared item shape, so the branch
-> pre-committed the programme to passing a pair for which no item existed. Its true null rate was
-> **0**, not 0.125. **X2 closes it**: the executable three-way join makes {language_code,
-> reasoning} load-bearing with real items and a subprocess exit code for a label.
+> **The six surviving pairs and the shape that carries each, so the branch is achievable — which
+> under revision 2 it was not** `[N2 fixed]`: {memory, language_code} = X1+X2, {memory, reasoning}
+> = X2+X3, **{language_code, reasoning} = X2** (the executable three-way join, with a subprocess
+> exit code for a label — this is the pair that had no shape and whose true null rate was
+> therefore **0**, not 0.125), {episodic_store, memory} = X7, {episodic_store, language_code} = X7,
+> and **{episodic_store, reasoning} = X8′**, the text-only deferred-premise variant pre-committed
+> in the shape table above precisely so this branch does not have to invent one on the day.
+>
+> **Under the slip, X8′ replaces X8 at the same 512/256 budget** and the `episodic_store × visual`
+> bin's items move to it, so all six surviving pairs keep **≥ 256 sealed items** and the branch is
+> powered as well as achievable.
 >
 > **Pre-committed with the branch, so the slip does not also make the criterion underpowered:**
 > under the slip, **X2 takes the whole of the `memory × language_code` bin (512 eval / 256
-> sealed) and X1 moves to train-only**, giving all three surviving pairs **≥256 sealed items**.
+> sealed) and X1 moves to train-only**, giving {language_code, reasoning} **≥256 sealed items**
+> like the other five.
 >
 > **The general bin is also restated under this branch** `[N9 fixed]`, which revision 2's
 > five-consequence list omitted: §5.5(c)'s construction is a `visual` frame paired with an
@@ -2572,6 +2912,17 @@ half.**
 > made mandatory, so the marginal cost is the resolution change (and W3r, which is CPU-only and
 > has no dependencies), and dropping the visual pairs guts the long-context-is-visual argument
 > that §6.1 rests the whole scheduler case on.
+
+**A second slip branch exists now and is pre-committed on the same terms, because DEC-49 created
+a second thing that can slip** `[DEC-49]`. **If E1 slips, or the episode harness does**, the four
+`episodic_store × *` bins are dropped: cross-faculty eval falls to 2,048, the compose eval to
+5,120, `R` to **4** (`language_code`, `memory`, `reasoning`, `visual`), the pairs to **6**, and the
+criterion to **≥ 5 of 6** at null **0.109** (§2.7.3's ceiling) — the same arithmetic as the W7v
+branch, arrived at by dropping the other participant. **If BOTH slip**, `R = 3`, the pairs are **3**, and the criterion
+is **all 3 of 3** at null **0.125**, which is revision 3.2's own worst case unchanged. **All three
+branches are written here, before the seal exists**, so no branch is ever a post-hoc re-slice —
+and the store's four pairs are the ones most likely to slip, because they are the only ones that
+need a component this programme has never built.
 
 `reasoning × numeric` is deferred with the `numeric` placeholder.
 
@@ -2620,7 +2971,7 @@ renderer** `[N9 fixed]`. §5.4 lists `memory × reasoning` as **live** — one o
 while the `visual × *` pairs are blocked — and revision 2 named **no source, no generator and
 therefore no generator hash for DEC-39's ledger row**. It is shape **X3**:
 
-> from the ≥87,503 recovered aqua_rat rows (§5.1), each carrying a question and a **rationale**,
+> from the 83,521 recovered aqua_rat rows (§5.1), each carrying a question and a **rationale**,
 > take two rationales that each state one intermediate fact, put both in a retrieval pool of the
 > remaining rationales, and ask a question whose answer requires **both** facts and is stated in
 > **neither** rationale alone.
@@ -2665,7 +3016,8 @@ shape it needs **W3r** for the frame and **W7v** for an encoder that can ingest 
 
 **Two corrections to revision 1's framing of this generator.** First, it is **no longer
 load-bearing for funding the reserve** — the aqua_rat recovery (§5.1) turns a 2.38× shortfall
-into a 2.13× surplus (2.23× before DEC-42's union burn), so *"this single generator can supply the entire 51,200-row training
+into a **1.71×** surplus at DEC-49's 61,440-row training need (1.77× at the two-draw union,
+2.13× at the old 51,200, 2.23× before DEC-42's union burn), so *"this single generator can supply the entire training
 reserve"* is no longer a plan the programme depends on, and leaning on it would drive generator
 share to ≈1.0 against B1 (§5.4). Second, **it produces nothing `visual` can read until W7v**:
 a four-panel composite downsampled to 64×64 is not legible to any encoder, and the encoder
@@ -2706,14 +3058,44 @@ model is part of the provenance chain** [V\*] and must be named in the manifest 
 revision and licence, generated with permissively-licensed **local** weights and never a hosted
 API, and its output excluded from every eval split.
 
+**(e) RECALL-DEPENDENT EPISODES — a re-staging, not a new corpus** `[DEC-49]`. X7's construction
+consumes **no new source rows beyond the two the reserve already draws**: take an admitted §5.5(a)
+retrieval-half item and an admitted §5.5(a′) multi-hop item **whose source rows are disjoint under
+DEC-38's fingerprint**, and stage them as **turn 1** and **turn 2** of one episode, with turn 2's
+question rewritten so its answer requires the fact turn 1 established. **The label is the same
+label the single-turn item already carried**, which is what makes this cheap and what keeps the
+provenance chain intact: an episode's chain is the union of its turns' chains, and both turns'
+`pair_fingerprint`s go to the ledger.
+
+**Three properties this construction must have, each of which can fail and each of which is
+checked in W3 rather than assumed:**
+
+1. **The fact must be UNRECOVERABLE from turn 2 alone.** Verified by the **negative control**: run
+   turn 2 with turn 1 replaced by an unrelated episode and require the item to be **failed**. An
+   item whose turn 2 is answerable without turn 1 is not recall-dependent, it is a single-turn item
+   in two parts, and it is **rejected at construction**, not discovered at W6.
+2. **The fact must not be recoverable from `memory`'s own corpus either**, or the pair measures
+   retrieval and calls it recall. Checked with the same `s_r` machinery §5.3 already runs: an
+   episode whose turn-2 question scores above `τ_lo` for `memory` **without** turn 1 is rejected.
+3. **Turn 1 and turn 2 must not share a source row**, under DEC-38 — otherwise the split key
+   cannot place the episode on one side of the train/eval boundary and the episode leaks against
+   itself.
+
+**(e′) The cross-modal variant, and its pre-committed text-only fallback.** X8 stages turn 1 as a
+**rendered W3r panel** carrying the premise and turn 2 as text. It inherits every W3r and W7v
+blocker the renderer has, which is why **X8′** is declared with it and not after it: the same
+two-turn staging with turn 1's premise delivered as text. Under §5.4's slip branches X8′ takes
+X8's whole budget. **Zero new sourcing in either variant** — which is the reason DEC-49's reserve
+increase is 11,264 *items* and not a new fetch (§5.4).
+
 **Genuinely new fetches, the only true ones:** a permissively-licensed general-text corpus
-(which also unblocks P6′), a **third text source** to lift `N_eff` off 2.44 **and aqua_rat's binding max-share off 80.2%** (§5.1) `[N8 fixed]`, and
+(which also unblocks P6′), a **third text source** to lift `N_eff` off 2.47 **and aqua_rat's binding max-share off 79.5%** (§5.1) `[N8 fixed]`, and
 and — **for the production phase, not for v1** — **audio** for `auditory`
 (DEC-43 as amended by **DEC-48**) `[OP: csd-multimodal-io-intent.md]`. The licence audit is
 **done** and committed at `docs/design/AUDIO-CORPUS-AUDIT.md`, the fetch is row **A0f**, and the
 two cross-faculty item shapes it makes constructible — `auditory × language_code` and
 `auditory × visual` — are row **A3**; all of them are **deferred** behind W6 and an operator go,
-so **no audio row is a v1 sourcing dependency and the six ablation pairs need none of it**.
+so **no audio row is a v1 sourcing dependency and the ten ablation pairs need none of it**.
 Audio remains the *best-provenanced* genuinely-new fetch on this list — **seven provenance
 groups, of which five carry no NC term** `[S31-13 fixed]`, and no BLOCKING source in the
 recommended mix. **The balance claim is `[I]` and cap-dependent, not a finding** `[S31-2 fixed]`:
@@ -3074,7 +3456,8 @@ the saving is `2 × 12,865,792 = 25,731,584` params, a 1.67× reduction on the t
 **2–5% of total params — and the cap is scoped, because v1 violates it by 6×** `[A25 fixed]`.
 
 ```
-v1 interconnect share = 26,899,751 / 85,807,015 = 31.4%
+v1 interconnect share = 27,424,039 / 86,331,303 = 31.8%   (was 26,899,751 / 85,807,015 = 31.4%
+                                                        before DEC-49 restored the store)
 ```
 
 Revision 1 set the cap in §6.4 and, four sections earlier, celebrated that *"white matter is
@@ -3083,7 +3466,7 @@ cannot both be honoured, with nothing saying the cap applied only at the 30B tar
 is scoped explicitly:**
 
 > **DEC-26 binds at ≥ 1B total parameters.** Below 1B the interconnect is **deliberately
-> dominant** — that is the thesis, not an overrun — and the v1 share (**31.4%**) is printed
+> dominant** — that is the thesis, not an overrun — and the v1 share (**31.8%**) is printed
 > beside the cap so a ratifying operator sees the exemption rather than inferring it from two
 > tables four sections apart. The crossover is where region *compute* parameters (not embedding
 > tables) begin to dominate: at v1, regions are 19.7% compute and 80.3% embedding, so the
@@ -3271,25 +3654,32 @@ decides whether progressive unfreezing is a mitigation or the only option
 The requirement is *"sliding windows over an overarching context, plus latent-reasoning windows.
 Per-region budgets, not one global window"* [V\*]. In this design:
 
-| requirement | mechanism at v1 | mechanism when `episodic_store` is built |
+| requirement | mechanism at v1, phase 2 **before** E2 | mechanism at v1 **after** E2, i.e. from W6 onward `[DEC-49]` |
 |---|---|---|
 | sliding windows over an overarching context | each region's `ctx_r` window over its own long input, re-selected per iteration | unchanged |
 | **the overarching context** | **the workspace latents `z`, persisted across the `n_iter` loop, plus the per-request `h_r` cache** — bounded, per-request, and honest about being *within*-request only | **`episodic_store`** — a participant with its own budget. Long context becomes *a region you allocate budget to*, not a special case |
 | latent-reasoning windows | the workspace latents `z [B,64,512]` themselves | unchanged |
 | per-region budgets | `ctx` and `b`, the two simplexes | unchanged |
 
-One mechanism, four requirements, no separate context manager — **with one honest correction**
-`[A17 fixed] [T2 fixed]`. Revision 1 satisfied *"the overarching context"* with `episodic_store`
-and shipped it as `built`. DEC-32 demotes it to a placeholder, so **at v1 the overarching context
-is within-request only**, and the cross-request half of this requirement is deferred with the
-store. That is a smaller claim than revision 1 made and it is the true one: a store with no write
-policy, empty at iteration 0, would have satisfied the requirement on paper and contributed
-nothing on any eval item.
+One mechanism, four requirements, no separate context manager — **and the honest correction has
+itself been corrected twice, which is worth tracing because it is the shape of the whole
+argument** `[A17 fixed] [T2 fixed] [DEC-49]`. Revision 1 satisfied *"the overarching context"* with
+`episodic_store` and shipped it as `built` — a store with no write policy, empty at iteration 0,
+satisfying the requirement on paper and contributing nothing on any eval item. Revision 2 (DEC-32)
+demoted it, which made the claim smaller and true. **Revision 3.3 (DEC-49) builds it**, which makes
+the claim large again — **but this time behind E1's and E2's gates rather than behind a status
+field.** The difference between revision 1's position and revision 3.3's is not the verdict; it is
+that one was a word in a config file and the other is three rows with failable gates.
 
-The store's contract is written now precisely so that building it is a specification and not a
-redesign — capacity, FIFO eviction, and a **server-derived partition key** (§1.3, §9.9). It is
-also the first place the architecture acquires cross-request state, and therefore the first place
-it acquires a trust boundary that per-request bounds do not cover.
+**So the requirement is met in two stages and both are dated.** Before E2, the overarching context
+is **within-request only** and this document says so. After E2 passes, it is the store — and if E2
+fails, the store is reverted and this table's right-hand column reverts with it, which is what
+makes the two columns worth printing separately rather than merging them into one aspiration.
+
+The store's contract comes from `memory-gate` where those repos specify it and from §8's gaps
+block where they do not (§1.3, §9.9). It is the first place the architecture acquires cross-request
+state, and therefore the first place it acquires a trust boundary that per-request bounds do not
+cover — which is why §9.9 B2's findings are E1's acceptance gates rather than its caveats.
 
 **Recursive / looped latent refinement remains deferred**, per the operator: the `n_iter`
 workspace loop is bounded and explicitly not a recurrent-depth architecture. The seam exists
@@ -3366,7 +3756,7 @@ file as read in this session [V].
 | §2.7 what has no source (1091–1120) | the general bin **now has a construction**; audio is added as the one genuinely-blocked placeholder | §5.5 |
 | Part 3 B1/B2 (1136–1178) | extend the provenance-group definition to **constructed** corpora: the generator (renderer, join, synthesis model) is the provenance group, and B1/B2 apply to it | §5.5 |
 | Part 3 B3 | the *held-out-domain vs in-mixture* rule now also governs the reserve, whose whole point is that it is neither | §5.3 |
-| §2.4 the allocation ledger — **again** | **replace the aqua_rat total write-off with the UNION burn (≤ 9,964 rows) plus ≥ 87,503 clean** (DEC-42), once W2a's **four** checks pass; record **both** draws' fingerprints, the corpus fingerprint of the parquet, whether the run's code revision could be established, and the fact that the *sampling* is what made recovery possible `[N1 fixed]` | §5.1, W2a |
+| §2.4 the allocation ledger — **again** | **replace the aqua_rat total write-off with the UNION burn (13,946 rows, three draws — R, P, and the discovered on-disk sample D3) plus 83,521 clean** (DEC-42), once W2a's **four** checks pass; record **every discovered draw's** fingerprints, the corpus fingerprint of the parquet, whether the run's code revision could be established, and the fact that the *sampling* is what made recovery possible `[N1 fixed]` | §5.1, W2a |
 | §2.4 / new §2.4b **the reserve ledger's schema** | `RESERVED.jsonl` rows carry the **union of source-row `pair_fingerprint`s**, the generator name, the SHA-256 of the generator source and the config hash — **not** composite content hashes; recomputed on load, mismatch **aborts** | DEC-38 |
 | new §2.8 **split assignment** | `split = HMAC(k_split, pair_fingerprint(source_row)) mod N`; `k_split` outside every agent-writable path; **no key ⇒ refuse to build a split** | DEC-39 |
 | Part 1 every source row | **pin the source revision SHA** and refuse an unpinned fetch — mirror metadata is measured to lie, and the same channel carries content | §5.6 |
@@ -3396,7 +3786,7 @@ file as read in this session [V].
 | receipt stages | `pipeline/receipt.py`'s `STAGES` contains `"compose"` and nothing writes it [V\*]; add **`"schedule"`** and make both real |
 | worked example 3 `csd/retrieve` (1032–1153) | becomes `csd/memory`, two heads, BEIR gate |
 | worked example 3b the VL region (1154–1196) | becomes `csd/visual`; record that the **deployed half is the context encoder (10,712,448)**, not the full 22,905,216 |
-| §E adversarial pass (499–533) | add **four** boundaries: the emitted `Schedule` is untrusted data validated by the runtime; **checkpoint loading** goes through one `load_checkpoint()` with `weights_only=True` hardcoded and a per-file SHA-256 verified *before* the file is opened (DEC-40); **`episodic_store` write→read across requests**, with a server-derived partition key (DEC-32); and **reserve construction → controller training**, the training-time path §9.9 did not cover (DEC-39, S5) |
+| §E adversarial pass (499–533) | add **four** boundaries: the emitted `Schedule` is untrusted data validated by the runtime; **checkpoint loading** goes through one `load_checkpoint()` with `weights_only=True` hardcoded and a per-file SHA-256 verified *before* the file is opened (DEC-40); **`episodic_store` write→read across requests**, with a server-derived scope key and the byte-capacity, scored-eviction and cross-request-fuzz gates that DEC-49 makes acceptance conditions of rows E0/E1/E2 (DEC-49, superseding DEC-32); and **reserve construction → controller training**, the training-time path §9.9 did not cover (DEC-39, S5) |
 | **NEW manifest kind: `overlay`** (DEC-33) | a memory-gate overlay is a first-class artifact, not a checkpoint variant. Required fields: **base checkpoint fingerprint it targets** (attach refuses on mismatch), overlay shape and rank, size in bytes at each residency tier, the data that trained it, its **licence under the strictest-input rule**, and the tiered-residency policy's measured hit rate / page-in latency / VRAM held. Its gate is P5′o's: **applied then disconnected reproduces the base receipt exactly, and the disconnect is logged** |
 
 ## 7.4 `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` (1,987 lines)
@@ -3416,7 +3806,7 @@ file as read in this session [V].
 
 | section | what changes |
 |---|---|
-| §1.4 model size (171–209) | the "~87M" figure is **both an over-count at deployment** (10,712,448 of `vl_latent` ships, not 22,905,216) **and an under-count** (it omits the receipt-less regions). Restate with the deployable figure: **85,807,015 params, 343 MB fp32, 35.0 MB at 3.27 bits** for the v1 participant list (§2.3, corrected in revision 2) |
+| §1.4 model size (171–209) | the "~87M" figure is **both an over-count at deployment** (10,712,448 of `vl_latent` ships, not 22,905,216) **and an under-count** (it omits the receipt-less regions). Restate with the deployable figure: **86,331,303 params, 345 MB fp32, 35.3 MB at 3.2675 bits** for the five-participant v1 list (§2.3, corrected in revision 2, restated in 3.3 for DEC-49) |
 | §2.11 factorized / pruned embedding — *ADOPT LATER* (663–695) | **verdict changes to a decided architectural item**: one shared token embedding across text faculties, 3.02× at toy scale, mandatory from the first region trained after ratification (DEC-24) |
 | §2.2 gradient accumulation — *REJECT* (365–406) | **re-scoped**, not reversed: rejected for single-host InfoNCE; **required** for phase-3 cross-host pipeline stages, where microbatch must be ≤ 256 (DEC-29) |
 | §2.7 LoRA / adapters — *ADOPT LATER* (526–566) | the justification arrives and is a systems one: an adapter is 17 MB and **0.85 ms** to page against **61 ms** for a whole region. Adapters are how specialisations scale; the region schema now has an `adapter` field |
@@ -3450,6 +3840,214 @@ it makes the live items harder to find. Each item below has a recommendation.
 |---|---|
 | **OD-1** release licence / GooAQ contradiction | **RESOLVED by the operator** `[OP: csd-release-licence-decision]`. The NC reading is accepted, the corpus is kept, and the licence moves rather than the data. **DEC-31** records the strictest-input rule; §5.7 applies it; `memory` is NC and therefore so is the composed mind. The "email AI2" action leaves the blocking list. |
 | **OD-6** disposition of the untracked working files | folded into **OD-7** below, because the set has changed and one of the new files is a security control. |
+| **OD-9** the audio licence audit | **ANSWERED and it stays answered.** The audit was done and is committed at `docs/design/AUDIO-CORPUS-AUDIT.md`; DEC-48 then deferred the rows it produced, which changes *when* the work is spent and not *whether the question is open*. **Its entry below is kept as a record of what the answer was and is not an open ask**; its six descendants, OD-10 to OD-15, are the live residue and they are deferred with the audio rows. |
+| **DEC-32's build trigger** for `episodic_store` | **REMOVED by DEC-49**, and it is listed here because it was a decision this section would otherwise still be waiting on. Revision 2 made the store's build conditional on *"`salience` is trained AND a measured failure mode requires cross-request context"* — an operator decision in the shape of a technical precondition. **The operator decided it directly instead** `[OP: csd-episodic-store-required.md]`, so the trigger is gone and rows E0/E1/E2 replace it. **`salience` is NOT a prerequisite of the store**, and that is a real consequence of the ruling rather than an oversight: the store's write policy at v1 is the workspace's own write-back path, not a learned salience score. A **learned** write policy is a phase-3 candidate alongside gap (d)'s consolidation question, not a phase-2 blocker. |
+
+---
+
+## Episodic store contract gaps — OPERATOR DELIBERATION REQUIRED `[DEC-49]`
+
+**Why this block exists and why it is not six more OD items.** DEC-49 takes the store's contract
+from the operator's own repositories wherever those repositories specify it, each clause cited at a
+`file:line` in §1.3. **Six things CSD needs are not in them.** The rule this document applies to a
+doc that a probe contradicts applies here too, one level up: **where the repos are silent, nothing
+is inferred into a contract clause.** Each gap below states **what the repos say**, **what CSD
+needs**, and **a recommended default** that is implementable if the operator does not want to spend
+a decision on it. They are grouped rather than numbered into the OD list because they are one
+decision surface — the store's — and splitting them would let a reader ratify four and leave the
+other two silently open.
+
+**A property worth stating before the list, corrected from an earlier draft that claimed five of
+six become measurements: of the six, four are genuine operator decisions, one is a confirmation,
+and one is a notification of something already closed** `[S33-8 fixed]`. Gaps (a), (b), (c) and
+(d) are the four decisions, each with a recommended default; (a), (c) and (d) become
+measurements — what actually got built, against what was only proposed — the moment E1 runs,
+while (b), the partition axis, is a pure policy question about who is isolated from whom that no
+measurement decides. **Gap (e) does not become a measurement**: its own recommendation is *do not
+pull it forward*, so the confirmation it asks for (that overlays stay in P5′o) is answered by
+**not** building in E1, not by building. **Gap (f) is not an open decision**: it is *closed by
+DEC-49* already, and is listed here only so that closure stays visible beside the gaps that are
+not. If only one of the four decisions is read closely, read (b).
+
+---
+
+**GAP (a) — DYNAMIC CAPACITY: what number bounds the store's bytes.**
+**What the repos say:** every capacity in both repos is an **item count**, never bytes and never
+VRAM — `hot_cap` 256 [V, `storage/tiered.py:40-51`], `TierBudget{ram_max_items 256,
+disk_max_items 4096}` [V, `types.rs:458-473`], `max_traces` 100,000
+[V, `holographic_store.rs:33-58`]. **The only VRAM arithmetic in either repo budgets model
+WEIGHTS**, is never wired to any store cap, and is llama.cpp launch-flag tooling:
+`weight_budget_mib(vram_total, reserve_gpu_kv) = vram_total − 2048 (display) − 1024 (cuda scratch)
+− [2048 (gpu kv)]`, `saturating_sub` to floor at zero, test-pinned at 16,303 MiB ⇒ 11,183 / 13,231
+MiB [V, `facade/hypha.rs:114-122`, constants `:13-26`, test `:152-157`]. **The operator's stated
+intent is not implemented, not described, and not even a TODO in either repo** — the subtractive-
+reserves *shape* is all that exists to borrow.
+**What CSD needs:** the operator's rule, verbatim `[OP: csd-episodic-store-required.md]`:
+*"Capacity is gonna be dynamic based on the GPU that it's running on and how much context is
+allocated for — like KV cache determining essentially how much free space there is that can be
+allocated to memory-gate functionality."*
+**Recommended default — adopt the subtractive shape, repointed from weights to the store:**
+
+```
+capacity_bytes(host, tick) = max(0, VRAM_total(host)
+                                  − KV_reserved(context_len, regions_active)   # from the scheduler
+                                  − activation_reserve                          # forward working set
+                                  − safety_margin)
+```
+
+computed as a **pure function of live inputs, per host, at scheduler-tick time and never cached** —
+because the 1080 Ti is preemptible and the active-region set changes under the store, so a capacity
+fixed at process start is not dynamic. **`safety_margin` is the one free parameter and it is the
+operator's**; the recommendation is to start at the same order as `hypha`'s display reserve (2 GiB)
+and let E1's probe report what is left on each card. **What the operator is actually being asked:**
+whether a residual claim is acceptable at all, given §9.11's finding that the residual may round to
+zero on the 5080. The alternative is a **floor** — reserve a fixed slice for the store before the
+KV budget is computed — which trades context length for recall, and that is a product decision this
+document should not make.
+
+**GAP (a), EXTENDED — the staleness decay function itself, not only the byte unit it evicts to**
+`[S33-4 fixed]`. **What the repos say:** `access_count` and `last_accessed` are recorded on every
+span and read by **nothing** in either eviction path [V, `holographic_store.rs:113-116, 321-338`]
+— the scout classifies "these fields indicate unfinished intent" as **INFERRED**, not VERIFIED
+(`memory-gate-contracts.md:245-250`): *"plausible... but not stated anywhere."* §1.3's `[I]` tag
+on `staleness_penalty(last_accessed)` is this classification, carried through rather than quietly
+upgraded to a decision. **What CSD needs:** E1's build gate (§4.1) requires the scored eviction
+term as a hard deliverable regardless, so the open question is not *whether* to decay but **by
+what function** — linear, exponential half-life, or a step at a fixed age — and over what
+argument (wall-clock age, or `access_count` as a frequency term instead of or alongside recency).
+**Recommended default:** exponential half-life on `last_accessed`, half-life a config constant
+starting at the same order as the workspace's own context window in wall-clock time, revisited
+once E1's probe shows real eviction pressure. **What the operator is actually being asked:**
+nothing yet — E1 ships a working default and the receipt records which function ran; this gap is
+closed by measurement the same way (a), (c), (d) and (f) are, per the framing above, and is listed
+under (a) rather than as a seventh gap because it shares gap (a)'s unit (bytes evicted) and its
+resolution mechanism (E1's receipt).
+
+---
+
+**GAP (b) — THE PARTITION AXIS BEYOND DOMAIN. Read this one.**
+**What the repos say:** **domain is the only implemented partition axis**, and it is part of
+*identity*, not a filter [V, `memory_protocols.py:123-125`; ADR-0001 `:129-133`]. It is a
+**fleet-defined task taxonomy** — a closed enum of `Infrastructure, CodeReview, Deployment,
+IncidentResponse, General` plus M1 additions [V, `types.rs:165-208`] — **not a per-user or
+per-session id space. There is no `user_id`, `session_id` or `principal` field anywhere** in
+`MemoryRecord`, `LearningContext`, or the store protocols [V-abs] `[S33-9 fixed]`. **Persona/basin is specified and has
+zero code**: ADR-0001 and the spec define `Persona --instantiates--> Basin --selects--> Domains`,
+with the explicit rule *"Basin ≠ collection; domain ≠ collection"* and the non-goal that
+*"Personas MUST select a memory basin/configuration; they MUST NOT be modeled as MoE experts or
+independent agents"* [V, `adr/0001:72-85`; spec FR-006/FR-007]. It is task `P1-13`, status **Not
+Started**, **no `Persona` or `Basin` class exists in either `src/` tree** [V-abs, grep, zero hits
+outside docs].
+**What CSD needs:** an isolation boundary. §9.9 B2's whole defence is a **server-derived scope**,
+and `domain` cannot be it — a task taxonomy is not an isolation boundary, and using one as the
+other is how a "partition" becomes a label. CSD also has a reason memory-gate does not: its regions
+are **brain faculties, not task domains**, so `domain` does not even name the right kind of thing.
+**Recommended default:** `(scope, domain, logical_key)`, three segments, with **`scope` = the
+authenticated principal, derived server-side** and `domain` retained as memory-gate's task axis for
+compatibility with the ported tests. **Keep persona/basin as a SCOPE SELECTOR and never as a
+routing object** — that non-goal is the one piece of the persona design that was fully thought
+through, and it is worth inheriting even though nothing implements it.
+**What the operator is actually being asked:** whether `scope` is **principal**, **session**, or
+**persona-basin** — three different products. Principal isolates users from each other and lets one
+user's episodes accumulate forever. Session isolates episodes and forgets between them, which makes
+X7 items work and long-horizon memory impossible. Persona-basin isolates *contexts* within one
+user. **The recommendation is `principal`, with `session` as a sub-segment the request may name and
+the server may bound** — but this is a decision about what the mind remembers about whom, and it is
+not a technical default.
+
+---
+
+**GAP (c) — WHAT IS STORED: text-plus-embedding, or workspace latents.**
+**What the repos say:** the unit of storage is **text**, with an optional embedding that must carry
+a binding (`model_id`, `dimension`, `metric`) [V, `memory_protocols.py:91-121, 61-73`]. **Neither
+repo stores KV-cache bytes or model latents.** `Residency::{Gpu,Ram,Disk}` is documented as
+*"Where a recalled span currently lives. GPU bytes stay in llama.cpp"* — a metadata tag over spans
+owned elsewhere, and `mark_gpu(key)` moves nothing [V, `types.rs:414-436`; `storage/tiered.rs:1-8`;
+`facade/hypha.rs:1-8`; `tiered.rs:99-106`]. **So there is no precedent in either repo for a store
+that owns tensors.**
+**What CSD needs:** DEC-47 forbids re-serialising to discrete tokens on an inter-region path, so a
+text-plus-embedding store is **not available** to CSD as an inter-region participant — it would put
+a token bottleneck exactly where the invariant says there must not be one. CSD's store holds
+**workspace latents**: the read is `k = W_k z`, `v = W_v z` over stored latents `z`.
+**Recommended default — take memory-gate's index/policy split and reject its payload:** the store
+owns an **index and an eviction policy** over latent bytes **owned by the runtime**, not a second
+allocator competing with the KV cache for the same VRAM. A record is `(scope, domain, key) →
+(pointer, residency, importance, last_accessed, byte_size, provenance)`; the latents themselves live
+where the runtime put them. **This is the one clause where CSD deliberately diverges from the source
+repos on the payload while adopting their structure**, and it is called out rather than blended.
+**What the operator is actually being asked:** whether a **text sidecar** is kept alongside the
+latent — searchable, auditable, and the only way a human can ever inspect what the mind remembered.
+**Recommendation: yes, as provenance metadata, never on the read path**, so it cannot become a
+token bottleneck by accident.
+
+---
+
+**GAP (d) — CONSOLIDATION: prune-only today, or a real CLS.**
+**What the repos say:** both languages implement consolidation as **prune-delete** — rows below
+`low_importance_threshold` (0.2) **and** older than `age_threshold_days` (30) are deleted
+[V, `gateway.rs:303-338`, defaults `types.rs:323-333`; Python `consolidation.py:103-104`]. **The
+Python spec names its own implementation a DEFECT** — prune-only, *"success recorded at run
+start"*, depending on undocumented store methods [V, spec.md `:51-62`, "Current defects (honest
+baseline)"]. Fast/slow CLS with provenance-preserving new representations is **only described**;
+`P1-11`/`P1-12` are **Not Started** [V]. `RecordProvenance` exists and is *required only for
+consolidation outputs* [V, `memory_protocols.py:76-88`] — the field the real design would need,
+already there and unused.
+**What CSD needs:** at minimum, eviction that does not lose what the mind should keep. At most, the
+thing the name promises: a slow pass that **creates new representations** from old episodes, which
+is what makes a hippocampal analogy more than a naming exercise.
+**Recommended default: PRUNE-ONLY AT v1, AND SAY SO IN THOSE WORDS.** Consolidation is scored
+eviction plus the durability ladder, and nothing else. **Do not build a CLS in phase 2** — it is a
+learned component with no gate, no receipt and no corpus, which is the `residual_mlp` defect in a
+new costume. **Record it as the store's own phase-3 candidate**, where P5′'s monotone-improvement
+rule can grade it. **What the operator is actually being asked:** to accept that CSD's store forgets
+by policy rather than consolidating by learning, for the whole of v1.
+
+---
+
+**GAP (e) — DIFFERENTIAL OVERLAYS: no counterpart exists.**
+**What the repos say:** **nothing.** Exhaustive grep for `overlay` and `differential` returns
+**zero hits in both `src/` trees** [V-abs]. No offset, delta, diff, LoRA-style overlay, per-persona
+weight delta or sparse update structure appears in either store [V-abs]. The nearest analogues are
+`Residency` (index-not-bytes, gap (c)) and persona/basin (spec-only, gap (b)). A research-notes
+document mentions AdaLoRA/DoRA as **external** techniques the author was reading about, not as
+anything memory-gate implements [V, `docs/dmll_for_ai_frameworks.md:35`].
+**What CSD needs:** DEC-33 already names memory-gate overlays as the dynamic-paging seam's first
+client and gives them a row, **P5′o**. So this gap is not "should CSD have overlays" — that is
+decided — it is that **the design for them cannot be imported and must be written fresh.**
+**Recommended default:** design them **in P5′o**, not now, and inherit exactly two patterns from the
+source repos rather than a specification: **index-not-bytes** for residency, and
+**scope-selector-not-agent** for persona. **P5′o's existing gates already have the right shape** —
+an overlay applied and disconnected reproduces the base receipt exactly, and an overlay refuses a
+base fingerprint it was not trained against. **What the operator is actually being asked:** to
+confirm that overlays stay in P5′o and are not pulled forward into E1 because the store is being
+built anyway. **Recommendation: do not pull them forward.** E1 is a container with four failable
+gates; adding an unspecified feature to it is how a row with gates becomes a row with intentions.
+
+---
+
+**GAP (f) — CROSS-REQUEST POISONING DEFENCE: partly present, and the gap is the fuzz.**
+**What the repos say:** cross-domain isolation is real and **test-pinned**
+[V, `tests/storage/test_store_conformance.py:150`], and a query with neither a domain nor an
+explicit global flag **raises** [V, `memory_protocols.py:194-217`; `record_validation.py:83-97`].
+**What is absent is the adversarial half:** there is no cross-request fuzz, no negative test that
+constructs a leak, and no capacity-exhaustion test anywhere in either repo [V-abs] `[S33-9 fixed]`.
+**What CSD needs:** threat **T2**. §9.9 B2's four bounds — partition, capacity bound, eviction
+order, and the two-request fuzz.
+**Recommended default: adopt them as E1's acceptance gates, which DEC-49 does**, and add the clause
+the source repos' conformance suite is missing and that this programme's own discipline demands:
+**every one of the four is verified by making it fail.** The mis-derived scope key must produce a
+crossing; the constructed overflow must evict in the scored order; the zero-capacity case must be
+reported rather than silently satisfied. **What the operator is actually being asked:** nothing —
+this gap is closed by DEC-49 and is listed so the closure is visible beside the five that are not.
+
+---
+
+**What this block does NOT contain, and the omission is deliberate.** There is no gap for *"a
+gateway-level `retrieve`"* (the source repos still have agents reaching into `store` directly, which
+CSD does not inherit because its read path is cross-attention, not a call), and none for *"a batch
+API"* (Rust has one, Python does not, and CSD's write path is one latent per turn). Both are real
+holes in the source repos and neither is a decision CSD has to make. Listing them would pad an
+operator decision list with someone else's backlog.
 
 Three of the items below (**OD-1, OD-2, OD-3**) come from the threat pass and are about code and
 fleet configuration **outside this document's tree**. They are recorded here because this design
@@ -3520,7 +4118,7 @@ gated by W5b** — the fallback is now well-defined, so the downside is bounded 
 
 **OD-6 — Whether 30B-class is a v1 commitment or a direction.**
 DEC-26 caps the interconnect at 2–5% of total, and revision 2 **scopes that cap to ≥1B
-parameters** and prints v1's actual 31.4% beside it `[A25 fixed]`, so the cap no longer silently
+parameters** and prints v1's actual 31.8% beside it `[A25 fixed]`, so the cap no longer silently
 contradicts §2.3. It also corrects the ceiling: at the design's own `mlp_ratio 4`, `L_ic = 8` is
 **7.2%**, above the band, not at it `[A26 fixed]`. *Recommendation:* treat 30B as a **direction**
 and keep the scoped cap — it costs nothing today (`L_ic = 4` is 3.6%) and it constrains exactly
@@ -3559,7 +4157,7 @@ v1 and are marked where they appear: **OD-13** and **OD-15** are what A0f blocks
 `[S31-7 fixed]`, and OD-10, OD-11, OD-12 and OD-14 concern sources **outside** the recommended
 mix and block nothing.
 
-**OD-9 — Start the audio licence audit now, or defer it. ANSWERED: START NOW — and the answer
+**OD-9 — Start the audio licence audit now, or defer it. ANSWERED (kept as a record, not an open ask): START NOW — and the answer
 went further than the question.** The operator's input, verbatim
 `[OP: csd-multimodal-io-intent.md]` — and **since deferred as a schedule by DEC-48**, which does
 not change the answer to OD-9 itself:
@@ -3720,8 +4318,12 @@ shapes only the *mean* of the sequence.
   which is the first place the retrain either works or does not.
 
 ## 9.2 The reserve cannot be funded — **downgraded, not closed**
-**109,047 text rows** against a 51,200-row training requirement after the aqua_rat recovery and
-DEC-42's union burn (§5.1) — a **2.13× surplus** where revision 1 computed a 2.38× shortfall. This was the document's
+**105,065 text rows** against a **61,440**-row training requirement after the aqua_rat recovery,
+DEC-42's union burn — now measured at three draws, not two (§5.1) — and **DEC-49's reserve
+increase** (§5.1, §5.4) — a **1.71× surplus** where revision 1 computed a 2.38× shortfall,
+revision 3.2 computed 2.13×, and revision 3.3's two-draw union computed 1.77×. **DEC-49 spent a third of
+the recovered headroom**, which is the honest way to record it: the risk is downgraded and still
+open, and it is now open by less margin than it was. This was the document's
 leading risk and it was largely self-inflicted: the write-off is refuted by the sampling code
 (`regions/pretrain.py:231`, `corpus.py:159-221` [V]) `[A5 fixed]`.
 
@@ -3734,13 +4336,16 @@ and *verification*:
   run used — does not revert the section; it decides whether the union burn was necessary, and the
   union is written either way (DEC-42). It is tested, not assumed.
 - **Falsifier: B1 on the recovered pool, and it is FAILING as printed** `[N8 fixed]`. aqua_rat is
-  **51.8% of the unallocated pool and 80.2% of the text-usable pool**, against B1's 0.50 hard line
-  and 0.40 operating cap. This is the *binding* max-share; revision 2 printed `fashion_mnist`'s
-  non-binding 35.5% against B1 and read as a pass. Mitigation, in §5.1's order: hold aqua_rat to
+  **50.6% of the unallocated pool and 79.5% of the text-usable pool** (was 51.8% / 80.2% under
+  the two-draw union — W2a's actual run found a third draw, D3, and burning it shrank aqua_rat's
+  clean share further), against B1's 0.50 hard line and 0.40 operating cap. This is the *binding*
+  max-share; revision 2 printed `fashion_mnist`'s non-binding 35.5% (now 36.3%) against B1 and
+  read as a pass. Mitigation, in §5.1's order: hold aqua_rat to
   0.40 of the reserve's **source rows** by construction, close the gap with W3r/W7v composites, and
   failing that carry a dated waiver.
-- **Falsifier: B2 on the recovered pool.** `N_eff` is **2.44** against B2's ≥ 3 — and it rose from
-  2.40 only because the union burn shrank the largest source, which is not diversification. The
+- **Falsifier: B2 on the recovered pool.** `N_eff` is **2.47** against B2's ≥ 3 (was 2.44 under
+  the two-draw union) — and it rose each time only because the union burn shrank the largest
+  source further, which is not diversification. The
   recovered rows are all aqua_rat, one source, one domain. Mitigation: a third genuine text source,
   or B2's dated waiver naming what the reserve cannot measure.
 - **Falsifier: W3's gate** — if the constructive generators do not yield ≥5,120 admitted items
@@ -3777,7 +4382,7 @@ point). **Pre-committed fallback:** disable and record, **and apply §2.4's cons
 `Ĉ`, `edges` and `lockstep_groups`** `[A20 fixed]`. See OD-5.
 
 ## 9.6 The interconnect memorises the reserve
-**26.9M** interconnect params (26,899,751, §2.3) against ~51k items `[N10d fixed]`. **Falsifier:
+**27.4M** interconnect params (27,424,039, §2.3) against ~61k items `[N10d fixed] [DEC-49]`. **Falsifier:
 the < 5-point train/held-out gap gate in W5.** Absent from the source proposal; grafted because this is exactly where a silent
 memorisation result comes from.
 
@@ -3834,17 +4439,31 @@ the architecture.** The simplex bounds *how much* budget the store receives; it 
 — the stated end state — request *j* attends to latents written by request *i*. No exploit is
 needed; that is the default behaviour of a shared store with a shared budget.
 
-**At v1 this boundary does not exist, because DEC-32 demotes the store to a placeholder.** The
-controls are written now so that building it is a specification:
+**THIS BOUNDARY NOW EXISTS AT v1, AND THAT IS THE POINT OF THIS SECTION IN REVISION 3.3.**
+Revision 2 (DEC-32) wrote these controls and then deferred the object they control, which made them
+documentation. **DEC-49 builds the store, so every row below becomes an ACCEPTANCE GATE of a
+programme row with a date on it** `[OP: csd-episodic-store-required.md]` — the operator's ruling is
+explicit that the threat model's findings are *"the acceptance gates for the build, not reasons to
+defer it"*. The table gains a column for that and it is the column that matters.
 
-| attack | bound | enforced where | bound is |
+| attack (threat **T2**) | bound | enforced where | proved by |
 |---|---|---|---|
-| cross-request poisoning | partition key **derived server-side from the authenticated principal**, never from the request and never from the `Schedule`. The `Schedule` may request **budget**; it may never name a **namespace** | store read path | **by construction**, once built |
-| unbounded growth | declared `capacity_entries`, FIFO eviction. `token_budget.max` bounds what is *read*, never what is *stored* | store write path | enforced |
-| unauthenticated read | unknown principal ⇒ **empty partition** ⇒ zero keys ⇒ the mind degrades to the no-store configuration, which is exactly phase A | store read path | **fails closed to a known-good, already-benchmarked state** |
+| **cross-request poisoning** | partition key **derived server-side from the authenticated principal**, never from the request and never from the `Schedule`. The `Schedule` may request **budget**; it may never name a **namespace**. CSD's identity is `(scope, domain, logical_key)`, with `scope` the server-derived segment and `(domain, logical_key)` the composite verified upstream [V, `memory_protocols.py:123-125`] | store read path | **E1 gate (iii)** — a ≥10,000-write, ≥100-partition fuzz in which **zero reads cross a scope**, plus the deliberately mis-derived key that **must** produce a crossing so the fuzz is shown capable of catching one |
+| **unbounded growth** | **byte** capacity, not entry count: §8 gap (a)'s residual formula computed per host per scheduler tick. `token_budget.max` (`b_store`) bounds what is *read*; `capacity_bytes` bounds what is *stored*; **they are different currencies** | store write path | **E1 gate (ii)** — the capacity differs between the 3090 Ti and the 5080, is respected (a write past it evicts rather than allocates), and **changes when the active-region set changes** |
+| **eviction is a security control, not a housekeeping one** | scored eviction `importance + gpu_resident_bonus − staleness(last_accessed)`, ties by older timestamp then key [V, `storage/tiered.rs:150-178`] — an attacker who can choose what survives eviction can choose what a later request reads | store write path | **E1 gate (iv)** — a **constructed overflow** with known scores, asserting the surviving set is exactly the top-scored one and that the `+1.0` GPU-residency bonus behaves as `gpu_hint_protects_from_spill` pins it |
+| **unauthenticated read** | unknown principal ⇒ **empty partition** ⇒ zero keys ⇒ the mind degrades to the no-store configuration, which is exactly phase A | store read path | **fails closed to a known-good, already-benchmarked state** — and after DEC-49 that state is *literally W5's receipt*, which makes the fallback checkable rather than asserted |
 
-**Gate when it is built:** extend W9's fuzz to a **two-request** form — request 1 writes, request
-2 reads — and require request 2's `Schedule` and output to be **unchanged from a clean run**.
+**Gate at W9, unchanged in shape and now reachable:** extend the fuzz to a **two-request** form —
+request 1 writes, request 2 reads — and require request 2's `Schedule` and output to be
+**unchanged from a clean run**. **W6 additionally runs with the isolation assertion enabled**, since
+an integration verdict obtained across a leaking partition would be a measurement of the leak.
+
+**One property of this boundary that the build does not remove, and it is recorded rather than
+mitigated.** The store is *supposed* to let a later turn read what an earlier turn wrote — that is
+X7's entire item shape. **So "a later request read what an earlier one wrote" cannot itself be the
+alarm; only "across a scope" can be.** The security of this object rests entirely on the scope
+segment being derived where the attacker cannot reach it, which is why E1's negative test
+constructs a mis-derived key rather than only asserting that the correct one works.
 
 ### B3 — reserve construction → controller training (phases B/C/D) `[T1 fixed]`
 
@@ -3971,11 +4590,30 @@ construction"* is not a mitigation, it is A1 — a baseline pinned by the filter
 data. DEC-36 replaces it, and the headroom the filter manufactures is now *reported* rather than
 *assumed*.
 
-## 9.11 The memory budget has no margin
+## 9.11 The memory budget has no margin — and DEC-49 puts a new claimant on it
 The bf16 arithmetic closes to **16.00 GiB exactly**. **Mitigation adopted as the plan rather than
 the contingency: int8 KV (DEC-25)**, which triples the token budget and restores real headroom.
 A 30% sensitivity on the assumptions moves the bf16 token budget from ~17.9k to ~13.8k; the int8
 plan absorbs that.
+
+**The episodic store is a NEW claimant on exactly this budget, and its 524,288 parameters are not
+the part that matters** `[DEC-49]`. The parameters are 2 MB at fp32 and are already inside §2.3's
+table. **The store's DATA is not budgeted anywhere in this document**, deliberately: §8 gap (a)'s
+rule is that its capacity is whatever is left after weights, KV and activations — `capacity =
+VRAM_total − KV_reserved(context, regions active) − activation_reserve − safety_margin`, computed
+per host per scheduler tick. **That is a residual claim, which is the safe shape and also the one
+that can silently become zero.** Two consequences, stated rather than discovered:
+
+1. **On the 5080 at the deployment configuration, the residual may be ≈ 0**, because §6.3's
+   arithmetic already closes to 16.00 GiB exactly. A store with zero capacity is a store that
+   evicts everything it writes, and it would pass E1's byte-capacity test (the bound is respected)
+   while failing every recall item. **E1's probe therefore prints the computed capacity per card
+   and E2's receipt prints the store's realised occupancy**; a capacity that rounds to zero on the
+   deployment card is a **finding**, not a configuration.
+2. **The mitigation is the same one, and it applies twice.** int8 KV (DEC-25) frees the KV term in
+   the residual formula, so it buys store capacity on the same card by the same mechanism it buys
+   token budget. It is now load-bearing for two subsystems rather than one, which raises the cost
+   of it not working out — recorded here because §9.11 is where that cost belongs.
 
 ## 9.12 Phase 3 at 30B is not trainable on this fleet
 Stated in §6.7 with the mitigation (progressive unfreezing by tract) and the correction
@@ -4033,6 +4671,28 @@ likely to be skipped should be the thing that costs least.** W1 is the proof tha
 it cost hours, it fired, and it bought a bounded retrain bill before a single line of
 interconnect existed.
 
+**A SECOND FALSIFIER EXISTS NOW AND IT IS FURTHER OUT, WHICH IS WHY IT IS WORTH NAMING**
+`[DEC-51] [OP: csd-mycelium-downstream-goal.md]`. Everything above falsifies the *architecture*.
+**M0 falsifies the programme's REASON.**
+
+> **If, after W10, CSD cannot clear a pre-registered pass-rate margin against a comparable open
+> model on the Mycelium task suite — parse, typecheck, implement, refactor, ground truth from that
+> repository's own tests — then the thing that was built is a research result and not a
+> development engine, and the operator's stated purpose for it is not met.**
+
+Three properties of this falsifier are worth stating because they are unusual for this document.
+**(1) It is not a benchmark.** The success criterion is a real project's real tasks, which is what
+the operator set: *"if it meets the bar, use it to drive forward the rest of the language-
+development project."* **(2) It is the most expensive falsifier here and therefore the most likely
+to be quietly softened** — the mitigation is that the margin and the comparison model are
+**registered in writing before any CSD run**, and a margin chosen after seeing a number is
+recorded as void. **(3) It carries an open question that this document must not answer by
+assumption:** whether CSD does RAG **natively as a skill** — `memory` plus `episodic_store` end to
+end — or needs the 1080 Ti helper. **Both arms are run.** `RAG native: NOT DEMONSTRATED` is a
+useful outcome and keeps the helper in the deployment; **asserting the native path in a design
+document would be assuming the single most load-bearing claim in the whole programme**, which is
+also the claim DEC-49 makes plausible enough to be tempting.
+
 ---
 
 # 10. Attack-pass disposition — every finding, and where it landed
@@ -4054,7 +4714,7 @@ specific sub-claim is refuted, because both are true and collapsing them would l
 | **A2** | critical | **ACCEPTED** — G3′ becomes the synergy conjunction; `REDUNDANT` quadrant named and FAILed; **B2t** trained matched-capacity late-fusion null added | §2.7.3 (DEC-37), §2.7.1, §2.7.4 |
 | **A3** | critical | **ACCEPTED** — verified `IJEPA.encode` → `target_encoder.embed`; **DEC-34 declares the target encoder the deployed half** (fix option (a)) | §2.3, §1.2, §1.4, §7.5 |
 | **A4** | critical | **ACCEPTED** — **a visual-resolution row is added (W7v)**, folded into the mandatory retrain; the two `visual × *` pairs are marked **blocked until W7v**, with the exact restatement if it slips | §4.1 W7v, §5.4 |
-| **A5** | critical | **ACCEPTED** — verified `reservoir_sample`/`sampling_rng` determinism; **W2a recovers the draw**; §5.1 and §9.2 restated with the reserve funded. **Revision 3 (N1): the recovery burns the UNION of both draws (DEC-42), so the surplus is 2.13×, not 2.23×** | §5.1, §4.1 W2a, §9.2 |
+| **A5** | critical | **ACCEPTED** — verified `reservoir_sample`/`sampling_rng` determinism; **W2a recovers the draw**; §5.1 and §9.2 restated with the reserve funded. **Revision 3 (N1): the recovery burns the UNION of both draws (DEC-42), so the surplus is 2.13×, not 2.23×. Revision 3.3, after W2a's ledger actually ran (`feat/w2a-ledger-recovery`, `c6ea587`): a third on-disk draw was discovered, the union is 13,946 (measured, not bounded), and the surplus is 1.71×** | §5.1, §4.1 W2a, §9.2 |
 | **A6** | critical | **ACCEPTED** — **DEC-38** reserves at source-row fingerprint granularity; the derived-item refusal is a W2b gate | §5.6 (DEC-38), §4.1 W2b |
 | **A7** | high | **ACCEPTED** — `blocked_by` column added and filled; `s_r` invalidation rule stated as a first-class constraint; CPU-only work separated from GPU-blocked work | §4.1, §4.2 |
 | **A8** | high | **ACCEPTED** — W7 is no longer "re-run W5"; it is a region-training row with a written objective and gate; the penultimate question moves into W1d's probe | §4.0 (DEC-35), §4.1 |
@@ -4064,20 +4724,20 @@ specific sub-claim is refuted, because both are true and collapsing them would l
 | **A12** | high | **ACCEPTED** — B0u is **trained** with uniform connectivity from initialisation, matching B3's discipline | §2.7.1 |
 | **A13** | high | **ACCEPTED** — W4 pre-registers five clauses including `recall@10 > 0.20`, `MRR > 0.10`, **> BM25** and **> its own random-init**; W2c re-measures `retrieve`'s untrained baseline | §4.1 W4, W2c, §1.2 |
 | **A14** | high | **ACCEPTED** — dev/sealed split, Holm/BH correction, null rates printed, eval re-sized against the number of decisions | §2.7.8 |
-| **A15** | high | **ACCEPTED** — phase-A `min_r mean(a_r) ≥ η/R` floor (**3.75% at `R = 4`**, written as the expression since 3.2 `[S31-16 fixed]`) with named remedies; "unrepresentable" restated as "unrewarded" | §2.6 |
+| **A15** | high | **ACCEPTED** — phase-A `min_r mean(a_r) ≥ η/R` floor (**3.75% at W5's `R = 4`, 3.0% at E2's `R = 5`**, written as the expression since 3.2 `[S31-16 fixed] [DEC-49]`) with named remedies; "unrepresentable" restated as "unrewarded" | §2.6 |
 | **A16** | high | **ACCEPTED** — source-row split key, block bootstrap, B1/B2 run on the reserve's generators with a dated-waiver path | §5.4 (DEC-38) |
-| **A17** | medium | **ACCEPTED** — option (a): `episodic_store` demoted to `placeholder`, **R = 4 → 6 pairs**, criterion restated | §1.3 (DEC-32), §2.7.7 |
+| **A17** | medium | **ACCEPTED** — option (a): `episodic_store` demoted to `placeholder`, **R = 4 → 6 pairs**, criterion restated. **REVISION 3.3 SWITCHES TO OPTION (b) BY OPERATOR RULING** (DEC-49): the store is built and its pairs are counted, so A17's defect is closed by **declaring X7/X8** and by the mechanical denominator rule (no pair without a mapped shape and a non-zero sealed count) rather than by exclusion. **A17 remains ACCEPTED, not reopened** — its finding was that an unconstructible pair must not sit in a denominator, and that is now enforced by a check instead of by an absence | §1.3 (DEC-49), §2.7.7, §5.4 |
 | **A18** | medium | **ACCEPTED** — budget-as-tag named as its own degenerate solution; **two content-swap arms**, graded on the frozen-schedule arm | §2.7.4 |
 | **A19** | medium | **ACCEPTED** — **DEC-41** names the v1 ranking head and candidate-set construction; B1/B2/G2 defined in that metric | §2.6 (DEC-41) |
 | **A20** | medium | **ACCEPTED** — the no-write-back `Ĉ` variant is defined, and if unbuilt the gate is declared void, `edges`/`lockstep_groups` are not emitted, and the receipt says `topology: not demonstrated` | §2.4, §4.1 W5b/W9, §9.5 |
 | **A21** | medium | **ACCEPTED** — the condition-(2) exemption is written into the filter (`nsrs: c1c3`); abstention is DEC-41's `NULL` candidate with its own gate; sizing stays 3,072 | §5.3, §2.6, §5.5(c) |
 | **A22** | medium | **ACCEPTED** — violation claim and its `[V]` tag withdrawn (re-verified: `objective` ≠ `objective_family`); the two enum values kept; the design question raised separately | §7.3 |
 | **A23** | medium | **ACCEPTED** — W2c measures the untrained `code` baseline and re-derives `τ_lo` per bin in chance-normalised units; W2b is blocked on it | §5.3, §4.1 W2c |
-| **A24** | medium | **ACCEPTED** — adapters recomputed for the v1 list (591,872), white matter 26,899,751, composed 85,807,015; total re-tagged `[I]` | §2.3 |
-| **A25** | medium | **ACCEPTED** — DEC-26 scoped to ≥1B; v1's **31.4%** printed beside the cap with the crossover argument | §6.4 |
+| **A24** | medium | **ACCEPTED** — adapters recomputed for the v1 list (591,872), white matter 26,899,751, composed 85,807,015; total re-tagged `[I]`. **Restated in revision 3.3 for DEC-49's five participants: white matter 27,424,039, composed 86,331,303** | §2.3 |
+| **A25** | medium | **ACCEPTED** — DEC-26 scoped to ≥1B; v1's **31.8%** (was 31.4% before DEC-49) printed beside the cap with the crossover argument | §6.4 |
 | **A26** | medium | **ACCEPTED** — `mlp_ratio` stated in both columns; at ratio 4, `L_ic=4` is 3.6% and `L_ic=8` is **7.2%, above the ceiling** | §2.3, §6.4 |
 | **A27** | medium | **ACCEPTED** — MAC derivation printed (**1.56 GMAC/item**); complexity restated as `O(L·D_w²·(1+mlp_ratio) + Σb·D_w² + L·Σb·D_w)` | §2.3 |
-| **A28** | medium | **ACCEPTED** — `episodic_store` and the `h_r` cache both get rows in the attack table; two-request fuzz specified | §9.9 B2, §2.5 |
+| **A28** | medium | **ACCEPTED** — `episodic_store` and the `h_r` cache both get rows in the attack table; two-request fuzz specified. **Revision 3.3 makes the specified controls REACHABLE**: DEC-49 builds the object, so B2's four bounds become **E1's acceptance gates** with constructed failures rather than a table about a placeholder | §9.9 B2, §2.5, §4.1 E1 |
 | **A29** | medium | **ACCEPTED** — W9's gate split into runtime-equivalence (same `Schedule`, eager vs DAG) and sparsity (vs dense) | §4.1 W9 |
 | **A30** | low | **ACCEPTED** — restated as "the token surface retrains nothing"; the retrain budget is §4.3 | §2.2, §4.3 |
 | **A31** | low | **ACCEPTED** — `memory` inherits `retrieve`'s table with the divergence recorded; DEC-24 binds from phase 3; 3.02× relabelled for three regions (1.67×) | §6.2 |
@@ -4091,7 +4751,7 @@ specific sub-claim is refuted, because both are true and collapsing them would l
 | # | disposition | where |
 |---|---|---|
 | **T1** (§4.1, B3 training-time controller poisoning) | **ACCEPTED, all four controls** — keyed split (DEC-39), generator identity in the ledger, a stated sandbox with no `subprocess` fallback, and **S5** as a third receipt verdict | §5.6, §5.5(a), §2.7.6, §9.9 B3 |
-| **T2** (§4.2, `episodic_store` partition; `trace_id`) | **ACCEPTED** — removed from v1 participants (DEC-32) **and** the partition/capacity/eviction contract written as its build trigger; `trace_id` minted server-side and rejected if client-supplied | §1.3, §9.9 B2, §2.5 |
+| **T2** (§4.2, `episodic_store` partition; `trace_id`) | **ACCEPTED** — the partition/capacity/eviction contract written; `trace_id` minted server-side and rejected if client-supplied. **Revision 3.3 changes the disposition's SHAPE, not its verdict** `[DEC-49]`: revision 2 closed T2 by removing the object from v1, which closes a threat by deleting its asset. The operator's ruling restores the asset, so **T2 is now closed by CONTROLS WITH CONSTRUCTED FAILURES** — E1's cross-request fuzz (with a mis-derived key that must produce a crossing), the byte-capacity probe on two cards, and the scored-eviction overflow. **That is a stronger closure than the deferral was**, and it is the one the threat pass asked for | §1.3, §9.9 B2, §2.5, §4.1 E0/E1/E2 |
 | **T3** (§4.3, `weights_only=False` in two scripts) | **ACCEPTED, and the immediate half has since LANDED** — commit `c976e84`, both call sites now `weights_only=True`, with `tests/test_checkpoint_load_security.py` committed to prove the guard fires [V]. **DEC-40 is the durable half and is still unbuilt:** one `load_checkpoint()`, hardcoded, hash verified **before the file is opened** (the landed fix does not do this), CI lint rule, hash-mismatch negative test. **Revision 3 gives it a row and an owner: W0c, owned by the operator by hand and explicitly not by autodev (OD-1)** `[N10c fixed]`. Revision 2 routed it to "OD-7", which is the disposition of the untracked working files — a different item, so DEC-40 had no owner at all | §9.9 B4, **§4.1 W0c** |
 | **T4** (§4.4, autodev `ALLOW_PREFIXES` scope) | **ACCEPTED as an OPERATOR decision** — outside this tree | **OD-1** |
 | **T4b** (§4.5, lab-console proxy forwards the token before authorising) | **ACCEPTED as an OPERATOR decision** — outside this tree | **OD-2** |
@@ -4107,16 +4767,16 @@ defects; every one is applied in place below and cited at the changed spot.
 
 | # | severity | disposition | where |
 |---|---|---|---|
-| **N1** | **critical** | **ACCEPTED.** The sampling algorithm changed under the recovery (`c42203c`, prefix → reservoir) and W2a's three checks passed under either hypothesis, so 4,982 rows of ambiguous provenance could have been certified clean into the reserve. **DEC-42: burn the UNION of both draws.** Cost: at most 4,982 further rows of the 92,485 the recovery marked clean; the surplus goes 2.23× → **2.13×**. W2a gains a **fourth** precondition and a gate that **fails on a ledger omitting either draw**. §5.1's premise about the deleted receipt is corrected: no receipt on disk ever carried `cap_sampling` | **DEC-42**, §5.1, §4.1 W2a, §9.2 |
+| **N1** | **critical** | **ACCEPTED, and confirmed the hard way.** The sampling algorithm changed under the recovery (`c42203c`, prefix → reservoir) and W2a's three checks passed under either hypothesis, so 4,982 rows of ambiguous provenance could have been certified clean into the reserve. **DEC-42: burn the UNION of every draw the ledger discovers.** When W2a actually ran (`feat/w2a-ledger-recovery`, `c6ea587`), it found not two draws but **three** — R, P, and an on-disk derived sample D3 — exactly the failure mode N1 was raised against, this time an artefact nobody anticipated rather than one that was reasoned about in advance. Cost: the union is **13,946** of the 97,467 (measured, not bounded); the surplus goes 2.23× → 2.13× (two draws) → **1.71×** (three). W2a's gate **fails on a ledger omitting any discovered draw**, which is what caught D3. §5.1's premise about the deleted receipt is corrected: no receipt on disk ever carried `cap_sampling` | **DEC-42**, §5.1, §4.1 W2a, §9.2 |
 | **N2** | high | **ACCEPTED.** All six ablation pairs now carry a declared item shape, a construction and a printed sealed-item count; two new shapes (**X2** three-way executable join, **X6** two-premise numeric composite) cover the two pairs that had none. The W7v-slip branch's *"all 3 of 3"* is **achievable** — it was not — and gains a pre-committed reallocation so it is not also underpowered | §5.4, §5.5(a), §5.5(b′), DEC-37 |
 | **N3** | high | **ACCEPTED.** §4.0 prints **both** rank definitions; they disagree and the sign reverses for all four regions; the verdict is recorded as **PROVISIONAL PENDING W1d**; W1d is made the deciding step with a rule that names no rank definition; the retrain requirement is **not** softened; W1c's statistic is named and its `< 32 of 512` restated in those units | §4.0, DEC-35, §4.1 W1d/W1c, §9.1, §11 R2 |
 | **N4** | medium | **ACCEPTED.** The fifth measurement, `compress_repo_local` at **2.00× AMBIGUOUS**, is in §4.0's table, flagged non-production and undertrained (step 2,000 of 8,000, `max_len` 256 of 96), with the 2.5× two-checkpoint spread stated as the sizing of W1d's risk | §4.0 |
 | **N5** | medium | **ACCEPTED.** The dependency inversion is broken by **W3r** — frame geometry, minimal renderer, checked-in fixture — a CPU-only row with no dependencies that **both** W7v and W3 depend on. Composite rendering leaves §4.2's CPU-parallel column until W3r lands | §4.1 W3r/W7v/W3, §4.2, §5.5(b) |
 | **N6** | medium | **ACCEPTED.** G0d gains a precedence rule and a remedy path: a redundant *corpus* reports **`corpus: REDUNDANT`** against §5.3 condition (2), not `statistic: broken`; `Δ_A`, `Δ_B`, `Δ_AB` are printed for B0 and B0d so the two causes are separable on the page | §2.7.2, §2.7.3 |
 | **N7** | medium | **ACCEPTED (part a).** B0, B0d, B0u, **B2t** and B3 are budgeted in `T_A` units and GPU-hours — **≈3.15 white-matter-run-equivalents, ≈3–6 GPU-hours** — **B2t is stated to be a second full white-matter run and counted as one**, and *"the decisive experiment is the cheap one"* is restated: the measurement is cheap, its controls are not | §4.3, §2.7.7, §2.7.1 |
-| **N8** | medium | **ACCEPTED.** The **binding** B1 max-share is printed in both accountings — aqua_rat **51.8%** unallocated / **80.2%** text-usable against the 0.50 hard line, a **FAIL** — beside `fashion_mnist`'s non-binding 35.5%, with the four-step remedy and the note that `N_eff` rose to 2.44 only because rows were burned | §5.1, §9.2, §4.1 W3 |
+| **N8** | medium | **ACCEPTED.** The **binding** B1 max-share is printed in both accountings — aqua_rat **50.6%** unallocated / **79.5%** text-usable against the 0.50 hard line, a **FAIL** (was 51.8% / 80.2% before W2a's run found the third draw) — beside `fashion_mnist`'s non-binding 36.3%, with the four-step remedy and the note that `N_eff` rose to 2.47 only because rows were burned | §5.1, §9.2, §4.1 W3 |
 | **N9** | medium | **ACCEPTED.** `memory × reasoning` gets construction **(a′)** — a multi-hop join over the recovered aqua_rat rationales, text-only and W7v-independent, which also gives the recovered rows a cross-faculty consumer that is not the blocked renderer. The general bin gets **(c′)**, a text-only variant, and is added to the W7v-slip restatement | §5.5(a′), §5.5(c′), §5.4 |
-| **N10** | low | **ACCEPTED, all seven.** (a) DEC-36's verify-by-failing gets the `source: admission \| graded` field that makes it constructible; (b) the W1 evidence is copied into the repo at `docs/design/evidence/w1-token-rank-2026-09-02/` and cited from there; (c) DEC-40 gets row **W0c** and a named owner; (d) the two stale 27.8M sites become 26,899,751; (e) `text_encoder.py`'s path prefix corrected to `regions/`; (f) W0's property (iii) gets both clauses and stops being false as written; (g) §5.2 and §11 R1 stop saying there is no train-time refusal — a coarse one landed at `0786a77` | §2.7.0, §4.0, §4.1 W0/W0c, §2.6, §9.6, §5.2, §11 R1 |
+| **N10** | low | **ACCEPTED, all seven.** (a) DEC-36's verify-by-failing gets the `source: admission \| graded` field that makes it constructible; (b) the W1 evidence is copied into the repo at `docs/design/evidence/w1-token-rank-2026-09-02/` and cited from there; (c) DEC-40 gets row **W0c** and a named owner; (d) the two stale 27.8M sites become 26,899,751 (**and 27,424,039 in revision 3.3, DEC-49 — the sweep was re-run, not assumed to have stayed done**); (e) `text_encoder.py`'s path prefix corrected to `regions/`; (f) W0's property (iii) gets both clauses and stops being false as written; (g) §5.2 and §11 R1 stop saying there is no train-time refusal — a coarse one landed at `0786a77` | §2.7.0, §4.0, §4.1 W0/W0c, §2.6, §9.6, §5.2, §11 R1 |
 
 
 ## 10.4 Third skeptic pass (revision 3.1)
@@ -4135,7 +4795,7 @@ the live ones, because a deferred row still needs a gate that can fire on the da
 
 | # | severity | disposition | where |
 |---|---|---|---|
-| **S1** | **critical** | **RESOLVED BY DEC-48, not recounted.** A fifth participant would have made the all-pairs set **ten**, with `auditory × memory` and `auditory × reasoning` carrying no item shape and therefore pre-committed to `REDUNDANT`/FAIL — the A17/N2 defect a third time. **Audio is deferred: `R` stays 4, the pair set stays 6, and "≥ 4 of 6" at null rate 0.344 is unchanged.** The branch is not deleted, it is **pre-specified in A3** for the day the row is picked up: `auditory` enters as a **non-pair participant** unless A3 declares the two missing shapes, the set is held at **8**, and the criterion is restated **in the same breath** as **≥ 5 of 8**, null rate **0.363** | §11 R4, §4.1 A3, §1.3, §4.1 `s_r` rule |
+| **S1** | **critical** | **RESOLVED BY DEC-48 in revision 3.2; EXECUTED BY DEC-49 in revision 3.3** — see §11 R4. Revision 3.2's account, kept because it is why the fix existed to apply: **not recounted.** A fifth participant would have made the all-pairs set **ten**, with `auditory × memory` and `auditory × reasoning` carrying no item shape and therefore pre-committed to `REDUNDANT`/FAIL — the A17/N2 defect a third time. **Audio is deferred: `R` stays 4, the pair set stays 6, and "≥ 4 of 6" at null rate 0.344 is unchanged.** The branch is not deleted, it is **pre-specified in A3** for the day the row is picked up: `auditory` enters as a **non-pair participant** unless A3 declares the two missing shapes, the set is held at **8**, and the criterion is restated **in the same breath** as **≥ 5 of 8**, null rate **0.363** | §11 R4, §4.1 A3, §1.3, §4.1 `s_r` rule |
 | **S2** | **critical** | **RESOLVED BY DEC-48 as a v1 blocker, and FIXED as groundwork.** DEC-45's clean tier and DEC-46's balance claim could not both be true, and the audit had declined to compute either. Fixed anyway: the balance claim is now **`[I]` and cap-dependent** with the recomputed `N_eff` at three caps printed, **People's Speech is decided explicitly** (out of the clean tier, counted only as the SA-tier variant), and **A0f's gate (iii) becomes a PASS/FAIL** — grouped max share > 0.50 or grouped `N_eff` < 3 **fails the row** | §11 R4, DEC-46, DEC-45, §4.1 A0f |
 | **S3** | high | **ACCEPTED.** A0's gate (i) keyed on **string equality** between `mirror_tag` and `licence_upstream`, which FAILs every correctly audited agreeing row (LibriSpeech, MLS, AMI, MUSAN, VCTK, Hi-Fi TTS, LibriTTS-R, AISHELL-3, Expresso) and **passes AudioSet**, the row it was written for. It now keys on **provenance of the read**: a required `licence_upstream_source` (URL + fetch date) that fails when absent, when its host equals the mirror host, or when the date is missing, plus a `grant_scope` enum — `metadata_only` catches AudioSet, `code_only` catches CSS10 and Libri-Light | §4.1 A0m |
 | **S4** | high | **ACCEPTED.** A2's trunk status was unstated and its two possible readings gave a vacuous gate or a guaranteed failure. **The frozen-trunk + adapter reading is adopted**, "exactly" becomes **bit-exact on the logits**, and **A2 is removed from the pre-W2b set** — with a frozen trunk it changes no weights, so the `s_r` rule does not reach it | §4.1 A2, `s_r` rule |
@@ -4150,12 +4810,12 @@ the live ones, because a deferred row still needs a gate that can fire on the da
 | **S13** | medium | **ACCEPTED.** *"six clean non-LibriVox provenance groups"* counted an NC group (Expresso) and a share-alike group (People's Speech) as clean. **Restated: seven provenance groups, of which five carry no NC term**, with "clean" kept for the tier definition it already had | DEC-46, §1.3, §5.5 |
 | **S14** | medium | **ACCEPTED.** The group table mixed hours and clips, and B1/B2 are share statistics. **Computed in hours**, Freesound converted (~145 h), and A0f's gate prints the unit | DEC-46, §4.1 A0f |
 | **S15** | medium | **ACCEPTED.** The audit states B1 as ≤ 0.40 while the design carries a **0.50 hard line and a 0.40 operating cap**, and the recomputed mix lands at **0.403** — between them. **A0f reports against both**, hard line as FAIL, operating cap as recorded warning, the shape §5.1 uses for aqua_rat | DEC-46, §4.1 A0f |
-| **S16** | medium | **ACCEPTED.** The phase-A collapse floor was hard-coded at **3%**, which is `0.15/5` — right only for a five-participant mind. At the v1 `R = 4` it is **3.75%**, so the written gate was **0.75 pp too lenient**, and it would have become accidentally correct the wrong way if `auditory` had landed. **Written as the expression `η/R` everywhere, with the receipt printing the evaluated value beside its own `R`** | §2.4, §2.6, §10.1 A15 |
+| **S16** | medium | **ACCEPTED, and revision 3.3 is the case that vindicates the fix.** The phase-A collapse floor was hard-coded at **3%**, which is `0.15/5` — right only for a five-participant mind. At revision 3.2's `R = 4` it is **3.75%**, so the written gate was **0.75 pp too lenient**. **DEC-49 makes `R` five, so the VALUE returns to exactly 3.0% — the number that was wrong two revisions ago, now right for a different reason.** A document carrying the constant would be accidentally correct with no way to show it. **The expression `η/R` is what is binding, the receipt prints the evaluated value beside its own `R`, and W5 (`R = 4`, 3.75%) and E2 (`R = 5`, 3.0%) print different floors in the same programme** | §2.4, §2.6, §4.1 W5/E2, §10.1 A15 |
 | **S17** | low | **ACCEPTED.** The decision index listed DEC-42 after DEC-46. **Moved up one block** | Decision index |
 | **S18** | low | **ACCEPTED.** A1's and A2's verify-by-failing constructions compare the untrained baseline to itself: they prove the comparison is wired, not that the instrument reads, and an ASR stub returning the reference transcript regardless of input would pass. **A2 gains a null-input control** — feed the frozen ASR silence or white noise and assert `WER ≈ 1.0` | §4.1 A2 |
 | **S19** | low | **ACCEPTED.** The brief called `speech_output` a *"phase-2 participant"*; it is a head and adds no participant and no ablation pair, and the only reason it could bear on W2b was the `s_r` weight rule. **Restated in both documents**, and under S4's frozen-trunk reading it need not precede W2b at all | §4.1 `s_r` rule, brief |
 | **S20** | low | **ACCEPTED.** DEC-45 silently dropped **HiFiTTS-2** — the largest source in the bucket — from the `speech_output` clean tier the audit includes, and wrote *"8 languages"* where the audit says *"8 **non-Ukrainian** languages"*. **Both stated**: the exclusion with its two reasons (mirror-verified only; open question 9's *"would dominate any mix it joins"*), and the qualifier restored | DEC-45 |
-| **S21** | low | **ACCEPTED.** The per-pair sealed counts sum to 1,280 against a 2,560-item sealed half — resolved in §5.4 (only 1,024 sealed items are cross-faculty, and shapes overlap pairs) but inherited by A3, which promises to recompute the allocation. **A3's gate now requires the recomputed table to print the cross-faculty sealed TOTAL alongside the per-pair figures**, so the two are visibly reconciled | §4.1 A3 |
+| **S21** | low | **ACCEPTED, and re-applied in revision 3.3 rather than assumed to have stayed applied** `[DEC-49]`: at `R = 5` the per-pair column sums to **2,304** against a cross-faculty sealed total of **1,536**, and §5.4 prints both with the reason (shapes overlap pairs). The revision-3.2 numbers, kept: the per-pair sealed counts sum to 1,280 against a 2,560-item sealed half — resolved in §5.4 (only 1,024 sealed items are cross-faculty, and shapes overlap pairs) but inherited by A3, which promises to recompute the allocation. **A3's gate now requires the recomputed table to print the cross-faculty sealed TOTAL alongside the per-pair figures**, so the two are visibly reconciled | §4.1 A3 |
 
 ---
 
@@ -4284,7 +4944,7 @@ demoted to `[I]` because a sum over an `[I]` row is `[I]`, the adapter row is re
 v1 participant list, and **re-instantiating at the design's actual configuration is a W0
 deliverable** so the total stops being a projection.
 
-## R4 — S1 and S2 (skeptic pass 3.1, both critical). DISSOLVED BY DEC-48, not refuted and not recounted.
+## R4 — S1 and S2 (skeptic pass 3.1, both critical). S1 was DISSOLVED by DEC-48 and is now EXECUTED by DEC-49; S2 stays dissolved.
 
 **The claims.** **S1:** *"adding `auditory` makes **ten** ablation pairs, not eight, and two of
 the four new ones FAIL by construction"* — `C(5,2) = 10`, with `auditory × memory` and
@@ -4302,15 +4962,29 @@ the rows `[OP: csd-multimodal-io-intent.md]`: *"we can wait to add audio as a fu
 it proves out without audio. that will be more of a production phase implementation."* **DEC-48
 defers `auditory` and `speech_output` to a production phase.** So:
 
-- **S1's premise is gone.** There is no fifth participant in v1. `R = 4`, the all-pairs set is
-  **six**, and G3′'s *"≥ 4 of 6"* at null rate **0.344** stands exactly as §2.7.3 wrote it. **The
-  correct response is not to restate the criterion for `R = 5`** — that would be answering a
-  question the programme no longer asks, and it would put a `≥ N of 10` gate in a document whose
-  v1 has four participants. What S1 earned instead is a **pre-specification inside A3** for the
-  day the row is picked up: `auditory` enters as a **non-pair participant** unless A3 declares
-  shapes for the two missing pairs, the set is held at **6 + 2 = 8**, and the criterion is
-  restated **in the same breath** as **≥ 5 of 8** with null rate **`P(Bin(8,0.5) ≥ 5) = 0.363`**
-  printed beside it. That is S1's own fix (b), written where it will be read.
+- **S1's premise was gone for one revision, and revision 3.3 brings it back through a different
+  door — so S1's FIX gets executed rather than pre-specified** `[DEC-49]`. Revision 3.2's position
+  was that `R = 4`, the all-pairs set is six, and restating the criterion for `R = 5` would answer
+  a question the programme no longer asked. **DEC-49 makes the programme ask it again**: not
+  `auditory`, but `episodic_store`, admitted by operator ruling. **So S1's fix (b) — the new
+  participant enters as a full participant and its pairs are counted — is APPLIED, and applying it
+  required doing the thing S1 said a bare fifth participant could not do: declaring item shapes for
+  the four new pairs.** X7 and X8 do that (§5.4), each store pair carries **256 sealed items**, and
+  the criterion is restated to **≥ 7 of 10** at null **0.1719** under §2.7.3's new 0.20 null-rate
+  ceiling, which is stricter than the 0.344 it replaces and therefore cannot be loosened by adding
+  a participant. **S1 was right, and its
+  being right is what made DEC-49 buildable rather than a recount:** the finding named the exact
+  precondition — shapes, or the pairs are pre-committed to FAIL — and that precondition is what
+  E1, the episode harness and §5.5(e) exist to satisfy.
+- **A3's audio pre-specification is restated in the same breath, because the base changed under
+  it.** With the store in, admitting `auditory` later makes the pair set **10 + 2 = 12** (it enters
+  as a **non-pair participant** unless A3 declares shapes for `auditory × memory` and
+  `auditory × reasoning`), and the criterion becomes **≥ 8 of 12** with null rate
+  **`P(Bin(12,0.5) ≥ 8) = 0.194`**, the smallest `k` under §2.7.3's 0.20 ceiling — replacing
+  revision 3.2's `6 + 2 = 8`, `≥ 5 of 8`, 0.363, which was correct for a four-participant base,
+  is not correct for a five-participant one, **and exceeds the ceiling in any case**. **A
+  pre-specification that is not re-derived when its base changes is a stale number waiting to be
+  quoted**, which is the defect S1 itself was about.
 - **S2 stops being a v1 blocker and its substance is fixed anyway**, because DEC-45 and DEC-46 stay
   in the document as groundwork and a wrong groundwork table is worse than none: the balance claim
   is tagged **`[I]`** and made **cap-dependent** with `N_eff` recomputed at three caps, People's
@@ -4318,11 +4992,18 @@ defers `auditory` and `speech_output` to a production phase.** So:
   both clean-tier cells read **CC BY 4.0**, and **A0f's gate (iii) becomes a PASS/FAIL** rather
   than a print — grouped max share > 0.50 or grouped `N_eff` < 3 fails the row.
 
-**Why this is recorded as a dissolution rather than a fix.** The pattern matters: a critical
-finding against a *requirement* can be answered by an operator changing the requirement, and when
-that happens the honest record says *the premise was removed*, not *the finding was closed*. S1
-and S2 would both be live again the moment audio is picked up, which is precisely why their fixes
-are written into the deferred rows rather than deleted with them.
+**Why this is recorded as a dissolution rather than a fix — and why S1's entry then changed
+again.** The pattern matters: a critical finding against a *requirement* can be answered by an
+operator changing the requirement, and when that happens the honest record says *the premise was
+removed*, not *the finding was closed*. **Revision 3.3 is the demonstration of why that
+distinction was worth keeping.** S1's fix was written into a deferred row rather than deleted with
+it; four days later a *different* fifth participant arrived by operator ruling, and the fix was
+sitting there, applicable, and applied. Had S1 been recorded as "closed", DEC-49 would have had to
+rediscover that a fifth participant needs declared item shapes — which is the discovery A17 already
+cost this programme once.
+
+**S2 stays dissolved and is untouched by DEC-49**, since it is about audio licence tiers and would
+be live again the moment audio is picked up.
 
 ---
 
@@ -4348,25 +5029,30 @@ IJEPA(JEPAConfig())                                   22,905,216      [V*]
        (vl_pretrain.py:202 [V]).
 4 x TextEncoder + IJEPA                               86,990,208      [V*]  <- the "~87M", exactly
 
---- WHITE MATTER v1, RECOMPUTED FOR THE v1 PARTICIPANT LIST [A24] -------------
+--- WHITE MATTER v1, RECOMPUTED FOR THE FIVE-PARTICIPANT v1 LIST [A24][DEC-49] -
 workspace blocks x4 @ D=512, 8 heads, mlp_ratio 4     16,803,840      [V*]
 frontal read-out                                       3,150,848      [V*]
 thalamic controller                                    1,588,007      [I]   at 3 heads; design has 4
 conditioning prefixes (3x256 + 1x384, n_cond 8)        4,727,808      [V*]
 region adapters (3 x 256->512, 1 x 384->512)             591,872      [I]   was 986,624 (6 text)
-episodic_store projections                                     0      --    demoted, DEC-32 (was 524,288)
+episodic_store projections W_k, W_v (512x512)            524,288      [I]   RESTORED by DEC-49
+                                                                            (was 0 under DEC-32)
 latent bank + norm + type embeddings                      37,376      [V*]
-WHITE MATTER v1 TOTAL                                 26,899,751      [I]   was 27,818,791
-  ^ a sum over an [I] row is [I]. W0 re-instantiates it at the design's actual config.
+WHITE MATTER v1 TOTAL                                 27,424,039      [I]   was 26,899,751
+  ^ a sum over an [I] row is [I]. W0 re-instantiates it at the design's actual config,
+    at FIVE participants.
 
 --- COMPOSED MIND v1 ----------------------------------------------------------
 language_code + memory + reasoning + visual           58,907,264      [V*]
-+ white matter                                        26,899,751      [I]
-COMPOSED MIND v1 DEPLOYABLE                           85,807,015      [I]   was 86,726,055
-  fp32                                                   343 MB       [I]   was 347 MB
-  at 3.2675 effective bits/param                          35.0 MB     [I]   was 35.4 MB
-  interconnect share of the mind                          31.4%       [I]   vs DEC-26's 2-5%,
-                                                                            scoped to >=1B (§6.4)
++ white matter (incl. the store's two projections)    27,424,039      [I]
+COMPOSED MIND v1 DEPLOYABLE                           86,331,303      [I]   was 85,807,015
+  fp32                                                   345 MB       [I]   was 343 MB
+  at 3.2675 effective bits/param                          35.3 MB     [I]   was 35.0 MB
+  interconnect share of the mind                          31.8%       [I]   was 31.4%; vs DEC-26's
+                                                                            2-5%, scoped to >=1B
+  ^ THE STORE'S DATA IS NOT IN THIS TABLE. It is bytes, not parameters, and it is bounded
+    by section 8 gap (a)'s dynamic capacity, computed per host per tick. W10 reports it
+    separately and section 9.11 records that it may round to zero on the 5080.
 memory-merge saving                                   15,890,176      [V*]
 shared-embedding saving, 6 text regions               64,328,960      [V*]  (3.02x) -- but v1 has
 shared-embedding saving, 3 text regions               25,731,584      [I]   (1.67x)   THREE (§6.2)
@@ -4413,17 +5099,28 @@ gate collapse:  linear gate 1.0 / 0.0 on tinystories, stream_dim 16, batch 8    
 --- CORPUS, AFTER THE aqua_rat RECOVERY [A5] ---------------------------------
 244,761 declared                                                                  [V*]
   burned: go_emotions 43,410 + banking77 13,083 + gsm8k 7,473
-        + aqua_rat <= 9,964  (UNION of both draws, DEC-42)                        [V]/[I]
-clean unallocated                                     169,047      was  83,328
+        + aqua_rat 13,946  (UNION of THREE draws -- R, P, D3 -- DEC-42)      [V*]
+                                                    was <= 9,964 (two draws) [V]/[I]
+clean unallocated                                     165,065      was 169,047 (two-draw
+                                                                   union), 83,328 (rev 1)
   fashion_mnist (no text bin can use it)               60,000
-  TEXT-USABLE after apps<->code_contests dedupe       109,047      was  21,544
-required 56,320, of which 51,200 is training data
-  as a share of what remains                            33.3%      was   67.6%
-  vs the 51,200-row training need                       2.13x SURPLUS  (was 2.38x SHORTFALL)
-  MAX SOURCE SHARE (aqua_rat), unallocated              51.8%   BINDING; B1 hard line 0.50 -- FAIL
-  MAX SOURCE SHARE (aqua_rat), text-usable              80.2%   the pool the reserve draws from
-  fashion_mnist share of what remains                   35.5%      was   72.0%  (NOT binding)
-  N_eff = 1/sum(p^2)                                     2.44      was    1.79  (B2 wants >= 3 --
+  TEXT-USABLE after apps<->code_contests dedupe       105,065      was 109,047 (two-draw),
+                                                                   21,544 (rev 1)
+required 67,584, of which 61,440 is training data     [DEC-49]   was 56,320 / 51,200
+  as a share of what remains                            40.9%      was 40.0% (two-draw),
+                                                                   33.3% (67.6% pre-recovery)
+  vs the 61,440-row training need                        1.71x SURPLUS  (was 1.77x at the
+                                                                        two-draw union, 2.13x
+                                                                        at 51,200, 2.38x
+                                                                        SHORTFALL before)
+  MAX SOURCE SHARE (aqua_rat), unallocated              50.6%   BINDING; B1 hard line 0.50 -- FAIL
+                                                                        (was 51.8% two-draw)
+  MAX SOURCE SHARE (aqua_rat), text-usable              79.5%   the pool the reserve draws from
+                                                                        (was 80.2% two-draw)
+  fashion_mnist share of what remains                   36.3%      was 35.5% (two-draw),
+                                                                   72.0%  (NOT binding)
+  N_eff = 1/sum(p^2)                                     2.47      was 2.44 (two-draw), 1.79
+                                                                        (B2 wants >= 3 --
                                                                         still short; §9.2)
 DETERMINISM THAT MAKES THE RECOVERY POSSIBLE [V]:
   regions/pretrain.py:231   reservoir_sample(stream, limit, sampling_rng(seed, shards, columns))
@@ -4434,10 +5131,58 @@ DETERMINISM THAT MAKES THE RECOVERY POSSIBLE [V]:
   W2a TESTS all three preconditions; if any fails, the write-off stands.
 
 --- STATISTICS -----------------------------------------------------------------
-P(Bin(10, 0.5) >= 6)  = 386/1024 = 0.377   revision 1's "6 of 10 pairs" null rate  [I]
-P(Bin(6,  0.5) >= 4)  =  22/64   = 0.344   revision 2's "4 of 6 pairs" null rate   [I]
-P(Bin(3,  0.5) >= 3)  =   1/8    = 0.125   the "3 of 3" rate if W7v slips (§5.4)   [I]
-binomial half-width 1.96*sqrt(0.25/n): +-4.33pp at n=512; +-6.1pp at n=2,560       [I]
+SELECTION RULE (new in 3.3, section 2.7.3): the criterion's null rate is CAPPED at a
+pre-committed 0.20 and k is the smallest value meeting it. A ceiling, not a comparison
+between revisions -- a comparison ratchets forever. Both predecessors (0.377, 0.344)
+EXCEED the ceiling, which is what stops a participant change from buying a pass.
+P(Bin(10, 0.5) >= 7)  = 176/1024 = 0.1719  v1 G3' criterion, R=5, DEC-49            [I]
+P(Bin(6,  0.5) >= 5)  =   7/64   = 0.109   either single-slip branch (W7v, or E1)   [I]
+P(Bin(3,  0.5) >= 3)  =   1/8    = 0.125   the "3 of 3" rate if BOTH slip (§5.4)     [I]
+P(Bin(12, 0.5) >= 8)  = 794/4096 = 0.194   A3's audio pre-specification, restated    [I]
+  superseded, kept so a reader who saw an earlier revision is not silently handed a number:
+P(Bin(10, 0.5) >= 6)  = 386/1024 = 0.377   revision 1's "6 of 10 pairs" -- REFUSED in 3.3
+                                           by the selection rule: looser than what it replaced
+P(Bin(6,  0.5) >= 4)  =  22/64   = 0.344   revision 2's "4 of 6 pairs", R=4          [I]
+P(Bin(8,  0.5) >= 5)  =  93/256  = 0.363   revision 3.2's A3 pre-spec, R=4 base      [I]
+binomial half-width 1.96*sqrt(0.25/n): +-4.33pp at n=512; +-6.1pp at n=256 (per bin,
+  either side of the split -- UNCHANGED by DEC-49: more items, more bins, same 256 per bin);
+  +-3.1pp at n=1,024 and +-2.5pp at n=1,536 (cross-faculty sealed, before/after DEC-49)  [I]
+
+--- RESERVE SIZE, AFTER DEC-49 -------------------------------------------------
+per-faculty eval, 6 bins x 512                             3,072      [I]   unchanged
+cross-faculty eval, 6 reported bins x 512                  3,072      [I]   was 2,048 (4 bins)
+compose eval total                                         6,144      [I]   was 5,120
+  split                                        3,072 dev / 3,072 sealed  was 2,560 / 2,560
+  of the sealed half, cross-faculty                        1,536      [I]   was 1,024
+interconnect train, >=10x eval                            61,440      [I]   was 51,200
+RESERVATION TOTAL                                         67,584      [I]   was 56,320
+  as a share of the 165,065 clean unallocated               40.9%     [I]   was 40.0% (two-draw
+                                                                             union), 33.3%
+  surplus of 105,065 text-usable vs the 61,440 train need    1.71x    [I]   was 1.77x (two-draw
+                                                                             union), 2.13x
+  ^ tightens section 9.2's funding risk; it does not close it.
+per-pair sealed counts sum to 2,304 against 1,536 sealed items -- shapes overlap pairs,
+  and BOTH numbers are printed because one alone cannot be checked (S31-21).
+
+--- EPISODIC STORE, CONTRACT PROVENANCE [DEC-49] -------------------------------
+memory-gate (python)     HEAD 2c11c3f, worktree memory-gate-wt-p1-09,
+                         branch feat/gateway-retrieve-domain (superset of P1-01..P1-09)
+memory-gate-rs (rust)    HEAD 4b9f60d "hypha KV residency and RAM/disk tiered store"
+  ^ every [V] in section 1.3's store cell is a file:line in ONE OF THESE TWO TREES,
+    not in this one. Extraction held at scratchpad/memgate/memory-gate-contracts.md.
+capacity units found in both repos                    item counts     [V]   NEVER bytes/VRAM
+  python hot_cap default                                    256      [V]   tiered.py:40-51
+  rust ram_max_items / disk_max_items                  256 / 4096    [V]   types.rs:458-473
+  rust max_traces (VSA store)                             100,000    [V]   holographic_store.rs:37
+the ONLY VRAM arithmetic in either repo, and it budgets WEIGHTS not the store:
+  weight_budget_mib = vram_total - 2048 (display) - 1024 (scratch) - [2048 (gpu kv)]
+  test-pinned: 16,303 MiB -> 11,183 (kv reserved) / 13,231 (not)     [V]   hypha.rs:114-122,152-157
+eviction score (rust, adopted by CSD)  importance + 1.0 if Residency::Gpu; ties by older
+  timestamp then key; lowest spills first                            [V]   tiered.rs:150-178
+gateway backpressure, refusing not queuing            max_in_flight 32     [V]   memory_gateway.py:118-133
+grep "overlay" / "differential" across both src/ trees      0 hits   [V]   gap (e): design fresh
+grep Persona/Basin class across both src/ trees             0 hits   [V]   gap (b): spec-only, P1-13
+b_store floor = eta/R * B_read = 0.03 * 256                  ~8 tokens     [I]   default 32, max 256
 
 --- FLEET ----------------------------------------------------------------------
 3090 Ti 24 GiB (.98) | 5080 16 GiB (.251, DEPLOYMENT TARGET) | 1080 Ti (.243, no train)   [V*]
