@@ -15,8 +15,12 @@ recorded but never gated on. Two things are:
   1. A LINEAR PROBE on frozen features against held-out labels, compared to the SAME probe
      on the untrained encoder. A random-init ViT is not a zero baseline; its features are
      genuinely somewhat linearly separable, exactly as a random-init text encoder scored
-     recall@1 0.40 on CodeSearchNet from lexical overlap alone. Judging a run without that
-     baseline is how you convince yourself an untrained model learned something.
+     recall@1 0.23 on CodeSearchNet from lexical overlap alone (measured 0.2285,
+     docs/design/evidence/w2c-untrained-baselines-2026-09-03/README.md; an earlier
+     ~0.40 figure traces to a measurement taken before the 2026-09-02 shuffle fix,
+     against code's then-unshuffled, two-repository-confined holdout). Judging a run
+     without that baseline is how you convince yourself an untrained model learned
+     something.
   2. rep_std, the representation spread. Recorded untrained and tracked throughout. A run
      whose spread has collapsed toward zero is reported as collapsed even if its loss is
      excellent, because that is precisely the failure the loss cannot see.

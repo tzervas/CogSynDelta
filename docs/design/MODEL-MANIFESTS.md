@@ -1135,10 +1135,13 @@ spec:
       rule: beats_baseline
       metric: "recall@1"
       why: >
-        A random-init encoder scores recall@1 0.40 on CodeSearchNet from lexical
-        overlap alone, and early training DESTROYS that before learned structure
-        replaces it. Judging a run without the untrained baseline produces
-        exactly the wrong conclusion.
+        A random-init encoder scores recall@1 0.23 (measured 0.2285; see
+        docs/design/evidence/w2c-untrained-baselines-2026-09-03/README.md -- an
+        earlier ~0.40 figure traces to a measurement taken before the 2026-09-02
+        shuffle fix, against code's then-unshuffled, two-repository-confined
+        holdout) on CodeSearchNet from lexical overlap alone, and early training
+        DESTROYS that before learned structure replaces it. Judging a run without
+        the untrained baseline produces exactly the wrong conclusion.
   outputs:
     checkpoint_dir: /akula-data/csd/checkpoints/retrieve
     receipt_dir: /akula-data/csd/receipts
