@@ -97,6 +97,14 @@ class RegionSpec:
     catalogue as built ones is what stops the docs and the code drifting apart -- the
     README's nine-region brain lineup exists because intent had nowhere honest to live."""
 
+    merged_into: str | None = None
+    """DEC-02-style merge: names the region this one's training regime was folded into
+    (e.g. `compress`/`retrieve` both carry `merged_into: "memory"` once W4 lands). The
+    OLD entry is kept in the catalogue, readable, rather than deleted -- every receipt
+    written before the merge still names a region this file has to be able to describe --
+    but a merged region can never itself be `live`, since its objective is no longer
+    trained on its own (see `__post_init__`)."""
+
     def __post_init__(self) -> None:
         """Reject a spec that cannot build: empty name, non-positive dims, or a
         latent_vae with no latent_dim."""
@@ -106,6 +114,13 @@ class RegionSpec:
             raise ValueError(f"{self.name}: stream_dim and hidden_dim must be positive")
         if self.kind == "latent_vae" and self.latent_dim is None:
             raise ValueError(f"{self.name}: kind 'latent_vae' requires latent_dim")
+        if self.merged_into and self.live:
+            raise ValueError(
+                f"{self.name}: merged into {self.merged_into!r} and 'live' at the same "
+                f"time -- a merged region's objective is trained through the region it "
+                f"was merged into, not on its own; a receipt from before the merge stays "
+                f"readable, but this entry cannot claim to be a live implementation too"
+            )
 
 
 @dataclass(frozen=True)

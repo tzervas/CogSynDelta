@@ -80,11 +80,13 @@ def test_every_region_resolves_through_the_accessor(name: str) -> None:
 
 
 def test_region_spec_shape_matches_regions_annotation() -> None:
-    """`REGIONS` today has exactly one region (`compress`) that declares a graded gate --
-    if this ever drops to zero, the graded-gate branch above stops being exercised by
-    (a) at all, silently. Pin the fact so that regression is visible here first."""
+    """`REGIONS` today has exactly two regions that declare a graded gate -- `compress`
+    or its own graded gate, and `memory` (DEC-02, row W4), which inherits the identical
+    STS-B gate as its consolidation head. If this ever drops to zero, the graded-gate
+    branch above stops being exercised by (a) at all, silently. Pin the fact so that
+    regression is visible here first."""
     graded = {name for name, entry in train_all.REGIONS.items() if entry[3] is not None}
-    assert graded == {"compress"}
+    assert graded == {"compress", "memory"}
 
 
 # ---------------------------------------------------------------------------------------

@@ -421,6 +421,43 @@ REGIONS: dict[str, tuple[list[SourceSpec], str, int, GradedSpec | None]] = {
         256,
         None,
     ),
+    "memory": (
+        # DEC-02 (row W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md): merges
+        # `compress` + `retrieve` into one hippocampal faculty -- one shared trunk, two
+        # EVALUATION heads read off the same pooled embedding space (consolidation's
+        # graded STS-B gate below via `graded=`; retrieval's BEIR full-pool gate is
+        # bolted on separately by `regions/memory.py`, the same way `regions/retrieve.py`
+        # already bolts its own BEIR ranking onto `pretrain_region`'s diagonal-holdout
+        # evaluation -- see that module's docstring for why the pool size makes the two
+        # different measurements).
+        #
+        # The corpus is the UNION of both parents' declared sources -- not a fresh
+        # decision, the two are simply concatenated through the same `extra_sources`
+        # mechanism every multi-source region already uses. `retrieve`'s FiQA pairs are
+        # listed FIRST (not `compress`'s AllNLI): DEC-24 (§6.2) has `memory` inherit
+        # `retrieve`'s token embedding table, "because it is the parent whose gate (the
+        # FiQA BEIR pool) survives as `memory`'s gate, so its tokenisation statistics are
+        # the ones the surviving eval is calibrated against" -- and the FIRST source is
+        # what a single-source-shaped consumer (a dry run's `pair_columns`, an old script
+        # reading `REGIONS[name][0][0]`) will see as "the" corpus if it looks at only one.
+        [
+            ("region/retrieve/fiqa-pairs/train.parquet", ("query", "passage"), 0),
+            ("region/compress/all-nli/pair/train*.parquet", ("anchor", "positive"), 0),
+            ("region/retrieve/natural-questions/**/train*.parquet", ("query", "answer"), 0),
+            ("region/retrieve/gooaq/**/train*.parquet", ("question", "answer"), 400_000),
+        ],
+        "hippocampus: consolidation (compress) + retrieval (retrieve) on one shared "
+        "trunk, DEC-02; the first token-aware retrain (§4.0, row W4)",
+        96,
+        # Consolidation's graded gate -- STS-B, held out entirely from training, exactly
+        # as `regions/compress.py`'s module docstring explains. Must match that module's
+        # `GRADED_SHARD`/`graded_columns`/`graded_name` (see `regions/memory.py`).
+        (
+            "region/compress/stsb/data/validation-00000-of-00001.parquet",
+            ("sentence1", "sentence2", "score"),
+            "stsb-validation",
+        ),
+    ),
 }
 
 

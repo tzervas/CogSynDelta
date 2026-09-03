@@ -59,6 +59,7 @@ from cogsyndelta.eval import (
 from cogsyndelta.eval.benchmark import effective_rank, participation_ratio
 from cogsyndelta.regions._checkpoint import (
     atomic_save,
+    load_checkpoint,
     load_resumable,
     rotate_checkpoints,
     sha256_file,
@@ -185,6 +186,26 @@ class PretrainConfig:
     token_loss_mask_prob: float = 0.15
     """Fraction of non-padding positions the MLM head is asked to predict, per side, per
     step -- BERT's own ratio. Read only when `token_loss_weight > 0`."""
+
+    init_embedding_from: str | None = None
+    """DEC-24 (§6.2): path to another region's `TextEncoder` checkpoint whose token
+    embedding table (`embed.weight`) is copied into THIS run's freshly constructed model
+    before training starts, in place of a random init -- "`memory` inherits `retrieve`'s
+    table ... because it is the parent whose gate ... survives as `memory`'s gate, so its
+    tokenisation statistics are the ones the surviving eval is calibrated against."
+
+    `None` (the default) is a plain random init, byte-identical to every region trained
+    before this field existed. Loaded through
+    `cogsyndelta.regions._checkpoint.load_checkpoint` -- DEC-40/W0c's one sanctioned
+    `torch.load` entry point, never a direct call -- and refused (`ValueError`, before
+    training starts) if the source table's shape does not match this run's
+    `(vocab_size, dim)` exactly; two encoders trained under different tokenizers or
+    widths cannot share a table by copying rows past each other.
+
+    Read only on a FRESH run. A RESUMED run's model already reflects whatever this field
+    produced when the run first started -- reapplying it would silently discard however
+    many steps of training have moved the table since. The receipt's own
+    `shared_embedding_table` block says whether it applied, on which run."""
 
 
 def _lr_at(step: int, cfg: PretrainConfig) -> float:
@@ -381,6 +402,37 @@ def _final_block_rank_stats(
         "token_global_entropy_rank": effective_rank(token_global),
         "n_tokens": float(token_global.size(0)),
     }
+
+
+def _apply_init_embedding(model: TextEncoder, path: str, device: torch.device) -> dict[str, Any]:
+    """DEC-24: copy another region's token embedding table into `model` before training.
+
+    Args:
+        model: The freshly constructed `TextEncoder` about to be trained.
+        path: Checkpoint to read `embed.weight` from.
+        device: Where `model` lives; the loaded table is moved here before copying.
+
+    Returns:
+        A small receipt fragment: `{"source": path, "source_sha256": ..., "applied":
+        True}`.
+
+    Raises:
+        ValueError: The source table's shape does not match `model.embed.weight`'s.
+    """
+    sha_out: list[str] = []
+    state = load_checkpoint(path, map_location=device, sha256_out=sha_out)
+    source_table = state["model"]["embed.weight"]
+    target_shape = tuple(model.embed.weight.shape)
+    if tuple(source_table.shape) != target_shape:
+        raise ValueError(
+            f"init_embedding_from={path!r}: source embedding table is "
+            f"{tuple(source_table.shape)}, this run's is {target_shape} -- cannot share "
+            f"a table across different (vocab_size, dim); two encoders trained under "
+            f"different tokenizers or widths do not line up row-for-row."
+        )
+    with torch.no_grad():
+        model.embed.weight.copy_(source_table.to(device))
+    return {"source": path, "source_sha256": sha_out[0], "applied": True}
 
 
 def _tokenize(tok: Tokenizer, texts: list[str], max_len: int, device: torch.device):
@@ -1162,6 +1214,7 @@ def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
         "token_loss_weight": cfg.token_loss_weight,
         "decorr_weight": cfg.decorr_weight,
         "token_loss_mask_prob": cfg.token_loss_mask_prob,
+        "init_embedding_from": cfg.init_embedding_from,
         "corpus_fingerprint": _corpus_content_fingerprint(cfg),
         "split_code_fingerprint": _split_code_fingerprint(),
     }
@@ -1311,10 +1364,18 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         ckpt_dir, fingerprint, fields, allow_unfingerprinted=cfg.allow_unfingerprinted_resume
     )
 
+    shared_embedding_table: dict[str, Any] = {"source": cfg.init_embedding_from, "applied": False}
     if resume is None:
         start_step = 0
         history: list[dict[str, float]] = []
         prior_elapsed = 0.0
+        # DEC-24 (§6.2): copy another region's token embedding table in BEFORE the
+        # untrained baseline is measured below, so `baseline`/`untrained_baseline`
+        # honestly reflects what "untrained" means for THIS run -- a warm-started table,
+        # not a cold random one, when `init_embedding_from` is set. The receipt's own
+        # `shared_embedding_table` block says which happened.
+        if cfg.init_embedding_from is not None:
+            shared_embedding_table = _apply_init_embedding(model, cfg.init_embedding_from, device)
         # The untrained model is a real baseline, not a formality: lexical overlap alone
         # scores recall@1 ~0.40 here. A trained model that does not beat this has not
         # learned, it has merely rearranged. Recorded so the comparison cannot be
@@ -1616,6 +1677,11 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
             "token_loss_kind": "masked_token_prediction",
             "final_block_rank": final_block_rank,
         },
+        # DEC-24 (§6.2). `applied` is False -- with `source` still naming what was asked
+        # for -- on a RESUMED run, since the field is read only on a fresh one (see the
+        # call site); a reader comparing this against `resumed` can tell "never asked
+        # for" apart from "asked for, deferred to the run that actually applied it".
+        "shared_embedding_table": shared_embedding_table,
     }
 
     _assert_graded_gate_present(cfg, receipt)
