@@ -184,3 +184,55 @@ def test_the_budget_guard_fires_when_the_terms_labels_are_yaml_booleans() -> Non
         "with boolean labels EVERY memory cell must miss its budget key -- that is the "
         "defect C3 named; if this passes, the checker is not checking"
     )
+
+
+# --------------------------------------------------- C4: shallow merge drops commands
+
+# The stages every region's pipeline actually runs a COMMAND for. `collect`, `publish`'s
+# successors `verify`, and `collect` itself are harness-internal (`gpu: false`, no
+# `commands:` entry anywhere in this config), so they are deliberately absent.
+COMMANDED_STAGES = frozenset({"train", "test", "quantize", "test-quant", "publish"})
+
+
+def _missing_commands(merged: dict[str, Any]) -> set[str]:
+    return set(COMMANDED_STAGES) - set(merged.get("commands", {}))
+
+
+def test_every_region_carries_a_command_for_every_commanded_stage() -> None:
+    """C4. `_merge_region` is `dict(defaults); merged.update(overrides)` -- SHALLOW. A
+    region that declares `commands: {train: ...}` therefore REPLACES the defaults map
+    rather than adding to it, and the harness renders an absent stage as the empty
+    string (`command_templates.get(stage_name, "")`): an empty argv, not an error."""
+    for name, merged in _merged_regions(_raw()).items():
+        assert _missing_commands(merged) == set(), (
+            f"region {name!r} has no command template for {sorted(_missing_commands(merged))} "
+            "-- a region that overrides `commands:` must repeat the FULL map, because "
+            "the harness merge is shallow"
+        )
+
+
+def test_inherited_command_templates_are_byte_identical_to_the_defaults() -> None:
+    """A region repeating the map must repeat it VERBATIM for the stages it does not
+    genuinely change. Paraphrasing is how the two copies drift into two different
+    pipelines that look like one."""
+    raw = _raw()
+    defaults = raw["regions"]["defaults"]["commands"]
+    for name, overrides in raw["regions"].items():
+        if name == "defaults" or "commands" not in overrides:
+            continue
+        for stage, template in overrides["commands"].items():
+            if stage == "train":
+                continue  # memory trains through its own module entry point, by design
+            assert template == defaults[stage], (
+                f"region {name!r} command {stage!r} has drifted from regions.defaults"
+            )
+
+
+def test_the_command_guard_fires_when_a_region_overrides_only_train() -> None:
+    """MUTATION. Restore the pre-fix `memory.commands` (train only) and assert the
+    guard reports the four templates the shallow merge deletes."""
+    raw = copy.deepcopy(_raw())
+    train_only = {"train": raw["regions"]["memory"]["commands"]["train"]}
+    raw["regions"]["memory"]["commands"] = train_only
+    merged = _merged_regions(raw)["memory"]
+    assert _missing_commands(merged) == {"test", "quantize", "test-quant", "publish"}

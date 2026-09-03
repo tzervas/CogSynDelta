@@ -211,11 +211,35 @@ regions:
     hosts: [akula-prime, gpu5080]
 
   memory:
+    # THE FULL COMMAND MAP IS REPEATED HERE ON PURPOSE (C4). `regions.defaults` is merged
+    # into a region with a SHALLOW `dict.update` (`model_matrix.config._merge_region`), so
+    # declaring only `train` here REPLACED the whole defaults map: memory cells came out
+    # with `command_templates == {"train": ...}` and the harness renders a missing stage as
+    # the empty string (`command_templates.get(stage_name, "")`) -- an empty argv for
+    # test/quantize/test-quant/publish on the one region this matrix calls today's
+    # production cell. A deep merge in the harness is a SEPARATE change (its round 4); this
+    # config is written to work correctly under both, which is why the four inherited
+    # entries below are byte-identical to `regions.defaults.commands` rather than
+    # paraphrased. `tests/test_matrix_config.py` enforces that equality, so a future edit
+    # to the defaults that is not mirrored here fails rather than silently diverging.
+    # Only `train` genuinely differs: memory trains through its own module entry point
+    # (`cogsyndelta.regions.memory`), not `scripts/csd-train-all.py`.
     commands:
       train: >-
         {python} -m cogsyndelta.regions.memory --steps {steps} --batch-size {batch} --lr {lr}
         --max-len {max_len} --seed {seed} --token-loss-weight {token_w} --decorr-weight {decorr_w}
         --token-loss-chunk {chunk} --eval-split dev --out-dir {state}/receipts
+      test: "{python} scripts/csd-benchmark.py --regions {region} --state {state} --train-receipt {train_receipt}"
+      quantize: >-
+        {python} scripts/csd-quantize.py --regions {region} --state {state} --train-receipt {train_receipt}
+        --tolerance {tolerance} --aggressive-bits {aggressive_bits} --max-bits {max_bits}
+      test-quant: >-
+        {python} scripts/csd-benchmark.py --regions {region} --state {state} --quantized {quantized_path}
+        --quant-receipt {quant_receipt} --train-receipt {train_receipt}
+      publish: >-
+        {python} scripts/csd-publish-checkpoint.py --region {region} --repo {hub_repo}
+        --receipt {train_receipt} --eval-receipt {eval_receipt} --quant-receipt {quant_receipt}
+        --revision {hub_branch} --base-ref {base_ref}
     derive: { lr: "3e-4 * (batch / 256) ** 0.5" }
     axes:
       batch: [512, 1280]
