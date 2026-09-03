@@ -1985,3 +1985,212 @@ other composition, was not checked against Creative Commons' own compatibility d
 this session — the same caveat this document already carries for every CC BY-SA 3.0→4.0
 compatibility claim elsewhere in this section, extended here to the NC+SA combination.
 
+
+---
+
+## Enriched and derived datasets
+
+Added 2026-09-03, from the dataset-factory pass (DEC-57 / P2′f). This section is a summary. The
+full analysis, with every clause quoted from a primary licence text fetched on 2026-09-03, is
+`docs/design/evidence/dataset-factory-2026-09-03/20-enrichment-licence-impact.md`; the fetched
+licence texts it relies on are named there. The candidate catalogue it feeds is
+`docs/design/DATASET-FACTORY-CATALOGUE-2026-09-03.md` and
+`docs/design/datasets/catalogue-2026-09-03.json`.
+
+Everything above this section answers *"may we train on this corpus and release the weights?"*
+This section answers the question that sits **below** it and that the factory actually has to
+decide: *"if we clean, filter, pair, annotate, augment, render or translate a corpus and emit the
+result, what licence must the emitted dataset carry?"* That second question is largely
+**answered by licence text**, where the weights question is not — which is the reason to
+engineer compliance at the dataset layer rather than the weights layer.
+
+### The two layers
+
+```
+  input dataset(s)
+        │
+        │  ── LAYER 1: enrichment ──►  emitted (enriched) dataset
+        │        clean, dedup, reformat, pair, label, augment, render, translate
+        │        ANSWERED by express clauses in CC 4.0 §4(b), ODbL §4.4(b),
+        │        ODC-By §4.2(a), CDLA-Sharing §1.8/§3.1
+        │
+        └──────────────────────────►  ── LAYER 2: training ──►  weights
+                                          UNSETTLED for CC/GPL (the question this
+                                          document opens and does not close);
+                                          ANSWERED FAVOURABLY IN WRITING by
+                                          CDLA §3.x and O-UDA/C-UDA §5.4;
+                                          ambiguous for ODC-By/ODbL
+```
+
+**The corollary bites immediately: the cheapest operation the factory can perform — dropping
+rows — already triggers the derivative-database clause of every share-alike data licence
+surveyed.** CC BY-SA 4.0 §4(b) says an enriched database of BY-SA content *is* Adapted Material
+*"including for purposes of Section 3(b)"* (ShareAlike). ODbL §4.4(b): *"Extraction or
+Re-utilisation of the whole or a Substantial part of the Contents into a new database is a
+Derivative Database."* CDLA-Sharing §1.8: *"'Modify' means to delete, erase, correct or
+re-arrange Data."* There is no creativity threshold to argue about, and **enrichment is not a
+licence-neutral cleanup step.**
+
+### The compatibility matrix
+
+Rows are the input licence class; columns are the licence the **emitted enriched dataset** may
+carry. `Y` = permitted; `Y*` = permitted, but CC recommends carrying at least the same licence
+elements; `—` = not permitted.
+
+| input ↓ / emitted dataset licence → | CC0 | MIT/Apache | CDLA-Perm | CC BY 4.0 | ODC-By | CC BY-SA 4.0 | ODbL | CDLA-Sharing | CC BY-NC | CC BY-NC-SA | private |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| CC0 / PD | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| MIT / Apache-2.0 / BSD | — | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| CDLA-Permissive 1.0/2.0 | — | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| O-UDA / C-UDA | — | Y | Y | Y | Y | Y | Y | Y | Y | Y | Y |
+| CC BY 4.0 | — | — | — | Y | — | Y* | — | — | Y* | Y* | Y |
+| ODC-By 1.0 | — | — | — | — | **Y only** | — | — | — | — | — | Y |
+| CC BY-SA 3.0 | — | — | — | — | — | **Y (4.0, via 3.0 §4(b)(ii))** | — | — | — | — | Y |
+| CC BY-SA 4.0 | — | — | — | — | — | **Y only** | — | — | — | — | Y |
+| ODbL 1.0 | — | — | — | — | — | — | **Y only** | — | — | — | Y (but see §4.6) |
+| CDLA-Sharing-1.0 | — | — | — | — | — | — | — | **Y only** | — | — | Y |
+| CC BY-NC 4.0 | — | — | — | — | — | — | — | — | Y | Y | Y |
+| CC BY-NC-SA 4.0 | — | — | — | — | — | — | — | — | — | **Y only** | Y |
+| bespoke NC (the GooAQ shape) | — | — | — | — | — | — | — | — | Y (chosen) | Y (chosen) | **Y — required by Rider 2** |
+| GPL / AGPL source rows | — | — | — | — | — | — | — | — | — | — | Y; else a GPL-only tier |
+| ND / research-only / no-redistribution / distributor disclaims ownership | — | — | — | — | — | — | — | — | — | — | **REFUSE at ingest** |
+
+Four things follow, and the third is the one that changes how the factory is built.
+
+1. **Every share-alike family is a singleton column.** CC BY-SA, ODbL, ODC-By and CDLA-Sharing
+   each admit exactly one emitted licence — their own. None is on any of the others' compatible
+   lists. **ODC-By is a database-level copyleft despite its name** (§4.2(a): a Derivative
+   Database may be conveyed *"only under the terms of this License"*), which is regularly missed;
+   it also introduces a `grant_scope` value this project did not have, **`database_rights_only`**,
+   because §2.4 licenses the database and expressly not its contents.
+2. **CC BY-SA 3.0 → 4.0 is settled**, from BY-SA 3.0 §4(b)(ii)'s own "later version with the same
+   License Elements" permission — closing an item this document previously left open. The reverse
+   is not permitted. The only designated BY-SA-compatible non-CC licences are **Free Art License
+   1.3** and **GPLv3** (one-way, into BY-SA adaptations, not out of GPLv3 projects).
+3. **The impossible cell is the design constraint.** There is **no** emitted-dataset licence that
+   satisfies a CC BY-SA input *and* an NC input: BY-SA §3(b)(1) demands the same licence elements
+   and §3(b)(3) forbids added restrictions. The same holds for CDLA-Sharing × NC (§3.3 names
+   commercial restrictions expressly), ODbL × NC (§4.7(a)), ODC-By × NC (§4.4), and every
+   share-alike × different-share-alike pair. **The strictest-input rule works for weights, where
+   one licence must be chosen for one blob; it fails at the dataset layer, because for that pair
+   there is no strictest licence — there is no licence at all.** So the rule the factory needs is
+   **partition first, then enrich**: one emitted file per licence tier, shipped together as a
+   Collection with a top-level manifest, which CC expressly permits. Cross-dataset **pairing** is
+   the operation that trips this — joining a CC BY-SA passage to a bespoke-NC query produces a row
+   with two irreconcilable parents that cannot be emitted under any licence, so it **must not be
+   constructed**. That is a planner constraint upstream of ingest, not a filter after it.
+4. **A finding about the decision already made.** The composed model's ratified CC BY-NC-SA 4.0
+   is coherent **only under the permissive reading** of the weights question. Under the cautious
+   reading, SNLI's §3(b)(1) is breached by adding the NC element and GooAQ's NC term is breached
+   by dropping it — there is no compliant release licence at all. This document already warns that
+   asserting weights are not derivative works *because it would be convenient* is not a
+   mitigation, and that if the position is taken it should be taken **explicitly, in the model
+   card, as a stated position rather than a silence**. That position is currently silent. The two
+   fixes are the ones already recommended here: **separate the checkpoints per region** (Option D),
+   so the SA and NC obligations never have to be satisfied by one licence, or drop one side. The
+   analysis recommends **stating the reading** and building so the choice stays reversible; it
+   does **not** recommend changing the release licence.
+
+### Synthetic generators
+
+Generated rows carry **two** licence stacks — the seed row's and the generator's — and the
+generator's licence name does not tell you which. Rules, extending DEC-58:
+
+- **SYN-L1 — the generator is named or the batch is refused**, with `{model_id, exact revision
+  sha, licence tag, licence source URL + fetch date, and the operative output/derivative clause
+  quoted verbatim}`. The clause text, not just the licence name: Gemma and Llama look alike and
+  differ entirely in whether they reach the downstream model.
+- **SYN-L2 — classify per model id and revision, never per vendor.** **SAFE**: Apache-2.0 or MIT
+  weights run locally with no hosted-service terms accepted (OLMo-2, Qwen2.5-7B, Qwen3-8B,
+  Mistral-7B-v0.3, SmolLM2-1.7B) — the licence is silent on outputs, so nothing attaches.
+  **ENCUMBERED**: the terms reach the downstream model — Gemma (outputs are free of Google's
+  claim, but a model trained on them falls inside "Model Derivatives" via *"transfer of patterns
+  of … Output … [including] synthetic data methods"*, and §3.1 then requires the Gemma use
+  restrictions to be carried forward as an enforceable provision), and Llama 3.1+ (permitted, but
+  forces a `Llama`-prefixed model name plus "Built with Llama" and AUP passthrough).
+  **REFUSED**: Llama 2 / 3.0 (*"You will not use the Llama Materials or any output or results …
+  to improve any other large language model"*), OpenAI, Anthropic, **and any model tagged `other`
+  until its bespoke licence is read** — today `Qwen/Qwen2.5-3B` and `Qwen/Qwen2.5-72B`, which is
+  why "Qwen is Apache" is false as a family claim. The default for an unclassified generator is
+  REFUSED, not ENCUMBERED.
+- **SYN-L3 — synthetic generation is not a licence launderer.** Generating rows from a model whose
+  own training corpus is BLOCKING does not produce clean rows. Record the generator's corpus
+  disclosure as `{disclosed, partially_disclosed, undisclosed}` and never infer `undisclosed` to
+  be clean. Concretely: **no amount of synthetic augmentation repairs `visual`** — tiny-imagenet's
+  problem is a missing grant, and a generator cannot manufacture one.
+- **SYN-L4 — augmentation does not reset provenance.** A rationale generated *from* a CC BY-SA
+  premise, a paraphrase *of* an NC answer, a translation *of* a CC BY passage: each is derived
+  from and based upon the licensed material, so the synthetic row inherits the **seed row's**
+  licence class and, where the generator is ENCUMBERED, carries the generator's terms in addition.
+  Only rows generated from unlicensed-input prompts — a template the operator wrote, a CC0 seed —
+  are the operator's alone.
+- **SYN-L5 — a generator is a provenance group**, so its share is a B1 statistic and one generator
+  cannot become a monoculture under several batch names. Print the share **beside its cap**.
+
+### Manifest mechanics — compliance as an artefact, not a claim
+
+Every obligation is either discharged by a file the factory writes, or refused at ingest. Nothing
+is left to be remembered at release time.
+
+- **A per-emitted-dataset manifest**, extending the existing `Dataset` dataclass. Three fields
+  carry most of the weight and are the ones a hurried implementation drops: **`licence_out_basis`**
+  (which input forced the emitted licence, and under which clause — an answer without its reason
+  cannot be re-checked when an input changes), **`operations[]`** (an ordered list of every
+  transform with params, code sha and seed — it is simultaneously CC BY §3(a)(1)(b)'s "indicate if
+  You modified", Apache-2.0 §4(b)'s changed-files notice, CDLA-Sharing §3.1(b)'s notice, and
+  ODbL §4.6(b)'s "method of making the alterations"), and **`refusals[]`** (a factory that
+  silently drops a candidate is indistinguishable from one that never looked). The manifest also
+  carries `licence_out_alternatives_rejected`, per-input `licence_text_sha256` for drift
+  detection, `generators[]`, `attribution[]`, machine-checkable `obligations[]`, and the B1–B5
+  numbers each printed **beside its threshold**.
+- **Per-row provenance, as columns in the shard rather than a sidecar**: `src_group` (the
+  provenance group id, because B1/B2/B5 are computed on groups), `src_fp` (source-row fingerprint,
+  which is also the join key for a licence-driven deletion), `op_chain`, `gen_id`, and
+  **`lic_class` — the compliance column**. This is the `all-nli` lesson made structural: `all-nli`
+  is BLOCKING-as-trained *only* because the mirror dropped `genre`, `promptID` and `pairID`, so
+  rows that were individually attributable became collectively unattributable. Cost is ~24-32
+  bytes per row (~3 GB at the 1e8-row scale path), and it is the only thing that makes a
+  licence-driven deletion executable rather than catastrophic.
+- **Two receipts, emitted at ingest/emit time rather than written later**: one per input
+  (reproducing the mirror tag, the verbatim upstream text with URL and fetch date, its sha256, the
+  grant scope, the verdict and the one-line why — **keeping the fetched licence text beside it**,
+  so a later re-fetch can *diff* rather than re-argue) and one per emitted dataset.
+- **An `attribution.json` + `ATTRIBUTION.md` pair per emitted dataset**, linked from the model
+  card — which CC BY §3(a)(2) permits and the CC FAQ confirms specifically for the dataset case.
+- **The REFUSE path is extended, fail-closed, none overridable**, on top of the existing
+  "`fetch` refuses any entry whose verdict is not `TRAIN_OK`, and there is deliberately no flag to
+  override that": **R1** licence source absent, same host as the mirror, or no fetch date; **R2**
+  `grant_scope ∈ {metadata_only, code_only, database_rights_only, unstated}` while corpus
+  *content* is being ingested; **R3** the distributor disclaims owning what it distributes;
+  **R4** ND, research-only, academic-only, no-redistribution EULA, paywalled; **R5** the input set
+  has no legal common output licence (any SA×NC or SA×different-SA pair) — *refuse the merge, not
+  the inputs*; **R6** a synthetic batch with no named generator, or a REFUSED/unclassified one;
+  **R7** a `CONSENT_OPEN` input proposed for training; **R8** an ODbL input combined with intent to
+  publish weights **and** keep the enriched dataset private (ODbL §4.6 forces an offer of the
+  entire enriched dataset or an alteration file free of charge — directly incompatible with DEC-31
+  Rider 2's private-HF-only policy, so ODbL is a **decision, not an ingest**); **R9** the input's
+  attribution obligation is **per-item** and per-row links are unavailable (the Stack Exchange
+  shape — a live outbound hyperlink to each question and each author profile, unsatisfiable at any
+  scale); **R10** an ENCUMBERED generator without recorded acceptance *before* generation.
+  **Each must be verified by making it fire**, per `verify-guards-by-making-them-fail`: construct
+  a refusing fixture per rule and assert refusal in the test suite.
+- **A separable clean-permissive tier per faculty.** For every faculty the factory emits at
+  minimum `<faculty>-permissive` — CC0/PD, MIT/Apache/BSD, ODC-By, CDLA-Permissive, O-UDA/C-UDA
+  and CC BY rows only — and one further file per tier actually used. **Each tier must
+  independently satisfy B1–B5 or carry a dated waiver naming the missing sources**, so the
+  permissive tier is a trainable corpus on its own rather than a residue that happens to be clean.
+  It is the only thing that keeps an MIT standalone-region release reachable; it makes the price
+  of an NC or SA input **measurable** (train both, compare on the same eval) rather than argued;
+  it is the structural fix for the §4 finding above; and it makes the current starvation honest —
+  applied to today's fleet, `memory`'s permissive tier is very nearly empty and `visual`'s is
+  empty, which becomes a file size rather than a paragraph in an audit.
+
+### Sourcing consequence
+
+When there is a choice of comparable corpora, a **CDLA-Permissive / O-UDA / C-UDA** source is
+*strictly better* than a CC BY one, because those agreements answer the Layer-2 question in
+writing — CDLA-Permissive-2.0 §3.1 imposes no restriction on Results, and §5.4 defines Results to
+include *"machine learning models"*. That should be a tiebreak rule in the surveyor's ranking,
+not an afterthought. **CDLA-Sharing** is likewise the friendliest share-alike family for this
+project's shape (open weights, private datasets): its obligations attach only on publication of
+*data* (§3.1 opens *"If You Publish"*) and §3.5 disclaims any reach into the model.
