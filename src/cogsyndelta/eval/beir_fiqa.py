@@ -324,21 +324,29 @@ class BM25:
         return torch.from_numpy(np.stack([self.scores(q) for q in queries]))
 
 
-class _EncoderLike(Protocol):
+class EncoderLike(Protocol):
     """Structural type for `encode_texts`/`encoder_rank_metrics`'s `model` -- anything
     shaped like `TextEncoder` (a callable `(ids, mask) -> [N, D]` with train/eval mode),
     without this module importing `TextEncoder` itself (see the module docstring)."""
 
     training: bool
 
-    def __call__(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor: ...
-    def eval(self) -> Any: ...
-    def train(self, mode: bool = True) -> Any: ...
+    def __call__(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        """Encode a batch of `(input_ids, attention_mask)` to `[N, D]` embeddings."""
+        ...
+
+    def eval(self) -> Any:
+        """Switch to evaluation mode (`torch.nn.Module.eval`'s own contract)."""
+        ...
+
+    def train(self, mode: bool = True) -> Any:
+        """Switch training mode on/off (`torch.nn.Module.train`'s own contract)."""
+        ...
 
 
 @torch.no_grad()
 def encode_texts(
-    model: _EncoderLike,
+    model: EncoderLike,
     tokenize: Any,
     texts: list[str],
     batch: int = 256,
@@ -346,7 +354,7 @@ def encode_texts(
     """Encode texts to L2-normalised ``[N, D]``.
 
     Args:
-        model: Anything shaped like `TextEncoder` -- see `_EncoderLike`.
+        model: Anything shaped like `TextEncoder` -- see `EncoderLike`.
         tokenize: `(texts: list[str]) -> (ids, mask)`, already bound to a tokenizer,
             `max_len` and device by the caller (`regions/memory.py`).
         texts: Strings to encode.
@@ -367,7 +375,7 @@ def encode_texts(
 
 @torch.no_grad()
 def encoder_rank_metrics(
-    model: _EncoderLike,
+    model: EncoderLike,
     tokenize: Any,
     task: RankingTask,
     batch: int = 256,
