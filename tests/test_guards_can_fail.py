@@ -1435,6 +1435,137 @@ def test_beats_untrained_gate_rejects_a_win_too_small_to_be_signal() -> None:
     assert beats["recall@10"] is False
 
 
+def test_beats_untrained_gate_baseline_sane_rejects_a_non_zero_value_below_chance_half() -> None:
+    """R6 continuation: `baseline_sane`'s threshold is `chance / 2`, not `0`. On real
+    (quantised-to-`k/N`) `recall@1` values every nonzero baseline already clears
+    `chance / 2` -- see `_beats_untrained_gate`'s "WHAT `baseline_sane`'S THRESHOLD
+    ACTUALLY CATCHES" docstring section -- so a test that only ever passes quantised
+    baselines could not tell `>= chance / 2` apart from `> 0`, and a mutation that
+    weakened the threshold to `> 0` would pass every other test in this file. This
+    constructs the one shape that distinguishes them directly: `eval_pairs=8` puts
+    `chance / 2` at `0.0625`, and a synthetic (non-quantised, as a real measurement never
+    is) `baseline["recall@1"] = 0.05` sits strictly between `0` and that threshold --
+    nonzero, and still correctly rejected."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import _beats_untrained_gate
+
+    final = {"recall@1": 0.9, "recall@10": 0.99}
+    baseline = {"recall@1": 0.05, "recall@10": 0.2}  # 0.05 < chance/2 == 1/16 == 0.0625
+
+    chance, beats = _beats_untrained_gate(final, baseline, eval_pairs=8)
+
+    assert chance["recall@1"] == pytest.approx(0.125)
+    assert baseline["recall@1"] > 0  # nonzero -- this is not the `== 0.0` case above
+    assert beats["recall@1"] is False
+    assert beats["recall@10"] is False
+
+
+def test_beats_untrained_gate_spearman_hardcoded_true_is_caught() -> None:
+    """R7 -- the exact regression this commit fixes: `beats_untrained["spearman"]` used
+    to be `graded_final["spearman"] > graded_baseline["spearman"]` with no margin and no
+    baseline sanity, so hardcoding it `True` broke no test. Here the trained model's
+    spearman is BELOW the untrained baseline's, so a correct gate must read `False`; a
+    version that ignores both inputs and returns `True` -- the exact hardcode this guards
+    against -- fails this assertion."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import _beats_untrained_gate
+
+    final = {"recall@1": 0.9, "recall@10": 0.99}
+    baseline = {"recall@1": 0.4, "recall@10": 0.8}  # sane: well above chance/2
+    graded_final = {"spearman": 0.10}
+    graded_baseline = {"spearman": 0.30}  # trained model did WORSE than untrained
+
+    _, beats = _beats_untrained_gate(
+        final, baseline, eval_pairs=512, graded_final=graded_final, graded_baseline=graded_baseline
+    )
+
+    assert beats["spearman"] is False
+
+
+def test_beats_untrained_gate_spearman_below_margin_fails_the_gate() -> None:
+    """The margin applied to spearman specifically: a trained model that beats the
+    graded baseline by less than `_BEATS_UNTRAINED_MARGIN` must not read as
+    `beats_untrained["spearman"]` -- mirrors
+    `test_beats_untrained_gate_rejects_a_win_too_small_to_be_signal` for recall@k."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import _BEATS_UNTRAINED_MARGIN, _beats_untrained_gate
+
+    final = {"recall@1": 0.9, "recall@10": 0.99}
+    baseline = {"recall@1": 0.4, "recall@10": 0.8}
+    graded_baseline = {"spearman": 0.30}
+    graded_final = {
+        "spearman": 0.30 + (_BEATS_UNTRAINED_MARGIN / 2)
+    }  # half the margin, not past it
+
+    _, beats = _beats_untrained_gate(
+        final, baseline, eval_pairs=512, graded_final=graded_final, graded_baseline=graded_baseline
+    )
+
+    assert beats["spearman"] is False
+
+
+def test_beats_untrained_gate_spearman_past_margin_with_sane_baseline_passes() -> None:
+    """Positive control for the two tests above: a spearman win clearly past the margin,
+    with a sane recall@1 baseline behind it, must pass -- the gate rejects bad evidence,
+    not every claim."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import _beats_untrained_gate
+
+    final = {"recall@1": 0.9, "recall@10": 0.99}
+    baseline = {"recall@1": 0.4, "recall@10": 0.8}
+    graded_baseline = {"spearman": 0.10}
+    graded_final = {"spearman": 0.50}
+
+    chance, beats = _beats_untrained_gate(
+        final, baseline, eval_pairs=512, graded_final=graded_final, graded_baseline=graded_baseline
+    )
+
+    assert chance["spearman"] == 0.0
+    assert beats["spearman"] is True
+
+
+def test_beats_untrained_gate_spearman_inherits_recall1_baseline_insanity() -> None:
+    """`baseline_sane` is computed once, off `recall@1`'s baseline, and gates spearman
+    too (see the docstring's "SPEARMAN SHARES THE GATE, NOT THE METRIC" section): a
+    `recall@1` baseline this broken makes the whole untrained measurement suspect, graded
+    included, even when the graded numbers alone look like a clean win."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import _beats_untrained_gate
+
+    final = {"recall@1": 0.748046875, "recall@10": 0.94921875}
+    baseline = {"recall@1": 0.0, "recall@10": 0.021484375}  # the real receipt's numbers
+    graded_baseline = {"spearman": 0.05}
+    graded_final = {"spearman": 0.60}  # a clean-looking win on the graded numbers alone
+
+    _, beats = _beats_untrained_gate(
+        final, baseline, eval_pairs=512, graded_final=graded_final, graded_baseline=graded_baseline
+    )
+
+    assert beats["spearman"] is False
+
+
+def test_beats_untrained_gate_omits_spearman_when_no_graded_set() -> None:
+    """A region with no graded eval set (`graded_final`/`graded_baseline` left at their
+    `None` default, matching `pretrain_region`'s `{}` when `graded` is empty) gets no
+    `"spearman"` key at all -- not a vacuous `True` or `False`."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import _beats_untrained_gate
+
+    final = {"recall@1": 0.75, "recall@10": 0.95}
+    baseline = {"recall@1": 1 / 512, "recall@10": 10 / 512}
+
+    chance, beats = _beats_untrained_gate(final, baseline, eval_pairs=512)
+
+    assert "spearman" not in chance
+    assert "spearman" not in beats
+
+
 def test_pretrain_region_receipt_records_chance_and_untrained_baseline_seed(
     tmp_path: Path,
 ) -> None:
