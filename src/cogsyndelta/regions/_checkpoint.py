@@ -57,6 +57,7 @@ def load_checkpoint(
     expected_sha256: str | None = None,
     map_location: str | torch.device = "cpu",
     weights_only: bool = True,
+    sha256_out: list[str] | None = None,
 ) -> dict[str, Any]:
     """The one production entry point for `torch.load` on a checkpoint file.
 
@@ -95,6 +96,17 @@ def load_checkpoint(
         weights_only: Forwarded to `torch.load`. Defaults `True` -- see
             `test_checkpoint_load_security.py` for what this defends against; this
             function adds a check upstream of it, and does not change that default.
+        sha256_out: If given, this function appends the checkpoint's content hash to
+            it -- the same hash `expected_sha256` was checked against, when one was
+            given, or freshly computed here when it was not. Exists so a caller that
+            needs the hash for its own purposes (a receipt recording which exact
+            bytes it evaluated, e.g. `scripts/csd-benchmark.py` /
+            `scripts/csd-quantize.py`) does not have to hash the file a second time
+            with `sha256_file` after this function already did. A list rather than a
+            single mutable "out" value because Python has no plain by-reference `str`
+            out-param; append-and-read-`[0]` is the idiom. Left `None` (the default)
+            costs nothing extra: `expected_sha256 is None` and `sha256_out is None`
+            together skip hashing entirely, exactly as before this parameter existed.
 
     Returns:
         The loaded checkpoint dict, exactly as `torch.load` returns it.
@@ -106,15 +118,19 @@ def load_checkpoint(
     p = Path(path)
     if not p.is_file():
         raise FileNotFoundError(f"load_checkpoint: no such file: {p}")
-    if expected_sha256 is not None:
+    actual: str | None = None
+    if expected_sha256 is not None or sha256_out is not None:
         actual = sha256_file(p)
-        if actual != expected_sha256:
-            raise ChecksumMismatchError(
-                f"checkpoint {p} sha256 {actual} does not match expected "
-                f"{expected_sha256} -- refusing to load. The file may have been "
-                f"overwritten, truncated, or replaced since the expected hash was "
-                f"recorded."
-            )
+    if expected_sha256 is not None and actual != expected_sha256:
+        raise ChecksumMismatchError(
+            f"checkpoint {p} sha256 {actual} does not match expected "
+            f"{expected_sha256} -- refusing to load. The file may have been "
+            f"overwritten, truncated, or replaced since the expected hash was "
+            f"recorded."
+        )
+    if sha256_out is not None:
+        assert actual is not None  # computed above whenever sha256_out is not None
+        sha256_out.append(actual)
     return torch.load(p, map_location=map_location, weights_only=weights_only)
 
 
