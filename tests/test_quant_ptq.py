@@ -8,6 +8,8 @@ rather than where tensor size suggests they might.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 import torch
@@ -132,3 +134,48 @@ def test_apply_plan_reports_measured_bytes() -> None:
     _, small_bytes = apply_plan(model, small)
     _, large_bytes = apply_plan(model, large)
     assert small_bytes < large_bytes < fp32
+
+
+# ------------------------------------------------------------ persisted artifact
+
+
+def test_pack_state_dict_roundtrips_within_quantization_error() -> None:
+    """Reconstructing from the packed artifact must match what apply_plan's in-memory
+    dequantization produces for the same plan -- the artifact is not a lossy summary
+    of the plan, it IS the plan, just packed."""
+    from cogsyndelta.quant.ptq import pack_state_dict, unpack_state_dict
+
+    torch.manual_seed(0)
+    model = nn.Sequential(nn.Linear(64, 64), nn.Linear(64, 8))
+    names = quantizable(model)
+    from cogsyndelta.quant.ptq import QuantPlan
+
+    plan = QuantPlan(bits=dict.fromkeys(names, 4))
+    plan.fp32 = [n for n, _ in model.named_parameters() if n not in plan.bits]
+
+    packed = pack_state_dict(model, plan)
+    restored = unpack_state_dict(packed)
+
+    live, _ = apply_plan(model, plan)
+    for name, p in live.named_parameters():
+        assert torch.allclose(restored[name], p.detach(), atol=1e-5)
+
+
+def test_save_packed_artifact_writes_hashable_file(tmp_path: Path) -> None:
+    from cogsyndelta.quant.ptq import QuantPlan, save_packed_artifact
+    from cogsyndelta.regions._checkpoint import sha256_file
+
+    torch.manual_seed(0)
+    model = nn.Sequential(nn.Linear(512, 512))
+    names = quantizable(model)
+    plan = QuantPlan(bits=dict.fromkeys(names, 3))
+    plan.fp32 = [n for n, _ in model.named_parameters() if n not in plan.bits]
+
+    out = tmp_path / "final.ptq.pt"
+    got_sha = save_packed_artifact(model, plan, out)
+
+    assert out.is_file()
+    assert got_sha == sha256_file(out)
+    # Smaller than the equivalent fp32 dump -- the whole point of packing.
+    fp32_bytes = sum(p.numel() * 4 for p in model.parameters())
+    assert out.stat().st_size < fp32_bytes

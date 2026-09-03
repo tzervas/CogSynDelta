@@ -31,6 +31,8 @@ from __future__ import annotations
 import copy
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -268,3 +270,85 @@ def build_plan(
     probe, size = apply_plan(model, plan)
     plan.metric, plan.stored_bytes = eval_fn(probe), size
     return plan
+
+
+# ------------------------------------------------------------------ persisted artifact
+#
+# Everything above this line measures a plan; nothing writes it to disk. That gap
+# means "quantized" was a number in a receipt, never a smaller file next to the
+# checkpoint -- the packed sub-byte tensors this module exists to produce (see
+# quant/packing.py) were computed for every sensitivity probe and then discarded.
+# `pack_state_dict` is the plan actually applied to `model`'s real weights (not the
+# copy `apply_plan` perturbs for measurement) and packed per :data:`QuantizedTensor`;
+# `save_packed_artifact` writes that as a single ``torch.save`` file so a consumer can
+# reconstruct the model with :func:`load_packed_artifact` + `unpack_state_dict`
+# without needing this module's `QuantPlan` at all.
+#
+# Deliberately a plain dict of tensors/ints/lists/strings -- every value
+# `torch.load(..., weights_only=True)` already allow-lists -- not the `QuantizedTensor`
+# dataclass (numpy arrays, not tensors) or `QuantPlan` itself, so the artifact loads
+# under the same safe-unpickling contract `regions/_checkpoint.py.load_checkpoint`
+# enforces for the fp32 checkpoint this artifact sits beside.
+
+
+def pack_state_dict(model: nn.Module, plan: QuantPlan) -> dict[str, Any]:
+    """The packed, on-disk representation of ``model`` quantized per ``plan``.
+
+    Every tensor named in ``plan.bits`` is packed at its assigned width (codes, the
+    per-channel scale and zero-point, and the original shape -- everything
+    :func:`dequantize_tensor` needs to reconstruct it). Every tensor NOT in
+    ``plan.bits`` -- 1-D parameters, and anything :func:`quantizable` excluded --
+    is stored verbatim in fp32, so the artifact alone is a complete model, not a
+    diff against the checkpoint.
+    """
+    packed: dict[str, Any] = {
+        "format": "csd-ptq-v1",
+        "bits": dict(plan.bits),
+        "codes": {},
+        "scale": {},
+        "zero": {},
+        "shape": {},
+        "fp32": {},
+    }
+    for name, p in model.named_parameters():
+        if name in plan.bits:
+            q = quantize_tensor(p.detach(), plan.bits[name])
+            packed["codes"][name] = torch.from_numpy(q.codes)
+            packed["scale"][name] = torch.from_numpy(q.scale)
+            packed["zero"][name] = torch.from_numpy(q.zero)
+            packed["shape"][name] = list(q.shape)
+        else:
+            packed["fp32"][name] = p.detach().clone()
+    return packed
+
+
+def unpack_state_dict(packed: dict[str, Any]) -> dict[str, torch.Tensor]:
+    """Reverse :func:`pack_state_dict`: a plain ``name -> fp32 tensor`` state dict."""
+    out: dict[str, torch.Tensor] = dict(packed["fp32"])
+    for name, bits in packed["bits"].items():
+        q = QuantizedTensor(
+            codes=packed["codes"][name].numpy(),
+            scale=packed["scale"][name].numpy(),
+            zero=packed["zero"][name].numpy(),
+            shape=tuple(packed["shape"][name]),
+            bits=bits,
+        )
+        out[name] = dequantize_tensor(q)
+    return out
+
+
+def save_packed_artifact(model: nn.Module, plan: QuantPlan, path: Any) -> str:
+    """Pack ``model`` per ``plan`` and write it atomically to ``path``.
+
+    Reuses `regions/_checkpoint.py`'s ``atomic_save`` (temp file in the same
+    directory, then an atomic rename) so a crash mid-write never leaves a truncated
+    artifact at the final name -- the same guarantee the fp32 checkpoint already
+    gets. Returns the sha256 of the bytes actually written, computed from the file on
+    disk (not from the in-memory dict), so it is a claim about what a later reader
+    will actually load, not about what this process intended to write.
+    """
+    from cogsyndelta.regions._checkpoint import atomic_save, sha256_file
+
+    path = Path(path)
+    atomic_save(pack_state_dict(model, plan), path)
+    return sha256_file(path)

@@ -58,7 +58,7 @@ def quantize_text_region(
     from tokenizers import Tokenizer
 
     from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
-    from cogsyndelta.quant.ptq import build_plan
+    from cogsyndelta.quant.ptq import build_plan, save_packed_artifact
     from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
     from cogsyndelta.regions.pretrain import PretrainConfig, build_splits, evaluate
     from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
@@ -189,6 +189,16 @@ def quantize_text_region(
     )
     print(f"    {len(plan.promotions)} promotion(s), {time.time() - started:.0f}s", flush=True)
 
+    # Persist the plan actually applied to the model, not merely its measurements.
+    # Written next to the checkpoint it was measured against (same directory), under a
+    # name that says what it is without claiming a single bit-width -- the plan is
+    # mixed-width by construction (see build_plan's docstring), so "quant-3bit.pt"
+    # would misdescribe every region that needed even one promotion.
+    checkpoint_path = Path(receipt["checkpoint"])
+    quantized_path = checkpoint_path.with_name(f"{checkpoint_path.stem}.ptq.pt")
+    quantized_sha256 = save_packed_artifact(model, plan, quantized_path)
+    print(f"    packed artifact -> {quantized_path} ({quantized_sha256[:12]}...)", flush=True)
+
     return {
         "region": region,
         "recorded_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -206,6 +216,12 @@ def quantize_text_region(
                 "path": str(receipt_path),
                 "sha256": sha256_file(receipt_path),
             },
+            # The packed sub-byte artifact this plan was actually applied to -- see
+            # `cogsyndelta.quant.ptq.save_packed_artifact`. `scripts/csd-publish-checkpoint.py`
+            # binds an upload to this by sha256, exactly as it already binds the fp32
+            # checkpoint above.
+            "quantized_path": str(quantized_path),
+            "quantized_sha256": quantized_sha256,
         },
         "corpus_fingerprint": fingerprint,
         "tolerance": tolerance,
