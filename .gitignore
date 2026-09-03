@@ -226,6 +226,10 @@ checkpoints/
 *-checkpoints/
 *.pt
 
+# Local receipts directory -- the secret audit found receipts/compress-20260902T153612Z.json
+# untracked and unignored here, unlike the checkpoint directories above.
+receipts/
+
 # Memory persistence files
 memory_storage/
 *.pkl
