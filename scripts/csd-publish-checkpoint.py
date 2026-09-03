@@ -238,12 +238,31 @@ def licence_tier(region: str) -> str:
 
 
 def load_json(path: Path) -> dict[str, Any]:
+    """Parse `path` as a receipt -- and require the result to actually be a JSON
+    *object*.
+
+    `json.loads` happily returns `None` for the four bytes `'null'`, or a `list` for
+    `'[1,2,3]'`, or a bare `str`/`int`/etc for other scalars -- every one of those is
+    valid JSON and none of them is a receipt. Left unchecked, a `null` receipt used to
+    read as "no receipt supplied" everywhere a caller wrote `if eval_receipt is not
+    None`, while the *path* to that same file stayed truthy wherever a caller instead
+    checked `if eval_receipt_path:` -- so the two conditions disagreed for exactly a
+    `null` receipt, and a receipt containing the four bytes `null` sailed past both
+    `assert_region_matches` and `assert_receipt_bound_to_checkpoint` and reached
+    `upload_file` anyway. A list or scalar receipt hit the same gap one step earlier,
+    as an uncaught `AttributeError` from `.get()` on a non-dict. One check here closes
+    the whole class for every caller at once: a receipt that isn't a JSON object
+    aborts before any field is ever read out of it.
+    """
     try:
-        return json.loads(path.read_text())
+        data = json.loads(path.read_text())
     except FileNotFoundError as e:
         raise PublishAbortError(f"{path}: not found") from e
     except json.JSONDecodeError as e:
         raise PublishAbortError(f"{path}: not valid JSON ({e})") from e
+    if not isinstance(data, dict):
+        raise PublishAbortError(f"{path}: receipt must be a JSON object, got {type(data).__name__}")
+    return data
 
 
 def load_region_config(region: str, regions_path: Path = DEFAULT_REGIONS_CONFIG) -> dict[str, Any]:
@@ -693,9 +712,14 @@ def build_plan(
         f"receipts/{train_receipt_path.name}": train_receipt_path,
         "README.md": card.encode("utf-8"),
     }
-    if eval_receipt_path:
+    # Deliberately gated on the same `is not None` condition already used above to
+    # decide whether to run assert_region_matches / assert_receipt_bound_to_checkpoint
+    # on this receipt -- not on the path's truthiness, which was the divergence a
+    # `null` receipt exploited (see load_json's docstring). A receipt path can only
+    # enter the upload plan once its parsed object has actually passed both checks.
+    if eval_receipt is not None:
         files[f"receipts/{eval_receipt_path.name}"] = eval_receipt_path
-    if quant_receipt_path:
+    if quant_receipt is not None:
         files[f"receipts/{quant_receipt_path.name}"] = quant_receipt_path
 
     return Plan(

@@ -436,6 +436,72 @@ def test_dry_run_against_real_compress_receipts_aborts_sha_absent() -> None:
     assert rc == 2
 
 
+# -------------------------------------------------- receipt must be a JSON object (review fix)
+#
+# json.loads('null') returns None, and json.loads('[1,2,3]') returns a list -- both
+# are valid JSON, neither is a receipt. The review's reproduction: an --eval-receipt
+# file containing exactly the four bytes 'null' made `eval_receipt` (the parsed
+# object) None, which build_plan's checks read as "no eval receipt supplied" (`if
+# eval_receipt is not None`) -- but the *path* to that same file stayed truthy
+# wherever the upload-plan builder instead checked `if eval_receipt_path:`, so the
+# receipt was smuggled past both assert_region_matches and
+# assert_receipt_bound_to_checkpoint straight into the files a mocked HfApi actually
+# uploaded. These tests pin both the direct fix (load_json rejects a non-dict) and
+# the outcome that matters: build_plan itself now aborts for such a file, so no path
+# through main()/publish() can ever reach upload_file with it.
+
+
+def test_eval_receipt_null_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    bogus = tmp_path / "not-a-receipt.json"
+    bogus.write_text("null")
+    with pytest.raises(mod.PublishAbortError, match=r"receipt must be a JSON object, got NoneType"):
+        mod.build_plan("compress", "tzervas/cogsyndelta-region-compress", train_path, bogus, None)
+
+
+def test_eval_receipt_list_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    bogus = tmp_path / "not-a-receipt.json"
+    bogus.write_text("[1,2,3]")
+    with pytest.raises(mod.PublishAbortError, match=r"receipt must be a JSON object, got list"):
+        mod.build_plan("compress", "tzervas/cogsyndelta-region-compress", train_path, bogus, None)
+
+
+def test_quant_receipt_null_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    bogus = tmp_path / "not-a-receipt.json"
+    bogus.write_text("null")
+    with pytest.raises(mod.PublishAbortError, match=r"receipt must be a JSON object, got NoneType"):
+        mod.build_plan("compress", "tzervas/cogsyndelta-region-compress", train_path, None, bogus)
+
+
+def test_null_receipt_never_reaches_upload_end_to_end(tmp_path: Path) -> None:
+    """The review's own reproduction, run to the end: build_plan must raise before
+    mod.publish() is ever reached, so a mocked HfApi.upload_file is never even given
+    the chance to be called with the bogus receipt."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    bogus = tmp_path / "not-a-receipt.json"
+    bogus.write_text("null")
+
+    fake_api = MagicMock()
+    fake_api.repo_info.return_value = SimpleNamespace(private=True)
+    fake_api.get_paths_info.return_value = []
+    with (
+        patch("huggingface_hub.HfApi", return_value=fake_api),
+        patch.dict("os.environ", {"HF_TOKEN": "tok"}),
+        pytest.raises(mod.PublishAbortError, match="receipt must be a JSON object"),
+    ):
+        plan = mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, bogus, None
+        )
+        mod.publish(plan)
+    fake_api.upload_file.assert_not_called()
+
+
 # ------------------------------------------------------- checkpoint containment (review fix)
 #
 # checkpoint_path_from_receipt() reads a receipt-controlled path with zero containment
