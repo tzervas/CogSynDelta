@@ -756,3 +756,148 @@ def test_dry_run_plan_omits_graded_keys_for_a_region_with_no_graded_gate(
     assert plan["graded_shards"] is None
     assert plan["graded_columns"] is None
     assert plan["graded_name"] is None
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 5, continued -- `_assert_graded_gate_present` itself was unwired and unweighed:
+# a review mutation deleted its call site from `pretrain_region` and a review mutation
+# that keyed it back on `cfg.graded_shards` alone (undoing the `or cfg.graded_name`
+# clause this file's other DEFECT-5 tests exercise only by calling the guard directly)
+# both left the full suite green. Every test above this point calls
+# `_assert_graded_gate_present` as a bare function; none of them run it AS `pretrain_region`
+# runs it, so neither mutation could be caught. The two tests below train for real, on
+# CPU, through `pretrain_region` itself.
+# ---------------------------------------------------------------------------------------
+
+
+def _build_tiny_tokenizer(path: Path, vocab_texts: list[str]) -> None:
+    """A WordLevel tokenizer covering exactly the vocabulary these tests use."""
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from tokenizers.pre_tokenizers import Whitespace
+    from tokenizers.trainers import WordLevelTrainer
+
+    tok = Tokenizer(WordLevel(unk_token="[UNK]"))  # noqa: S106 -- a token id name, not a secret
+    tok.pre_tokenizer = Whitespace()
+    trainer = WordLevelTrainer(special_tokens=["[UNK]", "[PAD]"])
+    tok.train_from_iterator(vocab_texts, trainer=trainer)
+    tok.save(str(path))
+
+
+def _build_tiny_train_shard(path: Path, n_pairs: int) -> tuple[list[str], list[str]]:
+    """`n_pairs` distinct (anchor, positive) rows -- distinct anchors so none are dropped
+    by `build_splits`'s anchor-fingerprint dedup. Returns the texts so the caller can feed
+    the same vocabulary to the tokenizer."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    anchors = [f"train anchor number {i}" for i in range(n_pairs)]
+    positives = [f"train anchor number {i} matched" for i in range(n_pairs)]
+    pq.write_table(pa.table({"anchor": anchors, "positive": positives}), path)
+    return anchors, positives
+
+
+def _tiny_pretrain_cfg(tmp_path: Path, *, graded_shards: list[str], graded_name: str):
+    """The exact shape of run a mutation-tested review reproduced: small enough to train
+    in a fraction of a second on CPU, distinguished only by whether a graded gate is
+    declared and whether it resolved."""
+    from cogsyndelta.regions.pretrain import PretrainConfig
+    from cogsyndelta.regions.text_encoder import TextEncoderConfig
+
+    tok_path = tmp_path / "tokenizer.json"
+    shard_path = tmp_path / "train.parquet"
+    anchors, positives = _build_tiny_train_shard(shard_path, 30)
+    _build_tiny_tokenizer(tok_path, anchors + positives + ["graded", "sentence", "example"])
+
+    return PretrainConfig(
+        region="compress",
+        pair_columns=("anchor", "positive"),
+        shards=[str(shard_path)],
+        steps=2,
+        batch_size=4,
+        holdout_pairs=8,
+        eval_every=1,
+        checkpoint_every=0,
+        device="cpu",
+        bf16=False,
+        encoder=TextEncoderConfig(dim=32, depth=1, n_heads=2, max_len=16),
+        max_len=16,
+        tokenizer_path=str(tok_path),
+        out_dir=str(tmp_path / "run"),
+        graded_shards=graded_shards,
+        graded_columns=("sentence1", "sentence2", "score"),
+        graded_name=graded_name,
+    )
+
+
+def test_pretrain_region_raises_when_graded_name_is_declared_but_shards_did_not_resolve(
+    tmp_path: Path,
+) -> None:
+    """The reachable regression, reproduced through `pretrain_region` itself rather than
+    through `_assert_graded_gate_present` called by hand.
+
+    `graded_shards=[]` with `graded_name` set is exactly the config `run_region` used to
+    build (before this branch's `GradedSourceMissingError`) when a declared graded glob
+    resolved nothing, and exactly the shape a caller other than `run_region` -- a hand-run
+    script, a notebook, a future runner -- can still construct directly. `_prepare_graded`
+    reads the empty `graded_shards` as "no graded set", so training proceeds and would
+    finish with no `graded_held_out` at all in the receipt were it not for the guard --
+    this must raise `RuntimeError` before `pretrain_region` returns or writes anything to
+    `out_dir`, not merely produce a gate-less receipt.
+
+    Proves two review mutations against `pretrain_region` at once: deleting the
+    `_assert_graded_gate_present(cfg, receipt)` call site, and narrowing its condition
+    back to `cfg.graded_shards` alone (dropping `or cfg.graded_name`). Either one leaves
+    `graded_shards=[]` unguarded and this test would stop raising.
+    """
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import pretrain_region
+
+    cfg = _tiny_pretrain_cfg(tmp_path, graded_shards=[], graded_name="stsb-validation")
+
+    with pytest.raises(RuntimeError, match="graded_shards"):
+        pretrain_region(cfg)
+
+    written = list((tmp_path / "run").glob("*.json")) if (tmp_path / "run").is_dir() else []
+    assert written == [], f"receipt written despite the missing graded gate: {written}"
+
+
+def test_pretrain_region_writes_graded_held_out_when_the_gate_resolves(
+    tmp_path: Path,
+) -> None:
+    """Positive control for the test above: a graded gate that DOES resolve must still
+    train and write a receipt normally through `pretrain_region` -- the guard fires on
+    absence, not on every run that declares one."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from cogsyndelta.regions.pretrain import pretrain_region
+
+    graded_path = tmp_path / "stsb-validation.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "sentence1": ["graded example one", "graded example two", "graded example three"],
+                "sentence2": [
+                    "graded sentence one",
+                    "graded sentence two",
+                    "graded sentence three",
+                ],
+                "score": [0.9, 0.4, 0.1],
+            }
+        ),
+        graded_path,
+    )
+    cfg = _tiny_pretrain_cfg(
+        tmp_path, graded_shards=[str(graded_path)], graded_name="stsb-validation"
+    )
+
+    receipt = pretrain_region(cfg)
+
+    assert "graded_held_out" in receipt
+    assert "spearman" in receipt["beats_untrained"]
