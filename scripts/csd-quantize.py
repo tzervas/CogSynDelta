@@ -122,7 +122,10 @@ def quantize_text_region(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tok = Tokenizer.from_file(cfg.tokenizer_path)
     model = TextEncoder(TextEncoderConfig(**enc_d), name=region).to(device)
-    ck = torch.load(receipt["checkpoint"], map_location=device, weights_only=False)
+    # weights_only=True: `receipt["checkpoint"]` is a path read out of a receipt JSON on
+    # the NFS-exported receipts tree (rw, no_root_squash) -- anyone who can write there
+    # can name an arbitrary file, so this load must not execute arbitrary pickle bytecode.
+    ck = torch.load(receipt["checkpoint"], map_location=device, weights_only=True)
     model.load_state_dict(ck["model"])
     model.eval()
 
