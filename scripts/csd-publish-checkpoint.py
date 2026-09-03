@@ -87,6 +87,17 @@ check (the same receipt supplied both the path and the expected hash, so it agre
 with itself). Derivation stops both: there is exactly one path this script will read
 as "the quantized artifact", and it is a function of the checkpoint.
 
+Derivation alone was later found to be incomplete (N1, a second review finding):
+"a function of the checkpoint" said nothing about what happens when the on-disk
+entry AT that derived path is a symlink -- `Path.resolve()` follows it wherever it
+points, unchecked, and a receipt whose `artifacts.quantized_path` simply named the
+same foreign target agreed with that already-compromised resolution. Derivation
+narrows *which path* gets read; it was never a substitute for checking that the path
+is safe to read. `quantized_artifact_path()` now refuses a symlink at the derived
+location outright and, for a non-symlink, re-runs it through the exact containment
+`_contained_path()` gives the checkpoint (allow-listed root, allow-listed suffix,
+same parent directory as the checkpoint) -- see that function's docstring.
+
 THE CARD'S QUANTIZATION NUMBERS ARE MEASURED, NOT TRANSCRIBED
 `stored_bytes` and the width histogram are recomputed from the artifact itself
 (`cogsyndelta.quant.ptq.load_packed_artifact` + `packed_stored_bytes` /
@@ -307,19 +318,23 @@ def _is_relative_to(path: Path, root: Path) -> bool:
 
 
 def _contained_path(raw_value: str, *, what: str) -> Path:
-    """Resolve a receipt-controlled path string and require it to be contained.
+    """Resolve a path string and require it to be contained.
 
     Used by `checkpoint_path_from_receipt`, which reads a path out of a receipt that
     anyone able to write (or misdirect an operator/agent into pointing `--receipt`
-    at) controls. The quantized artifact needs no equivalent: it is derived from this
-    already-contained checkpoint path rather than read from a receipt (see
-    `quantized_artifact_path`), so containment for it is inherited, not re-checked.
-    Without
-    containment this becomes arbitrary-file upload: whatever the path names gets
-    hashed, uploaded, and its sha256 published in the model card. So: resolve
-    symlinks/`..` first, then require the resolved path to sit under an allow-listed
-    root AND carry an allow-listed suffix, and abort before touching the filesystem
-    again (no hashing, no upload) if either check fails.
+    at) controls, AND by `quantized_artifact_path`, on the derived `<stem>.ptq.pt`
+    location -- THE REAL RULE, not the premise an earlier version of this docstring
+    asserted: deriving that path from an already-contained checkpoint narrows *which*
+    path gets read, but narrowing which path is not the same as that path being safe
+    to read. Nothing about derivation stops the on-disk entry at the derived location
+    from being a symlink to anywhere the process can read (see the reviewer-found
+    bypass, N1, in `quantized_artifact_path`'s own docstring) -- so containment is
+    checked there too, on the resolved target, exactly as it is checked here for the
+    checkpoint. Without containment this becomes arbitrary-file upload: whatever the
+    path names gets hashed, uploaded, and its sha256 published in the model card. So:
+    resolve symlinks/`..` first, then require the resolved path to sit under an
+    allow-listed root AND carry an allow-listed suffix, and abort before touching the
+    filesystem again (no hashing, no upload) if either check fails.
     """
     raw = Path(raw_value)
     resolved = raw.resolve()
@@ -356,23 +371,46 @@ def checkpoint_path_from_receipt(receipt: dict[str, Any]) -> Path:
 
 def quantized_artifact_path(checkpoint: Path, receipt: dict[str, Any]) -> Path:
     """Where this checkpoint's packed artifact must be -- DERIVED from the verified
-    checkpoint path, with the receipt's own claim used only to confirm agreement.
+    checkpoint path, with the receipt's own claim used only to confirm agreement, and
+    the derived location itself put through the SAME containment the checkpoint gets.
 
     `scripts/csd-quantize.py` writes the artifact at
     `checkpoint.with_name(f"{checkpoint.stem}.ptq.pt")` and nowhere else, so that
     expression -- applied to the path this script has already resolved, contained and
-    hashed -- is the whole answer to "which file is this region's quantized
-    artifact". `artifacts.quantized_path` is then a cross-check: if the receipt names
-    a different file, the receipt and this checkpoint are not describing the same
+    hashed -- names which file is this region's quantized artifact.
+    `artifacts.quantized_path` is then a cross-check: if the receipt names a
+    different file, the receipt and this checkpoint are not describing the same
     quantization run and the publish stops.
 
-    Deriving rather than reading is what closes the substitution hole, and it closes
-    it in a way neither of the two checks that were already here could. Containment
-    passes for any file under an allow-listed root, including a decoy the attacker
-    put there. The sha256 check passes trivially when the same document supplies both
-    the path and the expected hash. Only derivation makes the set of files this
-    script will read as "the quantized artifact" a function of the checkpoint rather
-    than of the receipt.
+    Deriving rather than reading closes the substitution hole this function was
+    written for: containment alone passes for any file under an allow-listed root,
+    including a decoy the attacker put there, and the sha256 check passes trivially
+    when the same document supplies both the path and the expected hash. Derivation
+    makes the set of files this script will even *consider* "the quantized artifact"
+    a function of the checkpoint rather than of the receipt.
+
+    THE RULE, NOT THE PREMISE (N1). An earlier version of this function treated
+    derivation as sufficient on its own -- as if narrowing which path gets read also
+    made that path safe to read. It does not: nothing stopped the on-disk entry at
+    `<checkpoint-stem>.ptq.pt` from being a symlink to any file this process can
+    read, anywhere on the filesystem. `Path.resolve()` follows a symlink silently, so
+    the OLD code's `checkpoint.with_name(...).resolve()` happily resolved straight
+    through a planted symlink to a file outside every allow-listed root -- and a
+    receipt whose `artifacts.quantized_path` simply named that same foreign file
+    agreed with the (already-compromised) derivation, so the cross-check above passed
+    too. Two things fix that, applied to the UNRESOLVED derived path before anything
+    follows it anywhere:
+
+    1. The on-disk entry must not itself be a symlink at all (`Path.is_symlink()`,
+       checked strictly before any `.resolve()` call -- resolving is exactly the
+       operation that would silently follow one). A hard link or a plain regular
+       file at this location is unaffected: neither is a symlink, and containment
+       still applies to both via step 2.
+    2. Once confirmed not to be a symlink, the path is run through `_contained_path`
+       -- the identical allow-listed-root-and-suffix check the checkpoint itself
+       gets -- and its resolved parent directory must equal the checkpoint's own
+       resolved parent directory, so a non-symlink path that somehow named a
+       sibling-of-a-symlink or a different region's directory is caught too.
 
     Returns:
         The resolved artifact path (existence is checked by `verify_quantized_sha`).
@@ -388,7 +426,28 @@ def quantized_artifact_path(checkpoint: Path, receipt: dict[str, Any]) -> Path:
             "can upload alongside the fp32 checkpoint. Regenerate it with "
             "scripts/csd-quantize.py (which now writes this field)."
         )
-    derived = checkpoint.with_name(f"{checkpoint.stem}.ptq.pt").resolve()
+
+    unresolved = checkpoint.with_name(f"{checkpoint.stem}.ptq.pt")
+    if unresolved.is_symlink():
+        raise PublishAbortError(
+            f"the derived quantized artifact path {unresolved} is a symlink -- "
+            "refusing: a symlink at this location can be made to resolve to any "
+            "file this process can read, anywhere on the filesystem, regardless of "
+            "what allow-listed root the symlink itself sits under. The quantized "
+            "artifact must be a regular file (or hard link) physically present "
+            "beside the checkpoint, never a link."
+        )
+    derived = _contained_path(str(unresolved), what="quantized artifact")
+
+    checkpoint_dir = checkpoint.resolve().parent
+    if derived.parent != checkpoint_dir:
+        raise PublishAbortError(
+            f"the derived quantized artifact path {derived} does not sit in the "
+            f"checkpoint's own directory ({checkpoint_dir}) -- refusing: the "
+            "quantized artifact must live beside the checkpoint it was produced "
+            "from, never in another region's directory"
+        )
+
     if derived == checkpoint.resolve():
         # Unreachable while the suffix table forbids a checkpoint already named
         # `*.ptq.pt`; asserted anyway because the one thing that must never happen is

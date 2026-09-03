@@ -13,6 +13,8 @@ import hashlib
 import importlib.machinery
 import importlib.util
 import json
+import os
+import re
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -563,6 +565,17 @@ def test_quant_artifact_consistent_trio_publishes_both_files(tmp_path: Path) -> 
     assert "Quantized artifact" in plan.card
     assert plan.quantized_sha256 is not None
     assert plan.quantized_sha256 in plan.card
+
+    # N1 regression guard: the card's filename and the actual upload key must be the
+    # SAME string, and both must come from the checkpoint stem -- never from a
+    # resolved foreign basename a symlink or a receipt could otherwise substitute in.
+    card_filename_match = re.search(r"\*\*File:\*\* `([^`]+)`", plan.card)
+    assert card_filename_match is not None
+    card_filename = card_filename_match.group(1)
+    assert card_filename == plan.quantized_path.name
+    assert card_filename == f"{checkpoint.stem}.ptq.pt"
+    assert card_filename in plan.files
+    assert plan.files[card_filename] == plan.quantized_path
 
 
 def test_dry_run_lists_checkpoint_and_quantized_artifact(tmp_path: Path, capsys: Any) -> None:
@@ -1207,10 +1220,15 @@ def test_quant_receipt_naming_an_unrelated_allowlisted_pt_aborts(tmp_path: Path)
 
 
 def test_quant_receipt_path_outside_allowed_roots_aborts(tmp_path: Path) -> None:
-    """Containment is now inherited rather than re-checked -- the derived path is a
-    function of the already-contained checkpoint -- so a receipt pointing outside the
-    allow-listed roots is refused as a disagreement instead. Either way it must never
-    become the file this script reads."""
+    """The real packed artifact `make_quant_receipt` writes always lands at the
+    derived, contained location beside the checkpoint (it ignores `quantized_path`
+    for where it WRITES, only for what the receipt CLAIMS) -- so this receipt's
+    `outside` claim disagrees with the derived path itself, and is caught by that
+    disagreement check, not by containment (which the derived path here legitimately
+    passes: it never left the checkpoint's own, allow-listed directory). The
+    symlink-and-containment tests below cover the case where the artifact's actual
+    on-disk location, not merely the receipt's claim about it, is made to point
+    outside the allow-listed roots."""
     import tempfile
 
     checkpoint = make_checkpoint(tmp_path)
@@ -1230,6 +1248,142 @@ def test_quant_receipt_path_outside_allowed_roots_aborts(tmp_path: Path) -> None
                 "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
             )
             assert plan.quantized_path != outside  # unreachable; states the property
+
+
+# --------------------------------------------------- N1: derived-path symlink bypass
+#
+# The disagreement checks above compare the RECEIPT's claim about the artifact path
+# to the derived path -- they say nothing about what the on-disk entry AT the derived
+# path actually is. A symlink at `<checkpoint-stem>.ptq.pt` is followed silently by
+# `Path.resolve()`, and a receipt whose `artifacts.quantized_path` simply names the
+# same target the symlink already points at agrees with that (already-compromised)
+# resolution -- containment on the checkpoint itself never runs on the symlink's
+# target, because nothing about `quantized_artifact_path()` re-checked it. These
+# tests are the exact reviewer-found bypass (N1) and its regression guards.
+
+
+def _symlinked_quant_receipt(tmp_path: Path, checkpoint: Path, target: Path) -> Path:
+    """A quant receipt whose artifacts.quantized_path / quantized_sha256 / measured
+    numbers all correctly describe `target` -- the receipt AGREES with whatever the
+    symlink at the derived location resolves to, which is exactly the shape that let
+    the old disagreement check pass trivially."""
+    quant_path = make_quant_receipt(
+        tmp_path, checkpoint, region="compress", quantized_artifact=False
+    )
+    receipt = json.loads(quant_path.read_text())
+    packed = load_packed_artifact(target)
+    receipt["stored_bytes"] = packed_stored_bytes(packed)
+    receipt["width_histogram"] = packed_width_histogram(packed)
+    receipt["artifacts"] = {
+        "quantized_path": str(target),
+        "quantized_sha256": mod.sha256_of(target),
+    }
+    quant_path.write_text(json.dumps(receipt))
+    return quant_path
+
+
+class _BoomHfApi:
+    """Construction is itself the failure: reaching `publish()` at all means the
+    plan should never have built."""
+
+    def __init__(self, *a: Any, **k: Any) -> None:
+        raise AssertionError("HfApi constructed despite an aborting plan")
+
+
+def test_symlinked_quant_artifact_outside_roots_aborts_before_hfapi(tmp_path: Path) -> None:
+    """N1, the reviewer's exact finding: `<checkpoint-stem>.ptq.pt` is a symlink to a
+    real, correctly-hashed packed artifact OUTSIDE every allow-listed root. This must
+    abort with PublishAbortError before `HfApi` is ever constructed -- proven to FAIL
+    (upload proceeds) on commit 8ac8fbb; see the session's verification script."""
+    import tempfile
+
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+
+    with tempfile.TemporaryDirectory() as outside_dir:
+        outside_artifact = Path(outside_dir) / "someone-elses-region.ptq.pt"
+        write_packed_artifact(outside_artifact)
+
+        link = checkpoint.with_name(f"{checkpoint.stem}.ptq.pt")
+        link.symlink_to(outside_artifact)
+
+        quant_path = _symlinked_quant_receipt(tmp_path, checkpoint, outside_artifact)
+
+        with (
+            patch("huggingface_hub.HfApi", _BoomHfApi),
+            patch.dict("os.environ", {"HF_TOKEN": "tok"}),
+            pytest.raises(mod.PublishAbortError, match="is a symlink"),
+        ):
+            mod.build_plan(
+                "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+            )
+
+
+def test_symlinked_quant_artifact_inside_roots_but_other_region_aborts(tmp_path: Path) -> None:
+    """N1 variant: the symlink's target is itself inside an allow-listed root (plain
+    containment on the target alone would pass) but sits in a DIFFERENT region's
+    directory, not beside this checkpoint. Caught by the same symlink refusal --
+    the derived location must never be a symlink at all, regardless of where it
+    points -- so this also aborts before `HfApi` is constructed."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+
+    other_region_dir = tmp_path / "some-other-regions-checkpoints"
+    other_region_dir.mkdir()
+    other_artifact = other_region_dir / "final.ptq.pt"
+    write_packed_artifact(other_artifact)
+
+    link = checkpoint.with_name(f"{checkpoint.stem}.ptq.pt")
+    link.symlink_to(other_artifact)
+
+    quant_path = _symlinked_quant_receipt(tmp_path, checkpoint, other_artifact)
+
+    with (
+        patch("huggingface_hub.HfApi", _BoomHfApi),
+        patch.dict("os.environ", {"HF_TOKEN": "tok"}),
+        pytest.raises(mod.PublishAbortError, match="is a symlink"),
+    ):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_hardlinked_quant_artifact_is_allowed(tmp_path: Path) -> None:
+    """Regression guard: a HARD link at the derived location -- a second directory
+    entry for the same inode, not a symlink -- must still publish. The fix refuses
+    symlinks specifically (the thing `Path.resolve()` follows unchecked), not every
+    non-canonical directory entry."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+
+    real_artifact = tmp_path / "real-storage.ptq.pt"
+    write_packed_artifact(real_artifact)
+
+    link = checkpoint.with_name(f"{checkpoint.stem}.ptq.pt")
+    os.link(real_artifact, link)  # hard link: NOT a symlink
+    assert not link.is_symlink()
+
+    quant_path = _symlinked_quant_receipt(tmp_path, checkpoint, link)
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+    )
+    assert plan.quantized_path == link.resolve()
+    assert link.name in plan.files
+
+
+def test_regular_file_quant_artifact_is_allowed(tmp_path: Path) -> None:
+    """Regression guard: the ordinary case -- a plain regular file written directly
+    at the derived location, no link involved -- must still publish. Already covered
+    indirectly by most tests above (`make_quant_receipt`'s default), pinned here
+    explicitly as the counterpart to the symlink and hard-link tests."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+    )
+    assert plan.quantized_path is not None
+    assert not plan.quantized_path.is_symlink()
 
 
 def test_quant_receipt_stored_bytes_tampered_aborts(tmp_path: Path) -> None:
