@@ -33,6 +33,13 @@ import numpy as np
 import pytest
 import torch
 
+# MUST precede the import below: cogsyndelta.regions.text_encoder is imported through
+# cogsyndelta.regions.__init__, which also imports cogsyndelta.regions.pretrain --
+# and THAT imports tokenizers at module scope. Without the train group installed the
+# import errors during collection and the whole file fails instead of skipping (same
+# reasoning as tests/test_region_compress.py and tests/test_pretrain_resume.py).
+pytest.importorskip("tokenizers", reason="train group not installed")
+
 from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig
 from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
 
