@@ -175,6 +175,14 @@ regions:
     axis_short: { batch: b, seed: s, terms: tok, chunk: c }
     variance_axes: [seed] # a seed change also resamples the holdout split (build_splits uses cfg.seed for both) -- declared, not hidden
     budget_axes: [batch]
+    # REQUIRED whenever budget_axes is narrower than the region's full axis set (C2):
+    # `model_matrix.config.validate_region_budgets` refuses the region outright without
+    # this claim, and every region inheriting these defaults (code, compress, retrieve,
+    # reason) declares axes {batch, seed} while budgeting on batch alone. Stating it once
+    # here rather than four times is the point of `defaults`; `memory` narrows a different
+    # way and carries its own copy of this sentence, because the shallow merge means an
+    # overriding region must restate both keys together.
+    budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
 
   code:
     axes: { batch: [512, 1280], seed: [0, 1] }

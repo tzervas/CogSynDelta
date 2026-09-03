@@ -236,3 +236,47 @@ def test_the_command_guard_fires_when_a_region_overrides_only_train() -> None:
     raw["regions"]["memory"]["commands"] = train_only
     merged = _merged_regions(raw)["memory"]
     assert _missing_commands(merged) == {"test", "quantize", "test-quant", "publish"}
+
+
+# ------------------------------------------------- C2: budget_axes narrowing needs a why
+
+
+def _narrows_budget_axes(merged: dict[str, Any]) -> bool:
+    axes = set(merged.get("axes", {}))
+    return set(merged.get("budget_axes", axes)) < axes
+
+
+def test_every_region_that_narrows_budget_axes_states_why() -> None:
+    """C2. `validate_region_budgets` REFUSES a region whose `budget_axes` is a proper
+    subset of its axes without a `budget_axes_why` claim -- the reviewer's constructed
+    load failed on `code`, `compress`, `retrieve` and `reason` for exactly this, so no
+    cell in the config could expand even once C1 was out of the way."""
+    for name, merged in _merged_regions(_raw()).items():
+        if not _narrows_budget_axes(merged):
+            continue
+        why = merged.get("budget_axes_why")
+        assert isinstance(why, str) and why.strip(), (
+            f"region {name!r} budgets on {sorted(merged['budget_axes'])} out of axes "
+            f"{sorted(merged['axes'])} with no budget_axes_why claim"
+        )
+
+
+def test_every_cell_in_every_region_resolves_a_declared_budget_entry() -> None:
+    """The C3 guard, widened to the whole config now that C2 lets every region load."""
+    for name, merged in _merged_regions(_raw()).items():
+        assert _unresolved_budget_cells(merged) == [], (
+            f"region {name!r} has cells with no matching budgets: key"
+        )
+
+
+def test_the_budget_axes_why_guard_fires_when_the_defaults_claim_is_removed() -> None:
+    """MUTATION. Delete the claim from `regions.defaults` and assert every region that
+    inherits it is reported -- the pre-fix state."""
+    raw = copy.deepcopy(_raw())
+    del raw["regions"]["defaults"]["budget_axes_why"]
+    offenders = [
+        name
+        for name, merged in _merged_regions(raw).items()
+        if _narrows_budget_axes(merged) and not merged.get("budget_axes_why")
+    ]
+    assert sorted(offenders) == ["code", "compress", "reason", "retrieve"]
