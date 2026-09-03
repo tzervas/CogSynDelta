@@ -1,0 +1,31 @@
+[Unit]
+Description=Model pipeline console — training/eval observability across projects
+Documentation=file:///home/kang/code/personal/tzervas/CogSynDelta/scripts/model-pipeline-console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kang/code/personal/tzervas/CogSynDelta
+# Runs on akula-prime because that is where /akula-data holds the receipts. homelab
+# reverse-proxies to it, matching how csd-lab-console already splits UI from GPU host.
+# The bind is routable and therefore stated explicitly -- the script defaults to loopback
+# so that exposing it is always a deliberate act.
+#
+# Second --receipt-root reads gpu5080's own training receipts over the /mnt/bulk NFS
+# mount (see /etc/fstab on akula-prime) -- same bytes gpu5080 wrote locally to
+# /bulk/csd-train-state/receipts, no copy step, no timer. Deliberately NOT gated behind
+# RequiresMountsFor/After=mnt-bulk.mount: that mount is `nofail` so boot is never blocked
+# on it, and the console itself bounds every filesystem touch to a root that may be
+# unreachable (see _bounded/_PROBE_TIMEOUT in the script) rather than depending on the
+# mount being up at unit start.
+ExecStart=/usr/bin/python3 /home/kang/code/personal/tzervas/CogSynDelta/scripts/model-pipeline-console \
+    --http 9121 --bind 192.168.1.98 \
+    --receipt-root /akula-data/csd/receipts \
+    --receipt-root /mnt/bulk/csd-train-state/receipts
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=default.target

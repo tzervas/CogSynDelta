@@ -175,7 +175,14 @@ class ModelSection(nn.Module):
         # PyTorch 2.6+ defaults to weights_only=True, but we need to load
         # custom dataclasses (ModelSectionMetadata). This is safe for
         # checkpoints we create ourselves.
-        checkpoint = torch.load(path, weights_only=False)
+        # weights_only=True is the safe default in torch>=2.6; it refuses to execute
+        # arbitrary pickle during load. We still need our own metadata dataclass, so it
+        # is allow-listed explicitly rather than disabling the protection wholesale.
+        # This matters more than it looks: the moment a checkpoint can arrive from a Hub
+        # or a peer instead of being self-generated, weights_only=False is remote code
+        # execution on load.
+        torch.serialization.add_safe_globals([ModelSectionMetadata, BrainRegionType])
+        checkpoint = torch.load(path, weights_only=True)
         self.load_state_dict(checkpoint["state_dict"])
         self.metadata = checkpoint["metadata"]
 

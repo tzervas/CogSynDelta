@@ -17,6 +17,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -518,11 +519,14 @@ def validate_performance_claims() -> tuple[
     print("=" * 70)
 
     try:
-        from cogsyndelta.core.pcn_vae_gan import PCN_VAE_GAN
+        import yaml
 
-        # Create model
-        config = {"input_dim": 784, "hidden_dim": 256, "latent_dim": 64}
-        model = PCN_VAE_GAN(config)
+        from cogsyndelta.core.pcn_vae_gan import PCNVAEGANHybrid
+
+        # PCNVAEGANHybrid needs the nested config (exploratory / culling /
+        # meta_optimization / vae_loss); a flat dict raises KeyError.
+        _cfg = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
+        model = PCNVAEGANHybrid(yaml.safe_load(_cfg.read_text()))
         test_input = torch.randn(1, 784)
 
         # Benchmark

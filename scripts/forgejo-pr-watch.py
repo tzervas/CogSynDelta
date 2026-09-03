@@ -11,6 +11,7 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -30,7 +31,11 @@ def get(path: str, token: str) -> object:
         f"{BASE}/api/v1{path}",
         headers={"Authorization": f"token {token}"},
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    # Bare urlopen honours file:/ and custom schemes; the base URL comes from
+    # config, so validate before opening rather than trusting it.
+    if urllib.parse.urlparse(req.full_url).scheme.lower() not in ("http", "https"):
+        raise ValueError(f"refusing non-http(s) URL: {req.full_url}")
+    with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 - validated above
         return json.load(resp)
 
 

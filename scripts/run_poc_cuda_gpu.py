@@ -2,6 +2,12 @@
 """Run PoC CUDA checks on a live GPU. No pytest. Receipt JSON to --out.
 
 GPU CI images have torch+CUDA but not pytest. Do not import tests/test_poc_cuda.py.
+
+These checks run on the SYNTHETIC fallback stream, and say so in the receipt. The GPU job
+runs in a container with the repo bind-mounted read-only and no dataset export, so there
+is no corpus to read; what is being asserted here is that CUDA kernels run, not that any
+number is meaningful. Real-data numbers come from tests/test_poc_train.py on a host that
+has the mount.
 """
 
 from __future__ import annotations
@@ -28,11 +34,13 @@ def _device_cuda_resolve() -> None:
 def _train_loss_decreases_cuda() -> None:
     from cogsyndelta.contracts.config import TrainConfig
     from cogsyndelta.contracts.device import DeviceContext
+    from cogsyndelta.data.stream import SyntheticStream
     from cogsyndelta.poc.train import train_latent_vae
 
     cfg = TrainConfig(steps=40, batch_size=32, hidden_dim=64, latent_dim=8, learning_rate=1e-2)
     ctx = DeviceContext.resolve("cuda")
-    result = train_latent_vae(cfg, ctx, seed=123)
+    stream = SyntheticStream(cfg.input_dim, ctx.device, seed=123)
+    result = train_latent_vae(cfg, ctx, seed=123, stream=stream)
     assert result["device"].startswith("cuda")
     assert result["last_loss"] < result["first_loss"], (
         f"first={result['first_loss']:.4f} last={result['last_loss']:.4f}"
@@ -43,11 +51,13 @@ def _compression_bench_cuda() -> None:
     from cogsyndelta.contracts.config import CompressionConfig
     from cogsyndelta.contracts.device import DeviceContext
     from cogsyndelta.contracts.metrics import MetricsStatus
+    from cogsyndelta.data.stream import SyntheticStream
     from cogsyndelta.poc.compress import run_compression_bench
 
     cfg = CompressionConfig(embed_dim=128, basis_rank=32, quant_bits=8, min_fidelity=0.85)
     ctx = DeviceContext.resolve("cuda")
-    records = run_compression_bench(cfg, ctx, batch=8, seed=7)
+    stream = SyntheticStream(cfg.embed_dim, ctx.device, seed=7)
+    records = run_compression_bench(cfg, ctx, batch=8, seed=7, stream=stream)
     by_name = {r.name: r for r in records}
     assert by_name["basis_residual"].status == MetricsStatus.PASS
     assert by_name["basis_residual"].device.startswith("cuda")
@@ -82,6 +92,7 @@ def _route_bench_cuda() -> None:
 def _train_route_loss_decreases_cuda() -> None:
     from cogsyndelta.contracts.config import RouteTrainConfig
     from cogsyndelta.contracts.device import DeviceContext
+    from cogsyndelta.data.stream import SyntheticStream
     from cogsyndelta.poc.train_route import train_softmax_router
 
     cfg = RouteTrainConfig(
@@ -95,7 +106,8 @@ def _train_route_loss_decreases_cuda() -> None:
         aux_coef=1.0,
     )
     ctx = DeviceContext.resolve("cuda")
-    result = train_softmax_router(cfg, ctx, seed=42)
+    stream = SyntheticStream(cfg.stream_dim, ctx.device, seed=42)
+    result = train_softmax_router(cfg, ctx, seed=42, stream_source=stream)
     assert result["device"].startswith("cuda")
     assert result["last_loss"] < result["first_loss"], (
         f"first={result['first_loss']:.4f} last={result['last_loss']:.4f}"

@@ -16,7 +16,16 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: poc-ci-${{ github.head_ref || github.ref_name }}
+  # Keyed on github.ref, matching every other workflow here. The previous key,
+  # `github.head_ref || github.ref_name`, collapsed the push and pull_request events for
+  # a feature branch into ONE group: push falls back to ref_name and pull_request uses
+  # head_ref, and on `feat/poc-x` both evaluate to `feat/poc-x`. With cancel-in-progress
+  # on, whichever started second cancelled the first, and Forgejo reports a cancelled run
+  # as `failure` -- so every push to a PR branch minted a permanently red
+  # `poc-ci (push)` status that no code change could clear.
+  # github.ref differs between the two (`refs/heads/...` vs `refs/pull/N/merge`), so they
+  # get separate groups while superseded runs of the SAME event still cancel.
+  group: poc-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -30,11 +39,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-          enable-cache: true
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
       - name: Python + deps (CPU torch)
         run: |
@@ -64,7 +77,13 @@ jobs:
       - name: CLI smoke
         run: |
           set -euo pipefail
-          uv run --no-sync python -m cogsyndelta.poc.cli train --device cpu --steps 10 --checkpoint /tmp/poc_vae.pt
-          uv run --no-sync python -m cogsyndelta.poc.cli compress --device cpu --batch 4
+          # --stream synthetic: the corpus is an NFS export from another host and this
+          # runner has no mount. The flag is explicit because the default is real data;
+          # the printed provenance marks the output as a code-path smoke, not a result.
+          uv run --no-sync python -m cogsyndelta.poc.cli train --device cpu --steps 10 \
+            --stream synthetic --checkpoint /tmp/poc_vae.pt
+          uv run --no-sync python -m cogsyndelta.poc.cli compress --device cpu --batch 4 \
+            --stream synthetic
           uv run --no-sync python -m cogsyndelta.poc.cli route --device cpu --batch 8
-          uv run --no-sync python -m cogsyndelta.poc.cli train-route --device cpu --steps 10
+          uv run --no-sync python -m cogsyndelta.poc.cli train-route --device cpu --steps 10 \
+            --stream synthetic

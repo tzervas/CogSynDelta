@@ -18,7 +18,7 @@ env:
   # Pin tool versions for consistency between local and CI
   RUFF_VERSION: "0.14.13"
   MYPY_VERSION: "1.19.1"
-  UV_VERSION: "0.7.17"
+  UV_VERSION: "0.9.21"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -31,11 +31,15 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        version: ${{ env.UV_VERSION }}
-        enable-cache: true
+    - name: Verify uv (baked into job image)
+      run: |
+        # uv is baked into the job image (fleet-ci-base), so nothing is installed
+        # here: no network dependency, and no tar extraction -- which is what forced
+        # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+        # must fail loudly and name the image, not silently skip the step.
+        command -v uv >/dev/null 2>&1 || {
+          echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+        uv --version
 
     # uvx: no project Python / torch. Same pins as local scripts/ci_local.sh.
     - name: Ruff lint check
@@ -44,9 +48,17 @@ jobs:
     - name: Ruff format check
       run: uvx ruff@${{ env.RUFF_VERSION }} format --check src/ tests/ benchmarks/ scripts/ examples/
 
+    - name: Set up Python 3.12
+      run: uv python install 3.12
+
+    # Pinned to 3.12: mypy's parser runs under whichever interpreter invokes
+    # it, regardless of --python-version / [tool.mypy] target. The bare
+    # `uvx` default resolves to the job image's system python3, which is
+    # older than the project floor (3.12) and cannot parse PEP 695 syntax
+    # (e.g. `def f[T](...)`), failing with a bogus "Expected '('" error.
     - name: Type check with mypy
       run: >
-        uvx --from mypy==${{ env.MYPY_VERSION }} --with types-PyYAML
+        uvx --python 3.12 --from mypy==${{ env.MYPY_VERSION }} --with types-PyYAML
         mypy src/
 
   pre-commit:
@@ -58,11 +70,15 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        version: ${{ env.UV_VERSION }}
-        enable-cache: true
+    - name: Verify uv (baked into job image)
+      run: |
+        # uv is baked into the job image (fleet-ci-base), so nothing is installed
+        # here: no network dependency, and no tar extraction -- which is what forced
+        # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+        # must fail loudly and name the image, not silently skip the step.
+        command -v uv >/dev/null 2>&1 || {
+          echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+        uv --version
 
     - name: Run pre-commit on all files
       run: uvx pre-commit run --all-files
@@ -73,9 +89,29 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
+    - name: Verify uv (baked into job image)
+      run: |
+        # uv is baked into the job image (fleet-ci-base), so nothing is installed
+        # here: no network dependency, and no tar extraction -- which is what forced
+        # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+        # must fail loudly and name the image, not silently skip the step.
+        command -v uv >/dev/null 2>&1 || {
+          echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+        uv --version
+
+    - name: Set up Python 3.12
+      run: uv python install 3.12
+
+    # Stdlib only, still pinned to 3.12: quality_control.py parses source
+    # with ast.parse under whatever interpreter runs it. The job image's
+    # bare python3 is older than the project floor (3.12) and cannot parse
+    # PEP 695 syntax, which quality_control.py reports as a syntax error
+    # (docked -5, dropping the score below --fail-under 90).
+    # --no-project: this script has no third-party deps, so skip syncing
+    # the full project (and its CPU/GPU torch extras) just to get a 3.12
+    # interpreter on PATH.
     - name: Run quality checks (90+ required)
-      # Stdlib only. Runner image already has python3.
-      run: python3 scripts/quality_control.py src/ --fail-under 90
+      run: uv run --python 3.12 --no-project python3 scripts/quality_control.py src/ --fail-under 90
 
   test:
     name: Test on Python 3.12
@@ -85,11 +121,15 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        version: ${{ env.UV_VERSION }}
-        enable-cache: true
+    - name: Verify uv (baked into job image)
+      run: |
+        # uv is baked into the job image (fleet-ci-base), so nothing is installed
+        # here: no network dependency, and no tar extraction -- which is what forced
+        # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+        # must fail loudly and name the image, not silently skip the step.
+        command -v uv >/dev/null 2>&1 || {
+          echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+        uv --version
 
     - name: Set up Python 3.12
       run: uv python install 3.12
@@ -103,13 +143,22 @@ jobs:
         mkdir -p "$UV_CACHE_DIR"
         # Use --no-sources to bypass pyproject.toml torch source (cu128)
         # Use --index-strategy unsafe-best-match to allow packages from all indexes
-        uv sync --group dev --no-sources --no-compile-bytecode --link-mode copy \
+        # --group train: pyarrow + tokenizers, both pure CPU wheels (no CUDA
+        # pull — verified locally: this exact sync leaves torch on the +cpu
+        # build with cuda_available=False). Without this group, ~85 guard
+        # tests across tests/test_corpus.py, test_guards_can_fail.py and
+        # others hit `pytest.importorskip("pyarrow" / "tokenizers", reason=
+        # "train group not installed")` and silently skip in CI on every run.
+        uv sync --group dev --group train --no-sources --no-compile-bytecode --link-mode copy \
           --extra-index-url https://download.pytorch.org/whl/cpu \
           --index-strategy unsafe-best-match
 
     - name: Run tests with pytest
       run: |
-        uv run --no-sync pytest tests/ -q --tb=short --cov=cogsyndelta --cov-report=xml --cov-report=term
+        # -rs: print a summary line for every skip, so a skip (e.g. a
+        # dependency group silently not installed) is visible in the log
+        # instead of vanishing into the passed/failed counts.
+        uv run --no-sync pytest tests/ -q -rs --tb=short --cov=cogsyndelta --cov-report=xml --cov-report=term
 
     # Codecov action is not mirrored on data.forgejo.org; cloning it
     # aborted the whole job before pytest. Coverage XML stays in the
@@ -127,11 +176,15 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        version: ${{ env.UV_VERSION }}
-        enable-cache: true
+    - name: Verify uv (baked into job image)
+      run: |
+        # uv is baked into the job image (fleet-ci-base), so nothing is installed
+        # here: no network dependency, and no tar extraction -- which is what forced
+        # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+        # must fail loudly and name the image, not silently skip the step.
+        command -v uv >/dev/null 2>&1 || {
+          echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+        uv --version
 
     - name: Set up Python 3.12
       run: uv python install 3.12

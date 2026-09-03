@@ -1,0 +1,229 @@
+{
+  "schema": "csd-program/v1",
+  "updated": "2026-09-02",
+  "note": "Phased CSD training program. Each phase declares what it consumes, what method it applies, what it must achieve to pass, and what was ACTUALLY measured. `actual` stays null until a run fills it from a receipt -- it is never hand-written, because a hand-written result is a claim rather than a measurement. A phase whose gate fails does not advance; the curriculum in docs/program/CSD-BRAIN-REGIONS.md is explicit that skipping per-region pretrain is not a shortcut.",
+  "thesis": "Trillion-parameter-class capability from a small multi-region mind. Success is capability PER PARAMETER, so 'more parameters' is never an acceptable answer to a failed gate.",
+  "gate_policy": {
+    "on_fail": "stop",
+    "why": "Advancing past a failed gate is how an unpretrained region becomes dead weight: the softmax gate collapses onto whichever region moved first, and every later number is measured against a broken mind.",
+    "intended_vs_actual": "Every phase records both. A phase that passes its numeric gate but does not do what it was supposed to do is a FAIL, and the discrepancy is the finding."
+  },
+  "phases": [
+    {
+      "id": "P0",
+      "title": "Substrate",
+      "status": "done",
+      "why": "Nothing downstream is measurable without a real corpus path, a real tokenizer, and an eval harness that can detect contamination.",
+      "deliverables": [
+        "corpus pipeline: parquet -> GPT-2 BPE -> packed windows, 488k tok/s",
+        "token-level feature-hashing encoder (separation +0.79 vs ~0 for the whole-line hash it replaced)",
+        "declarative region specs + honest catalogue (live/available default false)",
+        "component role protocols: encoder / region / decoder / classifier / ranker",
+        "eval metrics + contamination guard (catches reformatted duplicates)",
+        "causal LM backbone (step 4, fenced)",
+        "I-JEPA with EMA target, stop-gradient, asymmetric predictor"
+      ],
+      "gate": "ci_local.sh all gates pass",
+      "actual": {
+        "gates_passed": 10,
+        "gate_names": [
+          "ruff check",
+          "ruff format",
+          "mypy src/",
+          "quality >=90",
+          "poc pytest",
+          "poc cli train",
+          "poc cli compress",
+          "poc cli route",
+          "poc cli train-route",
+          "pytest tests/"
+        ],
+        "tests_passed": 339,
+        "tests_skipped": 5,
+        "recorded": "2026-09-02",
+        "measured_by": "scripts/ci_local.sh"
+      }
+    },
+    {
+      "id": "P1",
+      "title": "Per-region pretrain, isolated",
+      "status": "next",
+      "why": "Curriculum step 1, mandatory. A region that never sees its own job-shaped data before assembly becomes dead weight.",
+      "regions": [
+        {
+          "name": "code",
+          "corpus": "/mnt/fleet-datasets/csd/region/code/codesearchnet-python",
+          "rows": 455243,
+          "pair": [
+            "docstring",
+            "code"
+          ],
+          "method": "symmetric InfoNCE over in-batch negatives",
+          "gate": {
+            "in_batch_acc": ">= 0.50",
+            "emb_std": "> 0.01",
+            "held_out_recall@1": "> 0.20"
+          },
+          "actual": null
+        },
+        {
+          "name": "compress",
+          "corpus": "/mnt/fleet-datasets/csd/region/compress/{stsb,all-nli}",
+          "rows": 947818,
+          "pair": [
+            "sentence1",
+            "sentence2"
+          ],
+          "method": "InfoNCE on AllNLI triplets; STS-B graded pairs as held-out correlation",
+          "gate": {
+            "stsb_spearman": "> 0.40",
+            "emb_std": "> 0.01"
+          },
+          "actual": null
+        },
+        {
+          "name": "retrieve",
+          "corpus": "/mnt/fleet-datasets/csd/region/retrieve/fiqa",
+          "rows": 64286,
+          "pair": [
+            "query",
+            "passage"
+          ],
+          "method": "InfoNCE query->passage; needs qrels to link corpus and queries",
+          "gate": {
+            "recall@10": "> 0.20",
+            "mrr": "> 0.10"
+          },
+          "blocked_by": "qrels not present in the BeIR download; corpus and queries are separate files with no relevance links",
+          "actual": null
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "title": "Per-region evaluation and characterisation",
+      "status": "blocked",
+      "blocked_by": "P1",
+      "why": "The operator's stated interest: validate each submodel, benchmark it, learn what matters and what does not BEFORE composing.",
+      "measures": [
+        "held-out task metric per region, on a contamination-checked split",
+        "representation_std (collapse signal)",
+        "parameters, and capability per parameter against the region's gate",
+        "intended vs actual: does the region do its declared job, or merely score well"
+      ],
+      "actual": null
+    },
+    {
+      "id": "P3",
+      "title": "Post-training quantization, per region",
+      "status": "blocked",
+      "blocked_by": "P2",
+      "why": "Quantization is a first-class experiment here, not an afterthought. Training runs at full precision; PTQ comes after, so a quantized region can be compared against the full-precision one that produced it.",
+      "method": "calibrated uniform PTQ at 8/4/2 bits per region, each measured against its own P2 baseline",
+      "gate": {
+        "quality_delta": "regression named per metric, never averaged",
+        "note": "compare() reports per-metric; a size win with a quality loss is not a win"
+      },
+      "known_limitation": "sub-8-bit currently buys no space: one code is one uint8 regardless of bits. Real sub-byte packing is required before 2/4-bit ratios mean anything.",
+      "actual": null
+    },
+    {
+      "id": "P4",
+      "title": "Router training",
+      "status": "blocked",
+      "blocked_by": "P2",
+      "why": "Curriculum step 2. Regions must be pretrained first or the gate collapses onto whichever moved first.",
+      "method": "softmax gate + Switch aux load balance N*sum(f_i*P_i), top_k=1 until load is measured non-collapsed on a labelled batch",
+      "gate": {
+        "load_balance": "no region below 0.1 share on a labelled batch",
+        "routing_acc": "> chance"
+      },
+      "actual": null
+    },
+    {
+      "id": "P5",
+      "title": "Composed mind",
+      "status": "blocked",
+      "blocked_by": "P4",
+      "why": "Curriculum step 3. Only meaningful once each part is independently verified.",
+      "actual": null
+    },
+    {
+      "id": "P6",
+      "title": "Foundation / scale",
+      "status": "blocked",
+      "blocked_by": "P5",
+      "why": "Curriculum step 4. Foundation corpora (FineWeb/C4/Pile) are LAST, not first. The causal LM backbone is already written and fenced for this.",
+      "actual": null
+    }
+  ],
+  "corpora_on_disk": {
+    "note": "Measured after download, never declared. See /mnt/fleet-datasets/csd/manifest.json.",
+    "region": {
+      "codesearchnet-python": {
+        "files": 21,
+        "mb": 598.8,
+        "rows": 455243
+      },
+      "stsb": {
+        "files": 18,
+        "mb": 0.7,
+        "rows": 8628
+      },
+      "all-nli": {
+        "files": 45,
+        "mb": 212.8,
+        "rows": 981382
+      },
+      "fiqa": {
+        "files": 15,
+        "mb": 28.0,
+        "rows": 64286
+      }
+    },
+    "vl": {
+      "tiny-imagenet": {
+        "files": 21,
+        "mb": 164.4,
+        "rows": 100000
+      },
+      "cifar100": {
+        "files": 15,
+        "mb": 142.3,
+        "rows": 10000
+      },
+      "flickr30k": {
+        "files": 18,
+        "mb": 4403.1,
+        "rows": 31014,
+        "format": "zip+csv, not parquet"
+      }
+    },
+    "foundation": {
+      "note": "Pre-existing at /mnt/fleet-datasets/tritter, 649 GB. Step 4 only.",
+      "fineweb-edu-10b": "27 GB",
+      "wikipedia-en": "11 GB",
+      "tinystories": "7.1 GB"
+    }
+  },
+  "publication": {
+    "target": "private HF repos under tzervas",
+    "repos": [
+      "tzervas/cogsyndelta",
+      "tzervas/cogsyndelta-region-code",
+      "tzervas/cogsyndelta-region-compress",
+      "tzervas/cogsyndelta-region-retrieve",
+      "tzervas/cogsyndelta-region-residual",
+      "tzervas/cogsyndelta-region-stream-vae",
+      "tzervas/cogsyndelta-vl-jepa",
+      "tzervas/cogsyndelta-eval"
+    ],
+    "verified_private": "2026-09-02, all 8",
+    "org": "pending \u2014 POST /api/organizations returns 403; org creation is a web-UI action. Repos transfer cleanly once one exists."
+  },
+  "open_operator_decisions": [
+    "gpu-timeshare.json schema collision: CSD's csd-gpu-timeshare/v1 vs akula's cabal-gpu-timeshare/v1, same runtime state path, inverted priority ladder. Recommendation: akula's wins, CSD's is dropped.",
+    "README claims 10-50x compression at >0.95 fidelity; STATUS.md measures ~1.3-1.6x. AGENTS.md has a standing rule to flag this.",
+    "HF org name, if one is wanted."
+  ]
+}

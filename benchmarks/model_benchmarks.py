@@ -203,14 +203,17 @@ class PCNVAEGANBenchmark:
         """Lazy load model."""
         if self._model is None:
             import torch
+            import yaml
 
-            from cogsyndelta.core.pcn_vae_gan import PCNVAEGAN
+            from cogsyndelta.core.pcn_vae_gan import PCNVAEGANHybrid
 
-            self._model = PCNVAEGAN(
-                input_dim=512,
-                hidden_dim=256,
-                latent_dim=64,
-            )
+            # The class is PCNVAEGANHybrid and takes ONE nested config dict, reading
+            # config["exploratory"], ["culling"], ["meta_optimization"] and ["vae_loss"].
+            # This call passed keyword args to a name that does not exist, so the import
+            # raised and the except branch left every baseline with "quality": {}.
+            # Renaming alone would not have helped -- the signature is also wrong.
+            _cfg_path = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
+            self._model = PCNVAEGANHybrid(yaml.safe_load(_cfg_path.read_text()))
             actual_device = self.device if torch.cuda.is_available() else "cpu"
             self._model = self._model.to(actual_device)
             self._model.eval()

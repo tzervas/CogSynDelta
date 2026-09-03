@@ -35,7 +35,10 @@ permissions:
   actions: read
 
 env:
-  UV_VERSION: "0.7.17"
+  UV_VERSION: "0.9.21"
+  # Pinned so bandit runs under a known-good interpreter version, mirroring the
+  # mypy pin in ci.yml. See the "Run Bandit" step below for why 3.12 matters.
+  BANDIT_VERSION: "1.8.6"
 
 jobs:
   # CodeQL Static Analysis (SAST)
@@ -120,10 +123,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: ${{ env.UV_VERSION }}
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
       - name: Set up Python
         run: uv python install 3.12
@@ -157,34 +165,112 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: ${{ env.UV_VERSION }}
-          enable-cache: true
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
 
       - name: Install security tools
         run: |
-          uv tool install bandit
           uv tool install pip-audit
 
+      # Pinned to 3.12, same reasoning as ci.yml's mypy pin: bandit's AST parser
+      # runs under whichever interpreter invokes it, not under a configurable
+      # target version. A bare `uvx bandit` resolves to the job image's system
+      # python3, which on this fleet is older than the project floor (3.12) and
+      # cannot parse PEP 695 syntax (e.g. `def f[T](...)` in
+      # src/cogsyndelta/corpus.py). Under that older interpreter bandit hits a
+      # "syntax error while parsing AST from file" for corpus.py, logs it only
+      # under -q-suppressed INFO noise, and silently excludes the file from
+      # scanning instead of failing the job — so the file was never actually
+      # checked. Confirmed locally: python 3.11 drops corpus.py with that exact
+      # error; python 3.12 parses and scans it (verified against this repo).
       - name: Run Bandit security linter
         run: |
-          # Run bandit for JSON report (always succeeds)
-          uv tool run bandit -r src/ -f json -o bandit-report.json || echo "Bandit found issues (see report)"
-          # Run bandit for human output (-ll = only medium+, -ii = only medium+ confidence)
-          uv tool run bandit -r src/ -ll -ii || echo "::notice::Bandit found potential security issues. Review bandit-report.json artifact."
+          set -uo pipefail
+          # Full JSON report (default LOW/LOW thresholds — bandit exits
+          # non-zero whenever *any* finding, including a low-severity one,
+          # matches its threshold, so this call is expected to fail even on a
+          # clean-ish tree and must not abort the step). Printed to the log
+          # AND kept as a step artifact, so findings are visible without
+          # depending on the upload-artifact step below (which is best-effort
+          # — see its comment).
+          #
+          # The runner invokes this script under `bash -e -o pipefail`, and
+          # `set -uo pipefail` above does NOT clear that inherited `-e` — it
+          # only adds `-u`. Without the trailing `|| true`, this call's
+          # expected-non-zero exit (LOW findings, see above) would abort the
+          # step right here under `-e`, and the real gate below would never
+          # run. The `|| true` is scoped to this report-only call; the gate
+          # invocation below stays bare so its exit code is what fails the
+          # job.
+          uvx --python 3.12 --from "bandit==${{ env.BANDIT_VERSION }}" bandit \
+            -r src/ -f json -o bandit-report.json || true
+          echo "== bandit-report.json =="
+          cat bandit-report.json
+          echo
+          # Gate: -ll (medium+ severity), -ii (medium+ confidence). This is the
+          # step that actually fails the job — no `|| echo` swallowing the exit
+          # code. Low-severity/low-confidence findings stay non-blocking by
+          # virtue of the flags, not by catching and discarding a failure.
+          uvx --python 3.12 --from "bandit==${{ env.BANDIT_VERSION }}" bandit \
+            -r src/ -ll -ii
 
       - name: Run pip-audit for known vulnerabilities
         run: |
           # --no-sources drops [tool.uv.sources] pytorch-cu128 so pip-audit
           # installs torch==2.9.1 from PyPI instead of torch==2.9.1+cu128.
           uv export --python 3.12 --no-hashes --no-sources > requirements-audit.txt
-          uv tool run pip-audit -r requirements-audit.txt --desc on || echo "::notice::pip-audit completed with findings or unavailable packages."
+          # Informational only (this step), by deliberate choice: three known
+          # findings are pre-existing, upstream-unfixed-at-current-pin issues
+          # the operator has not yet decided to bump for, and turning this
+          # blocking today would make main red on vulnerabilities nobody has
+          # acted on yet, not on anything this change introduced.
+          #   - pygments      PYSEC-2026-2987
+          #   - setuptools    PYSEC-2026-3447 (x2 advisories)
+          # `|| true` guards only the exit code — it never touched pip-audit's
+          # stdout/stderr, so the findings below were already printed to the
+          # log before this change too. What actually changed here: the
+          # previous `|| echo "::notice::..."` is gone. `||` branches on exit
+          # status, not on the command's streams, so that echo never hid
+          # anything either — replacing it with `|| true` only drops the
+          # generic ::notice:: annotation Forgejo rendered alongside the
+          # step; the findings themselves were, and remain, visible by
+          # scrolling this step's log.
+          uv tool run pip-audit -r requirements-audit.txt --desc on || true
 
       - name: Upload security reports
         uses: actions/upload-artifact@v3
         if: always()
+        # The artifact endpoint is derived from Forgejo's ROOT_URL
+        # (https://git.vectorweight.com/), which DNS resolves to 192.168.1.170:443 -- an
+        # address job containers cannot reach. Measured from a container with the
+        # runner's exact options:
+        #     container -> 192.168.1.170:443   REFUSED
+        #     container -> 172.32.0.1:3080     OPEN
+        #     homelab   -> 192.168.1.170:443   OPEN
+        # so the upload fails with ECONNREFUSED and a 500, and takes the whole job with
+        # it. This is the same wall that forced registering the runner against
+        # http://172.32.0.1:3080; the artifact path reaches it by a different route.
+        #
+        # continue-on-error because this artifact is bandit-report.json -- a report for a
+        # human, not a gate. The actual checks run above and print their findings to the
+        # log. Failing a security job because a convenience artifact could not be stored
+        # trains people to ignore a red security check, which costs more than the report
+        # is worth.
+        #
+        # The real fix is routing/publishing so containers can reach the TLS edge. That
+        # is a fleet change, not a workflow change, and widening the host firewall to the
+        # edge just to store a report would trade a real boundary for a convenience.
+        continue-on-error: true
         with:
           name: security-reports
           path: |

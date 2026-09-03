@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Run the same gates as .github/workflows/ci.yml and poc-ci.yml.
 #
-# Default: project .venv (Python 3.12, CUDA torch from pyproject cu128).
+# Default: OWN venv at .venv-ci (Python 3.12, CUDA torch from pyproject cu128); never
+#          the shared project .venv, and NOT overridable via UV_PROJECT_ENVIRONMENT --
+#          see the isolation comment below for why that has to be unconditional.
 # --cpu:   CI-identical CPU torch (--no-sources + pytorch.org/whl/cpu).
 # --poc:   skip full tests/ (only poc-ci surface + CLI smoke).
 # --pre-commit: also run pre-commit --all-files (CI job, not a required check).
@@ -43,7 +45,73 @@ if ! command -v uv >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "== python ${PYTHON_VERSION} + .venv =="
+# --- isolation: never touch the interactive/training .venv --------------------------
+# HAZARD (confirmed 2026-09-02): `uv sync` (without --inexact) PRUNES every package
+# outside the requested groups. This project's `train` group holds pyarrow + tokenizers,
+# which scripts/csd-train-all.py imports lazily and via subprocess from the shared
+# .venv. Running this script's default `uv sync --group dev` against that same shared
+# .venv while a training run is live would silently strip both packages out from under
+# it -- silently, because an already-imported module keeps working until the next lazy
+# import or subprocess, so the failure surfaces later looking like a training bug
+# rather than an environment one.
+#
+# Options considered:
+#   A. `uv sync --group dev --inexact`  -- stops the pruning, minimal diff. Rejected:
+#      the venv can then accumulate packages this gate never asked for, so it drifts
+#      from a clean install and can hide a missing-dependency bug real CI would catch.
+#   B. Add `--group train` to the sync   -- keeps everything, minimal diff. Rejected:
+#      pyproject.toml already documents the train/dev split as deliberate ("pulling
+#      pyarrow + tokenizers into every lint job costs minutes for nothing"); this
+#      reintroduces exactly that cost on every single push, forever, not just while
+#      training happens to be running.
+#   C. Give this script its OWN project environment (CHOSEN) -- `uv sync --group dev`
+#      keeps pruning exactly as CI's clean-install check requires, but it prunes a venv
+#      nothing else reads from, so the hazard is structurally impossible rather than
+#      merely avoided. Cost is a second venv on disk and a slower first run, which is
+#      cheap next to "silently broke a multi-hour training run."
+# C preserves CI fidelity (A doesn't) and keeps the group split's build-minute savings
+# for the venv that matters (B doesn't), so it is strictly better than A or B here.
+#
+# IMPORTANT: this must be an UNCONDITIONAL override, not `${UV_PROJECT_ENVIRONMENT:-...}`.
+# Confirmed on this host: ~/.config/nushell/env.nu sets `$env.UV_PROJECT_ENVIRONMENT =
+# ".venv"` globally (nushell is the default shell here; bash subshells inherit it), so
+# UV_PROJECT_ENVIRONMENT is ALREADY SET to the shared venv on every normal invocation --
+# a `:-` fallback would never fire and this whole fix would silently do nothing. There
+# is no way to tell that ambient convention apart from a deliberate one-off override, so
+# this script does not try; it always wins.
+CI_VENV="${ROOT}/.venv-ci"
+export UV_PROJECT_ENVIRONMENT="${CI_VENV}"
+
+# --- guard: belt-and-braces, independent of the isolation above ---------------------
+# The isolation above should make this dead code. It stays in case a future edit to
+# this script drops the unconditional export above (e.g. "helpfully" changes it back to
+# `${UV_PROJECT_ENVIRONMENT:-...}`, reintroducing the exact bug the comment above warns
+# about) or otherwise lets the target venv drift back to the shared one. So check for
+# that specific collision (this run's venv == the shared venv) rather than refusing
+# outright whenever training happens to be running, which would make every push during
+# a long training job fail for no real reason once the isolation above is doing its job.
+if command -v pgrep >/dev/null 2>&1; then
+    TRAIN_PIDS="$(pgrep -f 'csd-train-all\.py' || true)"
+    if [[ -n "${TRAIN_PIDS}" ]]; then
+        SHARED_VENV="$(realpath -m "${ROOT}/.venv")"
+        THIS_VENV="$(realpath -m "${CI_VENV}")"
+        echo "ci_local: training process detected (pid(s): ${TRAIN_PIDS//$'\n'/, })" >&2
+        if [[ "${THIS_VENV}" == "${SHARED_VENV}" ]]; then
+            echo "ci_local: REFUSING to sync." >&2
+            echo "  UV_PROJECT_ENVIRONMENT resolves to ${SHARED_VENV}, the same venv" >&2
+            echo "  the training run above is using. 'uv sync' here would prune" >&2
+            echo "  train-only packages (pyarrow, tokenizers) out of it while it is" >&2
+            echo "  in use." >&2
+            echo "  To proceed: unset UV_PROJECT_ENVIRONMENT so this script uses its" >&2
+            echo "  own isolated ${ROOT}/.venv-ci, or wait for training to finish, or" >&2
+            echo "  'git push --no-verify' if this is a deliberate WIP push." >&2
+            exit 1
+        fi
+        echo "ci_local: using isolated venv ${THIS_VENV} (not the training venv) -- safe to proceed." >&2
+    fi
+fi
+
+echo "== python ${PYTHON_VERSION} + venv (${UV_PROJECT_ENVIRONMENT}) =="
 uv python install "${PYTHON_VERSION}"
 if [[ "${CPU_SYNC}" -eq 1 ]]; then
     echo "sync: CPU torch (CI Test/poc-ci wheels)"
@@ -104,17 +172,20 @@ run "poc pytest" uv run --no-sync pytest "${POC_PYTESTS[@]}" -q --tb=short
 
 SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/csd-ci-local.XXXXXX")"
 trap 'rm -rf "${SMOKE_DIR}"' EXIT
+# --stream synthetic mirrors CI exactly: the GitHub runners have no dataset export, so
+# the smoke must pass without one. The real-data path is covered by the corpus tests in
+# `pytest tests/`, which skip when the mount is absent.
 run "poc cli train" uv run --no-sync python -m cogsyndelta.poc.cli train \
-    --device cpu --steps 10 --checkpoint "${SMOKE_DIR}/poc_vae.pt"
+    --device cpu --steps 10 --stream synthetic --checkpoint "${SMOKE_DIR}/poc_vae.pt"
 run "poc cli compress" uv run --no-sync python -m cogsyndelta.poc.cli compress \
-    --device cpu --batch 4
+    --device cpu --batch 4 --stream synthetic
 if [[ -f src/cogsyndelta/poc/route.py ]]; then
     run "poc cli route" uv run --no-sync python -m cogsyndelta.poc.cli route \
         --device cpu --batch 8
 fi
 if [[ -f src/cogsyndelta/poc/train_route.py ]]; then
     run "poc cli train-route" uv run --no-sync python -m cogsyndelta.poc.cli train-route \
-        --device cpu --steps 10
+        --device cpu --steps 10 --stream synthetic
 fi
 
 if [[ "${POC_ONLY}" -eq 0 ]]; then

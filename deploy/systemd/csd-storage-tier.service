@@ -1,0 +1,19 @@
+[Unit]
+Description=Offload cold CSD corpora from the homelab SSD to gpu5080 bulk storage
+Documentation=file:///home/kang/code/personal/tzervas/CogSynDelta/scripts/csd-storage-tier.py
+
+[Service]
+Type=oneshot
+# --auto is a no-op unless the hot tier is under pressure, so a healthy SSD is untouched
+# and this costs one df on most days. What moves is decided by the POLICY table in the
+# script: only subtrees explicitly declared re-fetchable, never weights or receipts.
+ExecStart=/usr/bin/python3 /home/kang/code/personal/tzervas/CogSynDelta/scripts/csd-storage-tier.py --auto --min-free-gb 800 --apply
+
+# Type=oneshot inherits DefaultTimeoutStartSec (90s). A 661 GB transfer takes hours, so
+# without this systemd kills it mid-copy on every single run.
+TimeoutStartSec=0
+
+# Never compete with a training run for disk or CPU. The transfer has all day.
+Nice=15
+IOSchedulingClass=idle
+CPUSchedulingPolicy=idle

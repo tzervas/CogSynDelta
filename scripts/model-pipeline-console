@@ -1,0 +1,459 @@
+#!/usr/bin/env python3
+"""Observability for model training pipelines. Architecture-agnostic by construction.
+
+WHAT THIS IS FOR
+One console over every model pipeline on the fleet -- CSD's regions today, a ternary
+architecture or anything else tomorrow. It knows nothing about any of them. It reads
+receipts in the common envelope (cogsyndelta.pipeline.receipt) and renders whatever
+metrics a producer chose to report, grouped by project, component and stage.
+
+That is why it is not called csd-anything. The moment a console needs a branch for "if
+this is CSD", it stops being a platform and becomes a second implementation.
+
+WHAT IT DELIBERATELY DOES NOT DO YET
+Start, stop or reconfigure a run. Read-only is a real boundary, not an unfinished one:
+control needs authentication and an allowlist, and shipping a dashboard that can launch
+training before that exists would be the wrong order. The JSON API is shaped so control
+routes slot in beside it later.
+
+BINDING
+Defaults to loopback. A dashboard exposing checkpoint paths and fleet topology is not
+something to put on 0.0.0.0 by accident, so a routable bind must be asked for explicitly.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import threading
+from collections.abc import Callable
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from cogsyndelta.pipeline.receipt import Receipt, load_all
+
+RECEIPT_ROOTS: list[Path] = []
+
+# One root may sit on a `hard` NFS mount (required elsewhere so a stalled server
+# cannot silently drop a write -- see the fstab entry this console's receipts live
+# next to). `hard` means a stat() against that mount blocks indefinitely while the
+# server is unreachable, not just the first one. `_PROBE_TIMEOUT` is how long any
+# single root gets before it is reported unavailable instead of hanging the request.
+_PROBE_TIMEOUT = 3.0
+
+
+def _bounded[T](fn: Callable[[], T], timeout: float = _PROBE_TIMEOUT) -> tuple[T | None, bool]:
+    """Run ``fn`` off-thread and give up after ``timeout`` rather than block on it.
+
+    A dashboard that hangs because one storage root went away is worse than one that
+    reports what it can see -- so this is how every filesystem touch that can land on
+    removable/networked storage is guarded. On timeout the worker thread is abandoned
+    (daemonized): it finishes on its own whenever the underlying call unblocks, or
+    never does, but either way it stops being this request's problem. Returns
+    ``(result, finished)`` -- ``finished`` is False on timeout, in which case the
+    result is always ``None``.
+    """
+    box: list[T | None] = [None]
+
+    def _run() -> None:
+        box[0] = fn()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        return None, False
+    return box[0], True
+
+
+def load_receipts(roots: list[Path]) -> tuple[list[Receipt], list[str]]:
+    """Read every root independently, newest first, tolerating a wedged one.
+
+    ``load_all`` reads roots in one sequential pass; if any single root sits behind an
+    unreachable NFS server, that pass never returns and every OTHER root's receipts --
+    including the local, always-fast ones -- disappear from the response with it. Each
+    root gets its own bounded attempt here so a stuck root is merely absent, not fatal.
+    """
+    receipts: list[Receipt] = []
+    unavailable: list[str] = []
+    for root in roots:
+        found, finished = _bounded(lambda root=root: load_all([root]))
+        if finished:
+            receipts.extend(found or [])
+        else:
+            unavailable.append(str(root))
+    return sorted(receipts, key=lambda r: r.started_utc, reverse=True), unavailable
+
+
+def fleet_state() -> dict:
+    """GPU and storage state, best-effort. A missing probe is reported, not fatal."""
+    out: dict[str, object] = {"gpus": [], "storage": []}
+    try:
+        # S607: nvidia-smi is resolved from PATH deliberately. Its location differs
+        # across the fleet's drivers and distros, and this reads GPU telemetry rather
+        # than crossing a trust boundary.
+        r = subprocess.run(
+            [  # noqa: S607
+                "nvidia-smi",
+                "--query-gpu=name,utilization.gpu,memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        for line in r.stdout.strip().splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) == 4:
+                out["gpus"].append(
+                    {
+                        "name": parts[0],
+                        "util": int(parts[1]),
+                        "mem_used": int(parts[2]),
+                        "mem_total": int(parts[3]),
+                    }
+                )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    for path in ("/akula-data", "/bulk", "/mnt/bulk", "/mnt/fleet-datasets"):
+        p = Path(path)
+
+        def _usage(p: Path = p) -> object:
+            if not p.is_dir():
+                return None
+            try:
+                return shutil.disk_usage(p)
+            except OSError:
+                return None
+
+        # Two of these paths are NFS mounts (fleet-datasets always was; bulk now is
+        # too), so the same stuck-server risk applies here as to receipt roots --
+        # bound it the same way rather than let one dead mount blank the whole panel.
+        u, finished = _bounded(_usage)
+        if not finished or u is None:
+            continue
+        out["storage"].append(
+            {
+                "path": path,
+                "used_pct": round(100 * u.used / u.total, 1),
+                "free_gb": round(u.free / 1e9),
+                "total_gb": round(u.total / 1e9),
+            }
+        )
+    return out
+
+
+def summarise(receipts: list[Receipt]) -> list[dict]:
+    """Latest run per (project, component, stage), with its trend across earlier runs."""
+    groups: dict[tuple[str, str, str], list[Receipt]] = {}
+    for r in receipts:
+        groups.setdefault((r.producer.project, r.producer.component, r.stage), []).append(r)
+    rows = []
+    for (project, component, stage), items in sorted(groups.items()):
+        latest = items[0]
+        primary = next(iter(latest.metrics), None)
+        rows.append(
+            {
+                "project": project,
+                "component": component,
+                "stage": stage,
+                "architecture": latest.producer.architecture,
+                "passed": latest.passed,
+                "when": latest.started_utc,
+                "runs": len(items),
+                "metrics": latest.metrics,
+                "baseline": latest.baseline,
+                "gates": latest.gates,
+                "primary_metric": primary,
+                # Every run's primary metric, oldest first, so a reader can see direction
+                # without knowing what the metric means.
+                "trend": [i.metrics.get(primary) for i in reversed(items) if primary in i.metrics],
+            }
+        )
+    return rows
+
+
+def _escape(value: str) -> str:
+    """Escape a Prometheus label value.
+
+    Backslash, double quote and newline are the three characters that break the exposition
+    format. A component name is free text from a producer, so it gets escaped rather than
+    trusted -- an unescaped quote makes the whole scrape unparseable, not just one line.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _labels(pairs: dict[str, str]) -> str:
+    return ",".join(f'{k}="{_escape(str(v))}"' for k, v in pairs.items() if v != "")
+
+
+def prometheus_text(receipts: list[Receipt]) -> str:
+    """Render receipts in the Prometheus exposition format.
+
+    Metric NAMES stay constant and the varying part goes in labels. A metric called
+    `recall@1` is not a legal Prometheus name, and minting one series per metric name
+    would also mean the schema changes every time a new architecture reports something
+    novel -- which is precisely what the envelope exists to avoid. So there is one gauge,
+    `model_pipeline_metric`, carrying the metric name as a label.
+
+    Only the newest run per (project, component, stage) is exported. VictoriaMetrics keeps
+    the history itself; re-exporting every past run would rewrite that history on every
+    scrape with whatever timestamp the scrape happened to have.
+    """
+    latest: dict[tuple[str, str, str], Receipt] = {}
+    for r in receipts:  # load_all returns newest first
+        latest.setdefault((r.producer.project, r.producer.component, r.stage), r)
+
+    lines = [
+        "# HELP model_pipeline_metric A metric reported by a pipeline stage",
+        "# TYPE model_pipeline_metric gauge",
+    ]
+    baselines = [
+        "# HELP model_pipeline_baseline The baseline a metric should be read against",
+        "# TYPE model_pipeline_baseline gauge",
+    ]
+    gates = [
+        "# HELP model_pipeline_gate 1 if this gate held, 0 if it did not",
+        "# TYPE model_pipeline_gate gauge",
+    ]
+    passed = [
+        "# HELP model_pipeline_passed 1 if every gate on the run held",
+        "# TYPE model_pipeline_passed gauge",
+    ]
+    seconds = [
+        "# HELP model_pipeline_duration_seconds Wall time of the stage",
+        "# TYPE model_pipeline_duration_seconds gauge",
+    ]
+
+    for (project, component, stage), r in sorted(latest.items()):
+        base = {
+            "project": project,
+            "component": component,
+            "stage": stage,
+            "architecture": r.producer.architecture,
+        }
+        for name, value in r.metrics.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                lines.append(
+                    f"model_pipeline_metric{{{_labels({**base, 'metric': name})}}} {value}"
+                )
+        for name, value in r.baseline.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                baselines.append(
+                    f"model_pipeline_baseline{{{_labels({**base, 'metric': name})}}} {value}"
+                )
+        for name, ok in r.gates.items():
+            gates.append(
+                f"model_pipeline_gate{{{_labels({**base, 'gate': name})}}} {int(bool(ok))}"
+            )
+        passed.append(f"model_pipeline_passed{{{_labels(base)}}} {int(r.passed)}")
+        if r.seconds:
+            seconds.append(f"model_pipeline_duration_seconds{{{_labels(base)}}} {r.seconds}")
+
+    return "\n".join(lines + baselines + gates + passed + seconds) + "\n"
+
+
+PAGE = """<!doctype html><html><head><meta charset="utf-8">
+<title>Model Pipeline Console</title>
+<style>
+:root{--bg:#0f1115;--card:#171a21;--line:#262b36;--fg:#e6e9ef;--dim:#8b94a7;--ok:#3fb950;--bad:#f85149;--accent:#58a6ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+h1{font-size:17px;margin:0;font-weight:600}
+.sub{color:var(--dim);font-size:12px}
+main{padding:20px 24px;max-width:1400px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:26px 0 10px;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:13px 15px}
+.card .k{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.card .v{font-size:21px;margin-top:3px;font-variant-numeric:tabular-nums}
+.bar{height:5px;background:var(--line);border-radius:3px;margin-top:8px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--accent)}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:9px 10px;border-bottom:1px solid var(--line)}
+tr:hover td{background:#1b1f28}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.pass{background:rgba(63,185,80,.15);color:var(--ok)}
+.fail{background:rgba(248,81,73,.15);color:var(--bad)}
+.arch{color:var(--dim);font-size:12px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.metrics span{display:inline-block;margin-right:12px;color:var(--dim);font-size:12px}
+.metrics b{color:var(--fg);font-weight:600}
+.spark{display:inline-flex;align-items:flex-end;gap:2px;height:18px}
+.spark i{width:4px;background:var(--accent);border-radius:1px;min-height:2px}
+.empty{color:var(--dim);padding:30px 0}
+.wrap{overflow-x:auto}
+</style></head><body>
+<header><h1>Model Pipeline Console</h1>
+<span class="sub" id="sub">loading…</span></header>
+<main>
+<h2>Fleet</h2><div class="grid" id="fleet"></div>
+<h2>Pipelines</h2><div class="wrap"><table id="tbl">
+<thead><tr><th>Project</th><th>Component</th><th>Stage</th><th>Architecture</th><th>Gates</th><th>Metrics</th><th>Trend</th><th>Runs</th><th>When</th></tr></thead>
+<tbody></tbody></table></div>
+<div class="empty" id="empty" hidden>No receipts found under the configured roots.</div>
+</main>
+<script>
+const fmt = v => typeof v !== 'number' ? String(v) : (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(4));
+function spark(vals){
+  if(!vals || vals.length < 2) return '';
+  const ok = vals.filter(v => typeof v === 'number');
+  if(ok.length < 2) return '';
+  const lo = Math.min(...ok), hi = Math.max(...ok), span = (hi - lo) || 1;
+  return '<span class="spark">' + ok.map(v =>
+    `<i style="height:${3 + 15 * (v - lo) / span}px"></i>`).join('') + '</span>';
+}
+async function load(){
+  const [rows, fleet, health] = await Promise.all([
+    fetch('api/pipelines').then(r => r.json()),
+    fetch('api/fleet').then(r => r.json()),
+    fetch('api/health').then(r => r.json()).catch(() => ({unavailable_roots: []})),
+  ]);
+  const f = document.getElementById('fleet');
+  f.innerHTML = (fleet.gpus||[]).map(g =>
+    `<div class="card"><div class="k">${g.name}</div><div class="v">${g.util}%</div>
+     <div class="bar"><i style="width:${Math.round(100*g.mem_used/g.mem_total)}%"></i></div>
+     <div class="sub">${(g.mem_used/1024).toFixed(1)} / ${(g.mem_total/1024).toFixed(0)} GiB</div></div>`
+  ).join('') + (fleet.storage||[]).map(s =>
+    `<div class="card"><div class="k">${s.path}</div><div class="v">${s.used_pct}%</div>
+     <div class="bar"><i style="width:${s.used_pct}%"></i></div>
+     <div class="sub">${s.free_gb} GB free of ${s.total_gb}</div></div>`
+  ).join('');
+  const tb = document.querySelector('#tbl tbody');
+  document.getElementById('empty').hidden = rows.length > 0;
+  tb.innerHTML = rows.map(r => {
+    const gates = Object.entries(r.gates||{}).map(([k,v]) =>
+      `<span class="pill ${v?'pass':'fail'}">${k}</span>`).join(' ') || '<span class="arch">none</span>';
+    const mets = Object.entries(r.metrics||{}).slice(0,4).map(([k,v]) => {
+      const b = (r.baseline||{})[k];
+      return `<span>${k} <b>${fmt(v)}</b>${b!==undefined?` <span class="arch">← ${fmt(b)}</span>`:''}</span>`;
+    }).join('');
+    return `<tr><td>${r.project}</td><td><b>${r.component}</b></td><td>${r.stage}</td>
+      <td class="arch">${r.architecture||'—'}</td><td>${gates}</td>
+      <td class="metrics">${mets}</td><td>${spark(r.trend)}</td>
+      <td>${r.runs}</td><td class="mono arch">${(r.when||'').replace('T',' ').replace('Z','')}</td></tr>`;
+  }).join('');
+  const stuck = (health.unavailable_roots || []);
+  const warn = stuck.length ? ` · UNAVAILABLE: ${stuck.join(', ')}` : '';
+  document.getElementById('sub').textContent =
+    `${rows.length} pipeline(s) · ${rows.filter(r=>r.passed).length} passing · updated ${new Date().toLocaleTimeString()}${warn}`;
+}
+load(); setInterval(load, 15000);
+</script></body></html>"""
+
+
+class Handler(BaseHTTPRequestHandler):
+    """Read-only JSON API plus the dashboard page."""
+
+    def _send(self, code: int, body: bytes, ctype: str) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, payload: object) -> None:
+        self._send(200, json.dumps(payload, default=str).encode(), "application/json")
+
+    def do_GET(self) -> None:
+        path = self.path.split("?")[0].rstrip("/") or "/"
+        # Tolerate being mounted under a prefix by a reverse proxy.
+        for prefix in ("/lab/pipelines", "/pipelines"):
+            if path.startswith(prefix):
+                path = path[len(prefix) :] or "/"
+                break
+        if path in ("/", "/index.html"):
+            self._send(200, PAGE.encode(), "text/html; charset=utf-8")
+        elif path == "/api/pipelines":
+            receipts, _unavailable = load_receipts(RECEIPT_ROOTS)
+            self._json(summarise(receipts))
+        elif path == "/api/runs":
+            receipts, _unavailable = load_receipts(RECEIPT_ROOTS)
+            self._json(
+                [
+                    {
+                        "project": r.producer.project,
+                        "component": r.producer.component,
+                        "architecture": r.producer.architecture,
+                        "stage": r.stage,
+                        "metrics": r.metrics,
+                        "baseline": r.baseline,
+                        "gates": r.gates,
+                        "passed": r.passed,
+                        "when": r.started_utc,
+                        "seconds": r.seconds,
+                        "artifacts": r.artifacts,
+                        "detail": r.detail,
+                    }
+                    for r in receipts
+                ]
+            )
+        elif path == "/metrics":
+            receipts, _unavailable = load_receipts(RECEIPT_ROOTS)
+            body = prometheus_text(receipts).encode()
+            self._send(200, body, "text/plain; version=0.0.4; charset=utf-8")
+        elif path == "/api/fleet":
+            self._json(fleet_state())
+        elif path == "/api/health":
+            _receipts, unavailable = load_receipts(RECEIPT_ROOTS)
+            self._json(
+                {
+                    "ok": True,
+                    "roots": [str(p) for p in RECEIPT_ROOTS],
+                    "unavailable_roots": unavailable,
+                }
+            )
+        else:
+            self._send(404, b"not found", "text/plain")
+
+    def log_message(self, *_args: object) -> None:
+        """Silence per-request logging; systemd journal gets enough already."""
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--http", type=int, default=9121)
+    ap.add_argument(
+        "--bind",
+        default=os.environ.get("PIPELINE_CONSOLE_BIND", "127.0.0.1"),
+        help="loopback by default; a routable bind must be asked for explicitly",
+    )
+    ap.add_argument(
+        "--receipt-root",
+        action="append",
+        default=[],
+        help="repeatable; any directory of pipeline receipts, from any project",
+    )
+    ap.add_argument("--once", action="store_true", help="print the JSON summary and exit")
+    args = ap.parse_args()
+
+    roots = [Path(r) for r in (args.receipt_root or ["/akula-data/csd/receipts"])]
+    RECEIPT_ROOTS.extend(roots)
+
+    if args.once:
+        receipts, unavailable = load_receipts(roots)
+        if unavailable:
+            print(f"warning: unavailable roots: {', '.join(unavailable)}", file=sys.stderr)
+        print(json.dumps(summarise(receipts), indent=2, default=str))
+        return 0
+
+    srv = ThreadingHTTPServer((args.bind, args.http), Handler)
+    print(f"model-pipeline-console on http://{args.bind}:{args.http}", flush=True)
+    print(f"  roots: {', '.join(str(r) for r in roots)}", flush=True)
+    with contextlib.suppress(KeyboardInterrupt):
+        srv.serve_forever()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

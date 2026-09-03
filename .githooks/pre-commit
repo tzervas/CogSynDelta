@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Apply safe fixes to staged Python, then block on anything that needs a human.
+#
+# WHY THIS EXISTS AND WHY IT IS NOT `pre-commit run`
+# .pre-commit-config.yaml is well specified, but the pre-commit CLI is not installed here
+# and .git/hooks/pre-commit is git-secrets, so that config has never actually run. This
+# hook depends only on uvx, which the repo already requires, and calls git-secrets when
+# it is present rather than replacing it.
+#
+# WHAT IS SAFE TO AUTOFIX
+# Formatting and ruff's own --fix set only. Anything requiring judgement -- a type error,
+# a missing docstring, a real lint finding -- stops the commit rather than being
+# "corrected" into something that passes while meaning something else.
+#
+# SCOPE
+# Staged files only, so committing one change does not reformat unrelated work in the
+# tree. The full gate set runs at pre-push, which is where slow checks belong.
+set -uo pipefail
+
+RUFF_VERSION="$(grep -m1 'RUFF_VERSION' .github/workflows/ci.yml 2>/dev/null | tr -d ' "' | cut -d: -f2)"
+RUFF_VERSION="${RUFF_VERSION:-0.14.13}"
+
+mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACM -- '*.py')
+if [ "${#staged[@]}" -eq 0 ]; then
+    exit 0
+fi
+
+echo "pre-commit: ${#staged[@]} staged python file(s), ruff ${RUFF_VERSION}"
+
+# --- safe fixes, then re-stage -------------------------------------------------------
+# Re-staging matters: without it the fix lands in the working tree while the ORIGINAL
+# still goes into the commit, so CI fails on code that looks fixed locally.
+uvx "ruff@${RUFF_VERSION}" check --fix --quiet "${staged[@]}" >/dev/null 2>&1
+uvx "ruff@${RUFF_VERSION}" format --quiet "${staged[@]}" >/dev/null 2>&1
+
+restaged=0
+for f in "${staged[@]}"; do
+    if [ -f "$f" ] && ! git diff --quiet -- "$f"; then
+        git add -- "$f"
+        restaged=$((restaged + 1))
+    fi
+done
+[ "$restaged" -gt 0 ] && echo "pre-commit: auto-fixed and re-staged $restaged file(s)"
+
+# --- blocking checks -----------------------------------------------------------------
+fail=0
+
+if ! uvx "ruff@${RUFF_VERSION}" check "${staged[@]}"; then
+    echo "pre-commit: ruff findings above need a decision, not an autofix" >&2
+    fail=1
+fi
+
+if ! uvx "ruff@${RUFF_VERSION}" format --check --quiet "${staged[@]}"; then
+    echo "pre-commit: formatting still not clean after autofix" >&2
+    fail=1
+fi
+
+# git-secrets was the previous occupant of .git/hooks/pre-commit; keep it if installed.
+if command -v git-secrets >/dev/null 2>&1; then
+    git secrets --pre_commit_hook -- "$@" || fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
+    echo "pre-commit: BLOCKED. Fix the above, or 'git commit --no-verify' to override." >&2
+    exit 1
+fi
+
+echo "pre-commit: ok"
+exit 0

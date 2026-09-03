@@ -7,11 +7,14 @@ This example demonstrates:
 3. Monitoring performance metrics
 """
 
+from pathlib import Path
+
 import torch
+import yaml
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 
-from cogsyndelta.core.pcn_vae_gan import PCN_VAE_GAN
+from cogsyndelta.core.pcn_vae_gan import PCNVAEGANHybrid
 
 
 def main() -> None:
@@ -50,7 +53,10 @@ def main() -> None:
 
     # Initialize model
     print("\nInitializing PCN-VAE-GAN model...")
-    model = PCN_VAE_GAN(config["model"]).to(device)
+    # PCNVAEGANHybrid reads a nested config; the inline dict above never
+    # matched its shape, so this raised even once the name was right.
+    _cfg = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
+    model = PCNVAEGANHybrid(yaml.safe_load(_cfg.read_text())).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     # Training loop

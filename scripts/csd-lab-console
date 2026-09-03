@@ -41,6 +41,40 @@ AUTODEV_OUT = Path("/akula-data/cabal/autodev-out")
 GPU_PLAN = Path(os.environ.get("CSD_GPU_PLAN", "/akula-data/cabal/gpu-plan.json"))
 SESS_DIR = Path(os.environ.get("CSD_LAB_SESSIONS", "/akula-data/cabal/lab-sessions"))
 UPSTREAM = os.environ.get("CSD_UPSTREAM", "").rstrip("/")
+# Minted server-side at process start (secret exec), never taken from a client
+# header. Attached by proxy_upstream() for allowlisted routes only; never
+# forwarded for /api/apply, which never proxies (see PROXY_ALLOW).
+UPSTREAM_TOKEN = os.environ.get("CSD_UPSTREAM_TOKEN", "").strip()
+# Default-deny: only these read-only, non-credentialed routes may be relayed
+# to UPSTREAM. /api/apply is never eligible -- see dispatch_api_post, which
+# handles it locally before this allowlist is even consulted -- and the
+# exclusion is repeated in proxy_eligible() as an independent second guard.
+#
+# FUNCTIONAL IMPACT on a proxying node (CSD_UPSTREAM set, e.g. the homelab
+# instance pointed at akula-prime:9118): the console's own page issues ~19
+# distinct /api/* calls (gpu/lock, git, loop, priority, steer, spawn, chat,
+# forgejo/{whoami,prs,pr-create,status,wait,comment,merge-gate},
+# comfy/{queue-prompt,flux-klein-4b}, plus the 5 below). Only the 5 below are
+# allowlisted, so on a proxying node every other route now 404s through the
+# UI, and POST /api/apply is handled LOCALLY on the proxying node (see
+# dispatch_api_post) rather than relayed to prime -- where WORKTREES paths
+# don't exist, so it returns "unknown worktree" instead of writing anything.
+# Excluding apply from the proxy is intentional (OD-2) and correct; narrowing
+# reads to 5 routes is a defensible default-deny default, but it is a real
+# functional break for any node that was using this console as a UI
+# front-end onto prime, not a transparent no-op. This needs an explicit
+# operator call: widen PROXY_ALLOW to the read-only routes the UI actually
+# needs, or stop pointing CSD_UPSTREAM at a node used as the operator UI.
+# Do not report this as "keeps working" -- it does not, until that call is made.
+PROXY_ALLOW = frozenset(
+    {
+        "/api/status",
+        "/api/gpu",
+        "/api/sessions",
+        "/api/comfy/list-workflows",
+        "/api/comfy/prompt-status",
+    }
+)
 APPLY_TOKEN_FILE = Path(os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token"))
 WORKTREES = {
     "p1-08": Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-08"),
@@ -48,6 +82,30 @@ WORKTREES = {
 }
 PROTECTED_WT = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
 ALLOW_PREFIXES = ("src/", "tests/", "docs/")
+# Guard modules and the tests that prove they fire. http_apply refuses these
+# regardless of what worktree or path the client claims -- OD-1: the
+# autodev write scope must never include the code that checks autodev's own
+# output. Paired with a Forgejo path-scoped protection on the same paths so
+# the rule survives a new guard landing somewhere not yet listed here.
+PROTECTED_APPLY_PATHS = frozenset(
+    {
+        "src/cogsyndelta/eval/metrics.py",
+        "src/cogsyndelta/regions/pretrain.py",
+        "src/cogsyndelta/regions/_checkpoint.py",
+        "scripts/csd-train-all.py",
+        "tests/test_guards_can_fail.py",
+        "tests/test_reserved_corpus_guard.py",
+        "tests/test_checkpoint_load_security.py",
+    }
+)
+PROTECTED_APPLY_PREFIXES = (".github/workflows/", ".githooks/")
+
+
+def is_protected_apply_path(rel: str) -> bool:
+    """True for a guard module/test or CI/hook path that autodev must not touch."""
+    return rel in PROTECTED_APPLY_PATHS or rel.startswith(PROTECTED_APPLY_PREFIXES)
+
+
 ROOT = Path(__file__).resolve().parents[1]
 GOALS = ROOT / "docs/program/GOALS.md"
 ROUTER_JSON = ROOT / "config/model-router.json"
@@ -442,21 +500,38 @@ def check_apply_auth(header: str) -> bool:
     return hmac.compare_digest(got, want)
 
 
-def http_apply(worktree: str, rel: str, content: str) -> dict:
-    """Allowlisted worktree write. Never kang-main-wip."""
+def http_apply(worktree: str, rel: str, content: str) -> dict:  # noqa: PLR0911
+    """Allowlisted worktree write. Never kang-main-wip.
+
+    Path checks run against the RESOLVED target, not the client-supplied
+    string. A raw-string check here is bypassable: PurePath silently
+    collapses "//", "." segments and a trailing "/", and resolve() follows
+    symlinks, so a string that looks unprotected (or looks inside
+    ALLOW_PREFIXES) can resolve to a byte-for-byte protected path. Resolving
+    first and re-deriving `rel` from the resolved target means the string
+    every check below sees is exactly the path that gets written -- and it
+    closes the symlink vector (an alias pointing at a protected file
+    resolves to that file's real path) for free.
+    """
     dest = WORKTREES.get(worktree)
     if dest is None or not dest.is_dir():
         return {"ok": False, "error": f"unknown worktree {worktree}"}
-    if dest.resolve() == PROTECTED_WT.resolve():
+    droot = dest.resolve()
+    if droot == PROTECTED_WT.resolve():
         return {"ok": False, "error": "refusing kang-main-wip"}
-    rel = rel.lstrip("/")
-    if ".." in Path(rel).parts or not rel.startswith(ALLOW_PREFIXES):
+    raw_rel = rel.lstrip("/")
+    target = (dest / raw_rel).resolve()
+    if droot not in target.parents:
+        return {"ok": False, "error": "escaped worktree"}
+    rel = target.relative_to(droot).as_posix()
+    if is_protected_apply_path(rel):
+        return {"ok": False, "error": f"protected path: {rel}"}
+    if not rel.startswith(ALLOW_PREFIXES):
         return {"ok": False, "error": f"path not allowed: {rel}"}
     if len(content) > 400_000:
         return {"ok": False, "error": "content too large"}
-    target = (dest / rel).resolve()
-    if dest.resolve() not in target.parents:
-        return {"ok": False, "error": "escaped worktree"}
+    if "def test_" in content and "assert" not in content and "pytest.raises" not in content:
+        return {"ok": False, "error": "test has no assert; refusing pass stubs"}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return {"ok": True, "wrote": str(target)}
@@ -891,16 +966,36 @@ def chat(prompt: str) -> str:
     return text
 
 
+def proxy_eligible(path: str) -> bool:
+    """Default-deny membership test for the upstream proxy.
+
+    /api/apply is excluded even though dispatch_api_post never lets a
+    request reach here for that path -- this is the independent second
+    guard, not the only one.
+    """
+    if path == "/api/apply":
+        return False
+    return path in PROXY_ALLOW
+
+
 def proxy_upstream(
     method: str,
     path_qs: str,
     body: bytes | None = None,
-    extra_headers: dict | None = None,
 ) -> tuple[int, bytes]:
-    """Homelab UI → prime GPU agent. Why: cards are inference providers only."""
-    headers = dict(extra_headers or {})
+    """Homelab UI → prime GPU agent, allowlisted routes only.
+
+    Why: cards are inference providers only. Never relays the caller's
+    credentials -- the client's Authorization header is never read here.
+    Attaches a downstream-scoped bearer minted server-side (CSD_UPSTREAM_TOKEN,
+    set from env at service start via `secret exec`) when one is configured;
+    otherwise no Authorization header is sent at all.
+    """
+    headers: dict[str, str] = {}
     if body is not None:
-        headers.setdefault("Content-Type", "application/json")
+        headers["Content-Type"] = "application/json"
+    if UPSTREAM_TOKEN:
+        headers["Authorization"] = f"Bearer {UPSTREAM_TOKEN}"
     req = urllib.request.Request(
         UPSTREAM + path_qs,
         data=body,
@@ -916,6 +1011,97 @@ def proxy_upstream(
         return 502, json.dumps({"error": "prime agent down", "detail": str(exc)[:200]}).encode()
 
 
+def dispatch_api_get(apipath: str, query: str) -> tuple[int, bytes]:  # noqa: PLR0911
+    """Route one GET /api/* request. Pure function so proxy/auth order is testable."""
+    if UPSTREAM:
+        if not proxy_eligible(apipath):
+            return 404, b'{"error":"not found"}'
+        qs = apipath + (("?" + query) if query else "")
+        return proxy_upstream("GET", qs)
+    if apipath.startswith("/api/status"):
+        return 200, json.dumps(snapshot()).encode()
+    if apipath.startswith("/api/sessions"):
+        q = parse_qs(query)
+        sid = (q.get("id") or [""])[0]
+        body = load_session(sid) if sid else {"sessions": list_sessions()}
+        return 200, json.dumps(body).encode()
+    if apipath.startswith("/api/comfy/list-workflows"):
+        q = parse_qs(query)
+        src = (q.get("source") or ["catalog"])[0]
+        return 200, json.dumps(comfy_tool("list-workflows", {"source": src})).encode()
+    if apipath.startswith("/api/comfy/prompt-status"):
+        q = parse_qs(query)
+        pid = (q.get("prompt_id") or [""])[0]
+        return 200, json.dumps(comfy_tool("prompt-status", {"prompt_id": pid})).encode()
+    hit = handle_lab("GET", apipath, _qs_payload(query))
+    if hit is not None:
+        code, rec = hit
+        return code, json.dumps(rec).encode()
+    return 404, b'{"error":"not found"}'
+
+
+def dispatch_api_post(  # noqa: PLR0911
+    postpath: str, auth_header: str, raw_in: bytes
+) -> tuple[int, bytes]:
+    """Route one POST /api/* request. Pure function so proxy/auth order is testable.
+
+    /api/apply is handled here, unconditionally, before UPSTREAM is even
+    consulted -- it never reaches proxy_upstream, regardless of whether this
+    node is proxying. That is the OD-2 fix: apply auth used to run only in
+    the branch taken when UPSTREAM was unset, so a proxying node relayed the
+    client's raw Authorization header upstream for /api/apply without ever
+    calling check_apply_auth.
+    """
+    if postpath == "/api/apply":
+        if not check_apply_auth(auth_header):
+            return 401, b'{"error":"unauthorized"}'
+        try:
+            payload = json.loads(raw_in or b"{}")
+        except json.JSONDecodeError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        rec = http_apply(
+            str(payload.get("worktree") or ""),
+            str(payload.get("path") or ""),
+            str(payload.get("content") or ""),
+        )
+        return (200 if rec.get("ok") else 400), json.dumps(rec).encode()
+    if UPSTREAM:
+        if not proxy_eligible(postpath):
+            return 404, b'{"error":"not found"}'
+        return proxy_upstream("POST", postpath, raw_in)
+    try:
+        payload = json.loads(raw_in or b"{}")
+    except json.JSONDecodeError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    hit = handle_lab("POST", postpath, payload)
+    if hit is not None:
+        code, rec = hit
+        return code, json.dumps(rec).encode()
+    if postpath == "/api/steer":
+        return 200, json.dumps(write_steer(**payload)).encode()
+    if postpath == "/api/spawn":
+        rec = spawn_alias(
+            str(payload.get("alias") or "local/code"), str(payload.get("why") or "lab")
+        )
+        return 200, json.dumps(rec).encode()
+    if postpath == "/api/chat":
+        text = chat(str(payload.get("prompt") or ""))
+        return 200, json.dumps({"content": text}).encode()
+    if postpath == "/api/comfy/list-workflows":
+        return 200, json.dumps(comfy_tool("list-workflows", payload)).encode()
+    if postpath == "/api/comfy/queue-prompt":
+        return 200, json.dumps(comfy_tool("queue-prompt", payload)).encode()
+    if postpath == "/api/comfy/prompt-status":
+        return 200, json.dumps(comfy_tool("prompt-status", payload)).encode()
+    if postpath == "/api/comfy/flux-klein-4b":
+        return 200, json.dumps(comfy_tool("flux-klein-4b", payload)).encode()
+    return 404, b'{"error":"not found"}'
+
+
 def serve(port: int) -> None:
     class H(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: object) -> None:
@@ -928,7 +1114,7 @@ def serve(port: int) -> None:
             self.end_headers()
             self.wfile.write(raw)
 
-        def do_GET(self) -> None:  # noqa: PLR0911
+        def do_GET(self) -> None:
             path = urlparse(self.path).path
             if path in ("/", "/lab", "/lab/"):
                 body = PAGE.encode()
@@ -940,51 +1126,8 @@ def serve(port: int) -> None:
                 return
             parsed = urlparse(self.path)
             apipath = parsed.path[4:] if parsed.path.startswith("/lab/") else parsed.path
-            if UPSTREAM and apipath.startswith("/api/"):
-                qs = parsed.path + (("?" + parsed.query) if parsed.query else "")
-                extra = {}
-                if self.headers.get("Authorization"):
-                    extra["Authorization"] = self.headers.get("Authorization") or ""
-                code, raw = proxy_upstream("GET", qs, extra_headers=extra)
-                self._send(code, raw)
-                return
-            if apipath.startswith("/api/status"):
-                raw = json.dumps(snapshot()).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(raw)))
-                self.end_headers()
-                self.wfile.write(raw)
-                return
-            if apipath.startswith("/api/sessions"):
-                q = parse_qs(parsed.query)
-                sid = (q.get("id") or [""])[0]
-                body = load_session(sid) if sid else {"sessions": list_sessions()}
-                raw = json.dumps(body).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(raw)))
-                self.end_headers()
-                self.wfile.write(raw)
-                return
-            if apipath.startswith("/api/comfy/list-workflows"):
-                q = parse_qs(parsed.query)
-                src = (q.get("source") or ["catalog"])[0]
-                rec = comfy_tool("list-workflows", {"source": src})
-                self._send(200, json.dumps(rec).encode())
-                return
-            if apipath.startswith("/api/comfy/prompt-status"):
-                q = parse_qs(parsed.query)
-                pid = (q.get("prompt_id") or [""])[0]
-                rec = comfy_tool("prompt-status", {"prompt_id": pid})
-                self._send(200, json.dumps(rec).encode())
-                return
-            hit = handle_lab("GET", apipath, _qs_payload(parsed.query))
-            if hit is not None:
-                code, rec = hit
-                self._send(code, json.dumps(rec).encode())
-                return
-            self.send_error(404)
+            code, raw = dispatch_api_get(apipath, parsed.query)
+            self._send(code, raw)
 
         def do_POST(self) -> None:
             n = int(self.headers.get("Content-Length") or "0")
@@ -992,60 +1135,8 @@ def serve(port: int) -> None:
             postpath = urlparse(self.path).path
             if postpath.startswith("/lab/"):
                 postpath = postpath[4:]
-            if UPSTREAM and postpath.startswith("/api/"):
-                extra = {}
-                if self.headers.get("Authorization"):
-                    extra["Authorization"] = self.headers.get("Authorization") or ""
-                code, raw = proxy_upstream("POST", postpath, raw_in, extra_headers=extra)
-                self._send(code, raw)
-                return
-            payload = json.loads(raw_in or b"{}")
-            if postpath == "/api/apply":
-                if not check_apply_auth(self.headers.get("Authorization") or ""):
-                    self._send(401, b'{"error":"unauthorized"}')
-                    return
-                rec = http_apply(
-                    str(payload.get("worktree") or ""),
-                    str(payload.get("path") or ""),
-                    str(payload.get("content") or ""),
-                )
-                raw = json.dumps(rec).encode()
-                self._send(200 if rec.get("ok") else 400, raw)
-                return
-            if not isinstance(payload, dict):
-                payload = {}
-            hit = handle_lab("POST", postpath, payload)
-            if hit is not None:
-                code, rec = hit
-                self._send(code, json.dumps(rec).encode())
-                return
-            if postpath == "/api/steer":
-                raw = json.dumps(write_steer(**payload)).encode()
-            elif postpath == "/api/spawn":
-                raw = json.dumps(
-                    spawn_alias(
-                        str(payload.get("alias") or "local/code"), str(payload.get("why") or "lab")
-                    )
-                ).encode()
-            elif postpath == "/api/chat":
-                text = chat(str(payload.get("prompt") or ""))
-                raw = json.dumps({"content": text}).encode()
-            elif postpath == "/api/comfy/list-workflows":
-                raw = json.dumps(comfy_tool("list-workflows", payload)).encode()
-            elif postpath == "/api/comfy/queue-prompt":
-                raw = json.dumps(comfy_tool("queue-prompt", payload)).encode()
-            elif postpath == "/api/comfy/prompt-status":
-                raw = json.dumps(comfy_tool("prompt-status", payload)).encode()
-            elif postpath == "/api/comfy/flux-klein-4b":
-                raw = json.dumps(comfy_tool("flux-klein-4b", payload)).encode()
-            else:
-                self.send_error(404)
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(raw)))
-            self.end_headers()
-            self.wfile.write(raw)
+            code, raw = dispatch_api_post(postpath, self.headers.get("Authorization") or "", raw_in)
+            self._send(code, raw)
 
     bind = lab_bind()
     httpd = ThreadingHTTPServer((bind, port), H)
