@@ -224,18 +224,18 @@ def benchmark_region(
     model.load_state_dict(ck["model"])
     checkpoint_sha256 = ckpt_sha_out[0]
 
-    params = sum(p.numel() for p in model.parameters())
-    # Prefer the quantized size when one exists: what ships is what should be divided by.
-    stored = params * 4
-    quant = sorted(state.glob(f"receipts/{region}-quant-*.json"))
-    quantized = False
-    if quant:
-        stored = int(json.loads(quant[-1].read_text())["stored_bytes"])
-        quantized = True
+    # The fp32 checkpoint's OWN bytes on disk -- never a quantized artifact's, however
+    # convenient a same-region `*-quant-*.json` glob might be. This receipt's `kind` is
+    # "eval" and its `provenance.eval_target` is "fp32"; a reader dividing this receipt's
+    # `capability_per_mb` by anything but the fp32 checkpoint's real size would be
+    # comparing capability against the wrong artifact (N5). The quantized number belongs
+    # solely to `benchmark_region_quantized`'s "eval-quantized" receipt, which measures
+    # `packed_stored_bytes` on the artifact it actually opened.
+    stored = Path(train_receipt["checkpoint"]).stat().st_size
 
     res = _run_battery(model, tok, holdout, cfg, device, stored)
     r, e, rep = res.ranking, res.efficiency, res.representation
-    _print_battery(res, size_note="quantized" if quantized else "fp32")
+    _print_battery(res, size_note="fp32")
 
     return Receipt(
         producer=Producer("cogsyndelta", region, "dense-transformer"),
@@ -265,7 +265,6 @@ def benchmark_region(
         },
         provenance={
             "holdout_pairs": len(holdout),
-            "quantized_size": quantized,
             "eval_target": "fp32",
         },
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
