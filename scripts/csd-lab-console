@@ -125,7 +125,25 @@ WAN_BINDS = frozenset({"0.0.0.0", "::", "[::]"})
 
 
 def sh(args: list[str], timeout: int = 20) -> str:
-    p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+    """Run a helper CLI, never raising for a missing binary or a hang.
+
+    snapshot() calls this for nvidia-smi/docker/ssh unconditionally, on the
+    assumption that this console runs on a lab host with the GPU tooling
+    installed. Neither holds on a CI runner: `fleet-ci-base` has no
+    nvidia-smi (no GPU passthrough into the job container), so
+    subprocess.run's own Popen raised an uncaught FileNotFoundError here --
+    inside snapshot()'s dict literal, so it aborted the entire /api/status
+    response rather than degrading one field. Any missing-executable or
+    permission error is now reported as this field's value instead of
+    escaping; a slow/hung remote command (ssh_5080) is reported the same
+    way rather than exceeding its caller's HTTP-request budget.
+    """
+    try:
+        p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+    except OSError as exc:
+        return f"unavailable: {exc}"
+    except subprocess.TimeoutExpired:
+        return f"unavailable: timed out after {timeout}s"
     return (p.stdout or p.stderr or "").strip()
 
 

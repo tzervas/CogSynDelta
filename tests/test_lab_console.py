@@ -415,3 +415,66 @@ def test_http_apply_refuses_assertless_test_stub(
     real = "def test_real():\n    assert 1 == 1\n"
     ok = mod.http_apply("p1-08", "tests/test_stub.py", real)
     assert ok["ok"] is True
+
+
+# --- sh() must degrade, never crash, when a helper CLI is unusable ----------
+#
+# Regression for the CI failure on PR #7 (fix/lab-console-auth-all-routes):
+# a CI runner's job container has no nvidia-smi (no GPU passthrough), so
+# subprocess.run's own Popen raised an uncaught FileNotFoundError from
+# inside snapshot()'s dict literal, aborting the whole /api/status response
+# and abandoning the connection (test_route_dispatch_401s_for_bare_token_
+# and_trailing_space, test_server_survives_a_non_ascii_header_over_a_real_
+# socket both hit this indirectly via dispatch_api_get("/api/status", ...)).
+# sh() itself is the right place to guard: every caller (snapshot(),
+# ssh_5080()) already treats its return value as an opaque status string,
+# never a crash signal.
+
+
+def test_sh_reports_a_missing_binary_instead_of_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = load_lab(tmp_path, monkeypatch)
+    result = mod.sh(["definitely-not-a-real-binary-e02f9c"])
+    assert isinstance(result, str)
+    assert "unavailable" in result
+
+
+def test_sh_reports_a_timeout_instead_of_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = load_lab(tmp_path, monkeypatch)
+    result = mod.sh(["sleep", "5"], timeout=0.05)
+    assert isinstance(result, str)
+    assert "unavailable" in result
+
+
+def test_snapshot_survives_gpu_tooling_being_absent_from_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exact CI scenario: a PATH with no nvidia-smi/docker on it must
+    not crash snapshot(), and its output for that field must say so rather
+    than silently omitting it."""
+    mod = load_lab(tmp_path, monkeypatch)
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    snap = mod.snapshot()
+    assert "unavailable" in snap["prime_smi"]
+    assert "unavailable" in snap["localai_container"]
+
+
+def test_route_dispatch_status_survives_gpu_tooling_being_absent_from_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The route-level view of the same scenario: dispatch_api_get must
+    still answer 200, not abandon the connection, when nvidia-smi/docker
+    are not on PATH at all (the CI runner's job container)."""
+    mod = load_lab(tmp_path, monkeypatch)
+    monkeypatch.setenv("CSD_APPLY_TOKEN", "s3cr3t")
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    code, raw = mod.dispatch_api_get("/api/status", "", "Bearer s3cr3t")
+    assert code == 200
+    assert "unavailable" in json.loads(raw)["prime_smi"]
