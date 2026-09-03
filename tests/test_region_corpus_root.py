@@ -36,6 +36,20 @@ pytest.importorskip("tokenizers", reason="train group not installed")
 
 from cogsyndelta import corpus as corpus_mod
 
+# MUST be imported here, at module (collection) time, before any test in this file or
+# any other gets a chance to monkeypatch corpus_mod.fingerprint_corpus. quantize_text_
+# region/benchmark_region both do `from cogsyndelta.regions.pretrain import ...` lazily,
+# at call time. If that is pretrain.py's FIRST-EVER import anywhere in the session, it
+# runs `from cogsyndelta.corpus import (..., fingerprint_corpus, ...)` at pretrain's own
+# module scope while the mock is active, binding pretrain.py's `fingerprint_corpus` name
+# to the mock permanently -- monkeypatch only undoes its write to corpus_mod's attribute,
+# not that import-time binding, so every later test that relies on pretrain's real
+# fingerprint_corpus silently gets the mock instead (order-dependent: whichever test file
+# happens to import pretrain first, unpatched, "wins"). Importing it here, at collection
+# time -- which always precedes every test's execution across the whole session -- fixes
+# the real function in place before any monkeypatching can happen.
+from cogsyndelta.regions import pretrain as pretrain_mod
+
 pytestmark = pytest.mark.cpu
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -121,7 +135,16 @@ def _make_synthetic_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suff
         captured["shards"] = list(shards)
         raise _CapturedError
 
+    # Patch the name where it is looked up. quantize_text_region/benchmark_region each
+    # do their own `from cogsyndelta.corpus import fingerprint_corpus` at call time, so
+    # patching corpus_mod covers them -- but pretrain.py bound its OWN `fingerprint_corpus`
+    # name at its own module import (see the top-of-file comment on the pretrain_mod
+    # import), and nothing here calls through pretrain.py's copy for this particular path.
+    # Patch both anyway: they are the same logical target, and leaving pretrain_mod's copy
+    # real while corpus_mod's is mocked is exactly the split state that let a stale mock
+    # leak across tests in the first place.
     monkeypatch.setattr(corpus_mod, "fingerprint_corpus", _capture_and_raise)
+    monkeypatch.setattr(pretrain_mod, "fingerprint_corpus", _capture_and_raise)
 
     return train_all, tmp_path, shard_path, captured
 
