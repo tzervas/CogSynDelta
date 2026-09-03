@@ -62,6 +62,28 @@ def test_adapts_legacy_pretrain_receipt() -> None:
     assert rec.passed
 
 
+def test_adapts_pretrain_receipt_carries_checkpoint_sha256() -> None:
+    """R9: a receipt written after checkpoint fingerprinting carries a content hash of
+    the exact file `checkpoint` names, not just the path -- so a reader is not trusting
+    the path alone, and a checkpoint silently swapped or truncated on disk after the
+    receipt was written no longer passes as a match. `adapt()` has to carry that hash
+    through into `artifacts['checkpoint_sha256']` for it to reach a reader at all.
+    Verified by mutation: deleting the `checkpoint_sha256` line from the pretrain branch
+    of `adapt()` left every test in this file green before this one was added."""
+    raw = {
+        "region": "code",
+        "held_out": {"recall@1": 0.95},
+        "untrained_baseline": {"recall@1": 0.40},
+        "beats_untrained": {"recall@1": True},
+        "checkpoint": "/akula-data/csd/receipts/code-checkpoints/deadbeef/final.pt",
+        "checkpoint_sha256": "a" * 64,
+    }
+    rec = adapt(raw, Path("code-2026.json"))
+    assert rec is not None
+    assert rec.artifacts["checkpoint"] == raw["checkpoint"]
+    assert rec.artifacts["checkpoint_sha256"] == "a" * 64
+
+
 def test_adapts_legacy_quant_receipt() -> None:
     raw = {
         "region": "code",

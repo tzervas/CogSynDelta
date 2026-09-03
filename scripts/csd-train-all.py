@@ -499,6 +499,7 @@ def run_region(
     dry: bool,
     bf16: bool = True,
     max_len: int | None = None,
+    allow_unfingerprinted_resume: bool = False,
 ) -> dict | None:
     """Train one region and return its receipt.
 
@@ -521,6 +522,9 @@ def run_region(
             and the hard ceiling `TextEncoder.forward` raises past) from the same value
             -- see the comment at the `cfg = PretrainConfig(...)` call below for why
             those two must never be set independently.
+        allow_unfingerprinted_resume: Forwarded to `PretrainConfig.allow_unfingerprinted_resume`
+            -- see its docstring. False (refuse) unless the operator passes
+            `--allow-unfingerprinted-resume` on this script's command line.
 
     Returns:
         The receipt, or None when the region has no usable sources or `dry` is set.
@@ -683,6 +687,7 @@ def run_region(
         graded_shards=graded_shards or [],
         graded_columns=graded_cols or ("sentence1", "sentence2", "score"),
         graded_name=graded_name or "",
+        allow_unfingerprinted_resume=allow_unfingerprinted_resume,
     )
     started = time.time()
     receipt = pretrain_region(cfg)
@@ -933,6 +938,18 @@ def main() -> int:
         ),
     )
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--allow-unfingerprinted-resume",
+        action="store_true",
+        help=(
+            "resume from a checkpoint written before per-vintage fingerprinting "
+            "(R9) existed, instead of refusing it outright. Forwarded to "
+            "PretrainConfig.allow_unfingerprinted_resume for code/compress-style "
+            "regions only (run_region); run_vl_region/run_classify_region call "
+            "load_resumable positionally and keep its own permissive default "
+            "unchanged."
+        ),
+    )
     args = ap.parse_args()
     _require_train_deps(args.dry_run)
 
@@ -976,6 +993,7 @@ def main() -> int:
                     args.dry_run,
                     bf16=not args.no_bf16,
                     max_len=args.max_len,
+                    allow_unfingerprinted_resume=args.allow_unfingerprinted_resume,
                 )
         except Exception as exc:
             print(f"  {name}: FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)

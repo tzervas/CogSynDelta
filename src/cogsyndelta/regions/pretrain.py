@@ -134,6 +134,23 @@ class PretrainConfig:
     """Names the graded corpus in the receipt, e.g. 'stsb'. Cosmetic, but a receipt that
     says `spearman: 0.51` without saying against what is not a measurement."""
 
+    allow_unfingerprinted_resume: bool = False
+    """Escape hatch for `_checkpoint.load_resumable`'s refusal of a checkpoint with no
+    `config_fingerprint` at all (one written before fingerprinting existed, or with it
+    bypassed). Administrative, like `checkpoint_every`/`eval_every`/`device`/`out_dir`:
+    it decides how a resume ATTEMPT behaves, not what is being trained, so it is excluded
+    from `_resume_fields` -- flipping it must not change `_config_fingerprint`. Default
+    `False` (refuse) on purpose: commit 883c9d4 changed `build_splits` without changing
+    any `PretrainConfig` field, so the pre- and post-fix runs fingerprinted identically
+    and `code-checkpoints/` ended up mixing a 16:21 pre-fix `step-007998.pt` with
+    17:07-17:08 post-fix files with nothing on disk to tell them apart -- exactly the
+    silent-adoption shape a permissive default here would keep reproducing for any
+    checkpoint written before fingerprinting covered the corpus and split-building code.
+    Wired to `--allow-unfingerprinted-resume` in `scripts/csd-train-all.py`'s
+    `run_region` (the `code`/`compress`-style entrypoint); `run_vl_region` and
+    `run_classify_region` call `load_resumable` positionally and keep its own
+    permissive default instead, so this flag has no effect there."""
+
 
 def _lr_at(step: int, cfg: PretrainConfig) -> float:
     """Linear warmup then cosine decay.
@@ -756,15 +773,110 @@ the 8000-step runs' own multi-hundred-MB-per-region footprint either way.
 """
 
 
+def _corpus_content_fingerprint(cfg: PretrainConfig) -> str:
+    """The same corpus fingerprint the receipt records (`fingerprint_corpus`), computed
+    early so a resume check can see it before training runs.
+
+    `_resume_fields` used to carry `shards` as a sorted list of PATH STRINGS -- proof a
+    run was pointed at the same files, not that those files held the same rows. A corpus
+    refresh that rewrites the same paths in place (a re-fetch, a re-filter, a dedup pass)
+    changed nothing this function could see. `fingerprint_corpus` hashes each shard's
+    name AND byte size, so a content change big enough to matter shows up here even
+    though the path string never does.
+    """
+    return fingerprint_corpus(
+        cfg.shards, columns=list(cfg.pair_columns), extra_sources=cfg.extra_sources
+    )
+
+
+def _split_code_fingerprint() -> str:
+    """Hash of the split-building code path: `build_splits` in this module, plus
+    `screen_pair_contamination` (and everything it calls) in `cogsyndelta.eval.metrics`.
+
+    WHY THIS EXISTS: commit 883c9d4 changed `build_splits` -- shuffling single-source
+    corpora, which it had never done before -- without changing a single `PretrainConfig`
+    field. The pre- and post-fix runs had IDENTICAL `_resume_fields` and, before this
+    fix, an identical fingerprint; `code-checkpoints/` ended up holding a 16:21 pre-fix
+    `step-007998.pt` beside 17:07-17:08 post-fix files with nothing on disk to tell them
+    apart. A fingerprint over config fields alone cannot see a code change: it has to
+    hash the code.
+
+    WHOLE-FILE CONTENT, not `inspect.getsource(build_splits)` /
+    `inspect.getsource(screen_pair_contamination)` on the two named functions. Two
+    reasons. First, coverage: both functions call helpers in turn (`_pair_key`,
+    `pair_contamination_report`, `_scan`, `_channel_keys`, `_content_fingerprint`, the
+    function-word list `screen_pair_contamination` filters through...) and a change to
+    any of THOSE changes what a split contains without touching the two named functions'
+    own source text; hashing the whole module catches it without this function having to
+    enumerate every helper by hand as the guard grows. Second, stability across
+    PROCESSES: `inspect.getsource` re-derives text through a module's `__loader__` /
+    `linecache`, which can raise `OSError` for code not loaded from an ordinary `.py`
+    file on disk (a frozen build, a zipapp, a REPL `exec`) -- an availability failure
+    with no relationship to whether the code actually changed. `Path(file).read_bytes()`
+    reads the exact bytes any process sees from the same checkout, which is the property
+    that matters here: two ends of a resume (or two processes on the fleet) must agree on
+    this value whenever they are running the same code, with no dependency on how either
+    was launched.
+    """
+    from cogsyndelta.eval import metrics as _split_code_metrics_module
+
+    h = hashlib.blake2b(digest_size=16)
+    h.update(b"pretrain.py\x00")
+    h.update(Path(__file__).read_bytes())
+    h.update(b"\x00eval/metrics.py\x00")
+    h.update(Path(_split_code_metrics_module.__file__).read_bytes())
+    return h.hexdigest()
+
+
+def _sha256_file(path: Path, chunk_size: int = 1 << 20) -> str:
+    """Content hash of a file on disk, read in chunks rather than loaded whole."""
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(chunk_size), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _vintage_fingerprint(cfg: PretrainConfig) -> str:
+    """The corpus-content + split-code slice of `_config_fingerprint`, used ONLY to name
+    the checkpoint directory (see `pretrain_region`) -- never to decide whether a resume
+    is valid. That decision stays `_config_fingerprint`'s, checked field-by-field by
+    `load_resumable` against the FULL config.
+
+    Narrower than `_config_fingerprint` on purpose. If the checkpoint directory were
+    keyed on the full fingerprint instead, a plain hyperparameter tweak (batch_size, lr,
+    steps -- exactly what `test_config_mismatch_is_refused_not_silently_accepted` exists
+    to catch) would route to a brand-new, empty directory and silently START FRESH rather
+    than finding the prior checkpoint and refusing -- undoing that protection as a side
+    effect of fixing a different one. Keying on corpus+code alone means: a genuine new
+    vintage (883c9d4's shape -- same config, different corpus content or different
+    `build_splits` code) gets its own directory and can never blend with an older one,
+    while a same-vintage config change still lands in the SAME directory, where
+    `load_resumable` still finds the mismatch and still refuses.
+    """
+    h = hashlib.blake2b(digest_size=16)
+    h.update(_corpus_content_fingerprint(cfg).encode())
+    h.update(b"\x00")
+    h.update(_split_code_fingerprint().encode())
+    return h.hexdigest()
+
+
 def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
     """The config fields that must match for a checkpoint to be a valid continuation.
 
     Deliberately excludes purely administrative fields that do not change what is being
-    trained or measured: `out_dir`, `checkpoint_every`, `eval_every`, `device`. Every
-    field kept here -- steps, batch_size, lr, warmup, grad_clip, max_len, seed,
-    holdout_pairs, the encoder shape, the pair columns, the shard list, the tokenizer,
-    the graded set -- changes the run itself, so a checkpoint trained under a different
-    value of any of them is not a continuation of what `cfg` describes.
+    trained or measured: `out_dir`, `checkpoint_every`, `eval_every`, `device`,
+    `allow_unfingerprinted_resume`. Every field kept here -- steps, batch_size, lr,
+    warmup, grad_clip, max_len, seed, holdout_pairs, the encoder shape, the pair columns,
+    the shard list, the tokenizer, the graded set, the corpus content fingerprint, and the
+    split-building code fingerprint -- changes the run itself, so a checkpoint trained
+    under a different value of any of them is not a continuation of what `cfg` describes.
+
+    The last two of those were the R9 gap: this dict used to describe only
+    `PretrainConfig`'s OWN fields, so neither a corpus rewrite under the same paths nor a
+    change to `build_splits`/`screen_pair_contamination` itself (see commit 883c9d4)
+    moved the fingerprint at all -- the config looked identical because it was, and the
+    part that had actually changed was never asked.
     """
     return {
         "region": cfg.region,
@@ -790,11 +902,20 @@ def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
         "graded_shards": sorted(cfg.graded_shards),
         "graded_columns": list(cfg.graded_columns),
         "graded_name": cfg.graded_name,
+        "corpus_fingerprint": _corpus_content_fingerprint(cfg),
+        "split_code_fingerprint": _split_code_fingerprint(),
     }
 
 
 def _config_fingerprint(cfg: PretrainConfig) -> str:
-    """Hash the resume-relevant config fields into one comparable value."""
+    """Hash the resume-relevant config fields into one comparable value.
+
+    As of R9 this covers more than `PretrainConfig`'s own fields: `_resume_fields` folds
+    in the corpus CONTENT fingerprint (not just the shard paths) and a hash of the
+    split-building code itself, so a corpus rewrite or a `build_splits`/
+    `screen_pair_contamination` change moves this value even when every
+    `PretrainConfig` field stays byte-identical.
+    """
     payload = json.dumps(_resume_fields(cfg), sort_keys=True, default=str)
     return hashlib.blake2b(payload.encode(), digest_size=16).hexdigest()
 
@@ -850,16 +971,32 @@ def _checkpoint_payload(
 def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     """Train one region in isolation and write a receipt.
 
-    Resumable: if ``{out_dir}/{region}-checkpoints`` holds a checkpoint trained under an
-    IDENTICAL config (:func:`_config_fingerprint`), training continues from it --
-    model, optimizer momentum, RNG state, accumulated history and the untrained baseline
-    all carry forward rather than being re-measured or restarted. A checkpoint trained
-    under a DIFFERENT config is refused outright (see
+    Resumable: if ``{out_dir}/{region}-checkpoints/{fp8}`` holds a checkpoint trained
+    under an IDENTICAL config (:func:`_config_fingerprint`, which as of R9 covers the
+    corpus's own CONTENT and a hash of `build_splits`/`screen_pair_contamination`, not
+    just `PretrainConfig`'s fields), training continues from it -- model, optimizer
+    momentum, RNG state, accumulated history and the untrained baseline all carry forward
+    rather than being re-measured or restarted. ``{fp8}`` is the first 8 hex characters
+    of :func:`_vintage_fingerprint` (corpus content + split-building code, a narrower
+    slice of `_config_fingerprint`): every corpus/code vintage writes into its own
+    subdirectory, so a corpus rewrite or a `build_splits` change under an
+    otherwise-unchanged config can no longer land checkpoints in the same place a prior
+    vintage did (the failure commit 883c9d4 caused). A same-vintage config change
+    (batch_size, lr, steps, ...) still lands in that same directory, where a checkpoint
+    trained under a DIFFERENT full config -- or found with no fingerprint at all and
+    `cfg.allow_unfingerprinted_resume` unset -- is refused outright (see
     :func:`cogsyndelta.regions._checkpoint.load_resumable`) rather than silently adopted
     or silently ignored.
 
+    Every checkpoint written (periodic and `final.pt`) carries its own
+    `config_fingerprint` inside the file (`_checkpoint_payload`), so the file is
+    self-describing even if moved out of its fingerprint-prefixed directory.
+
     Returns:
-        The receipt dict, also written to ``{out_dir}/{region}-{timestamp}.json``.
+        The receipt dict, also written to ``{out_dir}/{region}-{timestamp}.json``. Its
+        ``checkpoint`` names the real file `final.pt` was written to;
+        ``checkpoint_sha256`` is that file's content hash, so a reader is not trusting
+        the path alone.
     """
     torch.manual_seed(cfg.seed)
     device = _resolve_device(cfg.device)
@@ -876,10 +1013,24 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     params = sum(p.numel() for p in model.parameters())
 
-    ckpt_dir = Path(cfg.out_dir) / f"{cfg.region}-checkpoints"
-    fingerprint = _config_fingerprint(cfg)
+    # fingerprint (and the corpus/code content it now covers, see R9) BEFORE ckpt_dir:
+    # the directory name carries a short prefix of the narrower VINTAGE fingerprint
+    # (corpus content + split-building code, see `_vintage_fingerprint`) so two vintages
+    # -- same PretrainConfig, different corpus content or different build_splits code,
+    # exactly commit 883c9d4's shape -- can never land in the same directory again, while
+    # a same-vintage config change (batch_size, lr, steps, ...) still lands in the SAME
+    # directory and still gets `load_resumable`'s full-fingerprint mismatch refusal
+    # rather than silently routing to an empty one. The OLD flat `{region}-checkpoints/`
+    # layout is left untouched on disk (it is simply never looked at by a
+    # fingerprint-prefixed run again); that is deliberate -- migrating or deleting
+    # whatever vintages are already mixed in there is an operator decision, not one this
+    # function should make silently.
     fields = _resume_fields(cfg)
-    resume = load_resumable(ckpt_dir, fingerprint, fields)
+    fingerprint = _config_fingerprint(cfg)
+    ckpt_dir = Path(cfg.out_dir) / f"{cfg.region}-checkpoints" / _vintage_fingerprint(cfg)[:8]
+    resume = load_resumable(
+        ckpt_dir, fingerprint, fields, allow_unfingerprinted=cfg.allow_unfingerprinted_resume
+    )
 
     if resume is None:
         start_step = 0
@@ -1036,6 +1187,10 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         final_ckpt,
     )
     rotate_checkpoints(ckpt_dir, _CHECKPOINT_KEEP)
+    # A content hash of the file `checkpoint` actually names, recorded next to it -- so
+    # a reader does not have to trust the path alone, and a checkpoint silently swapped
+    # or truncated on disk after the receipt was written no longer passes as a match.
+    checkpoint_sha256 = _sha256_file(final_ckpt)
 
     receipt: dict[str, Any] = {
         "schema": "csd-pretrain-receipt/v1",
@@ -1049,9 +1204,7 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
             # on -- so gooaq's 400,000 rows and NQ's 100,231 could have been swapped out
             # entirely under a matching fingerprint. `csd-quantize.py` hard-fails on this
             # value, so the check was load-bearing and nearly blind at the same time.
-            "fingerprint": fingerprint_corpus(
-                cfg.shards, columns=list(cfg.pair_columns), extra_sources=cfg.extra_sources
-            ),
+            "fingerprint": _corpus_content_fingerprint(cfg),
             # Names the rule, so a rule change reads as one instead of as corpus drift.
             "fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
             "pair_columns": list(cfg.pair_columns),
@@ -1069,6 +1222,7 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         },
         "parameters": params,
         "checkpoint": str(final_ckpt),
+        "checkpoint_sha256": checkpoint_sha256,
         "device": str(device),
         "elapsed_s": round(elapsed, 1),
         # Outside `elapsed_s` on purpose: `elapsed_s` has always meant "the training

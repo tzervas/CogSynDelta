@@ -33,8 +33,18 @@ structurally incapable of distinguishing from failure:
     declared graded glob resolves nothing, matching `regions/compress.py`'s
     `compress_config` (`FileNotFoundError`, "rather than training on nothing") instead of
     being weaker than the path it replaced.
+  - `regions/pretrain.py`'s checkpoint `_config_fingerprint` hashed `PretrainConfig`'s
+    own fields only -- not the corpus CONTENT at `cfg.shards`, and not the
+    split-building code (`build_splits`, `screen_pair_contamination`) that decides what
+    a corpus turns into. Commit 883c9d4 changed `build_splits` (an unconditional
+    shuffle it had never done before) without touching a single config field, so the
+    pre- and post-fix runs fingerprinted identically:
+    `/akula-data/csd/receipts/code-checkpoints/` mixes a 16:21 pre-fix
+    `step-007998.pt` with 17:07-17:08 post-fix files, and nothing on disk distinguishes
+    them. A checkpoint with no fingerprint at all (written before fingerprinting
+    existed) was also silently adopted as a valid fresh-start point rather than refused.
 
-A happy-path test passes against all five. So each test below builds the exact failing
+A happy-path test passes against all six. So each test below builds the exact failing
 input and asserts the guard fires, and several assert the PRE-FIX guard would not have --
 that pairing is the point of the file. Add to it whenever a guard is added: a guard with
 no failing-case test is a comment with a function signature.
@@ -44,6 +54,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -904,6 +915,357 @@ def test_pretrain_region_writes_graded_held_out_when_the_gate_resolves(
 
 
 # ---------------------------------------------------------------------------------------
+# DEFECT 6 (R9) -- the checkpoint fingerprint covered `PretrainConfig`'s own fields only,
+# so a corpus rewrite or a change to the split-building CODE under an unchanged config was
+# invisible to it, and a legacy checkpoint with no fingerprint at all was silently adopted
+# as a fresh start. Commit 883c9d4 is the reproduction: it changed `build_splits`
+# (unconditional shuffle) without touching a single `PretrainConfig` field, so the pre-
+# and post-fix runs fingerprinted identically and `code-checkpoints/` now mixes a 16:21
+# pre-fix `step-007998.pt` with 17:07-17:08 post-fix files with nothing on disk to tell
+# them apart.
+# ---------------------------------------------------------------------------------------
+
+
+def test_checkpoint_saved_under_one_fingerprint_refuses_to_resume_under_another(
+    tmp_path: Path,
+) -> None:
+    """A checkpoint trained under fingerprint A must refuse -- not silently resume from,
+    not silently discard -- a resume attempt under a different fingerprint B, and the
+    refusal must name BOTH fingerprints so an operator reading only the error can tell
+    which checkpoint and which config it disagreed with."""
+    pytest.importorskip("torch", reason="train group not installed")
+    # `cogsyndelta.regions._checkpoint` is model-agnostic and needs only torch, but
+    # importing anything under `cogsyndelta.regions` runs that package's `__init__`,
+    # which unconditionally imports `regions.pretrain` -- and THAT needs `tokenizers`.
+    # Skip on the same condition the rest of this file already does, rather than let an
+    # environment with torch but not the full train group fail on an unrelated import.
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    import torch
+
+    from cogsyndelta.regions._checkpoint import atomic_save, load_resumable
+
+    ckpt_dir = tmp_path / "ckpt"
+    fp_a = "a" * 32
+    atomic_save(
+        {
+            "config_fingerprint": fp_a,
+            "config_fields": {"lr": 1e-3},
+            "model": {"w": torch.zeros(2)},  # tiny synthetic tensor -- no GPU, no real model
+        },
+        ckpt_dir / "final.pt",
+    )
+
+    fp_b = "b" * 32
+    with pytest.raises(ValueError, match="refusing to resume") as exc_info:
+        load_resumable(ckpt_dir, fp_b, {"lr": 2e-3})
+
+    message = str(exc_info.value)
+    assert fp_a in message, "the checkpoint's own fingerprint must be in the message"
+    assert fp_b in message, "the current config's fingerprint must be in the message"
+
+
+def test_unfingerprinted_checkpoint_refuses_to_resume_by_default(tmp_path: Path) -> None:
+    """A checkpoint written before fingerprinting existed (or with it bypassed) carries
+    no `config_fingerprint` at all. `regions/pretrain.py` -- via
+    `PretrainConfig.allow_unfingerprinted_resume` defaulting `False`, and
+    `pretrain_region` passing that straight through as `load_resumable`'s
+    `allow_unfingerprinted` -- must refuse to resume from it rather than silently
+    starting fresh next to it: silently starting fresh is exactly the shape that let a
+    pre-883c9d4 checkpoint keep sitting in `code-checkpoints/` beside post-fix files with
+    nothing to tell them apart.
+
+    `load_resumable` ITSELF still defaults `allow_unfingerprinted=True` -- unchanged
+    behaviour for `regions/vl_pretrain.py` and `regions/classify_pretrain.py`, which call
+    it positionally and never opted into the stricter mode; only `regions/pretrain.py`
+    is stricter by default. Both ends of that split are asserted here.
+    """
+    pytest.importorskip("torch", reason="train group not installed")
+    # See the sibling test above for why `tokenizers` is skipped here too even though
+    # this test touches only `_checkpoint.py`.
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    import torch
+
+    from cogsyndelta.regions._checkpoint import atomic_save, load_resumable
+
+    ckpt_dir = tmp_path / "ckpt"
+    atomic_save({"model": {"w": torch.zeros(2)}, "step": 5}, ckpt_dir / "final.pt")
+
+    # regions/pretrain.py's default: PretrainConfig.allow_unfingerprinted_resume=False.
+    with pytest.raises(ValueError, match="no config_fingerprint"):
+        load_resumable(ckpt_dir, "current-fingerprint", {}, allow_unfingerprinted=False)
+
+    # load_resumable's OWN default (what vl_pretrain.py/classify_pretrain.py still get):
+    # unchanged from before this fix -- a fresh start, never a silent resume from a
+    # checkpoint with nothing on it to validate against.
+    assert load_resumable(ckpt_dir, "current-fingerprint", {}) is None
+    assert load_resumable(ckpt_dir, "current-fingerprint", {}, allow_unfingerprinted=True) is None
+
+
+def test_pretrain_region_refuses_unfingerprinted_checkpoint_by_default(tmp_path: Path) -> None:
+    """The test above exercises `load_resumable` directly, passing
+    `allow_unfingerprinted=False` by hand -- it never touches
+    `PretrainConfig.allow_unfingerprinted_resume` or the wiring at `pretrain_region`'s
+    `load_resumable(...)` call site that is supposed to pass it through. A mutation that
+    deletes that wiring entirely (calls `load_resumable(ckpt_dir, fingerprint, fields)`
+    with `load_resumable`'s own permissive `allow_unfingerprinted=True` default, silently
+    restoring the exact silent-adoption behaviour requirement (2) exists to stop) leaves
+    the test above still green, because it never runs `pretrain_region` at all.
+
+    This test plants an unfingerprinted `final.pt` directly in the vintage-fingerprinted
+    directory `pretrain_region` itself computes and reads
+    (`{out_dir}/{region}-checkpoints/{_vintage_fingerprint(cfg)[:8]}`), then calls
+    `pretrain_region(cfg)` -- the real entry point, not `load_resumable` -- and asserts
+    both ends: refused by default, and let through only when
+    `allow_unfingerprinted_resume=True` is set on the config.
+    """
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    import torch
+
+    from cogsyndelta.regions._checkpoint import atomic_save
+    from cogsyndelta.regions.pretrain import _vintage_fingerprint, pretrain_region
+
+    cfg = _tiny_pretrain_cfg(tmp_path, graded_shards=[], graded_name="")
+    assert cfg.allow_unfingerprinted_resume is False, "default under test"
+
+    ckpt_dir = Path(cfg.out_dir) / f"{cfg.region}-checkpoints" / _vintage_fingerprint(cfg)[:8]
+    atomic_save({"model": {"w": torch.zeros(2)}, "step": 5}, ckpt_dir / "final.pt")
+
+    with pytest.raises(ValueError, match="no config_fingerprint"):
+        pretrain_region(cfg)
+
+    # positive control: the same planted checkpoint, the same cfg, only the flag differs.
+    permissive_cfg = replace(cfg, allow_unfingerprinted_resume=True)
+    receipt = pretrain_region(permissive_cfg)
+    assert "checkpoint" in receipt, "the allow flag must let training proceed to a receipt"
+
+
+def test_changing_only_the_corpus_content_changes_the_fingerprint(tmp_path: Path) -> None:
+    """The actual 883c9d4 shape: byte-identical `PretrainConfig` fields, only what is ON
+    DISK at the shard path changes. Before this fix `_config_fingerprint` hashed
+    `_resume_fields`, which carried shard PATHS as strings -- a path that never changes
+    could not move the fingerprint no matter what the file underneath it held."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import PretrainConfig, _config_fingerprint
+
+    shard = tmp_path / "corpus.parquet"
+    shard.write_bytes(b"x" * 100)
+    cfg = PretrainConfig(
+        region="fp-corpus-test",
+        pair_columns=("a", "b"),
+        shards=[str(shard)],
+        out_dir=str(tmp_path / "run"),
+    )
+    fp_before = _config_fingerprint(cfg)
+
+    # Same path, same PretrainConfig object -- only the file's CONTENT (here, its size)
+    # changes, the way a corpus re-fetch or re-filter would.
+    shard.write_bytes(b"y" * 250)
+    fp_after = _config_fingerprint(cfg)
+
+    assert fp_before != fp_after
+
+
+def test_config_fingerprint_also_moves_when_the_split_building_code_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Companion to the two tests above: proves the split-building CODE hash is actually
+    wired into `_config_fingerprint`, not merely computed and discarded. Editing the real
+    source file mid-test is not how to exercise this (see `_split_code_fingerprint`'s own
+    docstring for why it hashes file bytes rather than `inspect.getsource`); instead,
+    substitute the function everything else here treats as ground truth and check the
+    composite moves with it. Commit 883c9d4 is exactly this shape: `build_splits`
+    changed, no `PretrainConfig` field did."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    import cogsyndelta.regions.pretrain as pretrain_mod
+
+    cfg = pretrain_mod.PretrainConfig(region="fp-code-test", pair_columns=("a", "b"), shards=[])
+
+    monkeypatch.setattr(pretrain_mod, "_split_code_fingerprint", lambda: "code-version-one")
+    fp_one = pretrain_mod._config_fingerprint(cfg)
+    monkeypatch.setattr(pretrain_mod, "_split_code_fingerprint", lambda: "code-version-two")
+    fp_two = pretrain_mod._config_fingerprint(cfg)
+
+    assert fp_one != fp_two
+
+
+def test_checkpoint_directory_is_vintage_prefixed_and_receipt_records_a_checksum(
+    tmp_path: Path,
+) -> None:
+    """End to end, and the receipt half of R9: the checkpoint directory a real
+    `pretrain_region` run writes into must carry the vintage-fingerprint prefix
+    (`_vintage_fingerprint`, corpus content + split-building code), and the receipt
+    naming the final checkpoint must carry a content hash of the exact file it names --
+    so a reader is not trusting the path alone, and a checkpoint silently swapped or
+    truncated on disk after the receipt was written no longer passes as a match."""
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    import hashlib
+
+    from cogsyndelta.regions.pretrain import PretrainConfig, _vintage_fingerprint, pretrain_region
+    from cogsyndelta.regions.text_encoder import TextEncoderConfig
+    from tests.test_pretrain_resume import _build_pairs_parquet, _build_tokenizer
+
+    tok_path = tmp_path / "tok.json"
+    shard = tmp_path / "pairs.parquet"
+    _build_tokenizer(tok_path, 40)
+    _build_pairs_parquet(shard, 40)
+
+    cfg = PretrainConfig(
+        region="fp8-dir-test",
+        pair_columns=("anchor", "positive"),
+        shards=[str(shard)],
+        steps=2,
+        batch_size=4,
+        holdout_pairs=4,
+        eval_every=2,
+        checkpoint_every=0,
+        max_len=16,
+        seed=0,
+        device="cpu",
+        encoder=TextEncoderConfig(dim=8, depth=1, n_heads=2, max_len=16),
+        tokenizer_path=str(tok_path),
+        out_dir=str(tmp_path / "run"),
+    )
+    receipt = pretrain_region(cfg)
+
+    fp8 = _vintage_fingerprint(cfg)[:8]
+    final_ckpt = Path(cfg.out_dir) / f"{cfg.region}-checkpoints" / fp8 / "final.pt"
+    assert final_ckpt.is_file()
+    assert receipt["checkpoint"] == str(final_ckpt)
+    assert receipt["checkpoint_sha256"] == hashlib.sha256(final_ckpt.read_bytes()).hexdigest()
+
+
+def test_checkpoint_directory_changes_when_split_code_fingerprint_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Companion to `test_config_fingerprint_also_moves_when_the_split_building_code_does`,
+    but for `_vintage_fingerprint` specifically -- the function that names the checkpoint
+    DIRECTORY, not the one that decides whether a resume is valid. The two call
+    `_split_code_fingerprint()` at separate sites; a test that only proves
+    `_config_fingerprint` moves says nothing about whether a code-vintage change actually
+    lands in its own directory on disk. Verified by mutation: deleting the
+    `h.update(_split_code_fingerprint().encode())` line from `_vintage_fingerprint` left
+    every existing test green before this one was added.
+
+    Exercises `pretrain_region` end to end under two different `_split_code_fingerprint`
+    return values (standing in for `build_splits`/`screen_pair_contamination` actually
+    changing -- commit 883c9d4's shape) with the SAME `PretrainConfig` otherwise, and
+    asserts the two runs land in two different checkpoint directories, each holding its
+    own `final.pt` -- the exact "code-checkpoints/ mixes pre- and post-fix files" failure
+    this defect is named for.
+    """
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    import cogsyndelta.regions.pretrain as pretrain_mod
+    from cogsyndelta.regions.text_encoder import TextEncoderConfig
+    from tests.test_pretrain_resume import _build_pairs_parquet, _build_tokenizer
+
+    tok_path = tmp_path / "tok.json"
+    shard = tmp_path / "pairs.parquet"
+    _build_tokenizer(tok_path, 40)
+    _build_pairs_parquet(shard, 40)
+
+    def _make_cfg() -> pretrain_mod.PretrainConfig:
+        return pretrain_mod.PretrainConfig(
+            region="fp8-split-code-test",
+            pair_columns=("anchor", "positive"),
+            shards=[str(shard)],
+            steps=2,
+            batch_size=4,
+            holdout_pairs=4,
+            eval_every=2,
+            checkpoint_every=0,
+            max_len=16,
+            seed=0,
+            device="cpu",
+            encoder=TextEncoderConfig(dim=8, depth=1, n_heads=2, max_len=16),
+            tokenizer_path=str(tok_path),
+            out_dir=str(tmp_path / "run"),
+        )
+
+    monkeypatch.setattr(pretrain_mod, "_split_code_fingerprint", lambda: "code-version-A")
+    receipt_a = pretrain_mod.pretrain_region(_make_cfg())
+
+    monkeypatch.setattr(pretrain_mod, "_split_code_fingerprint", lambda: "code-version-B")
+    receipt_b = pretrain_mod.pretrain_region(_make_cfg())
+
+    dir_a = Path(receipt_a["checkpoint"]).parent
+    dir_b = Path(receipt_b["checkpoint"]).parent
+    assert dir_a != dir_b
+    assert (dir_a / "final.pt").is_file()
+    assert (dir_b / "final.pt").is_file()
+
+
+def test_checkpoint_directory_changes_when_corpus_content_fingerprint_does(
+    tmp_path: Path,
+) -> None:
+    """Symmetric twin of `test_checkpoint_directory_changes_when_split_code_fingerprint_does`,
+    for `_vintage_fingerprint`'s OTHER half: the corpus-content line, not the split-code
+    one. `_vintage_fingerprint` calls `_corpus_content_fingerprint` and
+    `_split_code_fingerprint` independently, so a test that only changes the code side
+    says nothing about whether a corpus rewrite under the SAME shard path -- 883c9d4's
+    other named case, and the actual R9 gap this branch closes -- lands in its own
+    directory rather than colliding with the prior vintage's checkpoint. Verified by
+    mutation: deleting `h.update(_corpus_content_fingerprint(cfg).encode())` from
+    `_vintage_fingerprint` leaves the entire suite green, including this file, before
+    this test was added -- the two runs below land in the SAME directory and the second
+    one is refused by `load_resumable`'s pre-existing config-mismatch check instead of
+    getting its own vintage.
+
+    Rewrites the shard PARQUET FILE in place at the same path (40 rows -> 60 rows, i.e. a
+    byte-size change -- `fingerprint_corpus` hashes shard name + byte size, not full file
+    content, so a same-size content edit would not move this fingerprint either) between
+    two `pretrain_region` calls that otherwise share the identical `PretrainConfig`
+    (literally the same object, so no config field differs at all), and asserts the two
+    runs land in two different checkpoint directories, each holding its own `final.pt`.
+    """
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import PretrainConfig, pretrain_region
+    from cogsyndelta.regions.text_encoder import TextEncoderConfig
+    from tests.test_pretrain_resume import _build_pairs_parquet, _build_tokenizer
+
+    tok_path = tmp_path / "tok.json"
+    shard = tmp_path / "pairs.parquet"
+    _build_tokenizer(tok_path, 60)
+    _build_pairs_parquet(shard, 40)
+
+    cfg = PretrainConfig(
+        region="fp8-corpus-vintage-test",
+        pair_columns=("anchor", "positive"),
+        shards=[str(shard)],
+        steps=2,
+        batch_size=4,
+        holdout_pairs=4,
+        eval_every=2,
+        checkpoint_every=0,
+        max_len=16,
+        seed=0,
+        device="cpu",
+        encoder=TextEncoderConfig(dim=8, depth=1, n_heads=2, max_len=16),
+        tokenizer_path=str(tok_path),
+        out_dir=str(tmp_path / "run"),
+    )
+
+    receipt_a = pretrain_region(cfg)
+
+    # Rewrite the corpus IN PLACE at the same path: same `cfg`, same `cfg.shards`, but
+    # different content on disk -- exactly 883c9d4's "corpus content changed under an
+    # unchanged config" shape.
+    _build_pairs_parquet(shard, 60)
+    receipt_b = pretrain_region(cfg)
+
+    dir_a = Path(receipt_a["checkpoint"]).parent
+    dir_b = Path(receipt_b["checkpoint"]).parent
+    assert dir_a != dir_b
+    assert (dir_a / "final.pt").is_file()
+    assert (dir_b / "final.pt").is_file()
+
+
 # DEFECT 6 -- `beats_untrained` was satisfiable by a broken baseline.
 #
 # receipts/retrieve-20260902T203759Z.json recorded `untrained_baseline["recall@1"] ==
