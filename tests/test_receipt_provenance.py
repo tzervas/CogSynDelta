@@ -11,31 +11,49 @@ call sites routes through, and it refuses outright (raises, writes nothing) if t
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 from pathlib import Path
 
 import pytest
 
-# MUST precede the cogsyndelta imports below: cogsyndelta.regions.__init__ imports
-# regions.pretrain, which imports tokenizers at module scope, and `_receipt` is a
-# submodule of the `regions` package -- so importing IT triggers the package's
-# `__init__.py` first, even though `_receipt.py` itself needs neither pyarrow nor
-# tokenizers. Without this, a dev-group-only environment (no train group) fails
-# COLLECTION outright rather than skipping (same reasoning as
-# tests/test_pretrain_resume.py's identical guard).
-pytest.importorskip("pyarrow", reason="train group not installed")
-pytest.importorskip("tokenizers", reason="train group not installed")
-
-from cogsyndelta.regions._receipt import (
-    TRAINER_DEFAULT_FIELDS,
-    capture_code_revision,
-    trainer_defaults,
-    write_receipt,
-)
-
 pytestmark = pytest.mark.cpu
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+_RECEIPT_PATH = _REPO_ROOT / "src" / "cogsyndelta" / "regions" / "_receipt.py"
+
+
+def _load_receipt_module():
+    """Load `_receipt.py` directly by file path rather than
+    `from cogsyndelta.regions import _receipt`.
+
+    `_receipt` is a *submodule* of the `regions` package, and Python always runs a
+    package's `__init__.py` before one of its submodules -- `cogsyndelta.regions.__init__`
+    imports `regions.pretrain`, which imports `tokenizers` at module scope, even though
+    `_receipt.py` itself imports only `json`, `subprocess`, `pathlib` and `typing` and
+    needs neither `pyarrow` nor `tokenizers`. A previous version of this file routed
+    around that with a MODULE-scope `pytest.importorskip("pyarrow"/"tokenizers")`, which
+    does not do what it looks like it does: `importorskip` raises `Skipped` during
+    collection, which skips every test in the file, not just ones that need the train
+    group -- so in a dev-group-only environment (every CI job in this repo:
+    `.github/workflows/ci.yml`, `code-quality.yml`, `scripts/ci_local.sh` all
+    `uv sync --group dev`, never `--group train`) none of this file's tests ran, despite
+    none of them needing pyarrow or tokenizers. Loading `_receipt.py` by file path skips
+    the package `__init__.py` entirely, so this file needs no skip at all and runs in
+    every environment.
+    """
+    spec = importlib.util.spec_from_file_location("_csd_receipt_under_test", _RECEIPT_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_receipt = _load_receipt_module()
+TRAINER_DEFAULT_FIELDS = _receipt.TRAINER_DEFAULT_FIELDS
+capture_code_revision = _receipt.capture_code_revision
+trainer_defaults = _receipt.trainer_defaults
+write_receipt = _receipt.write_receipt
 
 
 def test_capture_code_revision_reports_this_real_checkout() -> None:
