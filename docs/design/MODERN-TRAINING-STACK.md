@@ -506,12 +506,18 @@ if the held-out metric is still below the untrained baseline after a set fractio
 
 The threshold has to be set from the data, and the data has a trap in it. `code` at step
 1333 of 8000 scored recall@1 **0.357 against an untrained baseline of 0.400**: healthy runs
-go *below* baseline early, because a random-init encoder scores 0.40 from lexical overlap
-and training destroys that before learned structure replaces it. Both `csd-train-all.py` and
-`pretrain.py` document this in their module docstrings. An abort threshold before ~40% of
-steps would kill healthy runs. Measured recovery points: `code` crosses back above baseline
-between step 1333 (0.357) and 2666 (0.883); `compress` and `retrieve` start from
-near-zero baselines and never dip.
+go *below* baseline early, because a random-init encoder was measured, at the time, to
+score 0.40 from lexical overlap and training destroys that before learned structure
+replaces it. That 0.400 baseline (and the run this table is drawn from) predates the
+2026-09-02 shuffle fix and was measured against `code`'s then-unshuffled,
+two-repository-confined holdout; the measured floor against the current (shuffled)
+holdout is **0.2285**, not 0.40 (`docs/design/evidence/w2c-untrained-baselines-2026-09-03/
+README.md`). Both `csd-train-all.py` and `pretrain.py` document the (now corrected) figure
+in their module docstrings. An abort threshold sized off this pre-fix run should be
+re-validated against a post-fix run before being relied on; directionally, an abort
+threshold before ~40% of steps would kill healthy runs. Measured recovery points from that
+same pre-fix run: `code` crosses back above baseline between step 1333 (0.357) and 2666
+(0.883); `compress` and `retrieve` start from near-zero baselines and never dip.
 
 **Verdict: REJECT** the plateau-stopper. **ADOPT** an abort at >=50% of steps if the metric
 is still below `untrained_baseline`, recorded in the receipt as an abort rather than a gate

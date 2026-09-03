@@ -117,8 +117,11 @@ near-duplicate leakage in a holdout that guard called clean.
 ## Non-negotiable practices
 
 - **Every run gates on beating its own UNTRAINED baseline.** A random-init text encoder
-  scores recall@1 0.40 on CodeSearchNet from lexical overlap alone; I-JEPA loss falls while
-  a representation collapses. Without the baseline both look like success.
+  scores recall@1 0.23 (measured 0.2285) on CodeSearchNet from lexical overlap alone --
+  `docs/design/evidence/w2c-untrained-baselines-2026-09-03/README.md`; an earlier ~0.40
+  figure traces to a measurement taken before the 2026-09-02 shuffle fix, against code's
+  then-unshuffled, two-repository-confined holdout. I-JEPA loss falls while a
+  representation collapses. Without the baseline both look like success.
 - **Never trust a mirror's licence tag.** Ten documented cases where a HuggingFace mirror
   claimed terms its upstream never granted. Verify upstream; refuse on mismatch. And keep
   *may I train on this* separate from *may I redistribute it* — they come apart.
