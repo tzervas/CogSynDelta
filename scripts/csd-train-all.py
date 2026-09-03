@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -56,7 +57,49 @@ from typing import NamedTuple
 DEFAULT_STATE = Path("/akula-data/csd")
 CORPUS = Path("/mnt/fleet-datasets/csd")
 
-LOCAL_CORPUS = Path("/bulk/csd-corpus")
+
+def resolve_local_corpus_root(
+    candidates: tuple[Path, ...] = (Path("/bulk/csd-corpus"), Path("/mnt/bulk/csd-corpus")),
+    env: dict[str, str] | None = None,
+) -> tuple[Path, str]:
+    """Resolve `LOCAL_CORPUS` to whichever candidate root actually exists on THIS host.
+
+    gpu5080 mounts the bulk array at `/bulk/csd-corpus`; akula-prime mounts the same data
+    at `/mnt/bulk/csd-corpus`. A single hardcoded `LOCAL_CORPUS = Path("/bulk/csd-corpus")`
+    resolved neither region's sources on akula-prime -- every `reason` glob silently
+    returned zero shards, `run_region` printed "source MISSING" for each one, "no usable
+    sources -- skipping reason", returned `None`, and (before the hard-failure fix
+    alongside this function) `main()` treated a `None` receipt as nothing-to-report and
+    exited 0. `--dry-run --regions reason` looked identical to a clean, empty plan.
+
+    Args:
+        candidates: Roots to probe, in order. The first that `.is_dir()` wins.
+        env: Defaults to `os.environ`; a test passes a plain dict instead of mutating the
+            real process environment.
+
+    Returns:
+        `(root, how)`. `how` describes the resolution for the plan/receipt: `"env:
+        CSD_CORPUS_ROOT"` when the override fired, `f"probed:{root}"` for whichever
+        candidate existed, or a `"none of ... exist"` message (paired with `candidates[0]`,
+        preserving the old hardcoded default as a deterministic fallback) when neither
+        does -- callers report that root as MISSING rather than this function raising.
+
+    `CSD_CORPUS_ROOT`, if set, wins outright over every candidate and is NOT checked for
+    existence here: an operator who set it explicitly has already made the call, and a
+    typo in it fails loudly downstream (as a MISSING source, once resolved against it)
+    rather than this function silently second-guessing an explicit override.
+    """
+    environ = env if env is not None else os.environ
+    override = environ.get("CSD_CORPUS_ROOT")
+    if override:
+        return Path(override), "env:CSD_CORPUS_ROOT"
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate, f"probed:{candidate}"
+    return candidates[0], f"none of {[str(c) for c in candidates]} exist"
+
+
+LOCAL_CORPUS, LOCAL_CORPUS_RESOLUTION = resolve_local_corpus_root()
 """Corpora fetched directly to a training host's local disk, not (yet) mirrored to the
 shared `/mnt/fleet-datasets/csd` NFS export `CORPUS` reads from. `classify` and `reason`
 are the first regions to draw from here: their four datasets were fetched and
@@ -64,6 +107,10 @@ licence-verified straight onto gpu5080's `/bulk` array (see
 docs/design/LICENCE-FOR-OPEN-WEIGHTS.md), and this constant makes that a declared fact
 rather than a path guessed at the call site. `REGION_CORPUS_ROOT` below says which
 regions use it; every region not listed there still resolves against `CORPUS`.
+
+Resolved once, at import time, via :func:`resolve_local_corpus_root` -- see that
+function's docstring for why a single hardcoded path was wrong on akula-prime.
+`LOCAL_CORPUS_RESOLUTION` records HOW it resolved, for the plan/receipt.
 """
 
 REGION_CORPUS_ROOT: dict[str, Path] = {"reason": LOCAL_CORPUS}
@@ -118,6 +165,26 @@ class GradedSourceMissingError(RuntimeError):
     runner exists to close: a receipt written with the gate silently absent. See
     `regions/pretrain.py`'s `_assert_graded_gate_present`, which is the second line of
     defence if a caller ever constructs a `PretrainConfig` this way directly.
+    """
+
+
+class CorpusSourceMissingError(RuntimeError):
+    """Raised when a region's (non-graded) source glob resolves no shards, and
+    `--allow-missing` was not passed.
+
+    Before this, a missing source printed one line ("source MISSING") and either dropped
+    silently out of the region's resolved source list (if at least one other source still
+    resolved) or, when every source was missing, made `run_region` print "no usable
+    sources -- skipping" and return `None` -- which `main()` treats as nothing to report,
+    exiting 0. `--dry-run --regions reason` against the wrong `LOCAL_CORPUS` root (see
+    `resolve_local_corpus_root`) looked exactly like a clean, empty plan; a real run would
+    have looked exactly like a clean, empty program. A missing source is either a
+    misconfigured corpus root, an unmounted export, or a renamed upstream dataset
+    directory -- in every case a defect in the RUN, not a variant of it, and now fails
+    loudly (non-zero exit, no receipt) by default. Pass `--allow-missing` for the cases
+    where an operator has already confirmed a source is legitimately absent and wants the
+    region to train on whatever else resolves (or skip entirely, if nothing does) --
+    exactly the old behaviour, now opt-in and logged as a WARNING rather than silent.
     """
 
 
@@ -500,6 +567,7 @@ def run_region(
     bf16: bool = True,
     max_len: int | None = None,
     allow_unfingerprinted_resume: bool = False,
+    allow_missing: bool = False,
 ) -> dict | None:
     """Train one region and return its receipt.
 
@@ -525,16 +593,31 @@ def run_region(
         allow_unfingerprinted_resume: Forwarded to `PretrainConfig.allow_unfingerprinted_resume`
             -- see its docstring. False (refuse) unless the operator passes
             `--allow-unfingerprinted-resume` on this script's command line.
+        allow_missing: When a (non-graded) source's glob resolves no shards, warn and
+            skip that source instead of raising :class:`CorpusSourceMissingError`. False
+            (raise) unless the operator passes `--allow-missing`; see that error's
+            docstring for what this used to do silently.
 
     Returns:
         The receipt, or None when the region has no usable sources or `dry` is set.
+
+    Raises:
+        CorpusSourceMissingError: A source's glob resolved no shards and `allow_missing`
+            is False.
     """
     sources, note, default_max_len, graded_spec = region_spec(name)
     resolved_max_len = default_max_len if max_len is None else max_len
     corpus_root = REGION_CORPUS_ROOT.get(name, CORPUS)
+    corpus_root_resolution = (
+        LOCAL_CORPUS_RESOLUTION if corpus_root == LOCAL_CORPUS else "shared CORPUS mount"
+    )
     print(f"\n=== {name} — {note}", flush=True)
     if corpus_root != CORPUS:
-        print(f"    corpus root: {corpus_root} (not the shared {CORPUS})", flush=True)
+        print(
+            f"    corpus root: {corpus_root} (not the shared {CORPUS}; resolved via "
+            f"{corpus_root_resolution})",
+            flush=True,
+        )
 
     resolved: list[SourceSpec] = []
     for glob_pat, cols, cap in sources:
@@ -547,8 +630,20 @@ def run_region(
         if shard_limit and not cap:
             shards = shards[:shard_limit]
         if not shards:
-            print(f"    source MISSING: {glob_pat}", flush=True)
-            continue
+            if allow_missing:
+                print(
+                    f"    WARNING: source MISSING (allowed): {glob_pat} "
+                    f"(root {corpus_root}, resolved via {corpus_root_resolution})",
+                    flush=True,
+                )
+                continue
+            raise CorpusSourceMissingError(
+                f"region {name!r} source {glob_pat!r} resolved no shards under corpus "
+                f"root {corpus_root} (resolved via {corpus_root_resolution}). Check the "
+                f"mount, or set CSD_CORPUS_ROOT to override the resolved LOCAL_CORPUS "
+                f"root. Pass --allow-missing to skip a missing source instead of failing "
+                f"the run."
+            )
         # Fail loudly if a glob spans shards with different schemas. This is what silently
         # poisoned `compress`: the failure surfaced 40 minutes into training as a KeyError
         # on shard 2, and before that it surfaced not at all -- it just trained on the
@@ -636,6 +731,8 @@ def run_region(
             "pair_columns": list(pair_cols),
             "shards": shards,
             "extra_sources": extra_sources,
+            "corpus_root": str(corpus_root),
+            "corpus_root_resolution": corpus_root_resolution,
             "steps": steps,
             "batch_size": batch,
             "lr": lr_for_batch(batch),
@@ -691,6 +788,15 @@ def run_region(
     )
     started = time.time()
     receipt = pretrain_region(cfg)
+    # `pretrain_region` has no notion of which corpus root this runner resolved (it only
+    # sees the shard paths PretrainConfig.shards already carries) and already wrote the
+    # receipt to disk before returning, so the resolution is recorded by amending the
+    # written file rather than duplicating this runner's root-resolution logic inside
+    # `pretrain_region` for one field's benefit.
+    receipt["corpus_root"] = str(corpus_root)
+    receipt["corpus_root_resolution"] = corpus_root_resolution
+    if receipt.get("receipt_path"):
+        Path(receipt["receipt_path"]).write_text(json.dumps(receipt, indent=2) + "\n")
     # pretrain_region already logged the resume decision as it happened; this repeats
     # it as a one-line summary so an operator scanning the whole run's output (or the
     # receipt itself, via `resumed`/`resumed_from_step`) does not have to scroll back.
@@ -950,6 +1056,18 @@ def main() -> int:
             "unchanged."
         ),
     )
+    ap.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help=(
+            "warn and skip a source whose glob resolves no shards, instead of failing "
+            "the run outright. Forwarded to run_region only (code/compress/retrieve/"
+            "reason); run_vl_region/run_classify_region keep their own MISSING handling "
+            "unchanged. Off by default: a missing source is a hard failure -- non-zero "
+            "exit, no receipt -- because it is far more often a wrong/unmounted corpus "
+            "root than an intentionally partial run (see CorpusSourceMissingError)."
+        ),
+    )
     args = ap.parse_args()
     _require_train_deps(args.dry_run)
 
@@ -994,6 +1112,7 @@ def main() -> int:
                     bf16=not args.no_bf16,
                     max_len=args.max_len,
                     allow_unfingerprinted_resume=args.allow_unfingerprinted_resume,
+                    allow_missing=args.allow_missing,
                 )
         except Exception as exc:
             print(f"  {name}: FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
