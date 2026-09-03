@@ -54,7 +54,12 @@ from cogsyndelta.eval import (
     screen_pair_contamination,
     spearman_correlation,
 )
-from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
+from cogsyndelta.regions._checkpoint import (
+    atomic_save,
+    load_resumable,
+    rotate_checkpoints,
+    sha256_file,
+)
 from cogsyndelta.regions._receipt import trainer_defaults, write_receipt
 from cogsyndelta.regions._tokencache import corpus_token_cache
 from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig, info_nce
@@ -882,15 +887,6 @@ def _split_code_fingerprint() -> str:
     return h.hexdigest()
 
 
-def _sha256_file(path: Path, chunk_size: int = 1 << 20) -> str:
-    """Content hash of a file on disk, read in chunks rather than loaded whole."""
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(chunk_size), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def _vintage_fingerprint(cfg: PretrainConfig) -> str:
     """The corpus-content + split-code slice of `_config_fingerprint`, used ONLY to name
     the checkpoint directory (see `pretrain_region`) -- never to decide whether a resume
@@ -1250,7 +1246,7 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     # A content hash of the file `checkpoint` actually names, recorded next to it -- so
     # a reader does not have to trust the path alone, and a checkpoint silently swapped
     # or truncated on disk after the receipt was written no longer passes as a match.
-    checkpoint_sha256 = _sha256_file(final_ckpt)
+    checkpoint_sha256 = sha256_file(final_ckpt)
 
     receipt: dict[str, Any] = {
         "schema": "csd-pretrain-receipt/v1",

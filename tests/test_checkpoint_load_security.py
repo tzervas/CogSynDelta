@@ -86,23 +86,27 @@ def test_legitimate_tensor_checkpoint_still_loads_under_weights_only(tmp_path: P
         ("csd-benchmark.py", 'train_receipt["checkpoint"]'),
     ],
 )
-def test_production_sites_load_receipt_checkpoints_with_weights_only_true(
+def test_production_sites_load_receipt_checkpoints_through_load_checkpoint(
     script: str, checkpoint_expr: str
 ) -> None:
-    """Regression guard: the receipt-driven `torch.load` call must stay weights_only=True.
+    """Regression guard, updated for `cogsyndelta.regions._checkpoint.load_checkpoint`
+    (design row W0c, DEC-40 -- see `tests/test_checkpoint_loader_lint.py`): both sites
+    used to call `torch.load(..., weights_only=True)` directly; they now route through
+    `load_checkpoint`, whose OWN default is `weights_only=True` (proven in
+    `test_checkpoint_loader_lint.py`), plus a content-hash check neither site had before.
 
-    This is the site the threat model flagged -- `receipt["checkpoint"]` /
+    This is still the site the threat model flagged -- `receipt["checkpoint"]` /
     `train_receipt["checkpoint"]` is a path chosen by whatever wrote the receipt JSON,
-    not by this process, so it must never be loaded with `weights_only=False` again.
+    not by this process -- so this pins two things: the call goes through
+    `load_checkpoint` (not a raw `torch.load`, which `test_checkpoint_loader_lint.py`'s
+    lint separately refuses to allow here at all), and if `weights_only` is ever passed
+    explicitly it is never `False`.
     """
     source = (_REPO_ROOT / "scripts" / script).read_text()
     pattern = re.compile(
-        r"torch\.load\(\s*" + re.escape(checkpoint_expr) + r"\s*,([^)]*)\)", re.DOTALL
+        r"load_checkpoint\(\s*" + re.escape(checkpoint_expr) + r"\s*,([^)]*)\)", re.DOTALL
     )
     match = pattern.search(source)
-    assert match is not None, f"expected a torch.load({checkpoint_expr}, ...) call in {script}"
+    assert match is not None, f"expected a load_checkpoint({checkpoint_expr}, ...) call in {script}"
     call_kwargs = match.group(1)
-    assert "weights_only=True" in call_kwargs, (
-        f"{script} loads {checkpoint_expr} without weights_only=True: {call_kwargs!r}"
-    )
     assert "weights_only=False" not in call_kwargs
