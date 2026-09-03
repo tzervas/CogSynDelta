@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -998,6 +999,46 @@ def test_unfingerprinted_checkpoint_refuses_to_resume_by_default(tmp_path: Path)
     # checkpoint with nothing on it to validate against.
     assert load_resumable(ckpt_dir, "current-fingerprint", {}) is None
     assert load_resumable(ckpt_dir, "current-fingerprint", {}, allow_unfingerprinted=True) is None
+
+
+def test_pretrain_region_refuses_unfingerprinted_checkpoint_by_default(tmp_path: Path) -> None:
+    """The test above exercises `load_resumable` directly, passing
+    `allow_unfingerprinted=False` by hand -- it never touches
+    `PretrainConfig.allow_unfingerprinted_resume` or the wiring at `pretrain_region`'s
+    `load_resumable(...)` call site that is supposed to pass it through. A mutation that
+    deletes that wiring entirely (calls `load_resumable(ckpt_dir, fingerprint, fields)`
+    with `load_resumable`'s own permissive `allow_unfingerprinted=True` default, silently
+    restoring the exact silent-adoption behaviour requirement (2) exists to stop) leaves
+    the test above still green, because it never runs `pretrain_region` at all.
+
+    This test plants an unfingerprinted `final.pt` directly in the vintage-fingerprinted
+    directory `pretrain_region` itself computes and reads
+    (`{out_dir}/{region}-checkpoints/{_vintage_fingerprint(cfg)[:8]}`), then calls
+    `pretrain_region(cfg)` -- the real entry point, not `load_resumable` -- and asserts
+    both ends: refused by default, and let through only when
+    `allow_unfingerprinted_resume=True` is set on the config.
+    """
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    import torch
+
+    from cogsyndelta.regions._checkpoint import atomic_save
+    from cogsyndelta.regions.pretrain import _vintage_fingerprint, pretrain_region
+
+    cfg = _tiny_pretrain_cfg(tmp_path, graded_shards=[], graded_name="")
+    assert cfg.allow_unfingerprinted_resume is False, "default under test"
+
+    ckpt_dir = Path(cfg.out_dir) / f"{cfg.region}-checkpoints" / _vintage_fingerprint(cfg)[:8]
+    atomic_save({"model": {"w": torch.zeros(2)}, "step": 5}, ckpt_dir / "final.pt")
+
+    with pytest.raises(ValueError, match="no config_fingerprint"):
+        pretrain_region(cfg)
+
+    # positive control: the same planted checkpoint, the same cfg, only the flag differs.
+    permissive_cfg = replace(cfg, allow_unfingerprinted_resume=True)
+    receipt = pretrain_region(permissive_cfg)
+    assert "checkpoint" in receipt, "the allow flag must let training proceed to a receipt"
 
 
 def test_changing_only_the_corpus_content_changes_the_fingerprint(tmp_path: Path) -> None:
