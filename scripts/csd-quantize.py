@@ -41,7 +41,7 @@ def _load_regions_spec() -> dict:
         raise RuntimeError(f"cannot load {path}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return {"REGIONS": mod.REGIONS, "_shards": mod._shards}
+    return {"REGIONS": mod.REGIONS, "_shards": mod._shards, "region_spec": mod.region_spec}
 
 
 def _latest_receipt(state: Path, region: str) -> dict:
@@ -64,7 +64,7 @@ def quantize_text_region(
 
     receipt = _latest_receipt(state, region)
     spec = _load_regions_spec()
-    sources, _note = spec["REGIONS"][region]
+    sources = spec["region_spec"](region).sources
 
     resolved = [(spec["_shards"](g), tuple(c), cap) for g, c, cap in sources]
 
