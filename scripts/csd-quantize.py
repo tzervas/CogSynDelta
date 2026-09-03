@@ -44,11 +44,11 @@ def _load_regions_spec() -> dict:
     return {"REGIONS": mod.REGIONS, "_shards": mod._shards, "region_spec": mod.region_spec}
 
 
-def _latest_receipt(state: Path, region: str) -> dict:
+def _latest_receipt(state: Path, region: str) -> tuple[Path, dict]:
     found = sorted(state.glob(f"receipts/{region}-2*.json"))
     if not found:
         raise FileNotFoundError(f"no training receipt for {region!r} under {state}/receipts")
-    return json.loads(found[-1].read_text())
+    return found[-1], json.loads(found[-1].read_text())
 
 
 def quantize_text_region(
@@ -59,11 +59,11 @@ def quantize_text_region(
 
     from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
     from cogsyndelta.quant.ptq import build_plan
-    from cogsyndelta.regions._checkpoint import load_checkpoint
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
     from cogsyndelta.regions.pretrain import PretrainConfig, build_splits, evaluate
     from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
 
-    receipt = _latest_receipt(state, region)
+    receipt_path, receipt = _latest_receipt(state, region)
     spec = _load_regions_spec()
     sources = spec["region_spec"](region).sources
 
@@ -131,14 +131,17 @@ def quantize_text_region(
     # already recorded (expected_sha256) -- both BEFORE torch.load ever opens it. Older
     # receipts (pre-R9) have no checkpoint_sha256; `or None` skips the hash check for
     # those rather than refusing every one of them.
+    ckpt_sha_out: list[str] = []
     ck = load_checkpoint(
         receipt["checkpoint"],
         expected_sha256=receipt.get("checkpoint_sha256") or None,
         map_location=device,
         weights_only=True,
+        sha256_out=ckpt_sha_out,
     )
     model.load_state_dict(ck["model"])
     model.eval()
+    checkpoint_sha256 = ckpt_sha_out[0]
 
     def eval_fn(m: torch.nn.Module) -> float:
         return evaluate(m, tok, holdout, cfg.max_len, device)["recall@1"]
@@ -186,6 +189,19 @@ def quantize_text_region(
         "recorded_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "method": "sensitivity-greedy-mixed-width",
         "checkpoint": receipt["checkpoint"],
+        "artifacts": {
+            "checkpoint": receipt["checkpoint"],
+            # The sha256 `load_checkpoint` just verified (when the training receipt
+            # carried one) or computed (when it did not, e.g. a pre-R9 receipt) --
+            # never a second, independent hash of the same bytes. This is what lets
+            # `scripts/csd-publish-checkpoint.py` bind this quant receipt to the exact
+            # checkpoint it was measured on, not merely the mutable path both name.
+            "checkpoint_sha256": checkpoint_sha256,
+            "source_training_receipt": {
+                "path": str(receipt_path),
+                "sha256": sha256_file(receipt_path),
+            },
+        },
         "corpus_fingerprint": fingerprint,
         "tolerance": tolerance,
         "aggressive_bits": aggressive,

@@ -42,7 +42,7 @@ def _regions_spec() -> dict:
 def benchmark_region(region: str, state: Path) -> Receipt | None:
     from tokenizers import Tokenizer
 
-    from cogsyndelta.regions._checkpoint import load_checkpoint
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
     from cogsyndelta.regions.pretrain import PretrainConfig, _tokenize, build_splits
     from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
 
@@ -50,7 +50,8 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
     if not receipts:
         print(f"    no training receipt for {region}", flush=True)
         return None
-    train_receipt = json.loads(receipts[-1].read_text())
+    train_receipt_path = receipts[-1]
+    train_receipt = json.loads(train_receipt_path.read_text())
 
     spec = _regions_spec()
     sources = spec["region_spec"](region).sources
@@ -89,13 +90,16 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
     # the SAME receipt already recorded (expected_sha256) -- both BEFORE torch.load ever
     # opens it. Older receipts (pre-R9) have no checkpoint_sha256; `or None` skips the
     # hash check for those.
+    ckpt_sha_out: list[str] = []
     ck = load_checkpoint(
         train_receipt["checkpoint"],
         expected_sha256=train_receipt.get("checkpoint_sha256") or None,
         map_location=device,
         weights_only=True,
+        sha256_out=ckpt_sha_out,
     )
     model.load_state_dict(ck["model"])
+    checkpoint_sha256 = ckpt_sha_out[0]
 
     with torch.no_grad():
         a_ids, a_mask = _tokenize(tok, [a for a, _ in holdout], cfg.max_len, device)
@@ -152,7 +156,19 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
             "not_anisotropic": rep["anisotropy"] < 0.9,
             "uses_its_dimensions": rep["effective_rank_ratio"] > 0.05,
         },
-        artifacts={"checkpoint": train_receipt["checkpoint"]},
+        artifacts={
+            "checkpoint": train_receipt["checkpoint"],
+            # The sha256 `load_checkpoint` just verified (when the training receipt
+            # carried one) or computed (when it did not, e.g. a pre-R9 receipt) --
+            # never a second, independent hash of the same bytes. This is what lets
+            # `scripts/csd-publish-checkpoint.py` bind this eval receipt to the exact
+            # checkpoint it was measured on, not merely the mutable path both name.
+            "checkpoint_sha256": checkpoint_sha256,
+            "source_training_receipt": {
+                "path": str(train_receipt_path),
+                "sha256": sha256_file(train_receipt_path),
+            },
+        },
         provenance={"holdout_pairs": len(holdout), "quantized_size": quantized},
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
         started_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

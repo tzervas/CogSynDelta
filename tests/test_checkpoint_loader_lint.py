@@ -266,6 +266,55 @@ def test_load_checkpoint_refuses_a_missing_file(ckpt: SimpleNamespace, tmp_path:
         ckpt.load_checkpoint(tmp_path / "nope.pt", map_location="cpu")
 
 
+def test_sha256_out_receives_the_expected_hash_when_one_was_given(
+    ckpt: SimpleNamespace, tmp_path: Path
+) -> None:
+    """`sha256_out` exists so `scripts/csd-benchmark.py` / `scripts/csd-quantize.py`
+    can record the checkpoint's hash in their own receipts without hashing the file a
+    second time. When `expected_sha256` is given, the value appended must be that same
+    verified hash -- not merely `expected_sha256` echoed back uninspected."""
+    ckpt_path = tmp_path / "final.pt"
+    _save_tiny_checkpoint(ckpt.torch, ckpt_path)
+    expected = ckpt.sha256_file(ckpt_path)
+
+    out: list[str] = []
+    ckpt.load_checkpoint(ckpt_path, expected_sha256=expected, map_location="cpu", sha256_out=out)
+
+    assert out == [expected]
+
+
+def test_sha256_out_is_populated_even_with_no_expected_hash(
+    ckpt: SimpleNamespace, tmp_path: Path
+) -> None:
+    """A caller with no prior hash to verify against (`expected_sha256=None`, e.g. a
+    pre-R9 training receipt with no recorded `checkpoint_sha256`) must still get the
+    checkpoint's real content hash back -- computed here, not skipped."""
+    ckpt_path = tmp_path / "final.pt"
+    _save_tiny_checkpoint(ckpt.torch, ckpt_path)
+    real = ckpt.sha256_file(ckpt_path)
+
+    out: list[str] = []
+    ckpt.load_checkpoint(ckpt_path, map_location="cpu", sha256_out=out)
+
+    assert out == [real]
+
+
+def test_sha256_out_is_not_populated_on_a_mismatch(ckpt: SimpleNamespace, tmp_path: Path) -> None:
+    """A checksum mismatch must raise before any caller-visible hash is reported --
+    `sha256_out` staying empty on the raised path keeps a caller from ever reading a
+    hash for a load that was actually refused."""
+    ckpt_path = tmp_path / "final.pt"
+    _save_tiny_checkpoint(ckpt.torch, ckpt_path)
+
+    out: list[str] = []
+    with pytest.raises(ckpt.ChecksumMismatchError):
+        ckpt.load_checkpoint(
+            ckpt_path, expected_sha256="0" * 64, map_location="cpu", sha256_out=out
+        )
+
+    assert out == []
+
+
 class _MaliciousReduce:
     """Same shape as `test_checkpoint_load_security.py`'s: pickles to a call that leaves
     a marker file behind when (and only when) it is actually unpickled."""
