@@ -1,6 +1,6 @@
 # Region Taxonomy and the White-Matter Interconnect
 
-**Status:** design draft, **REVISION 3.4**, for operator ratification. Nothing here is applied.
+**Status:** design draft, **REVISION 3.5**, for operator ratification. Nothing here is applied.
 No config, script, checkpoint or program file is modified by this document, and the JSON diff
 in §1.4 is shown so it can be reviewed, not so it can be run.
 
@@ -244,6 +244,126 @@ revision 3.3's **E0/E1/E2** and **M0** were never mirrored into that file and ar
 in this pass — four rows this document already had, which is that file having been stale and not
 this revision adding fifteen things.
 
+**What revision 3.5 changes.** One measured outcome, seven operator inputs and one read of the
+packer's own design document. No restructure, no renumbering, no earlier verdict reopened; the new
+decisions are appended in numeric order as **DEC-68 to DEC-77**. **One thing this revision
+deliberately does NOT do: it does not edit W4's five gate clauses.** The row has now been run at
+its pre-registered configuration, and a document that moves a bar after seeing the number it
+produced has stopped being a pre-registration. The change that is *recommended* is written as a
+pre-registered amendment and flagged **operator to confirm** (**OD-17**), and the pivot stays the
+fallback exactly as §9.14 wrote it.
+
+**(a) W4 HAS RUN AT ITS PRE-REGISTERED CONFIGURATION, AND THE RESULT IS THREE PASSES AS SCORED —
+ONE OF THEM ONLY BY FLOAT32 REPRESENTATION — AND TWO FAILS.** **DEC-68** records what was measured,
+from the receipts and nothing else (§4.0). The production run at batch 512 failed **four of five**
+gates; the batch-1280 run the plan actually pre-registered — reachable only after a chunked,
+checkpointed cross-entropy over masked positions made it fit — **passes (a) and (d)**, **passes (b)
+as the harness scored it** (`recall@10` **0.200** against a **strict** `> 0.20` floor, on a receipt
+value of `0.20000000298023224` = `float(numpy.float32(0.2))`, so the margin is float32
+representation and a strict reading makes it an exact tie — **OD-17 answers `>` versus `≥`, this
+summary does not**), and **fails (c)** (full-pool `recall@10` **0.200** against BM25's **0.440**)
+**and (e)** (final-block rank ratio **1.21**, against an absolute **2.0×**). The
+in-batch-negatives count is the dominant lever and the curve is printed: at batch **256 / 512 /
+1280**, full-pool `recall@10` is **0.030 / 0.098 / 0.200** and held-out `recall@1` is **0.600 /
+0.815 / 0.854**. The token-aware objective's own effect is now measured at production length rather
+than at 50 steps: at batch 512 the control arm reaches rank ratio **1.09** against **1.35** with the
+terms on. **OD-17 puts the pivot-or-amend decision to the operator with both branches costed.**
+
+**(b) THE KNOBS ARE ONE TABLE WITH MEASURED EFFECTS, AND THE PACKER'S ADMISSION MODEL IS THE
+RUNTIME PACKER'S STARTING POINT.** **DEC-69** (§6.7): per-job VRAM budget and admission margin,
+`token_loss_chunk` (**2048 → 20,726 MiB reserved / 22,120 MiB raw driver peak; 512 → 19,444 /
+20,883 at +2.6% step time**), batch as the in-batch-negatives count (the curve above), mask
+probability, and card choice by VRAM versus compute. **The operator's desktop on the 3090 Ti —
+981–1,057 MiB of Xorg/KDE/Firefox — is a standing FOREIGN claim every budget on that card must
+subtract**, and it is recorded as such rather than absorbed into a margin. Row **W7k**.
+
+**(c) THE MEMORY GATE IS A VRAM ARBITER, AND DEC-63's CAPACITY IS A CEILING RATHER THAN A TARGET.**
+**DEC-70** (§6.6): named claimants in priority order — base weights and working activations
+**fixed**; then the **ACTIVE memory set and the loaded persona, protected**; then the **KV
+cache/context window, which flexes** (sliding window) around them; **inactive overlays and
+differentials leave first**. A **frugality cap** bounds resident memory + persona to a small
+fraction of the card, with the gate that at the cap the achievable context length differs from the
+no-memory case by less than a stated margin. Failure to size **reports and degrades the memory set
+by relevance** and **never silently drops the persona**. Residency is scored on recency, persona
+relevance and access frequency across card / host RAM / disk, eviction is proactive on inactivity
+and pressure, and frugality is **measured in receipts**. Row **E1a**; **DEC-63 is amended in
+place**.
+
+**(d) TWO LONG-TERM TRACKS GET ROWS AND GATES, AND NEITHER IS PHASE 2.** **DEC-71** (§6.10):
+**differential activations** — activation deltas against base in a format built for fast
+recompute-and-apply, so an overlay contributes features without holding dense state; **gate: apply
+latency and VRAM per feature against the dense alternative**, adopted only if it wins on both. Row
+**P5′d**. **DEC-72** (§6.10): the **predictive hybrid training track** — extend `tritter`'s existing
+weight-update predictor to **activations, activation deltas and semantic residuals**, with gates on
+prediction error against real steps, the fraction of steps predicted, the end-task metric at
+**equal wall-clock**, and an **automatic fallback** to real steps on drift. Row **P5′p**.
+
+**(e) THE DATASET FACTORY'S PASS 1 IS MEASURED, AND IT AMENDS DEC-56.** **DEC-73** (§5.8): 159
+candidates in 106 provenance groups, **105 VERIFIED / 26 CONTRADICTED / 18 UNVERIFIABLE / 10
+REFUSED-CLOSED**, with **37 (23%) UNVERIFIED** as the real backlog. Against the flat
+**1e10-tokens-per-region** target the B1-bounded reach is **`visual` 0.3%**, **`memory` 1.3%
+clean-permissive / 5.0% NC-inclusive**, **`language_code` 15%**, **`reasoning` 1.8% without a
+generator**, and **`language_trunk` 60× over**. **NC buys almost nothing** over clean-permissive.
+**DEC-56's flat target is therefore amended**: per-faculty targets, clean-terms generators and the
+operator's own enrichment replace one number applied to seven faculties (row **P2′g**). The five
+legal readings become **OD-18**, and **the first of them needs no lawyer** — the model card must
+state the reading it takes, and today it states none.
+
+**(f) THE FLEET IS ON DEMAND, THE 1080 Ti's TORCH VERDICT IS MEASURED, AND THE PACKER LIVES IN ITS
+OWN REPO.** **DEC-74** (§6.7): **all three cards and all their runtimes are started on demand and
+stopped when idle** — an idle `:8080`, a stopped unit or an exited container is the **normal resting
+state, not a fault**. The 1080 Ti's verdict is measured, not assumed: the fleet's pinned
+**torch 2.11.0+cu128 cannot run on it at all** (`get_arch_list()` floors at sm_75; the VM's driver
+535.274 caps at CUDA 12.2), while a separate **`torch==2.5.1+cu121`** venv on that guest runs
+clean — so **fp32 training there is "with env X: yes"** and its **default role is inference, RAG and
+utility**. **DEC-75**: **tooling lives in its own repo** — `tzervas/gpu-pack` is row **W7p**'s
+implementation (**main at 5364932**, rounds 1–4 merged) and CogSynDelta keeps only the thin adapter
+it already carries.
+
+**(g) THE AUTODEV POINTER MOVES TO REV 5.** **DEC-76** (§8): the spec is
+**`docs/AUTODEV-IDENTITY-AND-SANDBOX.md` rev 5 at `ece346b`** on branch `docs/autodev-spec` in
+`tzervas/csd-autodev` (**PR #1** there), with the threat pass and the two retained skeptic
+write-ups beside it — `01-threat.md`, `skeptic-round4.md`, `skeptic-final.md`, which is the whole of
+`docs/evidence/autodev-threat-2026-09-03/`; five rounds were run and three write-ups were never
+committed. **The residual
+criticals, in one line:** the **final (round-5) skeptic, `skeptic-final.md`, still lists five
+critical and six high** findings (the round-4 pass, against rev 4, listed **four** critical and six
+high, and is a different document), of which two are overtaken by events (the auth gate is on
+`main`; the closure pin went stale) and the rest are rev-6 material — the import recorder must run the protected tests under `pytest` rather
+than import their modules and needs a `⊇` floor so it can fail, P0a's check must model the live
+code rather than a per-request credentials fork, `socket_ident` must be re-stat-ed per connect, and
+§0d must be pinned to a merge-base. **And the rule that follows from five rounds of chasing a moving
+tree: freeze a code revision (a tag), then write rev 6 against it, then implement.**
+
+**(h) THREE GOVERNANCE ADDITIONS, ALL MEASURED THIS SESSION.** **DEC-77** (§8): **DEC-61's PR-only
+rule extends to `tzervas/gpu-pack`** — its `main` is protected the same way (push whitelist = the
+operator, required context `CI / test (pull_request)`), so the rule is not CogSynDelta-specific.
+**The CI secret scan has a prose false-positive CLASS, not a one-off:** `gitleaks`'
+`generic-api-key` rule fires on low-entropy `identifier=value` pairs **inside prose** — a
+tokenizer-load log line, and `decorr_weight=0.0` quoted inside a docstring reporting a control
+arm's weights — and the fix is a **narrowly scoped allowlist (file path AND byte-identical phrase,
+`targetRules` limited to the one rule), verified by planting a real-shaped secret in the same file
+and asserting it is still caught**. **The CI runner has no GPU tooling:** `fleet-ci-base:1` has no
+`nvidia-smi`, so a helper-CLI wrapper that lets `subprocess.run` raise takes a whole endpoint down;
+**tests must not assume `nvidia-smi` exists, and a diagnostic subprocess must degrade one field
+rather than abort its caller**.
+
+**What this revision does NOT do.** It does not reopen W1/W1d, DEC-48's audio deferral, DEC-49's
+participant count, or any licence verdict — and, as above, **it does not touch W4's gates**. It
+makes the programme **larger**: **six new rows** (**W4n**, **W7k**, **E1a**, **P5′d**, **P5′p**,
+**P2′g**), of which only **W7k** and **E1a** are phase-2 work — **E1a carrying its own minimal
+persona/overlay stub, because two of its four gates need machinery that P5′o, `deferred` behind W10,
+would otherwise have to supply** — and only **W4n** sits on the critical
+path — and W4n is not licensed until OD-17 is answered. **It removes twelve lines across both files
+and every one of them is a line modified in place rather than content dropped**: the revision
+number itself; **six status or currency cells a completed run or a merged repository
+contradicts** — W4's `todo` in both files (the run has happened), W7p's `todo — no GPU dependency`
+in both files and `P10.4`'s *"gpu-pack's probe/admit/launch pipeline is the remaining piece"* (it is
+merged), and `REMAINING.md`'s *"revision 3.4 is the current text"*; **four amendments that keep
+their original text verbatim and append to it** — DEC-56, DEC-63, the index-order note and the
+autodev pointer row; and **one line split to admit the new block**. Each is named at the spot it
+happens and in the commit message. Everything else is additive.
+
 **Scope:** what each region *is* as a faculty; what white matter is, mechanically; what it
 emits and how a runtime executes it; how it is trained and on what; the experiment that
 distinguishes integration from dispatch; the replacement for P4/P5/P6; the reserved corpus
@@ -370,18 +490,28 @@ gate added or changed below carries the construction that makes it fail.
 | **DEC-53** | **THE LATENT INVARIANT GETS A DETECTOR, NOT ONLY A REFUSAL.** *Rationale: W9's DEC-47 clause refuses a violation someone constructed, which says nothing about the tracts nobody thought to construct one for.* Row **W9i**: a **token-round-trip probe** that instruments **every** tract in an emitted `Schedule` — region output, adapted form, workspace latents, DEC-17 write-back prefix — and reports a **positive detection** of any integer-typed, vocabulary-indexed or decode-then-re-encode payload, with the per-tract dtype and value-range census printed in the receipt. **It can fail in both directions and both are verified:** a constructed round-trip must be **detected** (not merely refused), and a clean run must report **zero** detections across every tract, so a probe that detects nothing because it inspects nothing is caught `[OP: csd-latent-space-reasoning-invariant.md]` | §2.2, §4.1 W9i |
 | **DEC-54** | **TRAINING PLACEMENT POLICY: PACK BY VRAM BUDGET ACROSS ALL THREE CARDS.** *Rationale: submodels are several million to a few hundred million parameters and fit every card, so serialising them on one card wastes two thirds of the fleet — but the one region that does not fit taught the lesson expensively.* Concurrent submodel runs are admitted **only when their per-job VRAM budgets fit** the target card (3090 Ti 24 GiB sm_86, 5080 16 GiB sm_120, 1080 Ti 11 GiB sm_61), under **process-level pseudo-isolation** — per-process memory fractions, `expandable_segments`, warp-level sharing. **No MIG on consumer cards; this is pseudo-isolation, not hard isolation, and it is acceptable because the fleet is single-tenant** (operator + agents), which is stated so nobody later reads it as a security boundary. **Launch tooling takes a VRAM budget and a target host**; **every receipt records `host`, `vram_budget_mib` and `concurrency`.** **The measured constraint: `reason` runs ALONE at batch 512 / `max_len` 256 with `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`** — batch 1280 OOMed 640 MiB short of the 22 GiB card. Row **W7p** `[OP: csd-training-placement-policy.md, csd-baseline-receipts-2026-09-03.md]` | §4.1 W7p, §6.7, §4.3 |
 | **DEC-55** | **LAYER-SECTIONED TRAINING IS A CANDIDATE FOR LARGER MODELS — NOT A DECISION.** *Rationale: at 1B+ per region the fleet either contributes three cards or two, and the technique that decides which is one the operator flagged as worth considering while explicitly doubting parts of their own understanding of it — recording it as a candidate keeps both halves.* Training isolated **sections of layers/weights** on different cards, rather than the whole model at once, sits **beside DEC-29** (region-granular pipeline parallel, microbatch ≤ 256 cross-host) and beside the standing ruling that **cross-host DDP is the wrong tool at 1 Gb/s**. Row **P5′L**, deferred: it is **evaluated on measured interconnect cost per section boundary against DEC-29's pipeline cost on the same model**, and adopted only if it wins. Until then, later phases may legitimately be **locked to the 3090 Ti + 5080, or to the 3090 Ti alone** `[OP: csd-training-placement-policy.md]` | §6.7, §4.1 P5′L |
-| **DEC-56** | **THE 1B-PER-SUBMODEL SCALE PATH, AND DATA IS THE LONG POLE.** *Rationale: the operator's post-phase-3 intent has a sequencing constraint and a data requirement that decide whether it is reachable, and neither was written down.* Sequence: toy (~87M) → **mid-size proven** (DEC-52's baseline, W6 green, PTQ on the deployment card) → **~1B parameters per submodel** → **quantise each region** → **train the composed model on the quantised regions** → the 30B direction (OD-6). **The data requirement is stated rather than implied: of the order 10^10 tokens PER REGION** under the usual scaling rules, each licence-verified under DEC-31 and balanced under B1–B5 — which is why DEC-57's factory is the reusable asset and not a side quest. **Per-region PTQ sensitivity at 1B decides the composed bits/param budget: the 3.2675 figure is RE-MEASURED at size, never carried forward.** The path proceeds **region by region under DEC-50**, so it never becomes one untestable jump. Row **P5′b** `[OP: csd-billion-per-submodel-scale-path.md]` | §6.1, §4.1 P5′b, §6.5 |
+| **DEC-56** | **THE 1B-PER-SUBMODEL SCALE PATH, AND DATA IS THE LONG POLE.** *Rationale: the operator's post-phase-3 intent has a sequencing constraint and a data requirement that decide whether it is reachable, and neither was written down.* Sequence: toy (~87M) → **mid-size proven** (DEC-52's baseline, W6 green, PTQ on the deployment card) → **~1B parameters per submodel** → **quantise each region** → **train the composed model on the quantised regions** → the 30B direction (OD-6). **The data requirement is stated rather than implied: of the order 10^10 tokens PER REGION** under the usual scaling rules, each licence-verified under DEC-31 and balanced under B1–B5 — which is why DEC-57's factory is the reusable asset and not a side quest. **Per-region PTQ sensitivity at 1B decides the composed bits/param budget: the 3.2675 figure is RE-MEASURED at size, never carried forward.** The path proceeds **region by region under DEC-50**, so it never becomes one untestable jump. Row **P5′b** `[OP: csd-billion-per-submodel-scale-path.md]`. **AMENDED IN REVISION 3.5 BY DEC-73: the flat 10^10-per-region number is replaced by PER-FACULTY targets.** The dataset factory's pass 1 measured the B1-bounded reach of every faculty and four of seven fall one to three orders of magnitude short (`visual` **0.3%**, `memory` **1.3–5%**, `reasoning` **1.8%** without a generator, `language_code` **15%**), while `language_trunk` overshoots **60×** — so one number applied to seven faculties is not a requirement, it is an average nobody can act on. Row **P2′g** `[OP: csd-dataset-factory-pass1-result.md]` | §6.1, §4.1 P5′b, §4.1 P2′g, §5.8, §6.5 |
 | **DEC-57** | **THE DATASET FACTORY: ONE STRUCTURED I/O LOOP, GENERALISED FROM WHAT EXISTS.** *Rationale: sourcing, licence deconfliction and polishing is the long pole for DEC-56, and the pieces already exist in embryo — rewriting them would discard the provenance discipline they encode.* The loop is **search → identify → capture provenance → licence verdict → ingest → emit a licence-compliant open dataset with full provenance**, drivable by an agent, with a **human-visible provenance receipt per dataset**. It **generalises, and does not replace**: `csd-corpus-expand` catalogue entries carrying `provenance_group`, **upstream licence verbatim held as a separate field from the mirror tag** (the mirrors lie), `REFUSE` verdicts **enforced by the fetcher** rather than recorded beside it, `LICENCE-FOR-OPEN-WEIGHTS.md` / `AUDIO-CORPUS-AUDIT.md` as the audit format, the corpus contract's B1–B5 balance rules, and NSRS admission with source-row fingerprints. **DEC-31's strictest-input rule applies to every dataset the factory emits.** Row **P2′f** `[OP: csd-dataset-factory-and-moral-corpus.md]` | §5.5, §5.6, §4.1 P2′f, §7.1 |
 | **DEC-58** | **SYNTHETIC DATA HAS ITS OWN CONTRACT, AND THE GATE CAN FAIL.** *Rationale: generated data carries garbage the operator will not train on, and "we will be careful" is not a control.* Four clauses, all failable: **(1) the generator is NAMED in provenance** — model, revision and licence — extending §5.6's existing *"no generating model, or the model named"* rule from the reserve to every corpus; **(2) contamination channels are run against EVERY eval**, not the one the data was made for, and the gated-channel counts are printed; **(3) a QUALITY GATE that can fail** — the synthetic bin must beat a matched human-authored sample on the bin's own metric, or the batch is discarded, verified by feeding it deliberately degraded output and asserting rejection; **(4) a CAPPED SHARE of any bin**, counted as a B1 statistic on provenance groups so a generator cannot become a monoculture wearing many names. **The operator's stated preference is preserved as the tie-breaker: extremely high quality and requirement-complete over large.** Row **P2′s** `[OP: csd-dataset-factory-and-moral-corpus.md]` | §5.6, §4.1 P2′s |
 | **DEC-59** | **THE MORAL CORPUS IS A CURATED DATASET WITH EVALS, AND IT IS A SCALE-UP ROW.** *Rationale: the operator wants values captured at the training-data level so they are baked in by training rather than bolted on by filtering — and wants to know whether that actually works.* It gets **its own CORPUS-CONTRACT entry**, its own **provenance chain**, its own **licence verdict** under DEC-31, and — the part that makes it a decision rather than an aspiration — **its own held-out moral/safety probes**, so *"training on it changes measured behaviour"* is a **measurement against an untrained and an unmoral-corpus control**, never an assumption. **Phase-3 / scale-up, explicitly NOT a toy-scale row**: at 87M there is no behaviour to move and a null result would be uninterpretable. Row **P5′m** `[OP: csd-dataset-factory-and-moral-corpus.md]` | §5.5, §4.1 P5′m, §7.1 |
 | **DEC-60** | **AUTODEV LIVES IN `csd-autodev`; THIS DOCUMENT KEEPS A POINTER AND THE CSD-SIDE PREREQUISITES.** *Rationale: autodev is a harness meant to run several models, and coupling it to one model's repo makes both harder to reason about and pollutes CSD's licence and provenance story.* Operator ruling: *"remember to keep autodev work in the autodev tree and repo so we dont mix autodev work with CSD work"* `[OP: autodev-work-lives-in-csd-autodev.md]`. The spec is **`docs/AUTODEV-IDENTITY-AND-SANDBOX.md` on branch `docs/autodev-spec` in `tzervas/csd-autodev`**, with its threat and skeptic passes beside it; **OD-1 and OD-2 are ANSWERED there** (`svc-autodev` with its own vault and a minimum-scope Forgejo user, no root and no sudo, the lab-console as sole egress gateway minting short-lived per-request tokens, a separate curated RAG vault) `[OP: autodev-service-identity-and-sandbox.md]`. **What stays HERE is only what CSD depends on: rows PRE-1, PRE-2 and PRE-3, which BLOCK any autodev GPU route** — because a design that assumes a control it does not own is how the assumption outlives the control | §8, §4.1 PRE-1/2/3, §9.9 B5 |
 | **DEC-61** | **GOVERNANCE: `main` IS PR-ONLY, AND OD-1's PATH-SCOPED PROTECTION IS CORRECTED BY MEASUREMENT.** *Rationale: the PR is where CI legitimacy, review and the merge record live, and direct pushes skip all three — but the file-pattern control OD-1 recommended turns out to block the reviewed path it was meant to protect.* No direct pushes to `main` in any code repo, **the operator's own commits included, on principle**. CogSynDelta enforces it: **push whitelist = the operator alone; 8 required `pull_request` contexts** (the `(push)` variants never appear on feature-branch heads, so requiring them made every PR unmergeable). **`protected_file_patterns` is CLEARED, and this REPLACES OD-1's recommendation rather than sitting beside it:** Forgejo refuses to merge **any** PR touching a protected file — 405 *"Changed protected files"*, **admins included**. **Guard integrity therefore rests on the required checks — including `tests/test_guards_can_fail.py` — plus review, and nothing else; counting the file-pattern rule would be counting a control that does not exist.** Every mutating agent works in an **ephemeral worktree** and pushes a **sha**; merges are fast-forward or `--no-ff` from pushed shas `[OP: branch-and-pr-to-main-only.md]` | §8 OD-1, §9.9 B5 |
 | **DEC-62** | **W2c's ANSWERS: THE 0.40 CODE FLOOR IS RETIRED, AND `retrieve`'s CHANCE FLOOR BREAKS NSRS CONDITION (1).** *Rationale: one of W2c's two measurements settled a documentation defect; the other created a live hole in the admission filter that no rule covers.* **(i)** The ≈0.40 code lexical floor is **unsupported and retired** — measured 0.2285 at seed 0 and 0.2344 at the region seed. **That retirement is recorded at `docs/design/evidence/w2c-untrained-baselines-2026-09-03/` and is CITED here, not restated**, so there is one copy of the number. **(ii) THE NEW FINDING: `retrieve`'s `τ_lo` is 0.0000 in chance-normalised units**, because its untrained r@1 equals chance exactly (1/512 = 0.00195). **NSRS admission condition (1) — `max_r s_r < τ_lo` — is therefore BARELY SATISFIABLE on that bin**: at `τ_lo = 0` the condition admits by construction rather than by evidence, and *"no single region suffices"* becomes untestable there. **W2b must DEFINE admission for a chance-floor bin BEFORE it runs** — an **absolute-margin floor** (`max_r s_r < chance + δ` with `δ` pre-registered) **or a different normaliser** — pre-registered with its reason, and the choice **verified by making it fail** on an item a single region trivially solves `[OP: csd-baseline-receipts-2026-09-03.md]` | §5.3, §4.1 W2c, §4.1 W2b, §2.7.1 |
-| **DEC-63** | **EPISODIC STORE GAP (a): DYNAMIC CAPACITY AND STALENESS DECAY — DEFAULT ADOPTED.** *Rationale: the operator asked for the contracts nailed down rather than deliberated, and gap (a) has an implementable default that E1's receipt then turns into a measurement.* `capacity_bytes(host, tick) = max(0, VRAM_total − KV_reserved(context_len, regions_active) − activation_reserve − safety_margin)`, a **pure function of live inputs, computed per host at scheduler-tick time and NEVER CACHED** — the 1080 Ti is preemptible and the active-region set changes under the store, so a capacity fixed at process start is not dynamic. **Staleness is an exponential half-life on `last_accessed`**, half-life a config constant starting at the order of the workspace context window in wall-clock time; the receipt **records which function ran**. **OPERATOR TO CONFIRM, two things and they are different questions:** the `safety_margin` value (recommend 2 GiB, the order of `hypha`'s display reserve), and **whether a residual claim is acceptable at all** given §9.11's finding that the residual may round to zero on the 5080 — the alternative being a **fixed floor reserved before the KV budget**, which trades context length for recall and is a product decision `[OP: csd-episodic-store-required.md]` | §1.3, §8 gap (a), §4.1 E1, §9.11 |
+| **DEC-63** | **EPISODIC STORE GAP (a): DYNAMIC CAPACITY AND STALENESS DECAY — DEFAULT ADOPTED.** *Rationale: the operator asked for the contracts nailed down rather than deliberated, and gap (a) has an implementable default that E1's receipt then turns into a measurement.* `capacity_bytes(host, tick) = max(0, VRAM_total − KV_reserved(context_len, regions_active) − activation_reserve − safety_margin)`, a **pure function of live inputs, computed per host at scheduler-tick time and NEVER CACHED** — the 1080 Ti is preemptible and the active-region set changes under the store, so a capacity fixed at process start is not dynamic. **Staleness is an exponential half-life on `last_accessed`**, half-life a config constant starting at the order of the workspace context window in wall-clock time; the receipt **records which function ran**. **OPERATOR TO CONFIRM, two things and they are different questions:** the `safety_margin` value (recommend 2 GiB, the order of `hypha`'s display reserve), and **whether a residual claim is acceptable at all** given §9.11's finding that the residual may round to zero on the 5080 — the alternative being a **fixed floor reserved before the KV budget**, which trades context length for recall and is a product decision `[OP: csd-episodic-store-required.md]`. **AMENDED IN REVISION 3.5 BY DEC-70: `capacity_bytes` is a CEILING, NOT A TARGET.** The formula says what the store *may* claim; it never said what the store *should* claim, and a residual read as an allocation is how a frugal subsystem becomes the largest one on the card. The resident set is what the residency score admits **now**, bounded additionally by DEC-70's frugality cap, and `capacity_bytes` is the ceiling that bound may not cross `[OP: csd-memory-gate-overlays.md]` | §1.3, §8 gap (a), §4.1 E1, §4.1 E1a, §6.6, §9.11 |
 | **DEC-64** | **EPISODIC STORE GAP (b): THE PARTITION AXIS IS `(scope, domain, logical_key)` WITH `scope` = THE AUTHENTICATED PRINCIPAL.** *Rationale: §9.9 B2's whole defence is a server-derived scope, and `domain` — a closed fleet task taxonomy — is a label, not an isolation boundary; CSD's regions are faculties, so `domain` does not even name the right kind of thing.* Three segments. **`scope` is the authenticated principal, DERIVED SERVER-SIDE and never client-supplied**; `domain` is retained as memory-gate's task axis so the ported conformance tests still bind; **`session` is a sub-segment the request may NAME and the server may BOUND**. **Persona/basin is a SCOPE SELECTOR and never a routing object** — inherited from the one part of that design that was fully thought through (*"Personas MUST select a memory basin/configuration; they MUST NOT be modeled as MoE experts or independent agents"*). **OPERATOR TO CONFIRM — this is the one gap no measurement decides:** principal isolates users and lets one user's episodes accumulate forever; session makes X7 items work and long-horizon memory impossible; persona-basin isolates contexts within one user. **Recommended and adopted as the default: principal, with session bounded beneath it** `[OP: csd-episodic-store-required.md]` | §1.3, §8 gap (b), §4.1 E1, §9.9 B2 |
 | **DEC-65** | **EPISODIC STORE GAP (c): INDEX-NOT-BYTES, LATENTS OWNED BY THE RUNTIME, TEXT SIDECAR OFF THE READ PATH.** *Rationale: DEC-47 forbids re-serialising to discrete tokens on an inter-region path, so memory-gate's text-plus-embedding payload is simply not available to CSD as a workspace participant — it would place a token bottleneck exactly where the invariant says there must not be one.* The store owns an **index and an eviction policy** over latent bytes **the runtime owns**, not a second allocator competing with the KV cache for the same VRAM. A record is `(scope, domain, key) → (pointer, residency, importance, last_accessed, byte_size, provenance)`; the read is `k = W_k z`, `v = W_v z` over stored latents. **This is the one clause where CSD deliberately DIVERGES from the source repos on the payload while adopting their structure, and it is called out rather than blended.** **A text sidecar is KEPT — as provenance metadata only, never on the read path** — because it is the only way a human can inspect what the mind remembered, and keeping it off the read path is what stops it becoming a token bottleneck by accident `[OP: csd-episodic-store-required.md]` | §1.3, §8 gap (c), §4.1 E1, §2.2 |
 | **DEC-66** | **EPISODIC STORE GAPS (d) AND (e): PRUNE-ONLY AT v1, IN THOSE WORDS; OVERLAYS STAY IN P5′o.** *Rationale: a learned consolidation pass with no gate, no receipt and no corpus is the `residual_mlp` defect in a new costume, and E1 is a container with four failable gates that an unspecified feature would turn into a row with intentions.* **Consolidation at v1 IS scored eviction plus the durability ladder and nothing else — CSD's store forgets by policy rather than consolidating by learning, for the whole of v1.** A real complementary-learning-systems pass (a slow phase that **creates new representations** from old episodes, using the `RecordProvenance` field both source repos already define and neither uses) is **the store's own phase-3 candidate**, where P5′'s monotone-improvement rule can grade it. **Differential overlays are NOT pulled forward into E1**: their design cannot be imported — an exhaustive grep for `overlay`/`differential` returns zero hits in both source `src/` trees `[V-abs]` — and it is written fresh in **P5′o**, inheriting exactly two patterns: **index-not-bytes** for residency and **scope-selector-not-agent** for persona `[OP: csd-episodic-store-required.md, csd-memory-gate-overlays.md]` | §8 gaps (d)/(e), §4.1 E1, §4.1 P5′o, §6.6 |
 | **DEC-67** | **DEPLOYMENT ACCEPTANCE: THE 5080 + 3090 Ti MUST RUN THE COMPOSED MIND; THE 1080 Ti IS THE RAG HELPER UNLESS CSD RETRIEVES NATIVELY.** *Rationale: M0 already carried this shape in its task text, and a shape in a task description is not an acceptance criterion — the card that is actually tight is the 16 GiB one, and nothing was scheduled to find out.* Row **M0d**: the composed, PTQ'd mind **loads and serves within VRAM on BOTH the 5080 (16 GiB sm_120) and the 3090 Ti (24 GiB sm_86)**, with the **store's dynamic capacity (DEC-63) reported separately in bytes on each card** — a footprint that omits the store has reported half the deployment. **The 1080 Ti (11 GiB sm_61) is the RAG residence with a helper embedding/rerank model, and it stays in the deployment unless M0's arm (b) demonstrates native retrieval** — *"unless CSD ends up capable of handling the various RAG processes natively as a skill"*, which is **measured in M0, never assumed** `[OP: csd-mycelium-downstream-goal.md, fleet-gpu-roles-and-scheduling]` | §4.1 M0d, §6.1, §9.14 |
+| **DEC-68** | **W4's PRE-REGISTERED RUN IS MEASURED: THREE GATES PASS AS THE HARNESS SCORED THEM — ONE OF THEM ONLY BY FLOAT32 REPRESENTATION — TWO FAIL, AND THE GATES ARE NOT EDITED HERE.** *Rationale: the row was pre-registered precisely so its outcome could not be argued with afterwards, and the first thing a document is tempted to do when a pre-registration fails is to improve it.* **Measured, from the receipts and nothing else.** The batch-512 production run (`memory-20260903T164611Z.json`, code `4d2d886`) failed **four of five**. The **pre-registered batch-1280 run** (`w4-chunked/run-1280/memory-20260903T184441Z.json`, code `eb735ab`, `token_loss_chunk` 512, 4,000 steps, 1,586.7 s) **PASSES (a)** — `recall@1` **0.8535** against parents **0.7754**/**0.7559**, graded spearman **0.7893** against compress's **0.7588** — **PASSES (b) AS SCORED, CONTINGENTLY** — full-pool `recall@10` **0.200** at a **strict** `> 0.20` floor, MRR **0.1168** at a **0.10** floor; the receipt's value is `0.20000000298023224` = `float(numpy.float32(0.2))`, so the float32 recall **is** 0.2 and the margin is representation error, which makes (b) an **exact tie under a strict reading** and sends the `>`-versus-`≥` question to **OD-17** rather than settling it here — **PASSES (d)**, and **FAILS (c)** — **0.200 against BM25's 0.440**, MRR **0.117** against **0.308** — and **FAILS (e)** — final-block rank ratio **1.2102** against an absolute **2.0×**, with the regression clause at **0.0** passing. **The negatives curve, three runs at one changed variable:** batch **256 / 512 / 1280** ⇒ full-pool `recall@10` **0.030 / 0.098 / 0.200**, held-out `recall@1` **0.600 / 0.815 / 0.854**, rank ratio **1.59 / 1.35 / 1.21**. **The objective's effect at production length, which the 50-step control arm could not measure:** at batch 512 the control arm (both weights 0) reports rank ratio **1.0851** against **1.3475** with the terms on, `recall@1` **0.7754** against **0.8145**, graded **0.7313** against **0.7463** — the terms work and the 2.0× clause **does** discriminate at 4,000 steps, and both arms sit below 2.0. **What this document does with that: nothing to the gates.** **OD-17** puts *pivot per §9.14 as pre-committed* against *amend as a pre-registration* to the operator, both costed `[OP: csd-w4-control-arm-result.md]` | §4.0, §4.1 W4, §4.1 W4n, §8 OD-17, §9.14 |
+| **DEC-69** | **THE KNOBS ARE ONE TABLE WITH MEASURED EFFECTS, AND gpu-pack's ADMISSION MODEL IS THE RUNTIME PACKER'S STARTING POINT.** *Rationale: packing and chunking were solved as two incidents; as a table they are a control surface, and the same admission arithmetic that keeps two training jobs off each other's VRAM is what will keep regions, overlays, the store and the KV cache off each other's at inference.* Six knobs, each with what it costs: **per-job VRAM budget** and **admission margin** (gpu-pack's `allowed = total − foreign_used − Σ max(budget, measured) − margin`, margin default 1,024 MiB); **`token_loss_chunk`** — **2048 ⇒ 20,726 MiB reserved / 22,120 MiB raw driver peak**, **512 ⇒ 19,444 / 20,883 at +2.6% step time**, chunk peak being `chunk × vocab` and therefore batch-independent; **batch, which IS the in-batch-negatives count** and carries DEC-68's curve; **mask probability** (0.15, which sets `n_masked` and therefore the token term's whole cost); **card choice by VRAM versus compute**. **And a standing FOREIGN claim that is not a knob and must never be absorbed into a margin: the operator's desktop holds 981–1,057 MiB on the 3090 Ti** (Xorg/KDE/Firefox, measured in both chunk probes) — a budget computed as if the card were headless is wrong by that amount, and gpu-pack already models it as `foreign_used` rather than as slack. **The admission model is reused, not re-invented, for inference packing.** Row **W7k** `[OP: csd-training-placement-policy.md]` | §6.7, §4.1 W7k, §4.1 W7p |
+| **DEC-70** | **THE MEMORY GATE IS A VRAM ARBITER WITH A PRIORITY ORDER AND A FRUGALITY CAP — IT CONTENDS, IT DOES NOT TAKE WHAT IS FREE.** *Rationale: DEC-63 gave the store a residual claim on whatever the KV cache and activations left over, which reads as "memory gets the leftovers" and, read the other way, as "memory may take everything left" — the operator's ruling is neither.* **Claimants and priority, in order:** **base weights and the working activations are FIXED**; then the **ACTIVE memory set and the LOADED PERSONA, which are protected and are never evicted to make room for context**; then the **KV cache / context window, which FLEXES around them** (sliding window, shorter context); **inactive overlays, offsets and differentials sit BELOW context and leave first**. **The frugality cap is what makes protecting memory safe:** a stated constant caps resident memory + persona at a small fraction of the card, per card, enforced by the residency scorer — **gate: at the cap, the achievable context length differs from the no-memory case by less than a stated margin**. **Failure to size is reported, never silent:** a relevant memory/persona set that does not fit emits a receipt and an event and **degrades the memory set by relevance**; **the persona is never silently dropped**. **Residency is scored** on recency, relevance to the loaded persona/basin and access frequency, across **card / host RAM / disk**, and **eviction is proactive on inactivity and on pressure**, not only on capacity overflow. **Frugality is measured:** every receipt records peak VRAM held by memory + overlays and the fraction of it that was active. **DEC-63 is amended: `capacity_bytes` is the CEILING, not the target.** Row **E1a** `[OP: csd-memory-gate-overlays.md]` | §6.6, §4.1 E1a, §4.1 E1, §8 gap (a), §9.11 |
+| **DEC-71** | **DIFFERENTIAL ACTIVATIONS — A LONG-TERM TRACK WITH A GATE, NOT A PHASE-2 FEATURE.** *Rationale: the operator is thinking past weight-delta overlays to activation deltas, and the honest way to hold an idea that is not yet buildable is a row with a falsifiable gate rather than a paragraph of intent.* Beside the weight overlays of DEC-33, an overlay may also carry **activation deltas relative to the base activations**, stored in a format **optimised for rapid recompute-and-apply** — a delta plus a cheap reconstruction rather than dense stored activations — so a persona or skill contributes features at inference **without holding dense state**. **Gate, and it is a comparison, not a demonstration: apply latency and VRAM per feature against the dense alternative, measured on the same items, and adopted only if it wins on BOTH.** **Post phase 3; not built in phase 2**, beside the ternary track (§6.9) and P5′o. Row **P5′d** `[OP: csd-memory-gate-overlays.md]` | §6.10, §6.6, §4.1 P5′d |
+| **DEC-72** | **THE PREDICTIVE HYBRID TRAINING TRACK — EXTEND THE EXISTING PREDICTOR, AND GATE IT ON WALL-CLOCK.** *Rationale: the tool already exists and its own documentation claims 25% backward and 15% forward reductions; those are inputs to an experiment, not results, and the experiment has to be specified before the claim can be believed or discarded.* `tzervas/tritter` carries `GradientPredictor` / `PredictiveTrainer` / `LossPredictor` and a 962-line research report; this track **extends prediction from weight-update outcomes to (2) activations and activation deltas — which is where it meets DEC-71 — and (3) semantic residuals used as a correction signal**. **Four gates, all pre-registered:** prediction error against a **real** step on held-out batches per target under a stated tolerance; the **fraction of steps predicted**, printed; the **end-task metric against a fully-real run at EQUAL WALL-CLOCK and at equal steps, both reported**, because a method that is only faster per step has proved nothing; and an **automatic fallback to real steps when a predicted phase drifts past tolerance**, verified by constructing the drift. Fine-tuning is measured as its own case. **Strictly after phase-3 whole-model training is underway**, and it lives in tritter under DEC-75 with a CSD adapter only. Row **P5′p** `[OP: csd-predictive-hybrid-training-track.md]` | §6.10, §4.1 P5′p, §6.9 |
+| **DEC-73** | **THE DATASET FACTORY'S PASS 1 IS MEASURED, AND THE FLAT 10^10 TARGET DOES NOT SURVIVE IT.** *Rationale: DEC-56 stated a data requirement without knowing whether it was reachable; pass 1 measured that, and four of seven faculties are one to three orders of magnitude short.* **Counts:** **159 candidates** in **106 provenance groups** — **105 VERIFIED, 26 CONTRADICTED** (the surveyor's verdict overturned at the primary), **18 UNVERIFIABLE, 10 REFUSED-CLOSED**; verdicts PERMISSIVE 42 / ATTRIBUTION 21 / SHARE_ALIKE 20 / NC 13 / **UNVERIFIED 37** / BLOCKING 11 / REFUSE 15. **The backlog is the 37 UNVERIFIED (23%), not the refused list.** **B1-bounded reach against 10^10 tokens per region:** **`visual` 0.3%**, **`memory` 1.3% clean-permissive / 5.0% NC-inclusive** (2.0% if MS MARCO is refused), **`language_code` 15%**, **`reasoning` 1.8%** permissive without a generator and **≥100% with** the DeepMind `mathematics_dataset` generator, **`moral_safety` 2.4%** (not a shortfall — DEC-59 curates), **`language_trunk` 6,359%**. **NC BUYS ALMOST NOTHING** over clean-permissive: **0 points** for `language_code`, `visual` and `moral_safety`, **0.8** for `reasoning`, **3.7** for `memory` of which **3.3 is MS MARCO alone**. **B1 — not licence tolerance — is what binds**, so the lever is more independent permissive provenance groups. **Consequence, and it amends DEC-56:** per-faculty targets with the reasoning written down, **clean-terms generators** (the cosmopedia shape: an Apache-weights generator run locally) and the operator's own **enrichment** replace one number applied to seven faculties. Row **P2′g**; the five legal readings become **OD-18** `[OP: csd-dataset-factory-pass1-result.md]` | §5.8, §4.1 P2′g, §6.1, §8 OD-18 |
+| **DEC-74** | **THE FLEET IS ON DEMAND, AND THE 1080 Ti's TRAINING VERDICT IS MEASURED RATHER THAN ASSUMED.** *Rationale: two stale claims were live — that all three cards serve `:8080` continuously, and that the 1080 Ti could take a region "where the corpus and torch build allow" — and both cost probing time before they were checked.* **All three cards and all their runtimes are started on demand and stopped when idle** — LocalAI on akula-prime and gpu5080, llama.cpp on the 1080 Ti VM, Open WebUI and ComfyUI alike. **An idle `:8080`, a stopped unit or an exited container is the NORMAL RESTING STATE, not a fault**, and is not to be "fixed". **The 1080 Ti verdict, VERIFIED:** the fleet's pinned **`torch 2.11.0+cu128` cannot run there at all** — `get_arch_list()` floors at **sm_75** and the VM's driver **535.274** caps at CUDA 12.2, so there is no sm_61 target in that build — while a separate **`torch==2.5.1+cu121`** venv on the guest runs a 2048² matmul with zero warnings but carries none of CSD's other dependencies. **So fp32 training there is "with env X: yes", and the DEFAULT ROLE IS INFERENCE, RAG AND UTILITY**, which is what the packer defaults it to until a probe shows otherwise. DEC-54's *"and the 1080 Ti where the corpus and torch build allow"* is **narrowed by this measurement rather than left standing** `[OP: fleet-gpu-roles-and-scheduling.md, csd-training-placement-policy.md]` | §6.7, §4.1 W7p, §4.1 W7k, §6.1 |
+| **DEC-75** | **TOOLING LIVES IN ITS OWN REPO, AND `tzervas/gpu-pack` IS ROW W7p's IMPLEMENTATION.** *Rationale: the operator's rule is explicit — every harness or framework built for this programme is captured in its own repo, aligned to its own role, so tooling never bloats the model repo — and W7p was written as a row without naming where its code would live.* **Rule:** before building a tool, decide which repo owns the role; if none does, create one. **CogSynDelta keeps the MODEL** — regions, interconnect, objectives, evals, corpus contracts, receipt formats, and the **thin adapters a tool needs** (an env var honoured, a job-spec file). **The tool's code, tests, docs and its own CI live in the tool's repo.** **`tzervas/gpu-pack` (main at `5364932`, rounds 1–4 merged) is W7p's implementation**: probe, budget ledger, admission under one flock, per-process cap, transient units with emitters, remote launch and launch receipts. **CSD's whole side is already in this tree and stays that size** — `src/cogsyndelta/util/gpu_budget.py` plus `program/jobs/*.json` — and **P10.4's "the probe/admit/launch pipeline is the remaining piece" is retired by measurement**. The same rule places the predictive trainer in `tritter` (DEC-72) and autodev in `csd-autodev` (DEC-60) `[OP: tooling-lives-in-its-own-repo.md]` | §6.7, §4.1 W7p, §4.1 W7k, §8 |
+| **DEC-76** | **THE AUTODEV POINTER IS REV 5, AND THE RULE THAT CAME OUT OF FIVE ROUNDS IS RECORDED WITH IT.** *Rationale: DEC-60 made this document a pointer, and a pointer that names a superseded revision is worse than no pointer — a reader follows it and reads the wrong design.* The spec is **`docs/AUTODEV-IDENTITY-AND-SANDBOX.md`, rev 5, committed at `ece346b`** on branch `docs/autodev-spec` in `tzervas/csd-autodev` (**PR #1** there; rev 4 was `c192278`), with the threat pass and the two retained skeptic write-ups under `docs/evidence/autodev-threat-2026-09-03/` — that directory holds exactly three files, `01-threat.md`, `skeptic-round4.md` and `skeptic-final.md`; **five** revise-and-attack rounds were run and the earlier write-ups were not committed [V, `git log` on `docs/autodev-spec` at `ece346b`]. **Residual criticals, one line and no summary of the spec itself:** the **FINAL (round-5) skeptic, `skeptic-final.md`, still lists five critical and six high** (23 findings) — the number the source memory records; the **round-4** pass against rev 4, `skeptic-round4.md`, listed **four** critical and six high (21 findings) and is not the count meant here — of which **two are overtaken by events** (the `/api` auth gate is on `main`; the closure pin went stale because CSD moved twice in eight minutes) and the rest are **rev-6 material** — the runtime import recorder must run the protected tests under `pytest` rather than import their modules and needs a `⊇` floor so it can fail; P0a's check must model the **live** code, which reads `CSD_APPLY_TOKEN` from the unit's environment rather than forking credentials per request; `socket_ident` must be re-stat-ed per connect or a socket-unit restart never invalidates; and §0d must be pinned to a merge-base. **THE RULE, and it is the transferable part: FREEZE A CODE REVISION (a tag), THEN WRITE THE NEXT SPEC REVISION AGAINST IT, THEN IMPLEMENT.** A spec chasing a moving tree cannot converge, and five rounds is the evidence `[OP: autodev-service-identity-and-sandbox.md]` | §8, §4.1 PRE-1/2/3 |
+| **DEC-77** | **THREE GOVERNANCE ADDITIONS, EACH FROM A MEASURED FAILURE THIS SESSION.** *Rationale: DEC-61 wrote the PR-only rule against CogSynDelta's `main` alone, and two CI failures this session were not one-off bugs but classes that will recur.* **(1) PR-ONLY EXTENDS TO `tzervas/gpu-pack`**, whose `main` is protected the same way — push whitelist = the operator, required context `CI / test (pull_request)` — so DEC-61 is a rule about every code repo and not a fact about one. **(2) THE SECRET SCAN HAS A PROSE FALSE-POSITIVE CLASS.** `gitleaks`' `generic-api-key` rule fires on low-entropy `identifier=value` pairs **inside prose**: a tokenizer-load log line, and `decorr_weight=0.0` quoted in a docstring that reports a control arm's three loss weights. **The remedy is the NARROWEST allowlist the finding admits — always `targetRules` limited to the one rule and always the byte-identical phrase, plus the exact file path WHERE PATH SCOPING IS POSSIBLE — and it is verified by PLANTING a real-shaped secret in the same file and asserting it is still caught**. *Path scoping is not always possible and the repo's own config shows why: the tokenizer-line entry is phrase-and-rule-scoped with no `paths`, because the same string is quoted in `.gitleaksignore`'s immutable history and a path-scoped entry could not reach it. The rule is therefore `rule + phrase` always, `+ path` whenever the finding is confined to one file*, because an allowlist nobody tried to overreach is an allowlist nobody has measured. **(3) THE CI RUNNER HAS NO GPU TOOLING.** `fleet-ci-base:1` has no `nvidia-smi`, so a helper-CLI wrapper that lets `subprocess.run` raise takes down the whole endpoint that called it — `FileNotFoundError` inside a status handler's dict literal, aborting a 200 that should have degraded one field. **Tests must not assume `nvidia-smi` (or `docker`, or `ssh`) exists**, and a diagnostic subprocess must **fail closed to a string**. The regression test is the CI scenario itself: a `PATH` with no GPU tooling on it at all `[OP: branch-and-pr-to-main-only.md, tooling-lives-in-its-own-repo.md]` | §8, §9.9 B5 |
 
 **The index is in numeric order** `[S31-17 fixed]`. Revision 3.1 appended DEC-43 to DEC-46 *before*
 the DEC-42 row revision 3 had added, so the table read DEC-41, 43, 44, 45, 46, 42. It is the
@@ -389,7 +519,7 @@ document's lookup table and a lookup table out of order is a small defect that c
 one thing the table exists to give them. **Revision 3.3 adds DEC-49, DEC-50 and DEC-51 in numeric
 order**, which for once is also append order; the ordering was re-checked rather than assumed. **Revision 3.4
 appends DEC-52 to DEC-67, also in numeric order, and renumbers nothing** — DEC-32's supersession by DEC-49 is
-the pattern: a decision that stops being true is amended in place and keeps its number.
+the pattern: a decision that stops being true is amended in place and keeps its number. **Revision 3.5 appends DEC-68 to DEC-77, also in numeric order, and renumbers nothing**; DEC-56 and DEC-63 are amended in place by DEC-73 and DEC-70 and keep their numbers and their original text.
 
 ---
 
@@ -2231,6 +2361,109 @@ region-per-host training is lost) is why it is not the first move.
 > **Verify the gate can fail:** run it against the *pre-retrain* checkpoint and assert it
 > reports FAIL — the harness that says 0.66× today must still say FAIL when handed 0.66×.
 
+### W4 HAS RUN AT THE PRE-REGISTERED CONFIGURATION. THREE GATES PASS, TWO FAIL, AND THE GATES ABOVE ARE NOT EDITED BY THIS REVISION `[DEC-68]`
+
+Everything in this subsection is read out of the receipts named beside it. No number here is
+restated from prose, and no gate above is changed — **the row was pre-registered so that its
+outcome could not be argued with afterwards, and the first thing a document is tempted to do when
+a pre-registration fails is to improve it.**
+
+**Four runs, one changed variable at a time.**
+
+| run | receipt | code | batch | terms | (a) | (b) | (c) | (d) | (e) |
+|---|---|---|---|---|---|---|---|---|---|
+| production | `/akula-data/csd/receipts/memory-20260903T164611Z.json` | `4d2d886` | 512 | on | **FAIL** | **FAIL** | **FAIL** | pass | **FAIL** |
+| probe A | `w4-probes/w4-probe-batch256/memory-20260903T170934Z.json` | `ef3e180` | 256 | on | **FAIL** | **FAIL** | **FAIL** | pass | **FAIL** |
+| probe B, control | `w4-probes/w4-probe-control512/memory-20260903T170747Z.json` | `ef3e180` | 512 | **off** | **FAIL** | **FAIL** | **FAIL** | pass | **FAIL** |
+| **pre-registered** | `w4-chunked/run-1280/memory-20260903T184441Z.json` | `eb735ab` | **1280** | on | **PASS** | **PASS †** | **FAIL** | pass | **FAIL** |
+
+**†** (b) is scored PASS by the harness on a value whose entire margin over the floor is float32
+representation error — see the clause-by-clause reading below, and **OD-17**, which is where the
+`>`-versus-`≥` question is answered rather than here.
+
+**The pre-registered run, clause by clause** (batch 1280, `token_loss_chunk` 512, 4,000 steps,
+`max_len` 96, seed 0, `token 0.1 / decorr 0.1`, 16,021,248 params, 1,586.7 s on the 3090 Ti):
+
+- **(a) beats both parents — PASS.** Held-out `recall@1` **0.8535** against `compress` **0.7754**
+  and `retrieve` **0.7559**; graded spearman **0.7893** against `compress`'s **0.7588**. Both
+  sub-clauses pass, which the batch-512 run's graded number (0.7463) did not.
+- **(b) full-pool floors — THE HARNESS SCORED IT PASS, AND THE ENTIRE MARGIN IS FLOAT32
+  REPRESENTATION.** `recall@10` **0.200** against a **0.20** floor, MRR **0.1168** against a
+  **0.10** floor, on the 57,638-passage FiQA pool. **The clause is STRICT** — pre-registered as
+  `recall@10 > 0.20`, printed unchanged in W4's row, and implemented strictly at
+  `src/cogsyndelta/eval/beir_fiqa.py:476` (`passed = recall > recall_at_10_floor and mrr >
+  mrr_floor`). **The receipt's stored value is `0.20000000298023224`, which is exactly
+  `float(numpy.float32(0.2))`** [V, the receipt]: the underlying float32 recall **is** 0.2 and the
+  whole 3e-9 margin is float32 representation error, not measurement. **So this document records
+  two things and settles neither here.** *The receipt says `passed: true` and that is what is
+  reported.* *Under a strict reading of the pre-registration (b) is an EXACT TIE and therefore a
+  fail, which makes the run **two passes and three fails**.* **Whether the floors are `>` or `≥`,
+  and at what precision, is OD-17's to answer alongside (c) and (e)** — reading a bar as `≥` after
+  the number came in is precisely the move this subsection's own preamble forbids, and a
+  measurement whose verdict flips on 3e-9 of float32 is not a verdict this document may take for
+  itself.
+- **(c) beats BM25 — FAIL.** `recall@10` **0.200** against BM25's **0.440**; MRR **0.117** against
+  **0.308**; `recall@100` **0.424** against **0.662**. **The gap is a factor of 2.2, not a
+  rounding**, and it is the same gap at every batch size measured.
+- **(d) beats random init — PASS.** **0.200** against the untrained **0.000**.
+- **(e) §4.0's retrain gate — FAIL on clause 1, PASS on clause 2.** Final-block
+  `token_global_pr_rank` **94.75** over `pooled_pr_rank` **78.29** = **1.2102**, against the
+  absolute **2.0×**. The regression clause is **0.0** — nothing regressed at all.
+
+**The negatives curve, which is the one axis that moves the failing number.** Three runs differing
+only in batch, which in an in-batch-negatives regime *is* the negative count:
+
+| batch | held-out `recall@1` | graded spearman | full-pool `recall@10` | full-pool `recall@100` | rank ratio |
+|---:|---:|---:|---:|---:|---:|
+| 256 | 0.5996 | 0.6775 | 0.030 | 0.104 | 1.586 |
+| 512 | 0.8145 | 0.7463 | 0.098 | 0.280 | 1.348 |
+| **1280** | **0.8535** | **0.7893** | **0.200** | **0.424** | **1.210** |
+
+**Reading, and it is the load-bearing one:** full-pool `recall@10` moves **6.7×** across a **5×**
+change in negative count while the held-out number moves 25 points — the in-batch-negatives count
+is the dominant lever on the metric gate (c) is defined over, and the batch-512 production run
+therefore could not have been judged against this gate at all. **That is why the pivot was not
+triggered on 2026-09-03 afternoon**, and it is why the pre-registered run had to be made to fit
+before any verdict: the chunked, checkpointed cross-entropy over masked positions
+(`PretrainConfig.token_loss_chunk`, exact, 30 equivalence tests on loss and every gradient) is what
+brought batch 1280 from an OOM before step 0 to a completed run
+(`docs/design/evidence/w4-masked-token-loss-2026-09-03/`).
+
+**The objective's effect at production length, which the 50-step control arm could not measure.**
+The control arm at batch 512 (both weights 0, `w4-probe-control512`) against the production arm at
+the same batch:
+
+| arm | held `recall@1` | graded | full-pool `recall@10` | rank ratio |
+|---|---:|---:|---:|---:|
+| control (0 / 0) | 0.7754 | 0.7313 | 0.100 | **1.0851** |
+| both on (0.1 / 0.1) | 0.8145 | 0.7463 | 0.098 | **1.3475** |
+
+**Three things this settles.** **(1) The token-aware terms are not a no-op at production length:**
++3.9 points of `recall@1` and +1.5 of graded spearman. **(2) The 2.0× clause DOES discriminate at
+4,000 steps** — 1.09 against 1.35 — which is the opposite of what the 50-step control arm showed
+(2.02 against 2.24, both clearing) and is the reason that earlier result was recorded as
+*not discriminating at 50 steps on that harness* rather than as a verdict. **(3) The full-pool miss
+is INDEPENDENT of the objective:** 0.100 control against 0.098 with the terms on. Gate (c) is not
+failing because of `L_token` or `L_decorr`.
+
+**What the failures are actually about, stated as two different problems rather than one.**
+
+- **(c) is a distribution-and-scale problem, and it is measurable.** FiQA is **14,131 of 782,959
+  training pairs — 1.8% of the corpus** [V, the receipt's own `corpus.sources`] — and the eval is
+  the full 57,638-passage FiQA-only pool. **The gate has no parent baseline**: neither `compress`
+  nor `retrieve` was ever measured against that pool, so *"the merge degraded retrieval"* and
+  *"an unmerged `retrieve` would have failed the same bar"* are indistinguishable from the receipts
+  that exist. **That absence is itself a finding**, and it is what OD-17's amendment addresses.
+- **(e) is a threshold problem, and the threshold was chosen before any of this was measured.**
+  W1's own pooled-versus-token ratios were 0.66× to 1.30×; 2.0× was set as *"the threshold W1
+  pre-committed as no-retrain-needed"*. The retrain moves the ratio from **1.09** to **1.21–1.35**
+  depending on batch — a real, repeatable, control-separated movement that lands nowhere near 2.0×.
+
+**And what this document does about it: nothing, yet.** Both branches are put to the operator in
+§8 as **OD-17**, with what each costs. **The pivot of §9.14 remains pre-committed and remains the
+fallback**; §9.1's *"a region that fails its retrain gate goes straight to §9.14's pivot"* is
+untouched by this subsection.
+
 ---
 
 ## 4.1 The rows
@@ -2293,10 +2526,13 @@ left as a note.
 | **W2a** | **Ledger + recovery. Minutes, no GPU, no dependencies — do it first** `[A34 fixed]`. (i) **Verify** the `compose` allocation for `codeparrot/apps` + `deepmind/code_contests` landed — it has (§5.2, and §11 R1). (ii) **Recover the aqua_rat draw, as the UNION of every draw the run discovers** (DEC-42) `[A5 fixed] [N1 fixed]`: compute **draw R** = `load_pairs(["reason/aqua_rat-raw/train.parquet"], ("question","rationale"), 4982, seed=0)` under today's reservoir code, **draw P** = the **first 4,982 pairs `_iter_pairs` yields in shard order** — what the same call returned before `c42203c` rewrote the cap from prefix-truncation to reservoir sampling — **and, found by the run itself rather than anticipated, draw D3** = the on-disk `reason/aqua_rat-raw/derived/sample-4982-seed0.parquet` (mtime `2026-09-02T23:05:45.957176Z`, sibling `MANIFEST.json` declaring `numpy Generator(PCG64).permutation(n)[:N_SAMPLE]` — a full-corpus shuffle-then-take, not a prefix — both before `b9a082e`'s cap-introducing commit and before `c42203c`). Write `fingerprints(R) ∪ fingerprints(P) ∪ fingerprints(D3)` — and any further draw a directory walk turns up — to the ledger as `reason`-burned, record the source file's corpus fingerprint, and **mark the remainder clean**. **Measured** `[V*, burned-aqua_rat.jsonl.manifest.json]`: `R` 4,982 rows / 4,951 unique; `P` 4,982 / 4,946 unique; `D3` 4,982 / 4,930 unique (4,369 new against `R ∪ P`); union **13,946**; clean **83,521** of 97,467. | **Four checks, all of which must pass, over however many draws are discovered** `[N1 fixed]`: (i) the recomputed `fingerprint_corpus` of the parquet on disk today matches; (ii) two consecutive computations of **each** draw return identical fingerprints; (iii) the run genuinely used `seed = 0`; **(iv) THE FOURTH, AND IT IS THE ONE THAT CAN FAIL:** establish which code revision the `reason` run used — checkpoint/receipt mtime against `c42203c`'s commit time (2026-09-02 19:32:52 -0400), or a trainer revision recorded in the checkpoint — **and if it cannot be established, RECORD THAT IT COULD NOT.** Either way the ledger takes the union. **The gate that makes this failable:** W2a asserts `count(ledger ∩ draw) = 4,982` for **every discovered draw** and **refuses to emit a ledger that omits any of them** — a fingerprint set omitting even one discovered draw is a FAIL, not a partial pass. **If any of the four fails, the write-off stands and §5.1 reverts** — this is a test, not an assumption. Then re-derive §5.1 and §9.2. | — | **done** — branch `feat/w2a-ledger-recovery`, `c6ea587` (approved) | 1080 Ti / CPU |
 | **W2c** | **Measure the two untrained baselines the thresholds rest on** `[A23 fixed] [A13 fixed]`. (i) Instantiate `TextEncoder(vocab 50257, dim 256, depth 4, heads 4)` **at a region-specific seed**, run the `code` in-mixture eval, and settle whether the lexical floor is **0.2285** (the surviving receipt) or **≈0.40** (prose in four files, no artefact). (ii) Re-instantiate `retrieve`'s random encoder and establish a real untrained baseline for the 0.7480 figure, whose recorded baseline is **exactly 0.0000**. **W2c HAS RUN — 2026-09-03, receipt `w2c-untrained-baselines-20260903T124940Z.json`, evidence committed at `docs/design/evidence/w2c-untrained-baselines-2026-09-03/`** (script, `results.json`, `SHA256SUMS`). **The ≈0.40 code floor is RETIRED as unsupported; the measured numbers and the trace of where 0.40 came from live in that directory and are NOT restated here** `[DEC-62]`. | **BOTH CLAUSES MET, and the second answer is the consequential one.** Both numbers exist in receipts; **`τ_lo` is re-derived per bin in chance-normalised units** (DEC-36); the disagreeing documents are corrected. **The 0.40 branch did NOT fire** — the measured code floor is 0.2285 / 0.2344, so `apps`/`code_contests` are not excluded and the reserve's main source survives. **What DID fire is the branch nobody wrote: `retrieve`'s `τ_lo` is 0.0000**, which makes NSRS condition (1) barely satisfiable on that bin. **That is now W2b's blocking clause, not this row's** `[DEC-62]`. | W0 | **done 2026-09-03** | 3090 `.98` |
 | **E1** | **Build the store: partition, byte-capacity, eviction, lifecycle — plus the DYNAMIC-CAPACITY PROBE on both GPUs** `[DEC-49]`. Implement against E0's failing tests: `(scope, domain, logical_key)` identity with the scope segment derived server-side (§9.9 B2); **byte** capacity from §8 gap (a)'s formula computed **per host per scheduler tick**; scored eviction `importance + gpu_resident_bonus − staleness(last_accessed)` with ties by older timestamp then key; the six lifecycle verbs with **refusing** backpressure at `max_in_flight = 32`; SQLite as the durability oracle with in-memory as the conformance oracle. **The store's two projections are NOT trained here** — they are white-matter parameters and E2 trains them. **This row builds a container and proves it is a correct container; it makes no claim about usefulness**, which is E2's job and is the whole point of DEC-50's step separation. | **Four, three of them constructed to fire.** (i) **E0's nine named tests go green** `[S33-5 fixed]`, and the diff that makes them green touches no test file — a fix that edits its own gate is refused. (ii) **THE DYNAMIC-CAPACITY PROBE, and it must produce two DIFFERENT, POSITIVE numbers** `[S33-6 fixed]`: compute capacity from a live `nvidia-smi` plus the scheduler's current KV and activation budgets on **the 3090 Ti (24 GiB) and the 5080 (16 GiB)**, assert the two **differ**, assert **each is `> 0`**, assert each is **respected** — a write that would exceed it triggers eviction rather than an allocation — and assert the value **changes when the active-region set changes**, since the 1080 Ti is preemptible and a capacity fixed at process start is not dynamic. **A probe returning one number for both cards has measured a constant and failed; a probe returning two DIFFERENT numbers where one is zero has also failed** — §9.11 found the residual may round to zero on the 5080, which is W10's deployment card, and "differ" alone passes that case. **Pre-committed branch, so this is not discovered at deployment:** if either card's `capacity_bytes` rounds to zero, gap (a)'s named alternative fires — a fixed **floor**, reserved for the store before the KV budget is computed, sized at `safety_margin`'s order (2 GiB) — and E1's receipt records which of the two (residual or floor) is active on each card, rather than the row passing on a store that has no capacity at all on the card it will actually run on. (iii) **CROSS-REQUEST FUZZ:** ≥10,000 interleaved writes across ≥100 partitions, then a read from every partition; **zero reads return a value written under another scope**, and the negative test is a deliberately mis-derived scope key that **must** produce a cross-partition read so the fuzz is shown to be capable of catching one. (iv) **EVICTION ORDER UNDER A CONSTRUCTED OVERFLOW:** build a working set whose scores are known and whose total exceeds capacity, then assert the survivors are exactly the top-scored set **and** that a GPU-resident low-importance entry outlives a host-resident higher-importance one by exactly the `+1.0` bonus — the behaviour `gpu_hint_protects_from_spill` pins upstream. | **W0**, E0 | todo | 3090 `.98` **and** 5080 `.251` (both, by construction) |
-| **W4** | **Merge `compress` + `retrieve` → `memory`, DESIGNED AS THE FIRST TOKEN-AWARE RETRAIN** so one run serves two rows `[A13 fixed]`. Shared trunk, two heads, joint loss **plus §4.0's `L_decorr` + `L_token` terms**. It is the natural first instance: the merge is a retrain that has to happen anyway, its two parents give it two independent regression checks, and a failure here is diagnosable as *merge* or *objective* by ablating one term. **It is also where DEC-24's shared embedding table first becomes achievable** (§6.2) `[A31 fixed]`. | **All five, pre-registered:** (1) `memory` matches or beats **both** parents on **both** parents' own gates (0.7070 and 0.7070-comparable, and 0.7480 **re-baselined by W2c**); (2) **`recall@10 > 0.20` and `MRR > 0.10`** on the FiQA BEIR eval against the full 57,638-passage pool — the numbers `retrieve.py:384` already states, which revision 1 adopted the eval for and then dropped; (3) **`memory` > BM25** on the same pool and qrels, from the same code path — not "BM25 reported alongside", *beaten*, because *"reporting a win for a loss"* is exactly what that file was written to prevent; (4) **`memory` > its own random-init baseline** on that pool; (5) **§4.0's retrain gate**, both clauses. Saves 15,890,176 params. | W1d, W2c, W1b | todo | 3090 `.98` |
+| **E1a** | **THE VRAM ARBITER AND THE FRUGALITY CAP — memory CONTENDS for VRAM, it does not take what is free** `[DEC-70] [OP: csd-memory-gate-overlays.md]`. E1 builds a correct container with a byte capacity; this row builds the **negotiation** that decides how much of that capacity is used and who yields when the card is tight. Named claimants with a priority order: **base weights and the working activations are fixed**; the **ACTIVE memory set and the loaded persona are protected** and are never evicted to make room for context; the **KV cache / context window flexes** (sliding window, shorter context) around them; **inactive overlays, offsets and differentials sit below context and leave first**. A **frugality cap** — a stated constant per card — bounds resident memory + persona to a small fraction of the card, enforced by the residency scorer, which scores on **recency, relevance to the loaded persona/basin, and access frequency** across **card / host RAM / disk**. **Eviction is proactive on inactivity and on pressure**, not only on capacity overflow. **Every receipt records peak VRAM held by memory + overlays and the fraction of it that was active**, which is what makes frugality a measurement instead of an intention. **AND, BECAUSE TWO OF THIS ROW'S FOUR GATES NEED MACHINERY THAT IS DEFERRED: this row DELIVERS ITS OWN MINIMAL PERSONA/OVERLAY STUB** — a loadable persona handle and an inert, TTL-carrying overlay object that the arbiter can protect, score and evict — **because P5′o, which builds the real overlays, is `deferred` behind W10**. Without the stub, gates (3) and (4) below cannot be executed at the point this row is scheduled, and a gate that cannot be run is not a gate. The stub is explicitly NOT P5′o: it carries no weights, makes no fingerprint claim and ships no attach/disconnect semantics; when P5′o lands it replaces the stub and gates (3) and (4) are re-run against the real object. | **Four, three constructed to fire.** (1) **UNDER A CONSTRUCTED CONTEXT-LENGTH INCREASE the store and the inactive overlays SHRINK and the run does not OOM** — build the case, assert the bytes released and assert no allocation failure. (2) **AT THE CAP, achievable context length differs from the no-memory case by less than a stated margin** — measured both ways on the same card, and a cap that costs more context than the margin allows is a **FAIL of the cap, not of the test**. (3) **FAILURE TO SIZE REPORTS AND DEGRADES BY RELEVANCE:** over-fill the relevant set past the cap and assert a receipt field and an event are emitted, that the surviving set is the top-scored one, and that **the loaded persona is still resident afterwards** — a run that silently drops the persona fails this clause even if it fits. (4) **An overlay resident and unused past its TTL is a TEST FAILURE**, constructed by loading one and idling it — proactive eviction that only fires on overflow is not proactive. | E1, W7k, **and this row's own minimal persona/overlay stub for gates (3)–(4)** — P5′o is `deferred` behind W10, so the stub is in scope here rather than a dependency on a deferred row | todo | 3090 `.98` **and** 5080 `.251` (both, by construction) |
+| **W4** | **Merge `compress` + `retrieve` → `memory`, DESIGNED AS THE FIRST TOKEN-AWARE RETRAIN** so one run serves two rows `[A13 fixed]`. Shared trunk, two heads, joint loss **plus §4.0's `L_decorr` + `L_token` terms**. It is the natural first instance: the merge is a retrain that has to happen anyway, its two parents give it two independent regression checks, and a failure here is diagnosable as *merge* or *objective* by ablating one term. **It is also where DEC-24's shared embedding table first becomes achievable** (§6.2) `[A31 fixed]`. | **All five, pre-registered:** (1) `memory` matches or beats **both** parents on **both** parents' own gates (0.7070 and 0.7070-comparable, and 0.7480 **re-baselined by W2c**); (2) **`recall@10 > 0.20` and `MRR > 0.10`** on the FiQA BEIR eval against the full 57,638-passage pool — the numbers `retrieve.py:384` already states, which revision 1 adopted the eval for and then dropped; (3) **`memory` > BM25** on the same pool and qrels, from the same code path — not "BM25 reported alongside", *beaten*, because *"reporting a win for a loss"* is exactly what that file was written to prevent; (4) **`memory` > its own random-init baseline** on that pool; (5) **§4.0's retrain gate**, both clauses. Saves 15,890,176 params. | W1d, W2c, W1b | **The five clauses above are UNCHANGED by revision 3.5 and are printed here exactly as they were pre-registered** `[DEC-68]`. **RUN AT THE PRE-REGISTERED CONFIG 2026-09-03. (a) PASS, (b) PASS AS SCORED — CONTINGENT: the strict `> 0.20` floor is cleared only by float32 representation (receipt value `0.20000000298023224` = `float(numpy.float32(0.2))`), so `>` versus `≥` goes to OD-17 — (c) FAIL (0.200 vs BM25 0.440), (d) PASS, (e) FAIL (rank ratio 1.2102 < 2.0; regression clause 0.0 PASS).** Receipt `w4-chunked/run-1280/memory-20260903T184441Z.json`, code `eb735ab`, batch 1280, `token_loss_chunk` 512, 4,000 steps. **BLOCKED ON OD-17** — pivot per §9.14 as pre-committed, or amend as a pre-registration; §4.0's DEC-68 block carries every number. *The old status cell read `todo`; the run has happened, so that word is replaced rather than kept beside a receipt.* | 3090 `.98` |
+| **W4n** | **THE NEGATIVES ABLATION — the pre-registered next lever on W4's remaining fails, and it is NOT LICENSED UNTIL OD-17 IS ANSWERED** `[DEC-68]`. DEC-68 measured the in-batch-negatives count as the dominant lever on the metric gate (c) is defined over — a **6.7×** move in full-pool `recall@10` across a **5×** move in batch — and batch 1280 is where the card runs out. This row asks the obvious next question: **can the negative count be raised without the batch?** Three arms at a **fixed VRAM budget** and a fixed step count: **(i)** the current in-batch regime at batch 1280 as the baseline, **(ii)** a **negatives queue** (momentum-encoder queue, MoCo shape) at an effective negative count of 8× the batch, **(iii)** **GradCache** (gradient caching over micro-batches) at the same effective count. **Every arm prints its EFFECTIVE negative count and its peak VRAM**, because an arm whose effective count is not what it claims has measured its own plumbing. | **Pre-registered before the run, and the margin is written down first.** (1) **The winning arm must beat the batch-1280 in-batch baseline on full-pool `recall@10` by a margin stated in writing beforehand**, at equal or lower peak VRAM and at equal wall-clock. (2) **A null result is a result** and is recorded as one — *the negative count is not the remaining lever* is a finding this programme can act on, and an ablation that can only report a win is not an ablation. (3) **A FAILABLE CONTROL:** an arm configured with an effective negative count **equal** to the batch's must reproduce the batch-1280 numbers within run-to-run noise; if it does not, the arm differs from the baseline for some reason other than the negative count and the comparison is void. (4) `parent baseline` — if OD-17's amendment is taken, `retrieve` alone is measured on the same pool in the same harness, since gate (c) has never had one. | **OD-17**, W4 | **todo — BLOCKED ON OD-17.** It is the recommended amendment's own next lever and it is not licensed until the amendment is; under the pivot branch this row does not exist | 3090 `.98` |
 | **W7a** | **Token-aware retrain of `language_code` and `reasoning`.** Same objective as W4, same harness, one region at a time. | **§4.0's retrain gate, per region, both clauses.** Plus: `language_code`'s r@1 0.9766 must not regress > 1 point, and `reasoning`'s regenerated 0.0801 (W1b) must not regress > 1 point. A region that clears the rank clause and fails the receipt clause is **reverted**, and the receipt says which. | W1d, W1b, W4 | todo | 3090 `.98` |
 | **W7v** | **`visual`: token-aware retrain AND resolution rebuild** `[A4 fixed]`. `visual` **physically cannot ingest a composite image today**: `JEPAConfig(image_size=64, patch_size=8)` and `ViTEncoder` registers a **fixed** sincos `pos_embed` of size `cfg.n_patches = 64` (`model/vl_jepa.py:52-53, 182, 199` [V]), so `h = self.patch_embed(x) + self.pos_embed` is a **shape error** on a larger image, not a slower forward. Meanwhile §5.4's `visual × language_code` and `visual × memory` are **2 of 4 cross-faculty pairs = 1,024 of 2,048 eval items**, and §5.4 itself concedes they are *"unconstructible against 64×64 single-object tiles"*. Revision 1 scheduled no row to build the prerequisite. **This row does it, folded into the retrain that W1's result made mandatory anyway, so the marginal cost is the resolution change and not a separate run.** Re-shape to composite resolution (`image_size 128`, `patch_size 8` ⇒ `n_patches 256`, `pos_embed` regenerated or 2-D interpolated), continue-train, and — if OD-4 is decided that way — swap the corpus in the same run. | New `n_patches`, `kv_bytes_per_token` and `token_budget.max` recorded and propagated to §1.4, §2.3 and §6.1. Probe top1 and cifar100 transfer **do not regress by more than 1 point** against 0.0606 / 0.2625 **measured on the target encoder** (DEC-34), with the untrained baseline re-instantiated at a region-specific seed. **§4.0's retrain gate**, both clauses. **A composite frame renders, encodes and round-trips** — the negative test is that the 64×64 checkpoint **raises** on the same input. **The frame is W3r's checked-in 128×128 fixture, NOT a W3 deliverable** `[N5 fixed]`: revision 2's gate consumed the composite renderer, which is W3's primary deliverable, while W3 was `blocked_by: W7v` — a dependency inversion in which neither row could start. W3r breaks it. | W1d, W3r | todo | 3090 `.98` |
-| **W7p** | **PLACEMENT HARNESS — a per-job VRAM budget, a target host, and receipts that say which** `[DEC-54] [OP: csd-training-placement-policy.md]`. Not a training row: the tooling every remaining GPU row already needed and none of them had. **Three deliverables.** (i) The launch path (`csd-train@`'s template today hardcodes `--batch 1280`, which is how `reason` OOMed) accepts **`--vram-budget-mib` and `--host`**, sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` and a **per-process memory fraction** derived from the budget, and **refuses to start when the budget exceeds the target card's free VRAM at launch** — the refusal is the point, not the sizing. (ii) An **admission check for concurrency**: two or more submodel runs are co-scheduled on one card **only when the sum of their budgets fits**, with the sum printed; `reason` carries a **declared `exclusive: true`** and its measured configuration — **batch 512, `max_len` 256, alone** — so the one region known not to co-reside cannot be packed by a future scheduler that has forgotten why. (iii) Every receipt gains **`placement { host, gpu_name, vram_budget_mib, vram_peak_mib, concurrency, co_resident_jobs[] }`**, which is what makes DEC-54 auditable rather than aspirational. **No MIG on consumer cards: this is process-level PSEUDO-isolation, stated as such so it is never read as a security boundary** — acceptable because the fleet is single-tenant. | **Four, and three are constructed to fire.** (1) **A budget larger than the card's free VRAM REFUSES to launch** — construct it by requesting 30,000 MiB on the 5080 and assert nothing starts and nothing is written. (2) **A co-schedule whose budgets sum over the card REFUSES the second job**, verified by requesting two 14,000 MiB jobs on the 3090 Ti. (3) **`reason` submitted as a co-resident job is REFUSED on its `exclusive` flag**, and the refusal names the receipt that justifies it — the regression this row exists to prevent is exactly the one already paid for. (4) **Positive control:** two submodel runs whose budgets do fit **do run concurrently on the 3090 Ti and both produce receipts carrying `concurrency: 2` and each other's job ids** — without this clause the row is three refusals and no capability. **`vram_peak_mib` is measured, not declared**, so a budget that was wrong is visible afterwards. | — | **todo — no GPU dependency for (i)/(ii); do early, it unblocks nothing and de-risks everything after W4** | any / CPU + 3090 `.98` for (4) |
+| **W7p** | **PLACEMENT HARNESS — a per-job VRAM budget, a target host, and receipts that say which** `[DEC-54] [OP: csd-training-placement-policy.md]`. Not a training row: the tooling every remaining GPU row already needed and none of them had. **Three deliverables.** (i) The launch path (`csd-train@`'s template today hardcodes `--batch 1280`, which is how `reason` OOMed) accepts **`--vram-budget-mib` and `--host`**, sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` and a **per-process memory fraction** derived from the budget, and **refuses to start when the budget exceeds the target card's free VRAM at launch** — the refusal is the point, not the sizing. (ii) An **admission check for concurrency**: two or more submodel runs are co-scheduled on one card **only when the sum of their budgets fits**, with the sum printed; `reason` carries a **declared `exclusive: true`** and its measured configuration — **batch 512, `max_len` 256, alone** — so the one region known not to co-reside cannot be packed by a future scheduler that has forgotten why. (iii) Every receipt gains **`placement { host, gpu_name, vram_budget_mib, vram_peak_mib, concurrency, co_resident_jobs[] }`**, which is what makes DEC-54 auditable rather than aspirational. **No MIG on consumer cards: this is process-level PSEUDO-isolation, stated as such so it is never read as a security boundary** — acceptable because the fleet is single-tenant. | **Four, and three are constructed to fire.** (1) **A budget larger than the card's free VRAM REFUSES to launch** — construct it by requesting 30,000 MiB on the 5080 and assert nothing starts and nothing is written. (2) **A co-schedule whose budgets sum over the card REFUSES the second job**, verified by requesting two 14,000 MiB jobs on the 3090 Ti. (3) **`reason` submitted as a co-resident job is REFUSED on its `exclusive` flag**, and the refusal names the receipt that justifies it — the regression this row exists to prevent is exactly the one already paid for. (4) **Positive control:** two submodel runs whose budgets do fit **do run concurrently on the 3090 Ti and both produce receipts carrying `concurrency: 2` and each other's job ids** — without this clause the row is three refusals and no capability. **`vram_peak_mib` is measured, not declared**, so a budget that was wrong is visible afterwards. | — | **The tooling this row specifies EXISTS and lives in `tzervas/gpu-pack`, not here** `[DEC-75]` — probe, ledger, admission under one flock, per-process cap, transient units with emitters, remote launch and launch receipts, `main` at `5364932`. **What remains is this row's CSD-side acceptance**, not a reimplementation. **in progress — gpu-pack `main` at `5364932` (rounds 1–4) implements (i) and (ii); CSD's adapter (`src/cogsyndelta/util/gpu_budget.py`, `program/jobs/*.json`) is in this tree. Remaining: (iii)'s `placement{}` receipt block and all four gates, including the `reason` `exclusive: true` refusal.** *The old status cell read `todo — no GPU dependency for (i)/(ii)`; (i) and (ii) are built, so that word is replaced.* | any / CPU + 3090 `.98` for (4) |
+| **W7k** | **THE KNOB TABLE BECOMES RECEIPT FIELDS, AND THE PACKING MODEL IS REUSED AT INFERENCE** `[DEC-69] [DEC-74] [OP: csd-training-placement-policy.md]`. §6.7's knob table is a measurement until the values a run actually used are in that run's receipt; today `token_loss_chunk`, the admission margin and the foreign baseline appear in launch notes and evidence directories and nowhere a later reader will look. **Three deliverables.** (i) Every training and quant receipt gains **`knobs { vram_budget_mib, admission_margin_mib, token_loss_chunk, batch_size, negatives_effective, mask_prob, card }`** — `negatives_effective` separately from `batch_size`, because W4n's whole point is that they stop being the same number. (ii) A **`foreign_baseline_mib`** field records the non-job holder measured on the card **at launch** — **981–1,057 MiB of desktop on the 3090 Ti** in both chunk probes — so a budget computed as though the card were headless is visible afterwards rather than inferred from an OOM. (iii) A **runtime packing prototype**: gpu-pack's `compute_allowed_mib` run over the **inference** claimants of DEC-70 (regions, overlays, store, KV) that prints the plan and its per-claimant byte shares. **No scheduler is built at this row** — the point is to find out whether the training admission model transfers before anything is built on the assumption that it does. | **Four, three constructed to fire.** (1) A receipt missing any `knobs` key **fails** a schema test, constructed by deleting one key and asserting the failure. (2) **`foreign_baseline_mib` is MEASURED, not declared:** start a job holding a known allocation on the card, assert the recorded baseline moves by roughly that amount — a field that reports a constant has measured nothing. (3) The runtime prototype **REFUSES** a plan whose claimant budgets exceed the card, constructed by asking for one that does, and the refusal names which claimant put it over. (4) **Positive control:** a plan that fits is admitted and prints every claimant's byte share summing to no more than the card minus the margin — without this the row is three refusals and no capability. | W7p | todo — CPU for (1) and (3); one card for (2) and (4) | any / 3090 `.98` |
 | **W2b** | **Reserve construction + NSRS admission + the guard** (replaces P2.5d). §5. **Only the BM25 condition (3), the licence audit, dedupe and rendering are CPU-parallel; `s_r` is inference through every frozen region including `memory`, so this row is GPU-blocked** `[A7 fixed]`. | `data/reserve/` + manifest exists; **thresholds frozen from a disjoint calibration split** and the would-have-been-rejected fraction of the graded set reported (DEC-36); every admitted row records `s_r` for all `r` and satisfies the NSRS filter **including the written condition-(2) exemption for the general bin** `[A21 fixed]`; **`RESERVED.jsonl` holds the union of SOURCE-ROW `pair_fingerprint`s, not composite hashes** (DEC-38); the ledger records `compose` for apps + code_contests; apps↔code_contests dedupe at cos ≥ 0.90 run and its 1,784 removals recorded; **keyed split assignment live** (DEC-39). **AND two refusals, both constructed:** (a) a training run seeded with one **directly reserved** row REFUSES TO START; (b) **a training run seeded with a row that a reserved COMPOSITE was built from REFUSES TO START** — the derived case, which is the path that actually leaks `[A6 fixed]`. **AND ONE MORE, ADDED IN REVISION 3.4 AND BLOCKING THE ROW** `[DEC-62]`: **admission for a CHANCE-FLOOR BIN is defined and pre-registered BEFORE this row runs.** W2c measured `retrieve`'s `τ_lo` at **0.0000** in chance-normalised units — its untrained r@1 *is* chance (1/512) — so condition (1) `max_r s_r < τ_lo` is **barely satisfiable on that bin** and admits by construction rather than by evidence. Adopt either an **absolute-margin floor** (`max_r s_r < chance + δ`, `δ` pre-registered per bin) **or a different normaliser**, record which and why, and **verify it can fail** on an item a single region trivially solves — under the current rule that item would be admitted, and the replacement rule must reject it. A bin whose admission condition cannot reject anything is not filtered. | W2a, W2c, W4, W7a, W7v | todo — **BLOCKS P2.3** | 1080 Ti / CPU **+ 3090 for `s_r`** |
 | **W3** | **Construct cross-faculty items, and build the EPISODE HARNESS.** §5.5: executable joins (**sandboxed**, §5.5a), rendered composites, shuffled mismatches, **and §5.5(e)/(e′)'s recall-dependent episodes (X7, X8, X8′)** `[DEC-49]`. **The harness is a named deliverable and not an implied one:** an eval item may be a *sequence* of turns; turn 1's write must commit through the store's `learn()` and return a `LearnReceipt` before turn 2 is scored; the partition is reset between episodes. | ≥ 512 admitted items per cross-bin pair for eval **and** ≥ 5,120 per pair for train; every item passes W2b's filter **including the trivial-baseline condition**; **train/eval split at source-row granularity, split key recorded** (DEC-38); provenance chain recorded with **no generating model**, or the model named with revision and licence; **B1/B2 run on the reserve's own generators** and either diversified or waived with a dated waiver naming what the reserve therefore cannot measure `[A16 fixed]`; **the reserve's aqua_rat source-row share is printed against B1's 0.50 hard line and 0.40 operating cap** (§5.1) `[N8 fixed]`. **Three more, all from DEC-49, all constructed to fire:** (i) **the negative control on every episode** — turn 2 run with turn 1 replaced by an unrelated episode **must FAIL the item**, and an episode that passes it is **rejected at construction**, not discovered at W6; (ii) **no episode's two turns share a source row** under DEC-38, asserted per item, because an episode that leaks against itself cannot be placed on one side of a split; (iii) **the harness resets the store partition between episodes**, verified by re-running one episode and asserting its turn-1-less variant still fails. **If the harness is not delivered, W3 reports `episodic pairs: NOT MEASURED` and §5.4's E1-slip branch fires** — it does not ship six pairs under a ten-pair criterion. | W2b, W7v, W3r, **E1** | todo | 1080 Ti / CPU |
 | **W1c** | **Anisotropy pre-flight.** Effective rank of the concatenated adapted union on 4,096 real mixed items, **on the retrained regions**. | **The statistic is named, because revision 2's threshold named none** `[N3 fixed]`: the number is **entropy-effective rank** (`cogsyndelta.eval.benchmark.effective_rank`), which is the definition behind the "8.7 of 128" prior this row compares against, and **`< 32 of 512` is in those units**. Participation ratio is recorded beside it, and the two are never compared across definitions — W1's pooled **PR**-ranks of 18–45 and its pooled **entropy** ranks of 115–130 (§4.0) are different quantities and revision 2 printed them as comparable. Comparable priors, restated in the right units: 8.7 of 128 on the pooled surface [V\*]; cross-region CKA ≤ 0.336 (§4.0). **If < 32 of 512 in entropy-effective rank, whitening goes into the adapters before W5.** | W4, W7a, W7v | todo | 5080 `.251` |
@@ -2320,6 +2556,9 @@ left as a note.
 | **P5′L** | **LAYER-SECTIONED TRAINING — evaluated as a candidate, beside DEC-29, not instead of it** `[DEC-55] [OP: csd-training-placement-policy.md]`. Training **isolated sections of layers/weights on different cards** rather than the whole model at once, so all three cards can contribute at 1B+ per region where otherwise later phases are **locked to the 3090 Ti + 5080, or to the 3090 Ti alone**. **The operator's own caveat is preserved rather than smoothed away** — they flag it as worth considering while noting they may be wrong about some of these techniques — which is exactly why it is a candidate row with a comparison and not a decision. | **A comparison, pre-registered, or the row is void.** Measured **wall-clock and interconnect bytes per section boundary** against **DEC-29's region-granular pipeline-parallel cost on the same model and the same microbatch ≤ 256**, on this fleet's real 1 Gb/s link — **the standing ruling that cross-host DDP is the wrong tool at 1 Gb/s is the null hypothesis, and this row either beats it or records that it did not.** Adopted only on a win; a null result is a **useful, publishable outcome** that keeps the two-card lock honest. | **P5′b** | deferred | all three GPUs |
 | **P5′b** | **1B PER SUBMODEL, THEN QUANTISE, THEN THE COMPOSED MODEL — the post-phase-3 scale path** `[DEC-56] [OP: csd-billion-per-submodel-scale-path.md]`. Sequence, in order and not skippable: **mid-size proven** (DEC-52's baseline, W6 green, PTQ on the deployment card) → **~1B parameters per submodel** → **quantise each region** → **train the composed model on the quantised regions** → the 30B direction (OD-6). **The ordering "quantise the regions, then train the whole" is what P5′q tests at toy scale first: if P5′q wins, this row is its production form; if P5′q loses, this row's ordering is wrong and must be re-derived before any 1B run is spent.** Proceeds **region by region under DEC-50** — scale one region, retrain the interconnect, then the unified pass — so a regression is attributable. | **Three, and the first is the gate that decides whether the row is reachable at all.** (i) **THE DATA GATE: of the order 10^10 tokens per region**, each with an **upstream-verified** licence under DEC-31 and satisfying **B1–B5** on provenance groups — reported per region **before** any 1B training run is scheduled, because a 1B region trained on a corpus that fails the licence bar is unreleasable and unrecoverable. DEC-57's factory is the instrument. (ii) **Per-region PTQ sensitivity is RE-MEASURED at 1B**: the 3.2675 effective-bits/param figure is a **toy-scale measurement and is not carried forward**; the composed model's bits/param budget is derived from the new number, and DEC-27's `D_sched ≤ 0.02` nats is re-evaluated per region at size. (iii) **DEC-50's three steps per region**, each with its own receipt, and **the monotone-improvement rule**: a scaled region that does not improve the composed metric is **reverted to its mid-size checkpoint**. | **P5′**, P5′q, **P2′f** | deferred — post phase 3 | 3090 + 5080 (+ 1080 Ti under P5′L) |
 | **P5′m** | **THE MORAL CORPUS — values at the training-data level, and whether that measurably works** `[DEC-59] [OP: csd-dataset-factory-and-moral-corpus.md]`. A **curated** corpus built to instil values at training time rather than filter them at inference time, with **its own CORPUS-CONTRACT entry**, its own provenance chain, and its own licence verdict under DEC-31. **Phase-3 / scale-up, explicitly NOT a toy row:** at 87M there is no behaviour to move and a null result would be uninterpretable, so running it early would burn the question. The operator's stated hope — that this improves model safety in a way industry could adopt — is a **claim to be measured**, which is what this row is for. | **Three arms, pre-registered, because a corpus that "clearly helps" without a control is the `residual_mlp` defect wearing a virtue** `[DEC-59]`. (i) **Held-out moral/safety probes**, constructed **before** training and **reserved under DEC-38/DEC-39** like every other sealed set — source-row fingerprints in `RESERVED.jsonl`, keyed split, and the training run **refuses to start** if a probe row is seeded. (ii) **Three matched arms:** the composed mind **with** the moral corpus, **without** it, and with a **size-matched neutral corpus** in its place — the third arm is what separates *"the values did something"* from *"more data did something"*. (iii) **The result is reported whatever it says**, including `moral corpus: NO MEASURED EFFECT`, which is a real and publishable outcome; and the probes' own contamination channels are run against the corpus, because a moral corpus that contains its own evaluation has measured nothing. | **P5′**, P2′f | deferred — phase 3 / scale-up | 3090 + 5080 |
+| **P2′g** | **PER-FACULTY TOKEN TARGETS, CLEAN-TERMS GENERATORS AND ENRICHMENT — because a flat 10^10 is not reachable for four faculties from open data** `[DEC-73] [DEC-56 amended] [OP: csd-dataset-factory-pass1-result.md]`. Pass 1 measured the B1-bounded reach of every faculty (§5.8) and the spread is three orders of magnitude: `language_trunk` **6,359%**, `language_code` **15%**, `memory` **5.0%**, `moral_safety` **2.4%**, `reasoning` **1.8%** without a generator, **`visual` 0.3%**. **One number applied to seven faculties is an average nobody can act on.** Three deliverables. (i) **A written per-faculty token target with its reasoning** — what the faculty must do, at what parameter count, and therefore how many tokens — replacing the flat figure in DEC-56. (ii) **Clean-terms generators**, in the cosmopedia shape (an Apache-weights generator run locally, so the output carries no model-output terms): the DeepMind `mathematics_dataset` generator is the one settled-grant case in the whole catalogue and it is what moves `reasoning` and `numeric_math` from 1.8% to ≥100%. (iii) **The operator's own enrichment**, under the enrichment licence analysis already committed in `LICENCE-FOR-OPEN-WEIGHTS.md`. | **Four, and the last one costs nothing.** (1) **Every faculty carries a target and the reasoning behind it**, and a faculty whose target is still the flat 10^10 fails this row — the point is that the number was inherited, not derived. (2) **At least one clean-terms generator is run end to end** for a faculty that needs one, and its output passes **all four of P2′s's clauses** (generator named in provenance, contamination channels against every eval, a quality gate that can fail, a capped share of the bin). (3) **`visual`'s route is decided IN WRITING** with the number that motivated it — a licence-filtered Wikimedia Commons pull, a geometry change (W7v's rebuilt `image_size 128` / `patch_size 8` ⇒ `n_patches 256` geometry moves the 10^10 requirement from ~1.6e8 images to **~3.9e7**; the catalogue's ~5.1e7 assumes a 224²/16²/196-token geometry that is not W7v's), or a lowered target — because 0.3% is not a gap that a fetch priority closes. (4) **The model card STATES the CC BY-NC-SA reading it takes.** This needs no lawyer: today the card is silent, and OD-18's first item is unanswerable *because* nothing is stated. | P2′f (§4.1), **and `P2′f-b` in `program/REMAINING.md`** for the readings that do need a lawyer — *P2′f's three sub-rows `P2′f-a/-b/-c` live only in REMAINING, so this dependency is deliberately named across the two files rather than pointing at a row this table does not contain* | todo — CPU | 1080 Ti / CPU |
+| **P5′d** | **DIFFERENTIAL ACTIVATIONS — activation deltas in a fast recompute-and-apply format** `[DEC-71] [OP: csd-memory-gate-overlays.md]`. Beside P5′o's weight-delta overlays, an overlay may also carry **activation deltas relative to the base activations**, encoded as a delta plus a cheap reconstruction rather than as dense stored activations, so a persona or skill contributes its features at inference **without holding dense state on the card**. It composes with quantised frozen regions (P5′q) and with DEC-70's arbiter — it is precisely the claimant class the arbiter evicts first, so its cost per feature is what decides whether it is worth being resident at all. | **A COMPARISON, not a demonstration, and both halves must win:** **apply latency per feature** and **VRAM held per feature**, each measured against a **dense-activation control** on the same items and the same card, with the reconstruction cost inside the latency number. **Adopted only if it wins on both**; a format that is smaller and slower to apply than dense is a different trade and is recorded as one rather than adopted. Plus P5′o's inherited clause: **applied then disconnected reproduces the base receipt metrics exactly, and the disconnect is logged.** | **P5′**, P5′o | deferred — post phase 3, explicitly not phase 2 | 3090 + 5080 |
+| **P5′p** | **PREDICTIVE HYBRID TRAINING — extend the existing predictor from weights to activations and semantic residuals** `[DEC-72] [OP: csd-predictive-hybrid-training-track.md]`. `tzervas/tritter` already carries `GradientPredictor`, `PredictiveTrainer`, `LossPredictor`, `EmbeddingPredictionLoss` and a 962-line research report on predictive hybrid training; this row extends prediction from **(1)** weight-update outcomes to **(2)** activations and activation deltas — where it meets P5′d — and **(3)** semantic residuals used as a correction signal, alternating predicted phases with real backprop phases. **The tool stays in tritter under DEC-75; CSD carries an adapter only.** **Strictly after phase-3 whole-model training is underway** — packing (W7p/W7k) and chunking landed and written into the spec, phase-2 rows done — and the tritter documentation's own 25% backward / 15% forward claims are **inputs to this row, not results of it**. | **Four, pre-registered, and the third is the one that decides it.** (1) **Prediction error against a REAL step** on held-out batches, per target (weights / activations and deltas / semantic residuals), under a tolerance stated before the run. (2) **The fraction of steps predicted, printed** in the receipt — a method that predicts 2% of steps perfectly has not sped anything up. (3) **The end-task metric against a fully-real run at EQUAL WALL-CLOCK and at equal steps, both reported** — equal-steps alone flatters a method whose steps are cheaper, and equal-wall-clock alone flatters one whose steps are worse. (4) **AUTOMATIC FALLBACK:** a predicted phase that drifts past tolerance falls back to real steps on its own, verified by **constructing the drift** and asserting the fallback fires and is logged. Fine-tuning is measured as its own case, against its own real-run control. | **P5′** | deferred — post phase 3, explicitly not phase 2 | 3090 + 5080 |
 | **M0d** | **DEPLOYMENT ACCEPTANCE — the composed mind must actually fit and serve on the two cards it is for** `[DEC-67] [OP: csd-mycelium-downstream-goal.md, fleet-gpu-roles-and-scheduling]`. M0 carries the deployment shape in its **task text**; a shape in a task description is not an acceptance criterion, and the card that is actually tight — the **5080, 16 GiB** — had nothing scheduled to find out. This row is that check, and it is a **prerequisite of M0 rather than a part of it**, so a deployment failure is not discovered while a readiness suite is running. | **Four, and (ii) is the one expected to be tight.** (i) **The composed, PTQ'd mind loads and serves on BOTH the 3090 Ti (24 GiB sm_86) and the 5080 (16 GiB sm_120)**, at the declared context length, with measured peak VRAM printed per card. (ii) **The store's DYNAMIC CAPACITY (DEC-63) is reported SEPARATELY IN BYTES on each card** — and **`capacity_bytes = 0` on the 5080 is a PERMITTED but RECORDED outcome** that fires §9.11's residual-rounds-to-zero finding and forces DEC-63's operator question (residual claim vs fixed floor). A footprint that reports parameters and omits the store has reported half the deployment. (iii) **The 1080 Ti (11 GiB sm_61) serves the RAG helper** (embedding + rerank) and its latency is measured on the same queries M0 will use — it **stays in the deployment unless M0's arm (b) demonstrates native retrieval**. (iv) **Verify it can fail:** run the same load against a deliberately over-sized context length and assert the row reports **FAIL** rather than swapping, thrashing, or silently truncating — a deployment check that cannot report "does not fit" is a launch script. | **W10** | **blocked — long arc** | 5080 `.251` + 3090 `.98`, RAG on 1080 Ti `.243` |
 | **PRE-1** | **GATEWAY AUTHENTICATES ON EVERY ROUTE, BEFORE `proxy_upstream()` ATTACHES ANYTHING** `[DEC-60]`. **VERIFIED today, and it is worse than OD-2 described:** `dispatch_api_get()` performs **no caller authentication whatsoever**, and `dispatch_api_post()` authenticates **only `/api/apply`**; every other route — including **every proxied route, with `Authorization: Bearer {UPSTREAM_TOKEN}` attached by `proxy_upstream()`** — is served to any unauthenticated caller on `192.168.1.0/24` [V, `scripts/csd-lab-console:1012-1080`, survey `02-skeptic.md` S1/S2]. **OD-2's finding was that the gateway forwards the client credential; the real defect is that it never looks at one** — a textbook confused deputy with no identity to confuse, and the reason it has not bitten is that `PROXY_ALLOW` currently names five read-only routes. **Authenticate the caller on EVERY route, before `proxy_eligible()` and before any credential is attached**, and bind autodev's routes to the unix socket so they **404 on the TCP listener**. | **Two, both constructed** — this is the `tests/test_guards_can_fail.py` pattern applied to the gateway. (i) **An unauthenticated `GET` to an allowlisted proxied route is REFUSED**, asserted against the running unit, and **the upstream sees no request** — refusing after the proxy call is not refusing. (ii) **An authenticated caller whose identity is not on the route's allowlist is REFUSED**, so authentication is not mistaken for authorisation. | — | **todo — BLOCKS every autodev GPU route** | akula-prime, operator-owned |
 | **PRE-2** | **TOKEN-GATE `POST :9108/v1/queue` AND MOVE THE WORKER OFF `kang`** `[DEC-60]`. **VERIFIED:** `_peer_ok()` returns true for **any** `192.168.1.*`, `172.30.*`, `172.32.*` or loopback source — **source-IP prefix only, no token** — and accepts `{kind, subject, extra{}}` into `enqueue_timeshare()`; 15 s later `gpu-timeshare-worker` runs the job **as `kang`** with `git/cabal-forgejo-agent` and `gpu/localai-api-key` **in its environment**, takes attacker-controlled `extra` fields **straight into argv**, and for the specialist kind **posts Forgejo comments under the agent identity** [V, `ansible/files/akula-health-exporter.py:520-596`; `scripts/gpu-timeshare-worker:60-170`; survey `01-threat.md` G17/G18/T4]. **IP-prefix authorisation is the "identity the client can set" anti-pattern, and this is the single most exploitable live path in the fleet.** Two structural changes: **(a)** a **bearer token bound to a producer identity** on `/v1/queue`, with `enqueue_timeshare` enforcing a **default-deny allowlist of `(identity, kind)` pairs**; **(b)** run the worker as **`svc-timeshare`, not `kang`**, with only the tokens that specific `kind` needs, injected per job via `secret exec`. Better still: make `/v1/queue` **loopback-only** and route cross-host handoff through the gateway like everything else. | **Three, all constructed.** (i) **An unauthenticated enqueue from a LAN address is REFUSED** and **nothing is queued** — asserted by reading the queue after the attempt. (ii) **An authenticated producer submitting an UNREGISTERED `kind` is REFUSED**, so a new job type gets no credentials until someone registers it. (iii) **`ps`/`systemctl show` confirms the worker's uid is NOT `kang`** and that its environment carries **only** the tokens its `kind` declares — verified by submitting one `kind` and asserting the other `kind`'s token is absent. **Until (iii) passes, the autodev sandbox's egress restrictions are moot**, because this path reaches the same credentials from the LAN. | — | **todo — P0; BLOCKS every autodev GPU route** | akula-prime, operator-owned |
@@ -3595,6 +3834,84 @@ design, because most of the easy clean volume in the entire audit sits inside th
 **Under DEC-48 that sign-off is no longer urgent**, and OD-13 moves with the rows it binds.
 
 
+## 5.8 DEC-73 — the dataset factory has run pass 1, and the measured reach amends DEC-56
+
+DEC-57 specified the factory as a loop. It has now run once, and the output is committed at
+`docs/design/DATASET-FACTORY-CATALOGUE-2026-09-03.md` with the machine-readable catalogue at
+`docs/design/datasets/catalogue-2026-09-03.json`, a new *Enriched and derived datasets* section in
+`LICENCE-FOR-OPEN-WEIGHTS.md`, and the evidence — ground, eight faculty surveys, eight adversarial
+verification passes, the enrichment analysis and the fetched licence texts — under
+`docs/design/evidence/dataset-factory-2026-09-03/`. **Every number in this section is cited from
+that catalogue, not restated from a survey.**
+
+**Counts.** **159 candidates** across **106 provenance groups** — and 106 is the number B1 and B2
+are computed over, not 159. Verification: **105 VERIFIED**, **26 CONTRADICTED** (the surveyor's
+verdict overturned at the primary source), **18 UNVERIFIABLE**, **10 REFUSED-CLOSED**. Verdicts:
+PERMISSIVE **42**, ATTRIBUTION **21**, SHARE_ALIKE **20**, NC **13**, **UNVERIFIED 37**, BLOCKING
+**11**, REFUSE **15**; 15 are EVAL-ONLY and 11 carry MODEL-OUTPUT-TERMS.
+
+**The headline is the UNVERIFIED column, not the REFUSE column.** **37 of 159 (23%) cannot be
+admitted today because no primary source settles their licence**, and 18 of those had a fetch
+attempted and failed. That is the factory's backlog. It is also the direct continuation of the
+mirror-lies pattern this programme already had a name for: BeIR's HF mirror family carries one
+blanket `cc-by-sa-4.0` tag regardless of upstream; `code_search_net` tags *"other"* while upstream
+is MIT (the lie running the other way); LeetCode-derived sets are REFUSE-TERMS under a
+non-redistributable EULA; `multi_news` is research-only in its own terms.
+
+**Token reach against the 10^10-per-region target** `[I]`, at 4 bytes per token and 64 patch tokens
+per image, with `T_B1 = min(L+R, R/0.60)` — the largest total that still satisfies B1's 0.40
+max-single-source share:
+
+| faculty | clean-permissive `T_B1` | % of 10^10 | NC-inclusive `T_B1` | % of 10^10 | what NC buys |
+|---|---:|---:|---:|---:|---:|
+| `language_trunk` | 6.4e11 | **6,359%** | 7.2e11 | 7,192% | — |
+| `numeric_math` | unbounded (generator) | **≥100%** | — | — | — |
+| `reasoning` | 1.8e8 | **1.8%** | 2.6e8 | 2.6% | **+0.8 pts** |
+| `reasoning`, running the DeepMind generator | unbounded | **≥100%** | — | — | — |
+| `language_code` | 1.5e9 | **15%** | 1.5e9 | 15% | **0 pts** |
+| `memory` | 1.3e8 | **1.3%** | 5.0e8 | **5.0%** | +3.7 pts, **3.3 of them MS MARCO** |
+| `moral_safety` | 2.4e8 | **2.4%** | 2.4e8 | 2.4% | **0 pts** |
+| **`visual`** | 3.2e7 | **0.3%** | 3.2e7 | **0.3%** | **0 pts** |
+
+**Three readings, and the second is the one most likely to be assumed backwards.**
+
+1. **Four faculties miss by one to three orders of magnitude, and `visual` misses by a factor of
+   300.** Its clean-permissive tier is ~524k images ≈ 3.2e7 patch tokens; reaching 10^10 needs
+   ~1.6e8 images at the current 64-token geometry, or **~3.9e7 at W7v's ACTUAL rebuilt geometry**
+   — `image_size 128`, `patch_size 8` ⇒ **`n_patches 256`**, fixed by **W3r** and consumed by
+   **W7v** (§4.1). *`DATASET-FACTORY-CATALOGUE-2026-09-03.md` §14 states this as ~5.1e7 at a
+   224²/16² geometry of 196 tokens per image; that geometry is not W7v's row, and this document
+   uses the row.* Exactly one candidate in the catalogue could plausibly supply
+   that — a licence-filtered Wikimedia Commons pull — and every other visual route dead-ends at
+   BLOCKING.
+2. **NC BUYS ALMOST NOTHING.** `language_code`, `visual` and `moral_safety` gain **zero** points;
+   `reasoning` gains 0.8; `memory` gains 3.7, of which **3.3 is MS MARCO alone** — the one entry
+   whose terms the operator has to rule on rather than accept (OD-18 item 3). **B1, not licence
+   tolerance, is what binds**, so the lever is *more independent permissive provenance groups*, not
+   more NC volume. **This is not an argument to drop NC** — the composed model is already
+   CC BY-NC-SA via GooAQ under DEC-31 — it is an argument that chasing NC volume is not the lever.
+3. **`memory` is the faculty the merge made worse in licence terms, not better.** It inherits the
+   union of both parents' obligations; post-merge its clean-permissive tier is 1.3% of target, its
+   share-alike tier is 99% one provenance group (Wikipedia), and the single largest lever against
+   GooAQ's 79% concentration — Stack Exchange — is refused **structurally** (a per-item live
+   hyperlink attribution a manifest cannot discharge at any scale), not by its licence class.
+
+**Consequence, and it is DEC-56's amendment.** The flat *10^10 tokens per region* was a scaling-law
+figure applied uniformly to seven faculties before anyone had measured what any of them could
+source. It survives as an order of magnitude and dies as a requirement: **per-faculty targets with
+the reasoning written down, clean-terms generators for the faculties a generator can serve, and the
+operator's own enrichment** replace it. Row **P2′g**. The generator route deserves naming precisely
+because it is narrow: the DeepMind `mathematics_dataset` generator is **the single source in the
+whole catalogue that can supply arbitrary B1-relief volume under a settled Apache-2.0 grant with no
+new licence question**, which is why it moves two faculties from single-digit percentages to
+unbounded and why *"just generate more"* is not otherwise available.
+
+**Five legal readings go to the operator as OD-18** (§8), ranked by what they could invalidate.
+**The first item needs no lawyer and is actionable today: the model card must STATE the reading it
+takes on CC BY-NC-SA given CC BY-SA inputs, and today it states none** — which is why the question
+is currently unanswerable rather than merely unanswered.
+
+
 # 6. Scale path and the dynamic-paging seam
 
 ## 6.1 The five numbers the scale path is derived from
@@ -3858,6 +4175,70 @@ selective activation. That is three mechanisms meeting at one seam, which is the
 the seam now: `Schedule.nodes[].resident` is already the scheduler's *request*, and an overlay is
 just a smaller thing to request.
 
+### DEC-70 — the memory gate is a VRAM ARBITER: named claimants, a priority order, and a frugality cap
+
+DEC-33 gave overlays a residency policy. DEC-63 gave the store a capacity formula. **Neither says
+what happens when the model, the KV cache and memory all want the same megabyte at the same
+moment**, and the operator's ruling is that this is a **negotiation between peers**, not a
+leftover: memory-gate **does not take what is free writ large — it must contend and negotiate for
+VRAM against the context window / KV cache and against the base weights and activations, as peers
+with their own claims** `[OP: csd-memory-gate-overlays.md]`. *The source note records this and the
+priority order below under the heading "operator, paraphrased faithfully", so the position is the
+operator's and the wording is the note's; it is set in bold rather than in quotation marks for that
+reason, and the same applies to every operator position in this decision.*
+
+**The claimants, and the priority order among them.** The order is the operator's, and it is the
+reverse of what a naive reading of DEC-63's residual formula would produce:
+
+| priority | claimant | behaviour under pressure |
+|---|---|---|
+| 1 | **base weights** | **FIXED.** Not negotiable; the mind is the mind. |
+| 2 | **working activations** (per step / per request) | **FIXED** for the admitted batch and schedule. |
+| 3 | **the ACTIVE memory set and the LOADED PERSONA** | **PROTECTED. Never evicted to make room for context.** |
+| 4 | **KV cache / context window** | **FLEXES** around 1–3: sliding window, shorter context. |
+| 5 | **inactive overlays, offsets, differentials** | **LEAVE FIRST.** Below context, evicted proactively. |
+
+**Why memory outranks context, in the operator's own reasoning:** a sliding context window will
+help a great deal, but **dropping a relevant memory or the persona because more context is wanted
+can create failures** — again the note's paraphrase of the operator's position, not marked speech. A model that forgets who it is in order to read four thousand more tokens has
+made the wrong trade, and it makes it silently.
+
+**The frugality cap is what makes protecting memory safe, and without it this priority order is
+dangerous.** A protected claimant with no ceiling is an unbounded claimant. So: **a design-doc
+constant caps the resident memory + persona footprint at a small fraction of the card, stated per
+card**, enforced by the residency scorer, with the target that it is **negligible relative to the
+KV budget at the deployment context length**. **The gate that makes the cap real: at the cap, the
+achievable context length differs from the no-memory case by less than a stated margin.** If it
+does not, the cap is wrong and the row fails — not the test.
+
+**DEC-63 is amended in the same breath, because the two are now one policy.** `capacity_bytes` is a
+**CEILING, not a target**. The formula says what the store *may* claim; it never said what the store
+*should* claim. The resident set is what the residency score admits **now** — bounded additionally
+by the frugality cap — and `capacity_bytes` is the line that bound may not cross. **A residual read
+as an allocation is exactly how a subsystem designed to be frugal becomes the largest one on the
+card.**
+
+**Residency scoring and eviction.** Promotion and eviction are scored on **recency**, **relevance to
+the loaded persona/basin**, and **access frequency**, across three tiers — **card / host RAM /
+disk** — extending memory-gate's own importance-scored eviction with a GPU-residency bonus by a
+persona-relevance term (§1.3's clause (2)). **Eviction is PROACTIVE**: on inactivity (an overlay
+loaded but unused past its TTL is demoted) and on VRAM pressure from the model, the KV cache or
+activations — **never only on capacity overflow**, which is the shape that guarantees the store is
+holding its maximum at the exact moment something else needs the card.
+
+**Failure to size is reported and degrades by relevance; it never silently drops the persona.** If
+the relevant memory/persona set cannot fit within the cap, the system emits a **receipt field and
+an event** and **degrades the memory set by relevance** — it does not shorten the context by
+default, and it does not drop the persona at all. *A degradation nobody can see is the same defect
+as DEC-33's silent fallback, one layer up.*
+
+**Frugality is measured, not asserted.** Every receipt records **peak VRAM held by memory +
+overlays** and **the fraction of that which was active**. A design-doc row states the target ratio,
+and E1a's four gates — three of them constructed to fire — are what turn this decision into a
+result. Row **E1a**; the arbiter's inference-time packing arithmetic is W7k's prototype, reusing
+gpu-pack's admission model rather than inventing a second one (DEC-69).
+
+
 ## 6.7 DEC-29 — training the fleet at 1 Gb/s, with one correction to the programme
 
 The programme's statement that **cross-host DDP is the wrong tool** is right: a 16M-param model
@@ -3937,6 +4318,113 @@ region-granular pipeline parallel** on the same model and microbatch, over this 
 link, with *"cross-host DDP is the wrong tool at 1 Gb/s"* as the standing null hypothesis. **A null
 result is a useful outcome** — it makes the two-card lock an honest constraint instead of an
 unexamined one.
+
+### DEC-69 — the knobs, in one table, with what each one was measured to cost
+
+Packing and chunking were each solved as an incident: `reason` OOMed and got a batch, `memory` OOMed
+at 1280 and got a chunked loss. **As a table they stop being incidents and become a control
+surface** — and the operator's framing is the reason to write it down: once packing and chunking
+land they **become a set of knobs for tuning how training and quantization run**, and the same
+admission model is the **foundation for deciding how to pack MODELS for runtime inference**
+`[OP: csd-training-placement-policy.md]`. *(Positions carried faithfully from the source note's
+"Operator intent" paragraph, which records intent in the note-taker's prose rather than as marked
+operator speech; the emphasis is this document's and the words are not offered as a quotation.)*
+
+| knob | what it actually controls | measured effect | where it is recorded |
+|---|---|---|---|
+| **per-job VRAM budget** | the per-process allocator fraction, and what admission charges the card | a budget larger than the card's free VRAM **refuses to launch** (W7p gate 1); under-use never returns headroom — the claim stays pinned at `max(budget, measured)` | `knobs.vram_budget_mib`, W7k |
+| **admission margin** | slack held back on every card before anything is admitted | gpu-pack default **1,024 MiB**; `allowed = total − foreign_used − Σ max(budget, measured) − margin` | `knobs.admission_margin_mib`, W7k |
+| **`token_loss_chunk`** | rows of masked positions projected to vocabulary at once, under `torch.utils.checkpoint` | **2048 ⇒ 20,357 MiB allocated / 20,726 reserved / 22,120 raw driver peak; 512 ⇒ 19,080 / 19,444 / 20,883, at +2.6% step time (380.0 → 390.0 ms)**. Chunk peak is `chunk × vocab` and is therefore **batch-independent** | `knobs.token_loss_chunk`, W7k |
+| **batch** | **the in-batch-negatives count** — a quality lever before it is a speed lever | full-pool `recall@10` **0.030 / 0.098 / 0.200** at batch **256 / 512 / 1280** (DEC-68); InfoNCE's mutual-information ceiling is `log(B)` nats — 5.55 / 6.24 / 7.15 | `knobs.batch_size` **and** `knobs.negatives_effective`, W7k |
+| **mask probability** | `n_masked`, and therefore the whole cost of the token term | **0.15 at production. MEASURED [V]:** the batch-1280 receipt's own `token_loss_n_masked` runs **10,815–11,333, mean ~11.0k** masked positions per call across its history — **× 50,257 vocab in fp32 ≈ 2.2 GB of logits per call, twice per step** — which is what `token_loss_chunk` exists to bound. **[I], and it is an upper bound, not a measurement:** the **~18.4k / 3.7 GB** figure this table carried from the OOM diagnosis is `1280 × 96 × 0.15`, which assumes every sequence is `max_len`; the corpus is ragged (`tokenisation.ragged_ratio` **0.2967**, ~58 real tokens per sequence), so the estimate overshoots by ~1.7×. W7k records the receipt's field, not the estimate | `knobs.mask_prob`, W7k |
+| **card choice** | VRAM against compute | 3090 Ti 24 GiB sm_86 / 5080 16 GiB sm_120 / 1080 Ti 11 GiB sm_61 (**inference-role by default, DEC-74**). The 5080 may win on compute alone at smaller VRAM where layer-sectioned training (DEC-55) applies | `knobs.card`, `placement{}`, W7p |
+
+**And one number that is NOT a knob and must never be absorbed into a margin: the operator's
+desktop.** Both chunk probes measured **981 MiB and 1,057 MiB** of Xorg/KDE/Firefox resident on the
+3090 Ti **before the job started**. A budget computed as though that card were headless is wrong by
+about a gigabyte, and the failure mode is an OOM attributed to the job. **gpu-pack already models it
+correctly** — as `foreign_used`, subtracted before admission, rather than as slack — and W7k records
+it per run as `foreign_baseline_mib` so a wrong assumption is visible afterwards instead of inferred
+from a crash. **It is a standing FOREIGN claim on a workstation card and it is variable**; a headless
+training host does not have it, which is exactly why it must be measured per launch and not
+constant-folded into the design.
+
+**The admission model is reused at inference, not re-derived.** gpu-pack's
+`allowed = total − foreign_used − Σ max(budget, measured) − margin`, its `claim(entry)` rule (a
+budget under-used never gives headroom back; only a measured overrun raises the claim), its
+fail-closed corrupt-registry behaviour and its host/gpu scoping filter are **the starting point for
+packing regions, overlays, the episodic store and the KV cache under DEC-70's arbiter at inference
+time**. Two properties transfer directly and are the reason to reuse rather than rewrite: the
+**safe direction on unknown usage** (an unmeasurable claimant is double-charged against itself
+rather than allowed to mask another's memory) and **one critical section** around
+expire-check-admit. Row **W7k** builds the prototype that finds out whether the rest transfers,
+before anything is built on the assumption that it does.
+
+### DEC-74 — the fleet is on demand, and the 1080 Ti's training verdict is a measurement
+
+**Two stale claims were live in this programme's documents and both cost probing time.**
+
+**(1) All three cards and all their runtimes are ON DEMAND.** LocalAI on akula-prime and on gpu5080,
+llama.cpp on the 1080 Ti VM, Open WebUI and ComfyUI — started when needed, stopped when idle. **An
+idle `:8080`, a `000`/connection-refused, a stopped unit or an exited container is the NORMAL
+RESTING STATE, not a fault**, and is not to be "fixed" `[OP: fleet-gpu-roles-and-scheduling.md]`.
+Training and quant jobs are admitted per card by VRAM budget through the packer (DEC-75), which is
+what makes on-demand safe: a card is not reserved by a running server, it is reserved by an
+admission entry.
+
+**(2) The 1080 Ti cannot run the fleet's pinned torch at all, and DEC-54's phrasing is narrowed by
+that measurement rather than left standing.** DEC-54 said submodels could train on the 1080 Ti
+*"where the corpus and torch build allow"*, which reads as a scheduling caveat. It is not:
+
+- **`torch 2.11.0+cu128` has no sm_61 target.** `get_arch_list()` floors at **sm_75**, and the VM's
+  driver **535.274** caps at CUDA 12.2 — so the pinned build cannot execute a single kernel there
+  `[V, probe 2026-09-03]`.
+- **A separate `torch==2.5.1+cu121` venv on the guest works**: a 2048² matmul runs with zero
+  warnings. It carries **none** of CSD's other dependencies, the VM has 7.8 GiB RAM, and it sees
+  the datasets RAID read-only at `/mnt/fleet-datasets` with no `/akula-data` and no route to
+  gpu5080's `/mnt/bulk`.
+
+**So fp32 training on that card is "with environment X: yes"** — a second CSD environment pinned to
+cu121 or cu118 — **and until someone builds it, the card's DEFAULT ROLE IS MODEL SERVING, RAG AND
+UTILITY INFERENCE**, which is what the packer defaults it to. That is the operator's own framing:
+the card sits in a VM precisely so it can carry its own CUDA and driver stack, and *"if an
+sm_61-capable training env is not worth the squeeze, its role is running models, RAG, and
+tool/utility inference"* `[OP: csd-training-placement-policy.md]`. **The 1080 Ti's RAG claim
+remains preemptible** and the timeshare scheduler still spans all three cards; what changes is that
+"all three cards train" is now "two cards train and the third serves, unless someone builds the
+env".
+
+### DEC-75 — tooling lives in its own repo, and `tzervas/gpu-pack` is W7p's implementation
+
+The operator's rule, verbatim: *"any tooling or harness or framework developed or built must be
+captured in its own forgejo repo keeping each repo aligned to their actual role and responsibility
+and preventing tooling from bloating CSD repo"* `[OP: tooling-lives-in-its-own-repo.md]`.
+
+**What CogSynDelta keeps:** the **model** — regions, interconnect, training objectives, evals,
+corpus contracts, receipt formats — **plus the thin adapters a tool needs**: an environment variable
+honoured, a job-spec file read. **What leaves:** the tool's code, its tests, its docs and its own
+CI.
+
+**W7p was written as a row without naming where its code would live, and it now has an answer.**
+`tzervas/gpu-pack`, **`main` at `5364932`** (rounds 1–4 merged through PRs #1 and #2), implements
+the probe, the budget ledger, admission under one flock, the per-process cap, transient units with
+emitters, remote launch and launch receipts — and is also the home of the emitter scripts that were
+living uncaptured under `/akula-data/csd/events/bin/`. **CSD's entire side of it is already in this
+tree and stays that size**: `src/cogsyndelta/util/gpu_budget.py` (`GPU_PACK_BUDGET_MIB` caps the
+allocator fraction, `GPU_PACK_PROBE=1` caps a run to a 20-step probe, `GPU_PACK_PEAK_MIB` reported
+to stderr on exit) plus the example job specs under `program/jobs/`. **P10.4's status — "gpu-pack's
+probe/admit/launch pipeline is the remaining piece" — is retired by that merge**, and W7p's status
+cell in §4.1 is corrected in the same pass rather than left reading `todo` beside a shipped tool.
+
+**One trap is worth carrying here because it has already cost a run.** The main checkout's editable
+install pins the **main** `src/` on `sys.path`, so a job spec that means to run a worktree's code
+must set `PYTHONPATH` explicitly — the chunk-512 probe had to do exactly this because the shared
+venv resolved `cogsyndelta` to a checkout with no `token_loss_chunk` field at all.
+
+**The same rule places two other things:** the predictive trainer stays in `tzervas/tritter` with a
+CSD adapter only (DEC-72), and autodev stays in `tzervas/csd-autodev` with a pointer only (DEC-60,
+DEC-76).
+
 
 ## 6.8 Hybrid context management falls out; it is not a separate subsystem
 
@@ -4020,6 +4508,72 @@ Three constraints that bind any future ternary work and are cheap to record now:
   bottleneck the invariant forbids.
 
 ---
+
+## 6.10 Two long-term tracks — differential activations, and predictive hybrid training
+
+Both sit **post phase 3**, beside §6.9's ternary track. Neither is built in phase 2, and both are
+written as rows with gates rather than as intentions, because an idea held as a paragraph gets
+argued about and an idea held as a gate gets settled.
+
+### DEC-71 — differential activations: activation deltas in a fast recompute-and-apply format
+
+DEC-33's overlays carry **weight** deltas. The operator is thinking past that: *"long term ... ALSO
+activations stored in a DIFFERENTIAL format optimised for rapid recompute, so they can be applied
+performantly and efficiently to the base values for the features and functionality they provide"*
+`[OP: csd-memory-gate-overlays.md]`. So an overlay may additionally carry **activation deltas
+relative to the base activations** — a delta plus a cheap reconstruction rather than dense stored
+activations — letting a persona or skill contribute its features at inference **without holding
+dense state on the card**.
+
+**It meets three existing decisions.** It composes with quantised frozen regions (P5′q) and with
+per-region selective activation, like weight overlays do (DEC-33). It is precisely the claimant
+class **DEC-70's arbiter evicts first**, so cost per feature is what decides whether it earns
+residency at all. And its prediction is the second of DEC-72's three targets, which is why the two
+tracks are written together.
+
+**Gate, and it is a COMPARISON rather than a demonstration** `[P5′d]`: **apply latency per feature**
+and **VRAM held per feature**, each measured against a **dense-activation control** on the same
+items and the same card, with the reconstruction cost counted inside the latency number. **Adopted
+only if it wins on both.** A format that is smaller but slower to apply is a different trade and is
+recorded as one rather than adopted — *"measure apply latency and VRAM per feature vs the dense
+alternative before adopting"* is the instruction, not *"build it and see"*.
+
+### DEC-72 — predictive hybrid training: extend the predictor, and gate it on wall-clock
+
+The operator's sequencing is explicit and it is late: **after all this is dialed and working and
+we have moved on to phase 3 model training, the predictive training tool is what gets dug at**
+*(the source note prints this as a blockquote it explicitly labels "paraphrased faithfully", so it
+is rendered here as the position it is rather than as quoted wording)*
+`[OP: csd-predictive-hybrid-training-track.md]`. **The tool exists.** `tzervas/tritter` carries
+`PredictionConfig` / `GradientPredictor` / `PredictiveTrainer`, a `LossPredictor`, an
+`EmbeddingPredictionLoss`, and a 962-line research report on predictive hybrid training (training
+dynamics on a low-dimensional manifold, three predictability regimes, Jacobian approximation for
+backward prediction, a trait/state-machine spec for a Rust trainer), plus planning documents
+claiming **25%+ backward and 15%+ forward** reduction. **Those claims are inputs to this row, not
+results of it.**
+
+**Three prediction targets, each with its own accuracy gate against the real computation:**
+**(1)** weight updates — the existing predictor; **(2)** **activations and activation deltas**,
+which is where this meets DEC-71; **(3)** **semantic residuals used as a correction signal**. The
+hybrid paradigm alternates predicted phases with real backprop phases.
+
+**Four gates, pre-registered, and the third is the one that decides it** `[P5′p]`:
+
+1. **Prediction error against a REAL step** on held-out batches, per target, under a tolerance
+   stated before the run.
+2. **The fraction of steps predicted, printed** in the receipt — a method that predicts 2% of steps
+   perfectly has not sped anything up, and a fraction reported only in aggregate hides that.
+3. **The end-task metric against a fully-real run at EQUAL WALL-CLOCK and at equal steps, BOTH
+   reported.** Equal-steps alone flatters a method whose steps are cheaper; equal-wall-clock alone
+   flatters one whose steps are worse. The pair is the measurement.
+4. **AUTOMATIC FALLBACK:** a predicted phase that drifts past tolerance falls back to real steps by
+   itself and says so — **verified by constructing the drift**, per this document's standing rule
+   that a guard nobody has made fail is not a guard. It fails closed.
+
+**Fine-tuning is measured as its own case**, against its own real-run control, because the
+efficiency argument is different there. **The tool stays in tritter under DEC-75**; CSD carries an
+adapter.
+
 
 # 7. What this invalidates in the other design docs
 
@@ -4612,6 +5166,143 @@ nothing else. **Cost of deciding late:** a checkpoint trained on a mixed tier ca
 The reversibility exists only before A1 and A2 run.
 
 
+**OD-17 — W4 FAILED TWO OF FIVE PRE-REGISTERED CLAUSES AT ITS PRE-REGISTERED CONFIGURATION.
+PIVOT PER §9.14 AS PRE-COMMITTED, OR AMEND. OPERATOR TO CONFIRM.** `[DEC-68]`
+This is the single largest open decision in the programme and it is put here rather than settled
+above **because this document must not move a bar after seeing the number it produced.** §4.0's
+DEC-68 block carries every measurement; this entry carries only what each branch costs.
+
+**What is on the table.** The pre-registered run (batch 1280, `token_loss_chunk` 512, 4,000 steps,
+receipt `w4-chunked/run-1280/memory-20260903T184441Z.json`) **passes (a) and (d)**, **passes (b) as
+the harness scored it**, and fails two: **(c)** full-pool `recall@10` **0.200** against BM25's
+**0.440**, and **(e)** final-block rank ratio **1.2102** against an absolute **2.0×**.
+
+**AND A THIRD CLAUSE IS CONTINGENT, WHICH IS PART OF THIS DECISION AND NOT A FOOTNOTE TO IT.**
+Gate (b) is pre-registered and implemented **strictly** (`recall@10 > 0.20`;
+`beir_fiqa.py:476`), and the receipt's value is **`0.20000000298023224`**, which is exactly
+`float(numpy.float32(0.2))` — the float32 recall **is** 0.2 and the entire margin is float32
+representation. **Under a strict reading the run is two passes and three fails.** §4.0 reports the
+receipt's own `passed: true` and refuses to resolve `>` versus `≥` after seeing the number, because
+that is the same move branch 2 has to justify for (c) and (e). **The operator resolves it here**,
+and the resolution is binding on every future floor in this programme rather than on this receipt.
+
+**BRANCH 1 — PIVOT, exactly as §9.14 and §9.1 pre-committed it.** *"A region that clears (2) and
+fails (1) goes straight to option (3), the pivot"*, and §9.1 R4 states the general rule
+independently: *"a region that fails its retrain gate goes straight to §9.14's pivot."* **The pivot
+is to reorder the phases — regions and the interconnect trained together from the start, the
+operator's phase 3 before phase 2.**
+
+*What it costs, in this document's own words:* **region receipts stop being comparable** (every
+per-region number in §4.3, §5.4 and the appendix loses its baseline), **region-per-host training is
+lost** (which is what DEC-54's whole placement policy exists to exploit), and the phase-2 bill of
+≈ 7–13 GPU-hours is replaced by a materially larger programme whose first checkpoint is a composed
+model. **W7a, W7v, W1c, W2b's freeze order and the entire `s_r` invalidation rule are re-derived**,
+because there is no longer a frozen region set to compute `s_r` against. **W4n does not exist under
+this branch.**
+
+*What argues FOR it:* it is what was pre-committed, and a pre-commitment honoured only when it is
+convenient is not one. The 2.0× clause was set from W1's own measured range; the retrain moved the
+ratio to 1.21–1.35 and no configuration measured reached 2.0×.
+
+**BRANCH 2 — AMEND, WRITTEN AS A PRE-REGISTRATION. RECOMMENDED.** Four clauses, all of which must be
+fixed **in writing before any run they govern**, or this branch is just the failure mode branch 1
+exists to prevent:
+
+1. **KEEP FiQA as the OUT-OF-DISTRIBUTION full-pool eval, and ADD an IN-DISTRIBUTION full-pool eval
+   with a PARENT BASELINE, measured for BOTH `retrieve` AND `compress`.** *Rationale, and it is a
+   measurement not an excuse:* FiQA is **14,131 of 782,959 training pairs — 1.8% of `memory`'s
+   corpus** [V, the receipt's own `corpus.sources`], and **gate (c) has never had a parent
+   baseline**: neither parent was ever run against that pool, so *"the merge degraded retrieval"*
+   and *"an unmerged `retrieve` would have failed the same bar"* are **indistinguishable from the
+   receipts that exist**. An in-distribution pool (drawn from the corpus the region was actually
+   trained on, at comparable pool size and qrel density) with **both parents measured on it** turns
+   gate (c) from *"beat BM25 on a domain you saw 1.8% of"* into *"beat BM25 on your own
+   distribution, and beat what you were merged from"*. **FiQA stays** — dropping it would be
+   removing the eval that failed — but it is labelled as the OOD arm and BM25 on it becomes a
+   reported number rather than a pass/fail clause.
+2. **REPLACE the absolute 2.0× rank clause with an IMPROVEMENT-OVER-CONTROL clause on the aligned
+   harness, at a PRE-REGISTERED MARGIN.** *Rationale:* 2.0× was chosen from W1's pooled-versus-token
+   ratios (0.66× to 1.30×) as the threshold W1 pre-committed for *"no retrain needed"* — a number
+   about untrained regions, applied to a retrained one. The retrain's **measured, control-separated
+   effect is real**: **1.0851 → 1.3475** at batch 512, **99% of the movement attributable to
+   `L_decorr`** at 50 steps. The replacement clause is `ratio(terms on) ≥ ratio(control) + δ` on the
+   identical W1 harness and the identical held-out items, **with `δ` written down before the run**
+   and **the control arm run at the same scale as the treatment**. *What it costs:* every W4/W7 run
+   now costs **two runs, not one**, and §4.3's retrain bill roughly doubles for the affected rows.
+   *What it buys:* a clause that measures the thing the objective was added to change.
+3. **PRE-REGISTER A NEGATIVES ABLATION — batch versus a negatives queue versus GradCache — as the
+   NEXT LEVER.** *Rationale:* DEC-68's curve makes the in-batch-negatives count the dominant lever
+   on gate (c)'s metric (**6.7×** in full-pool `recall@10` across a **5×** change in batch), and
+   batch 1280 is where the 3090 Ti runs out. Row **W4n**, blocked on this decision.
+4. **THE PIVOT REMAINS THE FALLBACK.** If the amended gate fails, branch 1 fires — **and the
+   amendment is spent, not repeated.** One amendment, pre-registered, then the pre-commitment
+   stands.
+
+**AND ONE FIX THAT IS NOT A BAR MOVE AND THEREFORE APPLIES UNDER BOTH BRANCHES: FIX THE FLOOR
+COMPARISON'S DIRECTION AND ITS PRECISION, IN WRITING, BEFORE THE NEXT RUN.** Every pre-registered
+floor states whether it is `>` or `≥`, and the harness compares at a stated precision against a
+value it has rounded explicitly, so that **no gate in this programme can ever again turn on 3e-9 of
+float32 representation**. This costs nothing, changes no threshold, and is required whichever branch
+the operator takes; the reason it is written here rather than applied silently is that applying it
+silently to *this* receipt would decide (b) — which is the operator's call, above.
+
+*What branch 2 costs beyond the runs:* the honest cost is **credibility**, and it is why this is
+the operator's call and not this document's. A gate amended after it failed is weaker than a gate
+that held, **however good the reasons** — the mitigation is that the amendment is written before the
+runs it governs, its margin is fixed in advance, and this entry is the record that the original
+clause failed rather than a page where it never existed.
+
+*Recommendation:* **branch 2**, on the grounds that (c) was measured against an eval the region saw
+1.8% of and against a bar with no parent baseline, and that (e)'s threshold was imported from a
+measurement of untrained regions — but **the recommendation is not the decision**, and DEC-68
+changes no gate until this is answered. *On (b) specifically there is no recommendation*: the
+document that would benefit from `≥` is this one, so it states the arithmetic and stops.
+
+**OD-18 — FIVE LEGAL READINGS FROM THE DATASET FACTORY'S PASS 1, RANKED. THE FIRST NEEDS NO
+LAWYER.** `[DEC-73]` Each is stated precisely enough to be billable in
+`DATASET-FACTORY-CATALOGUE-2026-09-03.md` §10.1; this is the ranking and what each could invalidate.
+
+1. **Is CC BY-NC-SA 4.0 coherent as the composed model's release licence given its CC BY-SA
+   inputs?** The only one that could invalidate a **shipped** artefact rather than constrain a
+   future one. Under the permissive reading it is a freely chosen licence and coherent; under the
+   cautious reading SNLI's §3(b)(1) requires the same licence elements (CC BY-NC-SA is not) and
+   §3(b)(3) forbids added restrictions, while releasing as CC BY-SA would breach GooAQ's NC term —
+   **under which there is no compliant release licence for the composed model at all**. Two fixes
+   are already implementable without a ruling: **separate the checkpoints per region** so the SA and
+   NC obligations never meet in one licence, or drop one side. **THE ACTIONABLE HALF NEEDS NO
+   LAWYER: the model card must STATE the reading it takes, and today it states none** — which is
+   why the question is unanswerable rather than merely unanswered. That is row **P2′g**'s clause (4)
+   and it is free.
+2. **Do OpenAI's and Anthropic's output restrictions bind a third party who receives the dataset?**
+   One ruling covering the **11 MODEL-OUTPUT-TERMS entries** (~1e9 tokens across `language_code`,
+   `memory` and `reasoning`). *Preference if the ruling is unfavourable:* the **cosmopedia shape** —
+   an Apache-weights generator run locally, which carries no such terms and is what P2′g's
+   generator clause builds on.
+3. **MS MARCO specifically: NC-with-a-waiver, or REFUSE?** Microsoft's own sentence stacks three
+   concerns — *"non-commercial research purposes only"*, *"without extending any license"*, and
+   **"we may not own the underlying rights in the documents"**. That third clause is closer to this
+   programme's REFUSE class (distributors disclaiming what they distribute) than to plain NC. It is
+   **5.3e8 tokens and 3.3 of `memory`'s 5.0 NC-inclusive percentage points** — i.e. almost all of
+   what NC buys anywhere.
+4. **Does Stack Exchange's per-item attribution clause reach an inference-time weight release?** Its
+   four conditions include a **live outbound hyperlink to each original question and each author
+   profile without `nofollow`**, which a dataset-level manifest cannot satisfy at any scale — so it
+   is refused **structurally**, not on licence class. If the clause does not bite on weights, **the
+   largest single lever against GooAQ's 79% concentration in `memory` becomes available**. Worth
+   asking as one instruction with item 1.
+5. **Is a machine-learning model a "Produced Work" under ODbL / ODC-By?** ODbL defines one as *"a
+   work (such as an image, audiovisual material, text, or sounds) resulting from using … the
+   Contents"*; weights are none of those and training is not obviously a query. If a model is
+   neither a Derivative Database nor a Produced Work, **ODC-By is silent — a gap, not a
+   permission**. Bears on FineWeb-Edu, C4, peS2o, OpenWebMath, WildGuard and SciFact.
+
+*Three more are in the catalogue and are ranked below these five* — `toxigen`'s CDLA-versus-README
+conflict, whether sui generis database rights reach a US-domiciled operator at all, and how far
+Gemma's *"Model Derivative"* definition travels through synthetic data. *Recommendation:* **obtain
+items 1, 3 and 4 as one instruction** (they share a factual record), **answer item 1's card clause
+today without waiting**, and treat item 2 as moot by preferring the cosmopedia shape.
+
+
 ---
 
 ## Autodev is somebody else's document now — the pointer, and what CSD still owns `[DEC-60]`
@@ -4634,7 +5325,7 @@ that it should be able to run and orchestrate"* `[OP: autodev-work-lives-in-csd-
 
 | what | where |
 |---|---|
-| the spec | `docs/AUTODEV-IDENTITY-AND-SANDBOX.md`, branch `docs/autodev-spec`, repo `tzervas/csd-autodev` (Forgejo `git.vectorweight.com`) |
+| the spec | `docs/AUTODEV-IDENTITY-AND-SANDBOX.md`, branch `docs/autodev-spec`, repo `tzervas/csd-autodev` (Forgejo `git.vectorweight.com`) — **REV 5, committed at `ece346b`, PR #1 in that repo** `[DEC-76]`; rev 4 was `c192278` |
 | its threat pass | beside it on the same branch (findings G14–G18, **G23**, T4, T6 are the ones CSD depends on — G23 is the one that CORRECTS OD-2 rather than extending it) |
 | its skeptic pass | beside it on the same branch (findings S1, S2 are the ones CSD depends on) |
 | why it is not here | the harness is meant to run several models; coupling it to one model's repo makes both harder to reason about and pollutes CSD's licence and provenance story |
@@ -4690,6 +5381,86 @@ a fork — but land PRE-1 on the running copy **first**, because a security fix 
 consolidation is a security fix that has not happened. *Why it is the operator's:* it decides which
 tree owns a service the operator runs, and the two copies have diverged in features as well as in
 security posture, so the merge is a product decision and not a mechanical one.
+
+### DEC-76 — the pointer is rev 5, and the rule five rounds produced is recorded with it
+
+**A pointer that names a superseded revision is worse than no pointer**, because a reader follows it
+and reads the wrong design. The pointer table above is updated in place: the spec is **rev 5,
+`ece346b`**, on `docs/autodev-spec` in `tzervas/csd-autodev`, **PR #1** in that repo, with the
+threat pass and the retained skeptic write-ups under `docs/evidence/autodev-threat-2026-09-03/`. Five
+revise-and-attack rounds went into it, **and three of those rounds' write-ups were not committed**:
+the directory holds exactly `01-threat.md`, `skeptic-round4.md` and `skeptic-final.md`
+[V, `git log --diff-filter=A` on that path].
+
+**The residual criticals, in one line, and deliberately not summarised further** — §"A note on
+scope" below forbids copying the spec's clauses here, and this is the minimum a CSD reader needs to
+know the spec is not finished. **The FINAL (round-5) skeptic — `skeptic-final.md`, the pass against
+rev 5 — still lists five critical and six high** (23 findings), which is the count the source memory
+records. *The round-4 pass, `skeptic-round4.md`, was against rev 4 and lists **four** critical and
+six high (21 findings); it is a different document and a different count, and this entry does not
+mean it.* Of the five, **two are overtaken by events** — the `/api` auth gate **is** on `main` (PR #7, `5303544`),
+and the closure pin went stale because CSD moved twice in eight minutes — and **the rest are rev-6
+material, to be folded WHEN IMPLEMENTATION STARTS and not before**: the runtime import recorder must
+run the protected tests **under `pytest`** rather than import their modules, and needs a `⊇` floor
+so it **can** fail; P0a's check (0)/(0r) conflicts with ADX-52 as written because the spec models a
+per-request `credentials.py` fork that the live code does not do — `apply_token()` reads
+`CSD_APPLY_TOKEN` from the environment set at unit start, verified in the running console, **so the
+spec must model the code rather than the reverse**; `socket_ident` must be re-stat-ed per connect or
+the FD refreshed, else a socket-unit restart never invalidates; and §0d must be pinned to the
+merge-base with `main` and its closure regenerated at implementation time.
+
+**THE RULE, and it is the part that transfers to every other spec in this programme: FREEZE A CODE
+REVISION FIRST — a tag — THEN WRITE THE SPEC REVISION AGAINST IT, THEN IMPLEMENT.** *A spec chasing
+a moving tree cannot converge*, and five rounds against a tree that moved twice in eight minutes is
+the evidence rather than the hypothesis `[OP: autodev-service-identity-and-sandbox.md]`.
+
+### DEC-77 — three governance additions, each from a failure measured this session
+
+**(1) DEC-61's PR-ONLY RULE EXTENDS TO `tzervas/gpu-pack`, and therefore to every code repo.**
+DEC-61 was written against CogSynDelta's `main` and read like a fact about one repository.
+`gpu-pack`'s `main` is now protected the same way — **push whitelist = the operator alone, required
+context `CI / test (pull_request)`, not applied to admins** — and rounds 1–4 landed through PRs #1
+and #2 rather than by push. **A rule that holds in one repo is a configuration; a rule that holds in
+every repo is a rule**, and this is the second data point that makes it one
+`[OP: branch-and-pr-to-main-only.md, tooling-lives-in-its-own-repo.md]`.
+
+**(2) THE CI SECRET SCAN HAS A PROSE FALSE-POSITIVE CLASS, AND IT IS A CLASS RATHER THAN AN
+INCIDENT.** `gitleaks`' `generic-api-key` rule matches low-entropy `identifier=value` pairs
+**inside prose**. Two instances so far, both in this repository, both genuine documentation: a
+**tokenizer-load log line** (`gpt2_tokenizer.json, vocab_size=50257`), and **`decorr_weight=0.0`**
+quoted inside `EVIDENCE_50_STEP_CONTROL_ARM`'s docstring, where the surrounding sentence is
+reporting the three loss weights a control arm measured. **This programme writes measurements into
+docstrings on purpose**, so the class will recur.
+
+**The remedy, and the part that makes it safe:** the **narrowest allowlist the finding admits**.
+**Two invariants, always:** `targetRules` limited to the **one** rule, and the **byte-identical
+matched phrase** as the regex. **A third whenever the finding is confined to one file:**
+`condition = "AND"` over the **exact file path** as well — which is what `.gitleaks.toml`'s
+`memory.py` entry does. **The tokenizer-load entry in the same file deliberately has no `paths`**,
+and its comment says why: the identical string is quoted inside `.gitleaksignore`'s own **immutable
+history** (commit `6f8ff7b`), which full-history scanning re-reads on every run, so a path-scoped
+entry could not reach it and a fingerprint entry keyed to that commit would be displaced by the next
+line-number shift. **A rule that demanded a path would forbid the entry this repository actually
+ships**, which is why the invariant is *rule + phrase always, path where it is possible*. What is
+never acceptable is the other direction: a path-wide or rule-wide suppression would have made the
+same failure go away and taken the control with it. **An allowlist nobody has tried to overreach is an allowlist nobody
+has measured**, which is this document's standing rule about guards, applied to a scanner.
+
+**(3) THE CI RUNNER HAS NO GPU TOOLING, AND A TEST THAT ASSUMES OTHERWISE TAKES DOWN AN ENDPOINT.**
+`fleet-ci-base:1` has **no `nvidia-smi`** — no GPU passthrough into the job container — so a helper
+wrapper that let `subprocess.run` raise produced `FileNotFoundError` **inside a status handler's
+dict literal**, aborting an entire HTTP response that should have degraded one field. The bug
+predated the branch that surfaced it; it was simply never exercised, because every earlier test that
+reached that path took a different branch first.
+
+**Two rules follow.** **Tests must not assume `nvidia-smi`, `docker` or `ssh` exists** — the
+regression test is the CI scenario itself, a `PATH` with no GPU tooling on it at all — and **a
+diagnostic subprocess must fail closed to a string** (`"unavailable: <detail>"`), never escape as an
+exception, for missing binaries *and* for timeouts, since a hung remote call has the identical
+failure mode. **This matters beyond CI:** DEC-74 makes every card's runtime on-demand, so *"the
+tooling is not there right now"* is the **expected** state on a live host too, not only in a
+container.
+
 
 **A note on scope, so this section does not grow back.** The autodev *spec* — service account,
 vault layout, sandbox profile, curated RAG vault, loop logic, its own open questions (including
