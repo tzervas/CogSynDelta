@@ -145,26 +145,39 @@ def test_production_sites_load_receipt_checkpoints_through_load_checkpoint(
 
     This is still the site the threat model flagged -- `receipt["checkpoint"]` /
     `train_receipt["checkpoint"]` is a path chosen by whatever wrote the receipt JSON,
-    not by this process -- so this pins two things: the call goes through
-    `load_checkpoint` (not a raw `torch.load`, which `test_checkpoint_loader_lint.py`'s
-    lint separately refuses to allow here at all), and `weights_only=True` is passed
-    EXPLICITLY at the call site -- a positive assertion, not merely the absence of
-    `weights_only=False`. The two are not equivalent: `load_checkpoint`'s own default is
-    `True` (also proven directly, with the train group, by
-    `test_checkpoint_loader_lint.py`), but that file needs `torch`/`tokenizers` and
-    naturally skips absent the train group, while THIS file has no such dependency and
-    runs in every CI job (`.github/workflows/ci.yml`, `code-quality.yml`,
-    `scripts/ci_local.sh` -- all `uv sync --group dev`, no train group ever installed).
-    Asserting only `"weights_only=False" not in call_kwargs` would pass for
-    `load_checkpoint(..., weights_only=some_flag)` with no guarantee `some_flag` is ever
-    `True` -- this asserts the call site itself is unambiguous, independent of what
-    `load_checkpoint`'s default happens to be, in the one test file that is guaranteed
-    to run.
+    not by this process -- so this pins that the call goes through `load_checkpoint`
+    (not a raw `torch.load`, which `test_checkpoint_loader_lint.py`'s lint separately
+    refuses to allow here at all).
+
+    Earlier versions of this test asserted `"weights_only=True" in call_text` as a
+    positive, per-call-site check -- deliberately not just the absence of
+    `weights_only=False`, because at the time `load_checkpoint(..., weights_only=flag)`
+    forwarded whatever `flag` a caller passed, with no guarantee it was ever `True`.
+    bandit's B614 (`Use of unsafe PyTorch load`) flagged exactly that shape: a variable
+    `weights_only` reaching `torch.load`, regardless of what any particular caller
+    happened to pass. `load_checkpoint` no longer takes a `weights_only` parameter at
+    all -- see `test_load_checkpoint_has_no_weights_only_parameter` below -- so a call
+    site cannot regress to an unsafe load even by typo; asserting `weights_only=True`
+    at the call site would now just assert a `TypeError` never fires, which duplicates
+    that structural guarantee instead of adding to it. What this test still needs to
+    pin is that the call goes through `load_checkpoint` in the first place.
     """
     source = (_REPO_ROOT / "scripts" / script).read_text()
     call_text = _load_checkpoint_call_text(source, checkpoint_expr)
-    assert "weights_only=True" in call_text, (
-        f"{script}: load_checkpoint({checkpoint_expr}, ...) must pass weights_only=True "
-        f"explicitly -- found call: {call_text!r}"
+    assert "weights_only" not in call_text, (
+        f"{script}: load_checkpoint({checkpoint_expr}, ...) must not pass weights_only "
+        f"-- load_checkpoint no longer accepts it (hardcoded True internally); found "
+        f"call: {call_text!r}"
     )
-    assert "weights_only=False" not in call_text
+
+
+def test_load_checkpoint_has_no_weights_only_parameter() -> None:
+    """Structural guarantee, not a convention: no argument exists that could make
+    `load_checkpoint` call `torch.load` with anything other than `weights_only=True`.
+    This is what makes the per-call-site checks above about a caller passing
+    `weights_only=True` unnecessary -- there is no keyword left to pass."""
+    import inspect
+
+    from cogsyndelta.regions._checkpoint import load_checkpoint
+
+    assert "weights_only" not in inspect.signature(load_checkpoint).parameters

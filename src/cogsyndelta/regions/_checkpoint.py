@@ -56,10 +56,20 @@ def load_checkpoint(
     *,
     expected_sha256: str | None = None,
     map_location: str | torch.device = "cpu",
-    weights_only: bool = True,
     sha256_out: list[str] | None = None,
 ) -> dict[str, Any]:
     """The one production entry point for `torch.load` on a checkpoint file.
+
+    `weights_only` is deliberately NOT a parameter: the underlying `torch.load` call
+    below is hardcoded to `weights_only=True`, so there is no argument a caller (or a
+    future edit) can pass to turn it off. bandit's B614 (`Use of unsafe PyTorch load`)
+    flags `torch.load` whenever `weights_only` is a variable rather than a literal
+    `True` -- correctly, since a variable forwarded from a caller has no guarantee of
+    ever being `True` at every call site. Removing the parameter, rather than trusting
+    every current and future caller to keep passing `True`, is what actually closes
+    that gap; every production caller already passed `True` explicitly (see
+    `tests/test_checkpoint_load_security.py`) or relied on this default, so the guard
+    was already load-bearing here.
 
     WHY A HASH CHECK BEFORE `torch.load`, NOT JUST `weights_only=True`
     `tests/test_checkpoint_load_security.py` covers a DIFFERENT threat: a checkpoint path
@@ -93,9 +103,6 @@ def load_checkpoint(
             those callers this function is still the one place `torch.load` is invoked,
             which is what the lint enforces.
         map_location: Forwarded to `torch.load`.
-        weights_only: Forwarded to `torch.load`. Defaults `True` -- see
-            `test_checkpoint_load_security.py` for what this defends against; this
-            function adds a check upstream of it, and does not change that default.
         sha256_out: If given, this function appends the checkpoint's content hash to
             it -- the same hash `expected_sha256` was checked against, when one was
             given, or freshly computed here when it was not. Exists so a caller that
@@ -131,7 +138,7 @@ def load_checkpoint(
     if sha256_out is not None:
         assert actual is not None  # computed above whenever sha256_out is not None
         sha256_out.append(actual)
-    return torch.load(p, map_location=map_location, weights_only=weights_only)
+    return torch.load(p, map_location=map_location, weights_only=True)
 
 
 def atomic_save(obj: dict[str, Any], path: Path) -> None:

@@ -353,11 +353,12 @@ def test_load_checkpoint_checks_the_hash_before_torch_load_ever_opens_the_file(
 def test_load_checkpoint_still_refuses_a_malicious_payload_with_a_matching_hash(
     ckpt: SimpleNamespace, tmp_path: Path
 ) -> None:
-    """`weights_only=True` (`load_checkpoint`'s default) is defense IN DEPTH, not
-    superseded by the hash check: an attacker who controls the file also controls its
-    hash (they compute it themselves after swapping the file, exactly as a caller with a
-    legitimate expected hash would) -- so a matching `expected_sha256` must not be read
-    as clearing the payload to unpickle. `weights_only=True` still refuses it."""
+    """`weights_only=True` (hardcoded inside `load_checkpoint`, not a caller-settable
+    parameter) is defense IN DEPTH, not superseded by the hash check: an attacker who
+    controls the file also controls its hash (they compute it themselves after swapping
+    the file, exactly as a caller with a legitimate expected hash would) -- so a
+    matching `expected_sha256` must not be read as clearing the payload to unpickle.
+    `weights_only=True` still refuses it."""
     sentinel = tmp_path / "sentinel.txt"
     ckpt_path = tmp_path / "final.pt"
     ckpt.torch.save({"model": _MaliciousReduce(sentinel)}, ckpt_path)

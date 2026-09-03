@@ -121,17 +121,16 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
     # load_checkpoint: `train_receipt["checkpoint"]` is a path read out of a receipt
     # JSON on the NFS-exported receipts tree (rw, no_root_squash) -- anyone who can write
     # there can name an arbitrary file, so this load must not execute arbitrary pickle
-    # bytecode (weights_only=True, passed explicitly below and matching
-    # load_checkpoint's own default) and must refuse a file that does not hash to what
-    # the SAME receipt already recorded (expected_sha256) -- both BEFORE torch.load ever
-    # opens it. Older receipts (pre-R9) have no checkpoint_sha256; `or None` skips the
-    # hash check for those.
+    # bytecode (load_checkpoint hardcodes weights_only=True internally -- there is no
+    # argument here that could turn it off) and must refuse a file that does not hash to
+    # what the SAME receipt already recorded (expected_sha256) -- both BEFORE torch.load
+    # ever opens it. Older receipts (pre-R9) have no checkpoint_sha256; `or None` skips
+    # the hash check for those.
     ckpt_sha_out: list[str] = []
     ck = load_checkpoint(
         train_receipt["checkpoint"],
         expected_sha256=train_receipt.get("checkpoint_sha256") or None,
         map_location=device,
-        weights_only=True,
         sha256_out=ckpt_sha_out,
     )
     model.load_state_dict(ck["model"])
