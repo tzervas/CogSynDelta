@@ -71,6 +71,16 @@ class Receipt:
     seconds: float = 0.0
     device: str = ""
     schema: str = SCHEMA
+    kind: str = ""
+    """A shape predicate finer than `stage`: e.g. `stage="eval"` covers both an fp32 pass
+    (`kind="eval"`) and a quantized-artifact pass (`kind="eval-quantized"`) -- same stage,
+    different provenance, different filename, and a reader (or a matrix harness selecting
+    a receipt by kind, never by "latest under this glob") must be able to tell them apart
+    without inspecting `provenance` or `artifacts`. Empty string means "not set" (a
+    receipt written before this field existed, or a stage with no finer distinction to
+    make); `write()` falls back to `stage` for the filename in that case, so this is
+    additive and every existing caller is unaffected.
+    """
 
     @property
     def passed(self) -> bool:
@@ -83,11 +93,17 @@ class Receipt:
         return bool(self.gates) and all(self.gates.values())
 
     def write(self, out_dir: Path) -> Path:
-        """Write to ``{out_dir}/{project}-{component}-{stage}-{timestamp}.json``."""
+        """Write to ``{out_dir}/{project}-{component}-{kind or stage}-{timestamp}.json``.
+
+        Uses `kind` when set (so `eval` and `eval-quantized` land under distinguishable
+        filenames and can never glob-collide) and falls back to `stage` otherwise --
+        every receipt written before `kind` existed named the file this same way.
+        """
         out_dir.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
         p = self.producer
-        path = out_dir / f"{p.project}-{p.component}-{self.stage}-{stamp}.json"
+        segment = self.kind or self.stage
+        path = out_dir / f"{p.project}-{p.component}-{segment}-{stamp}.json"
         path.write_text(json.dumps(asdict(self), indent=2, default=str) + "\n")
         return path
 
@@ -124,6 +140,10 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             started_utc=raw.get("started_utc", ""),
             seconds=float(raw.get("seconds", 0.0)),
             device=raw.get("device", ""),
+            # A producer that wrote `kind` directly (csd-benchmark.py's fp32/quantized
+            # eval receipts) is trusted; one that did not falls back to `stage`, matching
+            # `write()`'s own filename fallback.
+            kind=raw.get("kind") or raw.get("stage", "unknown"),
         )
 
     component = raw.get("region")
@@ -135,6 +155,7 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
         return Receipt(
             producer=Producer("cogsyndelta", component, "dense-transformer"),
             stage="quantize",
+            kind=raw.get("kind") or "quant",
             metrics={
                 "metric": _num(raw.get("quantized_metric")) or 0.0,
                 "compression_ratio": _num(raw.get("compression_ratio")) or 0.0,
@@ -173,6 +194,7 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
                 "cogsyndelta", component, "i-jepa" if visual else "dense-transformer"
             ),
             stage="pretrain",
+            kind=raw.get("kind") or "train",
             metrics={k: v for k, v in ((k, _num(v)) for k, v in held.items()) if v is not None},
             baseline={k: v for k, v in ((k, _num(v)) for k, v in base.items()) if v is not None},
             gates=dict(raw.get("beats_untrained") or {}),
