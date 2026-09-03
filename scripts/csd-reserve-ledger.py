@@ -41,20 +41,47 @@ receipt is now trustworthy -- W1b's job, not this one -- it only makes sure the 
 (W2b) can never admit a row of ambiguous aqua_rat provenance while that receipt is
 missing.
 
-A NOTE ON A FILE THIS SCRIPT DELIBERATELY IGNORES
-`reason/aqua_rat-raw/derived/sample-4982-seed0.parquet` exists on disk next to the source
-and looks, at a glance, like a pre-computed draw R. It is not: its own MANIFEST.json
-records `numpy Generator(PCG64).permutation(n)[:N_SAMPLE]` as its sampling method, not
-`cogsyndelta.corpus.reservoir_sample` + `sampling_rng` -- a different RNG and a different
-algorithm from what `load_pairs` actually runs, so treating it as draw R would recover the
-wrong 4,982 rows with high confidence. This script never reads it; it recomputes draw R
-from `load_pairs` itself and records the derived file's presence as a warning only (see
-`_note_decoy_derived_sample`).
+A THIRD, DATED CANDIDATE DRAW -- MEASURED, SURFACED, AND DELIBERATELY NOT BURNED HERE
+`reason/aqua_rat-raw/derived/sample-4982-seed0.parquet` exists on disk next to the source.
+It is not draw R: its own MANIFEST.json records `numpy Generator(PCG64).permutation(n)
+[:N_SAMPLE]` as its sampling method, not `cogsyndelta.corpus.reservoir_sample` +
+`sampling_rng` -- a different RNG and a different algorithm from what `load_pairs` runs
+today. THAT observation alone does not settle whether `reason` consumed it: the file's
+MANIFEST.json is timestamped 2026-09-02T23:05:45Z -- 27 minutes BEFORE `c42203c`
+(23:32:52Z) and 36 minutes before the 4,982 cap literal was even added to
+`scripts/csd-train-all.py` (`b9a082e`, 23:41:03Z) -- making it the strongest DATED artefact
+on disk bearing on check (iv), and a live hypothesis for what `reason` actually consumed,
+not a decoy this script gets to dismiss by construction. Measured against the real corpus:
+its 4,982 non-empty pairs overlap `fingerprints(R) UNION fingerprints(P)` in only 585 rows;
+the other 4,397 are certified CLEAN by this ledger today. `evaluate_third_draw_candidate`
+computes and records this every run (never trusted as truth, always measured), and
+`establish_code_revision` folds its mtime into check (iv)'s evidence so "established:
+false" never again means "this evidence doesn't exist" when it does.
+
+**This script does not burn it.** Doing so would take the union to at most 14,946 of
+97,467 -- past DEC-42's stated `<= 9,964` (`<= 2 * CAP`) -- which re-derives every number
+downstream of it in Section 5.1 (the pool table, the B1 accounting) and Section 9.2. That
+is an operator decision, not a code fix this script gets to make unilaterally. What it
+does instead: measure the overlap every run, write it into the manifest under
+`third_draw_candidate` with `operator_decision_required: true`, and refuse to exit quietly
+-- `main()` prints an unmissable banner and returns a distinct, non-zero exit code (`3`)
+unless run with `--acknowledge-third-draw-candidate`, which records that an operator has
+seen this specific evidence and lets the run proceed at exit `0` while changing nothing
+about what gets burned.
 
 Usage:
     scripts/csd-reserve-ledger.py                       # write data/reserve/burned-aqua_rat.jsonl
     scripts/csd-reserve-ledger.py --corpus-root /path    # override root discovery
     scripts/csd-reserve-ledger.py --out /tmp/x.jsonl     # write elsewhere (tests use this)
+    scripts/csd-reserve-ledger.py --acknowledge-third-draw-candidate
+                                                          # required for exit 0 once an
+                                                          # operator has ruled on the
+                                                          # candidate above
+
+Exit codes: 0 ok; 1 REFUSED (a DEC-42 check failed -- see stderr); 2 corpus root or
+shards not found; 3 the ledger WAS written but a third, dated candidate draw sits
+unacknowledged -- rerun with --acknowledge-third-draw-candidate once an operator has
+ruled on it (see the manifest's `third_draw_candidate`).
 """
 
 from __future__ import annotations
@@ -97,12 +124,33 @@ C42203C_COMMIT_TIME_UTC = "2026-09-02T23:32:52+00:00"
 UTC. This is the DELIBERATE correctness change (prefix -> reservoir sampling) that makes
 which draw the `reason` run used ambiguous; see the module docstring."""
 
+B9A082E_SHA = "b9a082ed4e170401a90ac10894d3855484a156c3"
+B9A082E_COMMIT_TIME_UTC = "2026-09-02T23:41:03+00:00"
+"""`git show -s --format='%H %ci' b9a082e` -> `2026-09-02 19:41:03 -0400`, converted to
+UTC. This is the commit that FIRST adds the 4,982 cap literal to
+`scripts/csd-train-all.py`'s `REGIONS["reason"]` -- see the module docstring's "A THIRD,
+DATED CANDIDATE DRAW" section for why this timestamp matters."""
+
+DECOY_MANIFEST_REL = Path("reason") / "aqua_rat-raw" / "derived" / "MANIFEST.json"
+DECOY_PARQUET_REL = Path("reason") / "aqua_rat-raw" / "derived" / "sample-4982-seed0.parquet"
+
 
 class LedgerGateError(ValueError):
     """Raised when a ledger does not cover every row of BOTH DEC-42 draws.
 
     A ledger built from one draw alone is a FAIL, not a partial pass -- construct one and
     confirm this fires; see tests/test_reserve_ledger.py.
+    """
+
+
+class SeedInferenceError(ValueError):
+    """Raised when surviving receipts DISAGREE on `config.seed` -- DEC-42 check (iii).
+
+    Section 5.1: "If (i), (ii) or (iii) fails, the write-off stands and this section
+    reverts." Absence of any surviving receipt is a separate, non-blocking case (mirrors
+    check (iv)'s "record it, don't assume it" -- see `infer_seed`'s docstring); this is
+    raised only when receipts exist and contradict each other, which means the uniform
+    `cfg.seed` assumption `infer_seed` and every other check leans on is false.
     """
 
 
@@ -197,20 +245,32 @@ def _iso_utc(mtime: float) -> str:
     return _dt.datetime.fromtimestamp(mtime, tz=_dt.UTC).isoformat()
 
 
+def _epoch(iso: str) -> float:
+    from datetime import datetime
+
+    return datetime.fromisoformat(iso).timestamp()
+
+
 def establish_code_revision(
-    receipts_dir: Path = RECEIPTS_DIR, region: str = REGION
+    receipts_dir: Path = RECEIPTS_DIR,
+    region: str = REGION,
+    corpus_root: Path | None = None,
 ) -> dict[str, Any]:
     """DEC-42 check (iv), the one that can fail: which code revision produced the
     `region` run. Looks for a receipt (`{region}-*.json`) or a checkpoint
     (`{region}-checkpoints/`) under `receipts_dir` and compares its mtime against
-    `C42203C_COMMIT_TIME_UTC`. When neither exists -- true for `reason` today; verified
-    live, not assumed -- records that explicitly. "Absence of evidence must not become
-    the evidence" (§5.1): the caller burns the union regardless of this function's
-    result.
+    `C42203C_COMMIT_TIME_UTC`. When `corpus_root` is given, ALSO looks for
+    `DECOY_MANIFEST_REL` under it and folds its mtime into `evidence` as a distinct
+    `kind` -- it is not a `region` receipt or checkpoint, but it IS a dated artefact
+    bearing on which code revision ran (see the module docstring's "A THIRD, DATED
+    CANDIDATE DRAW" section), and it must never be left out of this function's own
+    evidence just because it does not fit the receipt/checkpoint shape. "Absence of
+    evidence must not become the evidence" (§5.1) cuts both ways: this function must not
+    report `established: False` while sitting on evidence it simply didn't look at.
+    The caller burns the union regardless of this function's result -- check (iv) is
+    the one check DEC-42 explicitly allows to proceed unestablished.
     """
-    from datetime import datetime
-
-    c42203c_epoch = datetime.fromisoformat(C42203C_COMMIT_TIME_UTC).timestamp()
+    c42203c_epoch = _epoch(C42203C_COMMIT_TIME_UTC)
     receipts = sorted(receipts_dir.glob(f"{region}-*.json"))
     checkpoints_dir = receipts_dir / f"{region}-checkpoints"
     checkpoints = sorted(checkpoints_dir.glob("*")) if checkpoints_dir.is_dir() else []
@@ -219,20 +279,43 @@ def establish_code_revision(
         mtime = p.stat().st_mtime
         evidence.append(
             {
+                "kind": "reason_receipt" if p in receipts else "reason_checkpoint",
                 "path": str(p),
                 "mtime_utc": _iso_utc(mtime),
                 "before_c42203c": mtime < c42203c_epoch,
             }
         )
+    if corpus_root is not None:
+        decoy_manifest = corpus_root / DECOY_MANIFEST_REL
+        if decoy_manifest.is_file():
+            mtime = decoy_manifest.stat().st_mtime
+            evidence.append(
+                {
+                    "kind": "third_draw_candidate_manifest",
+                    "path": str(decoy_manifest),
+                    "mtime_utc": _iso_utc(mtime),
+                    "before_c42203c": mtime < c42203c_epoch,
+                    "before_b9a082e_cap_introduced": mtime < _epoch(B9A082E_COMMIT_TIME_UTC),
+                    "note": (
+                        "NOT a `region` receipt or checkpoint -- a derived-sample "
+                        "MANIFEST.json under the corpus root, dated before BOTH "
+                        "c42203c and the commit that introduced the cap literal. See "
+                        "`third_draw_candidate` elsewhere in this manifest for the "
+                        "measured row overlap; an operator decision is required "
+                        "before this evidence can change what gets burned."
+                    ),
+                }
+            )
     if not evidence:
         return {
             "established": False,
             "note": (
-                f"no {region!r} receipt under {receipts_dir} ({region}-*.json) and no "
-                f"{checkpoints_dir} directory -- the {region} receipt was deleted (see "
-                f"W1b) and no checkpoint survives it either. The code revision the "
-                f"{region} run used cannot be determined from artefacts on disk; "
-                f"recorded as such rather than assumed."
+                f"no {region!r} receipt under {receipts_dir} ({region}-*.json), no "
+                f"{checkpoints_dir} directory, and (when corpus_root was searched) no "
+                f"third-draw-candidate manifest either -- the {region} receipt was "
+                f"deleted (see W1b) and nothing else on disk dates the run. The code "
+                f"revision the {region} run used cannot be determined from artefacts "
+                f"on disk; recorded as such rather than assumed."
             ),
             "c42203c_sha": C42203C_SHA,
             "c42203c_commit_time_utc": C42203C_COMMIT_TIME_UTC,
@@ -241,10 +324,12 @@ def establish_code_revision(
     return {
         "established": True,
         "note": (
-            f"evidence exists for {region!r} -- see `evidence` for each artefact's mtime "
-            f"against c42203c; a human still has to weigh whether it settles which "
-            f"sampling method ran (a preserved-after-the-fact commit does not date the "
-            f"run that produced it -- §5.1)."
+            f"evidence exists bearing on {region!r}'s code revision -- see `evidence` "
+            f"for each artefact's `kind` and mtime against c42203c; a human still has "
+            f"to weigh whether it settles which sampling method ran (a "
+            f"preserved-after-the-fact commit does not date the run that produced it "
+            f"-- §5.1). `established: True` here means evidence exists to weigh, NOT "
+            f"that the question is settled."
         ),
         "c42203c_sha": C42203C_SHA,
         "c42203c_commit_time_utc": C42203C_COMMIT_TIME_UTC,
@@ -281,35 +366,108 @@ def infer_seed(receipts_dir: Path = RECEIPTS_DIR, expected: int = DEFAULT_SEED) 
 
 
 def _note_decoy_derived_sample(root: Path) -> dict[str, Any] | None:
-    """Records, but never trusts, `.../aqua_rat-raw/derived/sample-4982-seed0.parquet` if
-    present -- see the module docstring. Returns `None` when there is nothing to note."""
-    manifest_path = root / "reason" / "aqua_rat-raw" / "derived" / "MANIFEST.json"
+    """Reads `DECOY_MANIFEST_REL`'s DECLARED sampling method and mtime, if present, under
+    `root`. Returns `None` when there is nothing to note. This function only reports what
+    the file DECLARES about itself -- it does not measure the file's actual rows (see
+    `evaluate_third_draw_candidate` for that) and it does NOT decide whether the file is
+    irrelevant. `matches_production_reservoir_algorithm: False` means only that this file
+    was not produced by `reservoir_sample` + `sampling_rng` -- it does NOT mean the
+    `reason` run could not have consumed it by some other, undocumented path; that
+    inference was the bug this function used to make (see the module docstring's "A
+    THIRD, DATED CANDIDATE DRAW" section)."""
+    manifest_path = root / DECOY_MANIFEST_REL
     if not manifest_path.is_file():
         return None
+    mtime = manifest_path.stat().st_mtime
     try:
         manifest = json.loads(manifest_path.read_text())
+        readable = True
     except (OSError, json.JSONDecodeError):
-        return {
-            "path": str(manifest_path),
-            "note": "present but unreadable; ignored either way -- this script never reads the sample itself",
-        }
-    method = manifest.get("sampling_method", "")
+        manifest, readable = {}, False
+    method = manifest.get("sampling_method", "") if readable else ""
     is_production_method = "reservoir_sample" in method or "Algorithm R" in method
     return {
         "path": str(manifest_path),
+        "readable": readable,
         "declared_sampling_method": method,
-        "matches_production_algorithm": is_production_method,
+        "matches_production_reservoir_algorithm": is_production_method,
+        "declared_seed": manifest.get("seed") if readable else None,
+        "declared_n_sampled_rows": manifest.get("n_sampled_rows") if readable else None,
+        "mtime_utc": _iso_utc(mtime),
+        "before_c42203c": mtime < _epoch(C42203C_COMMIT_TIME_UTC),
+        "before_b9a082e_cap_introduced": mtime < _epoch(B9A082E_COMMIT_TIME_UTC),
         "note": (
-            "found and IGNORED -- this script always recomputes draw R from "
-            "cogsyndelta.regions.pretrain.load_pairs rather than reading this file"
-            if is_production_method
+            "declared sampling method does not match production's "
+            "reservoir_sample+sampling_rng, so this file is not draw R BY CONSTRUCTION -- "
+            "but its mtime predates both c42203c and the commit that introduced the "
+            "4,982 cap literal, so that alone does not settle whether `reason` consumed "
+            "it by some other, undocumented path. See `evaluate_third_draw_candidate` "
+            "for the measured row overlap against this ledger's union; resolving what "
+            "this file was is an OPERATOR DECISION."
+            if not is_production_method
             else (
-                "found and IGNORED -- its declared sampling method does not match "
-                "production's reservoir_sample+sampling_rng, so it is not draw R under "
-                "any hypothesis this script tests"
+                "declares production's reservoir_sample algorithm; this script still "
+                "recomputes draw R from cogsyndelta.regions.pretrain.load_pairs directly "
+                "rather than trusting a declared method on a file it did not produce."
             )
         ),
     }
+
+
+def evaluate_third_draw_candidate(
+    root: Path,
+    union: set[str],
+) -> dict[str, Any] | None:
+    """Measures `DECOY_PARQUET_REL` against this ledger's `union` -- the honest version of
+    what `_note_decoy_derived_sample` used to skip. Returns `None` when there is nothing
+    on disk to measure (no manifest, or a manifest with no matching parquet). Never
+    changes `union`: burning this file is an operator decision, not something this
+    function does on its own -- see the module docstring's "A THIRD, DATED CANDIDATE
+    DRAW" section. Requires `pyarrow` (already a hard dependency for parquet shards
+    elsewhere in this script).
+    """
+    note = _note_decoy_derived_sample(root)
+    if note is None:
+        return None
+    parquet_path = root / DECOY_PARQUET_REL
+    if not parquet_path.is_file():
+        note["parquet_present"] = False
+        note["measured"] = False
+        return note
+    note["parquet_present"] = True
+
+    import pyarrow.parquet as pq
+
+    from cogsyndelta.eval import pair_fingerprint
+
+    table = pq.read_table(parquet_path, columns=list(COLUMNS))
+    col_a = table.column(COLUMNS[0]).to_pylist()
+    col_b = table.column(COLUMNS[1]).to_pylist()
+    pairs = [(a, b) for a, b in zip(col_a, col_b, strict=True) if a and b]
+    fps = [pair_fingerprint(a, b) for a, b in pairs]
+    covered = sum(1 for fp in fps if fp in union)
+    not_covered = len(fps) - covered
+    union_if_burned = len(union | set(fps))
+
+    note["measured"] = True
+    note["rows_total"] = len(col_a)
+    note["rows_non_empty_pairs"] = len(pairs)
+    note["rows_unique_fingerprints"] = len(set(fps))
+    note["rows_covered_by_current_union"] = covered
+    note["rows_certified_clean_by_this_ledger_today"] = not_covered
+    note["union_if_burned"] = union_if_burned
+    note["dec42_stated_union_cap"] = 2 * CAP
+    note["burning_it_would_exceed_dec42_stated_cap"] = union_if_burned > 2 * CAP
+    note["operator_decision_required"] = not_covered > 0
+    note["note"] += (
+        f" MEASURED against the real corpus: {len(pairs)} non-empty pairs, of which "
+        f"{covered} already fall inside this ledger's union and {not_covered} do not -- "
+        f"those {not_covered} rows are certified CLEAN by this ledger today. Burning "
+        f"them would take the union to {union_if_burned}, "
+        f"{'past' if note['burning_it_would_exceed_dec42_stated_cap'] else 'within'} "
+        f"DEC-42's stated <= {2 * CAP}."
+    )
+    return note
 
 
 def build_ledger(
@@ -325,10 +483,14 @@ def build_ledger(
     Raises:
         RuntimeError: either draw is not reproducible across two computations (DEC-42
             check (ii)).
-        LedgerGateError: the union does not cover every row of both draws (should be
-            structurally impossible given this function's own construction -- this is
-            the belt to `verify_gate`'s braces, and its message would mean this
-            function's own union logic is broken, not that the corpus is ambiguous).
+        SeedInferenceError: surviving receipts disagree on `config.seed` (DEC-42 check
+            (iii)) -- see `SeedInferenceError`'s docstring for why absence of receipts
+            is a different, non-blocking case.
+        LedgerGateError: the union does not cover every row of both draws AT THE
+            REQUESTED `cap` -- gated against `cap` itself, not against however many rows
+            a draw actually returned, so a short/truncated/partial draw (bad mount,
+            corrupt shard, wrong --corpus-root) cannot self-certify by shrinking its own
+            target.
     """
     from cogsyndelta.corpus import CORPUS_FINGERPRINT_SCHEME, fingerprint_corpus
     from cogsyndelta.eval import pair_fingerprint
@@ -352,6 +514,19 @@ def build_ledger(
             "to build a ledger from a non-reproducible draw."
         )
 
+    # DEC-42 check (iii): surviving receipts must not disagree on `config.seed`. Absence
+    # of any surviving receipt is NOT the same as disagreement -- see
+    # `SeedInferenceError`'s docstring -- so this only raises when there IS conflicting
+    # evidence, exactly the case DEC-42 says must revert the write-off.
+    seed_info = infer_seed(receipts_dir, expected=seed)
+    if seed_info["surviving_receipts_seed"] and not seed_info["all_surviving_receipts_agree"]:
+        raise SeedInferenceError(
+            f"surviving receipts disagree on config.seed: "
+            f"{seed_info['surviving_receipts_seed']!r} -- DEC-42 check (iii) requires "
+            f"they agree before the uniform seed={seed!r} assumption behind draw R can "
+            f"be trusted. Refusing to build a ledger on a contradicted assumption."
+        )
+
     fps_r = [pair_fingerprint(a, b) for a, b in r_first]
     fps_p = [pair_fingerprint(a, b) for a, b in p_first]
     set_r, set_p = set(fps_r), set(fps_p)
@@ -367,9 +542,17 @@ def build_ledger(
         for fp in sorted(union)
     ]
 
-    covered_r, covered_p = verify_gate(union, r_first, p_first, cap=len(r_first))
+    # Gated against the REQUESTED cap, not against len(r_first)/len(p_first) -- a draw
+    # that came back short (partial mount, truncated/replaced parquet, wrong
+    # --corpus-root) must fail this, not silently redefine its own target. See the
+    # LedgerGateError docstring in this function's own Raises: section.
+    covered_r, covered_p = verify_gate(union, r_first, p_first, cap=cap)
 
     corpus_fp = fingerprint_corpus(shards, columns=COLUMNS)
+
+    third_draw_candidate = (
+        evaluate_third_draw_candidate(corpus_root, union) if corpus_root is not None else None
+    )
 
     manifest: dict[str, Any] = {
         "region": REGION,
@@ -377,7 +560,7 @@ def build_ledger(
         "shards": shards,
         "columns": list(COLUMNS),
         "cap": cap,
-        "seed": infer_seed(receipts_dir, expected=seed),
+        "seed": seed_info,
         "corpus_fingerprint": corpus_fp,
         "corpus_fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
         "draw_r_rows": len(r_first),
@@ -386,18 +569,21 @@ def build_ledger(
         "draw_p_unique_fingerprints": len(set_p),
         "union_size": len(union),
         "intersection_size": len(set_r & set_p),
-        "code_revision": establish_code_revision(receipts_dir, region=REGION),
+        "code_revision": establish_code_revision(
+            receipts_dir, region=REGION, corpus_root=corpus_root
+        ),
         "gate": {
-            "cap": len(r_first),
+            "cap": cap,
             "draw_r_rows_covered": covered_r,
             "draw_p_rows_covered": covered_p,
             "passed": True,
         },
+        "third_draw_candidate": third_draw_candidate,
+        "operator_decision_required": bool(
+            third_draw_candidate is not None
+            and third_draw_candidate.get("operator_decision_required")
+        ),
     }
-    if corpus_root is not None:
-        decoy = _note_decoy_derived_sample(corpus_root)
-        if decoy is not None:
-            manifest["derived_sample_on_disk"] = decoy
 
     return {"rows": rows, "manifest": manifest}
 
@@ -435,6 +621,18 @@ def main(argv: list[str] | None = None) -> int:
         "--cap", type=int, default=CAP, help="rows per draw (default: production's 4,982)"
     )
     parser.add_argument("--receipts-dir", type=Path, default=RECEIPTS_DIR)
+    parser.add_argument(
+        "--acknowledge-third-draw-candidate",
+        action="store_true",
+        help=(
+            "required to exit 0 when a third, dated candidate draw is found on disk "
+            "(see the module docstring's 'A THIRD, DATED CANDIDATE DRAW' section) -- "
+            "records that an operator has seen the measured evidence in "
+            "third_draw_candidate before this run is treated as final. Without it, a "
+            "run that finds such evidence still writes the ledger (for review) but "
+            "exits 3, not 0."
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -456,9 +654,12 @@ def main(argv: list[str] | None = None) -> int:
         result = build_ledger(
             shards, seed=args.seed, cap=args.cap, receipts_dir=args.receipts_dir, corpus_root=root
         )
-    except (RuntimeError, LedgerGateError) as exc:
+    except (RuntimeError, LedgerGateError, SeedInferenceError) as exc:
         print(f"csd-reserve-ledger: REFUSED -- {exc}", file=sys.stderr)
         return 1
+
+    if args.acknowledge_third_draw_candidate and result["manifest"]["third_draw_candidate"]:
+        result["manifest"]["third_draw_candidate"]["acknowledged_by_operator_flag"] = True
 
     manifest_path = write_ledger(args.out, result)
     m = result["manifest"]
@@ -473,6 +674,33 @@ def main(argv: list[str] | None = None) -> int:
         f"  manifest: {manifest_path}",
         file=sys.stderr,
     )
+
+    if m["operator_decision_required"] and not args.acknowledge_third_draw_candidate:
+        tdc = m["third_draw_candidate"]
+        print(
+            "\n"
+            "=========================================================================\n"
+            "csd-reserve-ledger: OPERATOR DECISION REQUIRED -- NOT ACKNOWLEDGED\n"
+            "=========================================================================\n"
+            f"A third, dated candidate draw exists on disk: {tdc['path']}\n"
+            f"  mtime: {tdc['mtime_utc']}  (before c42203c: {tdc['before_c42203c']}, "
+            f"before b9a082e's cap literal: {tdc['before_b9a082e_cap_introduced']})\n"
+            f"  {tdc['rows_non_empty_pairs']} non-empty pairs measured; "
+            f"{tdc['rows_covered_by_current_union']} already in this ledger's union, "
+            f"{tdc['rows_certified_clean_by_this_ledger_today']} are NOT -- this ledger "
+            f"is certifying those rows CLEAN today.\n"
+            f"  Burning them would take the union to {tdc['union_if_burned']} "
+            f"({'past' if tdc['burning_it_would_exceed_dec42_stated_cap'] else 'within'} "
+            f"DEC-42's stated <= {tdc['dec42_stated_union_cap']}), which re-derives "
+            "Section 5.1 and 9.2 -- this script does not decide that on its own.\n"
+            "The ledger above WAS written, so the evidence is available to review, but "
+            "this run is NOT treated as final: rerun with "
+            "--acknowledge-third-draw-candidate once an operator has ruled on it.\n"
+            "=========================================================================",
+            file=sys.stderr,
+        )
+        return 3
+
     return 0
 
 

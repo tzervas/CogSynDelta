@@ -345,27 +345,271 @@ def test_infer_seed_flags_disagreement(tmp_path: Path) -> None:
     assert result["all_surviving_receipts_agree"] is False
 
 
+def test_build_ledger_refuses_when_surviving_receipts_disagree_on_seed(
+    shard: list[str], tmp_path: Path
+) -> None:
+    """BLOCKING review finding: `infer_seed`'s `all_surviving_receipts_agree` was computed
+    and never read anywhere. CONSTRUCTED exactly as the review did: a receipts dir with
+    `config.seed=0` and `config.seed=7`. Before the fix, `build_ledger` returned normally
+    with `gate.passed=True`; DEC-42 5.1 is explicit that a check-(iii) failure must revert
+    the write-off, not pass silently."""
+    receipts = tmp_path / "receipts"
+    receipts.mkdir()
+    (receipts / "code-x.json").write_text(json.dumps({"config": {"seed": 0}}))
+    (receipts / "odd-x.json").write_text(json.dumps({"config": {"seed": 7}}))
+
+    with pytest.raises(ledger.SeedInferenceError, match="disagree"):
+        ledger.build_ledger(shard, seed=0, cap=_CAP, receipts_dir=receipts)
+
+
+def test_build_ledger_proceeds_when_no_receipts_survive_at_all(
+    shard: list[str], tmp_path: Path
+) -> None:
+    """Absence of evidence for check (iii) is NOT the same as disagreement -- an empty or
+    missing receipts dir must not block the way a genuine conflict does."""
+    result = ledger.build_ledger(shard, seed=0, cap=_CAP, receipts_dir=tmp_path / "no-receipts")
+    assert result["manifest"]["seed"]["surviving_receipts_seed"] == {}
+
+
 # ---------------------------------------------------------------------------------------
-# The decoy on disk: a derived sample must never be trusted as draw R.
+# The gate must be checked against the REQUESTED cap, not against whatever a draw
+# happened to return -- a short/truncated draw must fail, not redefine its own target.
 # ---------------------------------------------------------------------------------------
 
 
-def test_decoy_derived_sample_with_wrong_algorithm_is_flagged_and_not_trusted(
+def test_gate_fails_on_a_short_draw_at_the_production_cap(shard: list[str]) -> None:
+    """BLOCKING review finding, reproduced exactly: a shard with far fewer rows than the
+    production cap (4,982), gated at the production cap. Before the fix,
+    `verify_gate(union, r_first, p_first, cap=len(r_first))` rebound its own target to
+    however many rows the short draw returned, so this passed and wrote a 30-row ledger
+    self-certified against a cap of 30 while the manifest's top-level `cap` still said
+    4982. A partial mount, truncated shard, or wrong --corpus-root must be caught here."""
+    with pytest.raises(ledger.LedgerGateError):
+        ledger.build_ledger(shard, seed=0, cap=4982, receipts_dir=Path("/nonexistent-receipts-dir"))
+
+
+def test_build_ledger_gate_cap_matches_requested_cap_not_draw_length(shard: list[str]) -> None:
+    """At a cap the shard CAN satisfy, the gate's recorded `cap` must be the requested
+    cap -- not silently substituted for `len(r_first)` (which happens to equal it here,
+    but for the right reason: draws are computed at `cap` themselves)."""
+    result = ledger.build_ledger(shard, seed=0, cap=_CAP, receipts_dir=Path("/nonexistent"))
+    assert result["manifest"]["gate"]["cap"] == _CAP
+    assert result["manifest"]["cap"] == _CAP
+
+
+# ---------------------------------------------------------------------------------------
+# The third, dated candidate draw: measured and surfaced, never silently dismissed and
+# never silently burned. See the module docstring's "A THIRD, DATED CANDIDATE DRAW".
+# ---------------------------------------------------------------------------------------
+
+
+def _write_decoy(root: Path, *, pairs: list[tuple[str, str]] | None = None) -> None:
+    derived = root / "reason" / "aqua_rat-raw" / "derived"
+    derived.mkdir(parents=True, exist_ok=True)
+    (derived / "MANIFEST.json").write_text(
+        json.dumps(
+            {
+                "sampling_method": "numpy Generator(PCG64).permutation(n)[:N_SAMPLE]",
+                "seed": 0,
+                "n_sampled_rows": len(pairs) if pairs is not None else 4982,
+            }
+        )
+    )
+    if pairs is not None:
+        questions = [q for q, _ in pairs]
+        rationales = [r for _, r in pairs]
+        pq.write_table(
+            pa.table({"question": questions, "rationale": rationales}),
+            derived / "sample-4982-seed0.parquet",
+        )
+
+
+def test_decoy_note_no_longer_claims_the_hypothesis_set_settles_relevance(
     tmp_path: Path,
 ) -> None:
-    derived = tmp_path / "reason" / "aqua_rat-raw" / "derived"
-    derived.mkdir(parents=True)
-    (derived / "MANIFEST.json").write_text(
-        json.dumps({"sampling_method": "numpy Generator(PCG64).permutation(n)[:N]"})
-    )
+    """The review's CRITICAL finding: the old note text ('not draw R under any hypothesis
+    this script tests') was circular -- the hypothesis set is exactly what W2a exists to
+    establish. The new note must not claim non-membership in a fixed hypothesis set
+    settles the file's relevance, and must say a human has to decide."""
+    _write_decoy(tmp_path)
     note = ledger._note_decoy_derived_sample(tmp_path)
     assert note is not None
-    assert note["matches_production_algorithm"] is False
-    assert "IGNORED" in note["note"]
+    assert note["matches_production_reservoir_algorithm"] is False
+    assert "OPERATOR DECISION" in note["note"]
+    assert "any hypothesis this script tests" not in note["note"]
 
 
-def test_decoy_derived_sample_absent_is_silently_fine(tmp_path: Path) -> None:
+def test_decoy_note_records_dating_against_both_commits(tmp_path: Path) -> None:
+    _write_decoy(tmp_path)
+    note = ledger._note_decoy_derived_sample(tmp_path)
+    assert note is not None
+    # The fixture is written "now" (test run time), which is after both commits -- this
+    # asserts the fields exist and are computed, not a specific value; the real corpus's
+    # dating (before both) is exercised by the integration test below.
+    assert "before_c42203c" in note
+    assert "before_b9a082e_cap_introduced" in note
+
+
+def test_decoy_absent_is_silently_fine(tmp_path: Path) -> None:
     assert ledger._note_decoy_derived_sample(tmp_path) is None
+    assert ledger.evaluate_third_draw_candidate(tmp_path, set()) is None
+
+
+def test_evaluate_third_draw_candidate_measures_overlap_against_the_union(
+    shard: list[str], tmp_path: Path
+) -> None:
+    """Builds a real ledger union from the synthetic shard, then a decoy file with rows
+    partly inside and partly outside it, and checks the measured counts are exact --
+    the same measurement the review ran by hand against the real corpus (585 covered /
+    4,397 not, out of 4,982)."""
+    draw_r = ledger.draw_reservoir(shard, seed=0, cap=_CAP)
+    draw_p = ledger.draw_prefix(shard, cap=_CAP)
+    union = set(ledger.fingerprint_pairs(draw_r)) | set(ledger.fingerprint_pairs(draw_p))
+
+    # Two rows already in the union (won't move the "not covered" count), plus two
+    # entirely new rows the union has never seen.
+    covered_pair = next(iter(draw_r))
+    new_pairs = [
+        ("decoy question 1", "decoy rationale 1"),
+        ("decoy question 2", "decoy rationale 2"),
+    ]
+    _write_decoy(tmp_path, pairs=[covered_pair, covered_pair, *new_pairs])
+
+    note = ledger.evaluate_third_draw_candidate(tmp_path, union)
+    assert note is not None
+    assert note["measured"] is True
+    assert note["rows_non_empty_pairs"] == 4
+    assert note["rows_covered_by_current_union"] == 2
+    assert note["rows_certified_clean_by_this_ledger_today"] == 2
+    assert note["operator_decision_required"] is True
+    assert note["union_if_burned"] == len(union) + 2
+
+
+def test_evaluate_third_draw_candidate_no_uncovered_rows_does_not_require_a_decision(
+    shard: list[str], tmp_path: Path
+) -> None:
+    """If a candidate file's rows are ALL already inside the union, burning it would
+    change nothing, so there is nothing for an operator to decide."""
+    draw_r = ledger.draw_reservoir(shard, seed=0, cap=_CAP)
+    covered_pair = next(iter(draw_r))
+    _write_decoy(tmp_path, pairs=[covered_pair])
+
+    fps_r = set(ledger.fingerprint_pairs(draw_r))
+    note = ledger.evaluate_third_draw_candidate(tmp_path, fps_r)
+    assert note is not None
+    assert note["rows_certified_clean_by_this_ledger_today"] == 0
+    assert note["operator_decision_required"] is False
+
+
+def test_establish_code_revision_folds_in_the_decoy_manifest_as_evidence(
+    tmp_path: Path,
+) -> None:
+    """CRITICAL review finding: check (iv) reported `established: False` while a strong
+    dated artefact sat on disk unweighed. With `corpus_root` given, that artefact's mtime
+    must appear in `evidence`, and `established` must reflect that evidence exists (a
+    human still has to weigh it -- this does not mean the question is settled)."""
+    empty_receipts = tmp_path / "receipts"
+    empty_receipts.mkdir()
+    corpus_root = tmp_path / "corpus"
+    _write_decoy(corpus_root)
+
+    result = ledger.establish_code_revision(
+        empty_receipts, region="reason", corpus_root=corpus_root
+    )
+    assert result["established"] is True
+    kinds = [e["kind"] for e in result["evidence"]]
+    assert "third_draw_candidate_manifest" in kinds
+
+
+def test_establish_code_revision_still_absent_without_a_decoy_or_receipts(
+    tmp_path: Path,
+) -> None:
+    empty_receipts = tmp_path / "receipts"
+    empty_receipts.mkdir()
+    result = ledger.establish_code_revision(empty_receipts, region="reason", corpus_root=tmp_path)
+    assert result["established"] is False
+    assert result["evidence"] == []
+
+
+def test_build_ledger_flags_operator_decision_required_when_decoy_has_uncovered_rows(
+    shard: list[str], tmp_path: Path
+) -> None:
+    _write_decoy(tmp_path, pairs=[("brand new question", "brand new rationale")])
+
+    result = ledger.build_ledger(
+        shard, seed=0, cap=_CAP, receipts_dir=tmp_path / "no-receipts", corpus_root=tmp_path
+    )
+    assert result["manifest"]["operator_decision_required"] is True
+    assert (
+        result["manifest"]["third_draw_candidate"]["rows_certified_clean_by_this_ledger_today"] == 1
+    )
+
+
+def test_build_ledger_no_decoy_present_is_not_operator_decision_required(
+    shard: list[str], tmp_path: Path
+) -> None:
+    result = ledger.build_ledger(
+        shard, seed=0, cap=_CAP, receipts_dir=tmp_path / "no-receipts", corpus_root=tmp_path
+    )
+    assert result["manifest"]["operator_decision_required"] is False
+    assert result["manifest"]["third_draw_candidate"] is None
+
+
+def test_main_exits_3_and_still_writes_the_ledger_when_unacknowledged(
+    shard: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    corpus_root = tmp_path / "corpus"
+    aqua_dir = corpus_root / "reason" / "aqua_rat-raw"
+    aqua_dir.mkdir(parents=True)
+    _write_shard(aqua_dir / "train.parquet")
+    _write_decoy(corpus_root, pairs=[("brand new question", "brand new rationale")])
+
+    out = tmp_path / "ledger.jsonl"
+    rc = ledger.main(
+        [
+            "--corpus-root",
+            str(corpus_root),
+            "--out",
+            str(out),
+            "--cap",
+            str(_CAP),
+            "--receipts-dir",
+            str(tmp_path / "no-receipts"),
+        ]
+    )
+    assert rc == 3
+    assert out.exists()  # written for review despite the non-zero exit
+    manifest = json.loads(out.with_suffix(".jsonl.manifest.json").read_text())
+    assert manifest["operator_decision_required"] is True
+    assert "acknowledged_by_operator_flag" not in manifest["third_draw_candidate"]
+
+
+def test_main_exits_0_when_the_operator_acknowledges_the_candidate(
+    shard: list[str], tmp_path: Path
+) -> None:
+    corpus_root = tmp_path / "corpus"
+    aqua_dir = corpus_root / "reason" / "aqua_rat-raw"
+    aqua_dir.mkdir(parents=True)
+    _write_shard(aqua_dir / "train.parquet")
+    _write_decoy(corpus_root, pairs=[("brand new question", "brand new rationale")])
+
+    out = tmp_path / "ledger.jsonl"
+    rc = ledger.main(
+        [
+            "--corpus-root",
+            str(corpus_root),
+            "--out",
+            str(out),
+            "--cap",
+            str(_CAP),
+            "--receipts-dir",
+            str(tmp_path / "no-receipts"),
+            "--acknowledge-third-draw-candidate",
+        ]
+    )
+    assert rc == 0
+    manifest = json.loads(out.with_suffix(".jsonl.manifest.json").read_text())
+    assert manifest["third_draw_candidate"]["acknowledged_by_operator_flag"] is True
 
 
 # ---------------------------------------------------------------------------------------
@@ -442,6 +686,7 @@ def test_integration_real_aqua_rat_union_covers_both_draws_in_full(tmp_path: Pat
     assert m["draw_r_rows"] == ledger.CAP
     assert m["draw_p_rows"] == ledger.CAP
     assert m["gate"]["passed"] is True
+    assert m["gate"]["cap"] == ledger.CAP
     # DEC-42's stated worst case: at most 2 * CAP, i.e. no overlap at all.
     assert m["union_size"] <= 2 * ledger.CAP
     # And it should be a real recovery, not degenerate to one draw entirely.
@@ -451,6 +696,30 @@ def test_integration_real_aqua_rat_union_covers_both_draws_in_full(tmp_path: Pat
     ledger.write_ledger(write_target, result)
     lines = write_target.read_text().splitlines()
     assert len(lines) == m["union_size"]
+
+    # The third, dated candidate draw (see the module docstring's "A THIRD, DATED
+    # CANDIDATE DRAW"): report and check what the review measured by hand against this
+    # same real corpus -- 4,982 non-empty pairs, only 585 already inside R union P, so
+    # 4,397 are certified clean by this ledger today.
+    tdc = m["third_draw_candidate"]
+    print(
+        f"\n[integration] third-draw candidate: {tdc}"
+        if tdc is None
+        else (
+            f"\n[integration] third-draw candidate present={tdc['parquet_present']} "
+            f"measured={tdc['measured']} pairs={tdc.get('rows_non_empty_pairs')} "
+            f"covered={tdc.get('rows_covered_by_current_union')} "
+            f"not_covered={tdc.get('rows_certified_clean_by_this_ledger_today')} "
+            f"operator_decision_required={tdc.get('operator_decision_required')}"
+        )
+    )
+    if tdc is not None and tdc["measured"]:
+        assert tdc["rows_non_empty_pairs"] == 4982
+        assert tdc["rows_covered_by_current_union"] == 585
+        assert tdc["rows_certified_clean_by_this_ledger_today"] == 4397
+        assert tdc["operator_decision_required"] is True
+        assert m["operator_decision_required"] is True
+        assert tdc["burning_it_would_exceed_dec42_stated_cap"] is True
 
 
 @needs_real_corpus
@@ -462,7 +731,11 @@ def test_integration_ledger_write_is_idempotent_against_the_real_corpus(tmp_path
 
     out1 = tmp_path / "run1.jsonl"
     out2 = tmp_path / "run2.jsonl"
-    ledger.write_ledger(out1, ledger.build_ledger(shards, seed=0, receipts_dir=receipts_dir))
-    ledger.write_ledger(out2, ledger.build_ledger(shards, seed=0, receipts_dir=receipts_dir))
+    ledger.write_ledger(
+        out1, ledger.build_ledger(shards, seed=0, receipts_dir=receipts_dir, corpus_root=root)
+    )
+    ledger.write_ledger(
+        out2, ledger.build_ledger(shards, seed=0, receipts_dir=receipts_dir, corpus_root=root)
+    )
 
     assert out1.read_text() == out2.read_text()
