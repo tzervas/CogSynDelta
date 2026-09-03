@@ -1,7 +1,7 @@
 title = "CogSynDelta gitleaks config"
 
 [extend]
-# Keep every default rule; we only add one narrow allowlist entry below.
+# Keep every default rule; we only add narrow allowlist entries below.
 useDefault = true
 
 # fleet-security / gitleaks runs `gitleaks detect --source . --verbose --redact`
@@ -36,4 +36,38 @@ targetRules = ["generic-api-key"]
 regexTarget = "match"
 regexes = [
   '''gpt2_tokenizer\.json, vocab_size=50257''',
+]
+
+# fleet-security / gitleaks (PR #7, head 4d2d886) failed on one finding:
+#
+#   File:   src/cogsyndelta/regions/memory.py:175
+#   Commit: 6df1a68d34c65235f536b86983192cde29453265
+#   RuleID: generic-api-key
+#
+# The flagged text is a key=value-shaped substring inside prose --
+# `EVIDENCE_50_STEP_CONTROL_ARM`'s docstring reads: "...attributable to
+# token_loss_weight alone (control->token_only, decorr_weight=0.0
+# throughout that step)...", where `decorr_weight=0.0` is one of the three
+# control-arm loss weights the surrounding sentence is reporting (see
+# docs/design/evidence/w4-control-arm-2026-09-03/README.md), not a
+# credential. Same class of false positive as the tokenizer-load line
+# above: a low-entropy identifier=value pair the generic-api-key rule
+# can't distinguish from a real key. Entropy measured 3.73.
+#
+# Scoped narrower than the entry above on purpose, since this one is a
+# single source file rather than an evidence directory: `condition = "AND"`
+# requires BOTH the path AND the exact phrase to match, so this cannot
+# swallow an unrelated secret elsewhere in memory.py, and the regex is the
+# byte-identical phrase from the docstring, not a bare `decorr_weight=`
+# that could match a differently-valued (and potentially real) pair later.
+[[allowlists]]
+description = "generic-api-key false positive: decorr_weight=0.0 in EVIDENCE_50_STEP_CONTROL_ARM's docstring (src/cogsyndelta/regions/memory.py:175, commit 6df1a68d)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^src/cogsyndelta/regions/memory\.py$''',
+]
+regexes = [
+  '''token_only, decorr_weight=0\.0''',
 ]
