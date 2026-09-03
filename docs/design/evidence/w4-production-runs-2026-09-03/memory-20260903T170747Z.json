@@ -1,0 +1,475 @@
+{
+  "schema": "csd-pretrain-receipt/v1",
+  "region": "memory",
+  "recorded": "2026-09-03T17:07:47Z",
+  "method": "symmetric InfoNCE over in-batch negatives",
+  "corpus": {
+    "shards": [
+      "train.parquet"
+    ],
+    "fingerprint": "6fc0cf23ff8591ff2241278f82c001d2",
+    "fingerprint_scheme": "csd-corpus-fp/v2",
+    "pair_columns": [
+      "query",
+      "passage"
+    ],
+    "sources": {
+      "primary": 14131,
+      "anchor->positive": 314315,
+      "query->answer": 100231,
+      "question->answer": 400000
+    },
+    "cap_sampling": {
+      "method": "reservoir (Algorithm R), one pass over every row of each source",
+      "seed": 0
+    },
+    "train_pairs": 782959,
+    "holdout_pairs": 512,
+    "duplicates_removed": 45168
+  },
+  "graded_corpus": {
+    "name": "stsb-validation",
+    "shards": [
+      "validation-00000-of-00001.parquet"
+    ],
+    "fingerprint": "6ea4d7fb3871c869863dadcff4c675f7",
+    "columns": [
+      "sentence1",
+      "sentence2",
+      "score"
+    ],
+    "pairs_loaded": 1500,
+    "pairs_removed_as_train_positive": 2,
+    "pairs_evaluated": 1498,
+    "sentence_overlap_with_train": 0.146,
+    "sentence_overlap_note": "Shared SENTENCES, not shared pairs. Inherent to the corpus pairing: STS-B was partly built from the same SNLI data as AllNLI. No graded score leaks through it. The pairs that did leak were removed and counted above."
+  },
+  "contamination": {
+    "train_pairs_seen": 782997,
+    "train_pairs_removed": 38,
+    "eval_pairs": 512,
+    "gated_channels": [
+      "pair_exact",
+      "pair_content"
+    ],
+    "channels": {
+      "anchor_exact": {
+        "key": "the eval anchor, whitespace- and case-normalised. VACUOUS whenever the caller deduplicated on this same key -- reported so a zero here is never mistaken for evidence.",
+        "gated": false,
+        "eval_unique": 512,
+        "overlap": 0,
+        "eval_fraction_contaminated": 0.0,
+        "examples": []
+      },
+      "positive_exact": {
+        "key": "the eval POSITIVE, normalised. Anchor-only dedup never touches this side, so it can fire. Reported rather than gated: a passage shared across two genuinely different queries is normal in IR and only leaks if the queries are also close.",
+        "gated": false,
+        "eval_unique": 512,
+        "overlap": 133,
+        "eval_fraction_contaminated": 0.259765625,
+        "examples": [
+          "1 year old dog is how old in human years?",
+          "A black dog is running on the grass with a pink purse in its mouth.",
+          "A black man is posing for a photo with two other people, showing just their hands, points guns at him.",
+          "A black-and-white dog running in the water.",
+          "A blond dog runs through the grass."
+        ]
+      },
+      "pair_exact": {
+        "key": "the whole pair, order-independent. A held-out pair that is also a training pair in either direction -- symmetric InfoNCE trains both directions, so a swap is the same leak. Unambiguous memorisation.",
+        "gated": true,
+        "eval_unique": 512,
+        "overlap": 0,
+        "eval_fraction_contaminated": 0.0,
+        "examples": []
+      },
+      "anchor_content": {
+        "key": "the eval anchor's content-word SET (function words, order and repetition discarded). Catches the paraphrase family exact normalisation cannot see.",
+        "gated": false,
+        "eval_unique": 512,
+        "overlap": 43,
+        "eval_fraction_contaminated": 0.083984375,
+        "examples": [
+          "'This is where you work.'",
+          "1 coulomb is equals to how many electrons?",
+          "But it is possible?",
+          "People are walking along a sidewalk.",
+          "are intp and infj compatible?"
+        ]
+      },
+      "positive_content": {
+        "key": "the eval positive's content-word set.",
+        "gated": false,
+        "eval_unique": 511,
+        "overlap": 160,
+        "eval_fraction_contaminated": 0.3131115459882583,
+        "examples": [
+          "'That'll be your job, Mr. White.",
+          "'This is where you work.'",
+          "1 year old dog is how old in human years?",
+          "A baby dressed in a brown striped jacket sits on a bed smiling while holding a glow-stick.",
+          "A black dog is running on the grass with a pink purse in its mouth."
+        ]
+      },
+      "pair_content": {
+        "key": "BOTH sides content-word-identical to a training pair. Function-word paraphrase of an entire training example, which is memorisation with the wording changed.",
+        "gated": true,
+        "eval_unique": 512,
+        "overlap": 25,
+        "eval_fraction_contaminated": 0.048828125,
+        "examples": [
+          "are intp and infj compatible?",
+          "can you get pregnant on cycle day 10?",
+          "can you tell if someone blocked your iphone texts?",
+          "how are electromagnetic waves are different than mechanical waves?",
+          "how do i download photos from my icloud to my laptop?"
+        ]
+      }
+    },
+    "eval_duplicate_positives": 0
+  },
+  "config": {
+    "region": "memory",
+    "pair_columns": [
+      "query",
+      "passage"
+    ],
+    "extra_sources": [
+      {
+        "shards": [
+          "/mnt/fleet-datasets/csd/region/compress/all-nli/pair/train-00000-of-00001.parquet"
+        ],
+        "columns": [
+          "anchor",
+          "positive"
+        ],
+        "limit": 0
+      },
+      {
+        "shards": [
+          "/mnt/fleet-datasets/csd/region/retrieve/natural-questions/pair/train-00000-of-00001.parquet"
+        ],
+        "columns": [
+          "query",
+          "answer"
+        ],
+        "limit": 0
+      },
+      {
+        "shards": [
+          "/mnt/fleet-datasets/csd/region/retrieve/gooaq/pair/train-00000-of-00002.parquet",
+          "/mnt/fleet-datasets/csd/region/retrieve/gooaq/pair/train-00001-of-00002.parquet"
+        ],
+        "columns": [
+          "question",
+          "answer"
+        ],
+        "limit": 400000
+      }
+    ],
+    "steps": 4000,
+    "batch_size": 512,
+    "lr": 0.0004242640687119285,
+    "warmup_steps": 266,
+    "grad_clip": 1.0,
+    "checkpoint_every": 200,
+    "max_len": 96,
+    "seed": 0,
+    "bf16": true,
+    "device": "auto",
+    "eval_every": 666,
+    "holdout_pairs": 512,
+    "tokenizer_path": "/mnt/fleet-datasets/tritter/gpt2_tokenizer.json",
+    "out_dir": "/akula-data/session-backup-staging/w4-probes/w4-probe-control512",
+    "graded_shards": [
+      "/mnt/fleet-datasets/csd/region/compress/stsb/data/validation-00000-of-00001.parquet"
+    ],
+    "graded_columns": [
+      "sentence1",
+      "sentence2",
+      "score"
+    ],
+    "graded_name": "stsb-validation",
+    "allow_unfingerprinted_resume": false,
+    "token_loss_weight": 0.0,
+    "decorr_weight": 0.0,
+    "token_loss_mask_prob": 0.15,
+    "init_embedding_from": null,
+    "encoder": {
+      "vocab_size": 50257,
+      "dim": 256,
+      "depth": 4,
+      "n_heads": 4,
+      "max_len": 96,
+      "out_dim": null
+    },
+    "trainer_defaults": {
+      "steps": 4000,
+      "batch_size": 512,
+      "lr": 0.0004242640687119285,
+      "bf16": true,
+      "max_len": 96
+    }
+  },
+  "parameters": 16021248,
+  "checkpoint": "/akula-data/session-backup-staging/w4-probes/w4-probe-control512/memory-checkpoints/d96be64b/final.pt",
+  "checkpoint_sha256": "241b88284ef185f252343908c5e60203ba4736de21de6427766c1463acd2d035",
+  "device": "cuda",
+  "elapsed_s": 504.9,
+  "precision": {
+    "autocast": "bf16",
+    "requested_bf16": true,
+    "master_weights": "fp32",
+    "logits": "fp32 (forced in info_nce)",
+    "eval": "fp32"
+  },
+  "tokenisation": {
+    "mode": "pre-tokenised ragged corpus cache",
+    "prepare_s": 11.79,
+    "cache_dir": "/akula-data/session-backup-staging/w4-probes/w4-probe-control512/token-cache",
+    "train_tokens": 44605084,
+    "ragged_ratio": 0.2967
+  },
+  "resumed": false,
+  "resumed_from_step": 0,
+  "history": [
+    {
+      "step": 0.0,
+      "lr": 0.0,
+      "loss": 8.164764404296875,
+      "in_batch_acc": 0.001953125,
+      "chance": 0.001953125,
+      "emb_std": 0.01267267856746912,
+      "held_recall@1": 0.017578125,
+      "held_recall@10": 0.0234375,
+      "held_spearman": 0.0846139052938172
+    },
+    {
+      "step": 666.0,
+      "lr": 0.00041236413555855014,
+      "loss": 4.300346374511719,
+      "in_batch_acc": 0.09375,
+      "chance": 0.001953125,
+      "emb_std": 0.037975940853357315,
+      "held_recall@1": 0.126953125,
+      "held_recall@10": 0.45703125,
+      "held_spearman": 0.422321933692941
+    },
+    {
+      "step": 1332.0,
+      "lr": 0.0003445137647036533,
+      "loss": 2.4168553352355957,
+      "in_batch_acc": 0.4375,
+      "chance": 0.001953125,
+      "emb_std": 0.05164482071995735,
+      "held_recall@1": 0.447265625,
+      "held_recall@10": 0.787109375,
+      "held_spearman": 0.6113067835933329
+    },
+    {
+      "step": 1998.0,
+      "lr": 0.00023617463192732567,
+      "loss": 1.432265281677246,
+      "in_batch_acc": 0.642578125,
+      "chance": 0.001953125,
+      "emb_std": 0.05820199102163315,
+      "held_recall@1": 0.662109375,
+      "held_recall@10": 0.91796875,
+      "held_spearman": 0.6867288157033887
+    },
+    {
+      "step": 2664.0,
+      "lr": 0.000120482105246243,
+      "loss": 0.933934211730957,
+      "in_batch_acc": 0.771484375,
+      "chance": 0.001953125,
+      "emb_std": 0.06062344089150429,
+      "held_recall@1": 0.728515625,
+      "held_recall@10": 0.951171875,
+      "held_spearman": 0.7171335609527241
+    },
+    {
+      "step": 3330.0,
+      "lr": 3.2820577631975984e-05,
+      "loss": 0.7659546136856079,
+      "in_batch_acc": 0.802734375,
+      "chance": 0.001953125,
+      "emb_std": 0.06151040643453598,
+      "held_recall@1": 0.779296875,
+      "held_recall@10": 0.96875,
+      "held_spearman": 0.7319661259254304
+    },
+    {
+      "step": 3996.0,
+      "lr": 1.2012874836852785e-09,
+      "loss": 0.7616117000579834,
+      "in_batch_acc": 0.798828125,
+      "chance": 0.001953125,
+      "emb_std": 0.06165715306997299,
+      "held_recall@1": 0.775390625,
+      "held_recall@10": 0.96875,
+      "held_spearman": 0.7313076857313462
+    },
+    {
+      "step": 3999.0,
+      "lr": 7.508053417320818e-11,
+      "loss": 0.7969111800193787,
+      "in_batch_acc": 0.7734375,
+      "chance": 0.001953125,
+      "emb_std": 0.06166955828666687,
+      "held_recall@1": 0.775390625,
+      "held_recall@10": 0.96875,
+      "held_spearman": 0.7313076857313462
+    }
+  ],
+  "untrained_baseline": {
+    "n_pairs": 512.0,
+    "recall@1": 0.017578125,
+    "recall@10": 0.0234375,
+    "mrr": 0.0254618301987648,
+    "emb_std": 0.01197535265237093
+  },
+  "held_out": {
+    "n_pairs": 512.0,
+    "recall@1": 0.775390625,
+    "recall@10": 0.96875,
+    "mrr": 0.8453305959701538,
+    "emb_std": 0.06167611479759216
+  },
+  "untrained_graded_baseline": {
+    "n_pairs": 1498.0,
+    "spearman": 0.0846139052938172,
+    "emb_std": 0.012956127524375916,
+    "cos_mean": 0.9829236268997192,
+    "cos_std": 0.020570846274495125
+  },
+  "graded_held_out": {
+    "n_pairs": 1498.0,
+    "spearman": 0.7313076857313462,
+    "emb_std": 0.05950765311717987,
+    "cos_mean": 0.5798860788345337,
+    "cos_std": 0.2421162724494934
+  },
+  "untrained_baseline_seed": 0,
+  "chance": {
+    "recall@1": 0.001953125,
+    "recall@10": 0.01953125,
+    "spearman": 0.0
+  },
+  "beats_untrained": {
+    "recall@1": true,
+    "recall@10": true,
+    "spearman": true
+  },
+  "capability_per_param": 0.04839764199393206,
+  "token_aware": {
+    "enabled": false,
+    "token_loss_weight": 0.0,
+    "decorr_weight": 0.0,
+    "token_loss_mask_prob": 0.15,
+    "token_loss_kind": "masked_token_prediction",
+    "final_block_rank": {
+      "pooled_pr_rank": 46.33768718639551,
+      "pooled_entropy_rank": 133.146240234375,
+      "token_global_pr_rank": 50.28215897354698,
+      "token_global_entropy_rank": 163.88890075683594,
+      "n_tokens": 6714.0
+    }
+  },
+  "shared_embedding_table": {
+    "source": null,
+    "applied": false
+  },
+  "code_revision": {
+    "git_sha": "ef3e18049044f35a5fe4cf63b56fc1d800994acc",
+    "dirty": false,
+    "branch": "feat/vl-jepa"
+  },
+  "receipt_path": "/akula-data/session-backup-staging/w4-probes/w4-probe-control512/memory-20260903T170747Z.json",
+  "retrieval": {
+    "eval_split": "dev",
+    "full_pool": {
+      "task": {
+        "queries": 500.0,
+        "pool_size": 57638.0,
+        "relevant_per_query": 2.472
+      },
+      "trained": {
+        "mrr": 0.049633342772722244,
+        "recall@1": 0.026000000536441803,
+        "recall@10": 0.10000000149011612,
+        "recall@100": 0.22800001502037048
+      },
+      "untrained": {
+        "mrr": 0.0004963813116773963,
+        "recall@1": 0.0,
+        "recall@10": 0.0,
+        "recall@100": 0.006000000052154064
+      },
+      "lexical_bm25": {
+        "mrr": 0.30793944001197815,
+        "recall@1": 0.23999999463558197,
+        "recall@10": 0.4399999976158142,
+        "recall@100": 0.6620000004768372,
+        "index_s": 2.8
+      }
+    },
+    "licence": "BeIR/fiqa + BeIR/fiqa-qrels, both cc-by-sa-4.0."
+  },
+  "gates": {
+    "a_beats_both_parents": {
+      "gate": "a_beats_both_parents",
+      "memory_recall@1": 0.775390625,
+      "compress_recall@1": 0.775390625,
+      "retrieve_recall@1": 0.755859375,
+      "recall_threshold": 0.775390625,
+      "memory_graded_spearman": 0.7313076857313462,
+      "compress_graded_spearman": 0.7588195158826483,
+      "passed_recall": true,
+      "passed_graded": false,
+      "passed": false
+    },
+    "b_full_pool_thresholds": {
+      "gate": "b_full_pool_thresholds",
+      "recall@10": 0.10000000149011612,
+      "recall@10_floor": 0.2,
+      "mrr": 0.049633342772722244,
+      "mrr_floor": 0.1,
+      "passed": false
+    },
+    "c_beats_bm25": {
+      "gate": "c_beats_bm25",
+      "trained_recall@10": 0.10000000149011612,
+      "bm25_recall@10": 0.4399999976158142,
+      "passed": false
+    },
+    "d_beats_random_init": {
+      "gate": "d_beats_random_init",
+      "trained_recall@10": 0.10000000149011612,
+      "untrained_recall@10": 0.0,
+      "passed": true
+    },
+    "e_retrain_gate": {
+      "gate": "e_retrain_gate",
+      "pr_rank_clause": {
+        "token_global_pr_rank": 50.28215897354698,
+        "pooled_pr_rank": 46.33768718639551,
+        "ratio": 1.0851244856327127,
+        "required_ratio": 2.0,
+        "passed": false,
+        "note": "Measured NOT DISCRIMINATING at 50 steps on this harness: the W4 control arm (token_loss_weight=0.0, decorr_weight=0.0 -- the token-aware terms fully OFF) already clears this clause's ratio>=2.0 threshold on its own, at 2.0191x, because pooled_pr_rank sits barely above its floor while token_global_pr_rank starts measurably higher for reasons unrelated to L_token/L_decorr. A `passed: True` here does not by itself distinguish 'the token-aware terms worked' from 'the terms were never turned on' at this step count. See docs/design/evidence/w4-control-arm-2026-09-03/ for the three-arm evidence and full write-up. The threshold is unchanged; whether this clause discriminates at production scale (the ratified plan's step count, not this 50-step smoke run) is not measured here."
+      },
+      "receipt_regression_clause": {
+        "recall_regression_vs_compress": 0.0,
+        "recall_regression_vs_retrieve": 0.0,
+        "graded_regression_vs_compress": 0.027511830151302097,
+        "worst_regression": 0.027511830151302097,
+        "margin": 0.01,
+        "passed": false,
+        "banking77_probe": "not measured; out of scope for row W4's implementation"
+      },
+      "passed": false
+    },
+    "passed": false
+  }
+}

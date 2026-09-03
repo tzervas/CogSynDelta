@@ -1,0 +1,68 @@
+{
+  "unit": "csd-run-w4-memory-20260903T163517Z.service",
+  "code_revision": "4d2d8860af744a4179e96ef035b3435168a4e26f",
+  "worktree": "/home/kang/code/personal/tzervas/csd-worktress/CogSynDelta-wt-run-w4",
+  "host": "akula-prime",
+  "gpu": "RTX 3090 Ti",
+  "entry_point": "cogsyndelta.regions.memory:main (python -m), NOT scripts/csd-train-all.py",
+  "entry_point_reason": "VERIFIED by reading scripts/csd-train-all.py: run_region() (the code path --regions memory takes) calls cogsyndelta.regions.pretrain.pretrain_region() directly and never imports or calls cogsyndelta.regions.memory.run_memory_pretrain or cogsyndelta.eval.beir_fiqa. That means a csd-train-all.py --regions memory run -- the pattern the persistent csd-train@.service template uses -- would train the region but never compute the BEIR full-pool eval, the BM25 reference, or the five pre-registered W4 gates. regions/memory.py's own CLI is the only code path that runs pretrain_region() AND THEN the BEIR eval AND THEN cogsyndelta.eval.beir_fiqa.w4_gates(), all inside one process/run. Launched via that CLI instead of csd-train-all.py so this run actually produces the row's pre-registered gates.",
+  "planned_command": [
+    "/home/kang/code/personal/tzervas/CogSynDelta/.venv/bin/python", "-m", "cogsyndelta.regions.memory",
+    "--steps", "4000",
+    "--batch-size", "512",
+    "--lr", "0.0004242640687119285",
+    "--warmup-steps", "266",
+    "--max-len", "96",
+    "--seed", "0",
+    "--eval-every", "666",
+    "--holdout-pairs", "512",
+    "--checkpoint-every", "200",
+    "--token-loss-weight", "0.1",
+    "--decorr-weight", "0.1",
+    "--eval-split", "dev",
+    "--out-dir", "/akula-data/csd/receipts"
+  ],
+  "config": {
+    "region": "memory",
+    "steps": 4000,
+    "batch_size": 512,
+    "lr": 0.0004242640687119285,
+    "lr_derivation": "lr_for_batch(512) = BASE_LR(3e-4) * sqrt(512/256), scripts/csd-train-all.py, same formula the parent compress/retrieve production runs used at their own batch",
+    "max_len": 96,
+    "seed": 0,
+    "warmup_steps": 266,
+    "eval_every": 666,
+    "checkpoint_every": 200,
+    "holdout_pairs": 512,
+    "encoder": {"dim": 256, "depth": 4, "n_heads": 4, "params": 16021248},
+    "token_loss_weight": 0.1,
+    "decorr_weight": 0.1,
+    "eval_split": "dev",
+    "skip_lexical": false,
+    "init_embedding_from": null,
+    "init_embedding_from_note": "DEC-24's shared-embedding-table inheritance from retrieve was NOT applied -- naming the design intent without a path trains from a random init, matching scripts/csd-train-all.py's own default behaviour. A retrieve final.pt checkpoint exists at /akula-data/csd/receipts/retrieve-checkpoints/final.pt if a later run wants to apply it via --retrieve-checkpoint.",
+    "batch_deviation": "PRE-REGISTERED/production batch for text regions is 1280 (DEFAULT_BATCH in scripts/csd-train-all.py; matches the actual compress/retrieve/code production receipts from 2026-09-03, all steps=4000 batch=1280). memory.py's own EVIDENCE (MEASURED_VRAM_AT_BATCH_512, memory.py:88-112) measured peak_whole_card_mib=13079 at batch=512 with these exact token-aware terms on. Extrapolating that measurement linearly to batch=1280 (2.5x) predicts >32,000 MiB, which does not fit a 23,028 MiB card (this is also why the 'reason' region OOMed at batch 1280/max_len 256 on 2026-09-03, per program/csd-w4-control-arm-result and the fleet's own OOM receipt). Batch 512 was used instead, at the exact config MEASURED_VRAM_AT_BATCH_512/EVIDENCE_50_STEP_CONTROL_ARM already measured; lr re-derived for batch 512 via the same lr_for_batch formula rather than left at the 1280 value."
+  },
+  "shard_limit_note": "regions/memory.py resolves ALL shards via glob (no shard_limit concept) -- equivalent to csd-train-all.py's --shard-limit 0, not its default of 2.",
+  "corpus_inputs_verified": {
+    "fiqa_pairs_train": "/mnt/fleet-datasets/csd/region/retrieve/fiqa-pairs/train.parquet",
+    "allnli_pair_train": "/mnt/fleet-datasets/csd/region/compress/all-nli/pair/train-00000-of-00001.parquet",
+    "natural_questions_train": "/mnt/fleet-datasets/csd/region/retrieve/natural-questions/pair/train-00000-of-00001.parquet",
+    "gooaq_train_2_shards_capped_400000": "/mnt/fleet-datasets/csd/region/retrieve/gooaq/pair/train-0000{0,1}-of-00002.parquet",
+    "stsb_graded_gate": "/mnt/fleet-datasets/csd/region/compress/stsb/data/validation-00000-of-00001.parquet",
+    "fiqa_beir_corpus_pool": "/mnt/fleet-datasets/csd/region/retrieve/fiqa/corpus/corpus-00000-of-00001.parquet (57,638 passages, confirmed via beir_fiqa.build_ranking_task('dev', pool='corpus').summary())",
+    "fiqa_qrels": "/mnt/fleet-datasets/csd/region/retrieve/fiqa-qrels/{dev,test,train}.tsv",
+    "bm25_reference": "computed live in-process by cogsyndelta.eval.beir_fiqa.BM25 (an in-repo implementation, no external rank_bm25 dependency needed -- verified rank_bm25 is NOT installed in the venv and is not imported)",
+    "tokenizer": "/mnt/fleet-datasets/tritter/gpt2_tokenizer.json"
+  },
+  "gpu_preflight": {
+    "measured_before_launch": "1057 MiB used / 21507 MiB free / 23028 MiB total (nvidia-smi)",
+    "expected_peak_mib": {
+      "peak_allocated_mib": 10276.6,
+      "peak_reserved_mib": 11678.0,
+      "peak_whole_card_mib": 13079,
+      "source": "cogsyndelta.regions.memory.MEASURED_VRAM_AT_BATCH_512, same config (batch 512, max_len 96, dim 256/depth 4/n_heads 4, token_loss_weight 0.1, decorr_weight 0.1), measured 2026-09-03 on this same card"
+    }
+  },
+  "started_utc": "2026-09-03T16:35:17Z"
+}

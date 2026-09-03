@@ -1,0 +1,93 @@
+{
+  "unit": "csd-run-w4-memory-b1280-20260903T181738Z.service",
+  "code_revision": "eb735ab46063cb965ded5318947630c44201335d",
+  "code_revision_note": "worktree HEAD on feat/w4-masked-token-loss, pushed to forgejo (bbf7b4a..15c339e..eb735ab), ci_local.sh full gate set green on push both times. 15c339e adds this evidence's section 5 (chunk=512 probe). eb735ab adds the --token-loss-chunk CLI flag / run_memory_pretrain(token_loss_chunk=...) parameter this launch depends on -- regions/memory.py had no override path for PretrainConfig.token_loss_chunk before that commit.",
+  "worktree": "/home/kang/code/personal/tzervas/csd-worktress/CogSynDelta-wt-w4-masked",
+  "host": "akula-prime",
+  "gpu": "RTX 3090 Ti",
+  "entry_point": "cogsyndelta.regions.memory:main (python -m), NOT scripts/csd-train-all.py",
+  "entry_point_reason": "Same reasoning as launch-w4-memory-20260903T163517Z.json: run_region() (the code path --regions memory in csd-train-all.py takes) calls pretrain_region() directly and never computes the BEIR full-pool eval / BM25 reference / five pre-registered W4 gates. Only regions/memory.py's own CLI (run_memory_pretrain) runs pretrain_region() AND THEN the BEIR eval AND THEN cogsyndelta.eval.beir_fiqa.w4_gates() in one process.",
+  "planned_command": [
+    "/home/kang/code/personal/tzervas/CogSynDelta/.venv/bin/python", "-m", "cogsyndelta.regions.memory",
+    "--steps", "4000",
+    "--batch-size", "1280",
+    "--lr", "0.0006708203932499369",
+    "--warmup-steps", "266",
+    "--max-len", "96",
+    "--seed", "0",
+    "--eval-every", "666",
+    "--holdout-pairs", "512",
+    "--checkpoint-every", "200",
+    "--token-loss-weight", "0.1",
+    "--decorr-weight", "0.1",
+    "--token-loss-chunk", "512",
+    "--eval-split", "dev",
+    "--out-dir", "/akula-data/session-backup-staging/w4-chunked/run-1280"
+  ],
+  "process_env": {
+    "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "PYTHONPATH": "/home/kang/code/personal/tzervas/csd-worktress/CogSynDelta-wt-w4-masked/src",
+    "PYTHONPATH_REASON": "the shared venv's cogsyndelta is editable-installed against the main repo checkout (/home/kang/code/personal/tzervas/CogSynDelta/src), which has no token_loss_chunk field at all (grep-confirmed before launch) -- PYTHONPATH makes the worktree's src/ (this branch's chunk-and-checkpoint implementation) shadow it."
+  },
+  "config": {
+    "region": "memory",
+    "steps": 4000,
+    "batch_size": 1280,
+    "lr": 0.0006708203932499369,
+    "lr_derivation": "lr_for_batch(1280) = BASE_LR(3e-4) * sqrt(1280/256) = 3e-4 * sqrt(5), scripts/csd-train-all.py -- same formula the prior batch-512 launch used at its own batch, now applied at the pre-registered production batch (DEFAULT_BATCH=1280 in that module).",
+    "max_len": 96,
+    "seed": 0,
+    "warmup_steps": 266,
+    "warmup_steps_derivation": "max(50, steps // 15) = max(50, 4000 // 15) = 266, scripts/csd-train-all.py's warmup_steps formula (batch-independent) -- identical to the batch-512 launch's own value.",
+    "eval_every": 666,
+    "eval_every_derivation": "max(1, steps // 6) = 666, scripts/csd-train-all.py's memory-region eval_every formula (batch-independent) -- identical to the batch-512 launch's own value.",
+    "checkpoint_every": 200,
+    "checkpoint_every_derivation": "CHECKPOINT_EVERY constant, scripts/csd-train-all.py -- identical to the batch-512 launch's own value.",
+    "holdout_pairs": 512,
+    "encoder": {"dim": 256, "depth": 4, "n_heads": 4, "params": 16021248},
+    "token_loss_weight": 0.1,
+    "decorr_weight": 0.1,
+    "token_loss_chunk": 512,
+    "token_loss_chunk_derivation": "PretrainConfig.token_loss_chunk's own default (2048) does not fit batch=1280 on this card by the driver-observed peak (docs/design/evidence/w4-masked-token-loss-2026-09-03/README.md section 4: 22,120 MiB raw vs a 20,980 MiB fits threshold, a near miss). chunk=512, re-probed in this same task (section 5, commit 15c339e), fits every metric: 20,883 MiB driver-raw peak (97 MiB margin under the 20,980 MiB fits-threshold convention; 1,117 MiB margin under this task's own explicit launch criterion of <=22,000 MiB). Chunk=256 was not probed -- 512 did not overshoot either threshold. PretrainConfig.token_loss_chunk's own default is UNCHANGED at 2048 by this work; only this launch's own CLI invocation passes 512 explicitly, via the --token-loss-chunk flag added in eb735ab.",
+    "eval_split": "dev",
+    "skip_lexical": false,
+    "init_embedding_from": null,
+    "init_embedding_from_note": "Same as the batch-512 launch: DEC-24's shared-embedding-table inheritance from retrieve was NOT applied -- random init, matching scripts/csd-train-all.py's own default behaviour. A retrieve final.pt checkpoint exists at /akula-data/csd/receipts/retrieve-checkpoints/final.pt if a later run wants --retrieve-checkpoint.",
+    "batch_note": "This is the pre-registered production batch (DEFAULT_BATCH=1280 in scripts/csd-train-all.py), superseding the batch-512 launch (csd-run-w4-memory-20260903T163517Z.service, 2026-09-03T16:35:17Z, which used batch=512 because token_loss_chunk did not yet exist and the unchunked projection OOM'd at batch=1280 -- docs/design/evidence/w4-masked-token-loss-2026-09-03/README.md section 3). That batch-512 run completed training (receipt memory-20260903T164611Z.json) but exited 1 on the W4 gates (expected/documented at 50-step-derived early scale; not this launch's concern -- this launch is the pre-registered 4000-step run at the pre-registered batch)."
+  },
+  "shard_limit_note": "regions/memory.py resolves ALL shards via glob (no shard_limit concept) -- equivalent to csd-train-all.py's --shard-limit 0, not its default of 2.",
+  "gpu_preflight": {
+    "measured_before_launch": "1,057 MiB used / 21,506 MiB free / 23,028 MiB total (nvidia-smi, no training process running -- same as this task's own probe512 baseline)",
+    "expected_peak_mib": {
+      "source": "this task's own chunk=512 re-probe at batch=1280 (docs/design/evidence/w4-masked-token-loss-2026-09-03/measure_w4_batch1280_probe_chunk512.py, section 5), same config (batch 1280, max_len 96, dim 256/depth 4/n_heads 4, token_loss_weight 0.1, decorr_weight 0.1, token_loss_chunk 512), measured 2026-09-03 on this same card, 20 steps",
+      "peak_allocated_mib": 19079.7,
+      "peak_reserved_mib": 19444.0,
+      "peak_driver_raw_mib": 20883,
+      "desktop_baseline_before_probe_mib": 1057,
+      "driver_peak_training_attributable_mib": 19826,
+      "launch_criterion": "raw driver peak <= 22,000 MiB (>= 1,028 MiB below the 23,028 MiB card with desktop baseline included) -- MET, margin 1,117 MiB",
+      "note": "the probe used pretrain_region() directly (no BEIR full-pool eval, which run_memory_pretrain layers on top and is heavier); this production run's own eval passes may push the peak somewhat higher than the probe's -- the probe measures the training step's own VRAM, not this launch's full pipeline. 2,145 MiB of card headroom remained after the probe's own peak, which is the basis for expecting the BEIR eval (a forward-only encode over the corpus, no backward pass, smaller batch than 1280 in beir_fiqa's own encoder_rank_metrics) to fit without a fresh probe of its own."
+    }
+  },
+  "emitter": {
+    "instance": "w4-memory-b1280",
+    "mechanism": "systemd-run --user transient unit with --property=ExecStartPre/--property=ExecStopPost replicating ~/.config/systemd/user/csd-train@.service.d/10-emit.conf's hooks exactly (same csd-emit.sh, same started/stopped event names, CSD_EMIT_UNIT set to this unit's own literal name since %n does not expand outside a real unit-file drop-in for a systemd-run transient unit).",
+    "events_file": "/akula-data/csd/events/events.jsonl",
+    "sentinels": "/akula-data/csd/events/w4-memory-b1280.{started,done,failed}"
+  },
+  "out_dir": "/akula-data/session-backup-staging/w4-chunked/run-1280",
+  "out_dir_note": "fresh, empty before this launch -- verified via ls before systemd-run.",
+  "expected_duration": {
+    "verified_per_step_ms": 390.0,
+    "verified_per_step_source": "this task's own chunk=512 probe at this exact batch/chunk config (20 steps, section 5) -- a DIRECT measurement at batch=1280, not an extrapolation from batch=512.",
+    "inferred_training_loop_s": 1560,
+    "inferred_training_loop_note": "INFERRED: 4000 steps * 390.0 ms/step, linearly extrapolated from the 20-step probe's measured mean. Step time is expected to be near-constant across steps at fixed batch/chunk (no growing cache, no curriculum), but only 20 of 4000 steps were actually measured.",
+    "reference_total_wall_time": {
+      "batch_512_chunk_2048_run": "csd-run-w4-memory-20260903T163517Z.service: started 2026-09-03T16:35:17Z, stopped 2026-09-03T16:46:36Z -- 679s (11m19s) total wall time for steps=4000, including tokenisation, the training loop, and the full BEIR eval. Training-loop-only at that config was separately measured at 146.0 ms/step (regions/memory.py's MEASURED_VRAM_AT_BATCH_512, 50-step run) => ~584s training loop, leaving ~95s (~1.6 min) for tokenisation+eval overhead.",
+      "note": "VERIFIED reference point, not this launch's own measurement. Used only to estimate non-training-loop overhead for this launch's own total-duration estimate below; this launch's corpus/tokenisation is the same, its BEIR eval pool is the same 57,638 passages, but its own overhead is INFERRED, not measured."
+    },
+    "inferred_total_estimate_min": "26-29 minutes (1560s training loop + an estimated ~2-3 min tokenisation/eval overhead, extrapolated from the batch-512 run's ~1.6 min overhead with some margin for a larger batch's marginally heavier tokeniser cache pass). Matches this task's own back-of-envelope (batch 1280 ~2.5x the per-step cost of 512, ~25-30 min for 4000 steps plus eval) -- 390.0/146.0 = 2.67x, close to the 2.5x estimate."
+  },
+  "started_utc": "2026-09-03T18:17:38Z"
+}
