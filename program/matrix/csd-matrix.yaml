@@ -219,12 +219,21 @@ regions:
     derive: { lr: "3e-4 * (batch / 256) ** 0.5" }
     axes:
       batch: [512, 1280]
-      terms: { off: { token_w: 0.0, decorr_w: 0.0 }, on: { token_w: 0.1, decorr_w: 0.1 } }
+      # QUOTED DELIBERATELY (C3). Bare `off`/`on` are YAML 1.1 booleans: PyYAML's
+      # safe_load turns these axis LABELS into False/True, while every `budgets:` key
+      # below is a string parsed as `terms=off`/`terms=on`. The harness matches a cell
+      # to a budget by `str(label)` (config.py canonical_budget_key), so `str(False)`
+      # is "False" and NO memory cell ever matched a budget entry -- all five silently
+      # resolved to BudgetEntry(mib=None, source="probe"), including the one cell whose
+      # peak was actually measured. Any future boolean-looking axis label (`on`, `off`,
+      # `yes`, `no`, `y`, `n`, `true`, `false`) must be quoted the same way; the guard
+      # is tests/test_matrix_config.py.
+      terms: { "off": { token_w: 0.0, decorr_w: 0.0 }, "on": { token_w: 0.1, decorr_w: 0.1 } }
       chunk: [512, 2048]
       seed: [0]
     exclude:
       - { batch: 1280, chunk: 2048 } # raw peak measured 22,120 MiB -- does not fit the 3090 Ti
-      - { terms: off, chunk: 2048 } # dead when the token loss is off: identical argv to (off, 512)
+      - { terms: "off", chunk: 2048 } # dead when the token loss is off: identical argv to (off, 512)
     budget_axes: [batch, terms, chunk]
     budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
     budgets:
