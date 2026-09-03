@@ -192,6 +192,7 @@ def benchmark_region(
     region: str, state: Path, train_receipt_path: Path | None = None
 ) -> Receipt | None:
     """The fp32 pass: score the checkpoint `region`'s training receipt names."""
+    from cogsyndelta.quant.ptq import fp32_reference_bytes
     from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
     from cogsyndelta.regions.text_encoder import TextEncoder
 
@@ -224,14 +225,24 @@ def benchmark_region(
     model.load_state_dict(ck["model"])
     checkpoint_sha256 = ckpt_sha_out[0]
 
-    # The fp32 checkpoint's OWN bytes on disk -- never a quantized artifact's, however
-    # convenient a same-region `*-quant-*.json` glob might be. This receipt's `kind` is
-    # "eval" and its `provenance.eval_target` is "fp32"; a reader dividing this receipt's
-    # `capability_per_mb` by anything but the fp32 checkpoint's real size would be
-    # comparing capability against the wrong artifact (N5). The quantized number belongs
-    # solely to `benchmark_region_quantized`'s "eval-quantized" receipt, which measures
+    # The fp32 model's OWN weight bytes -- never a quantized artifact's, and never the
+    # checkpoint FILE's `stat().st_size` either. A resumable training checkpoint also
+    # carries the Adam optimizer's momentum and variance buffers (`opt.state_dict()`,
+    # see `regions/pretrain.py`'s checkpoint dict) -- routinely ~2x the weights
+    # themselves -- so the file's size is not "the fp32 model", it is "the fp32 model
+    # plus training bookkeeping that never ships". `fp32_reference_bytes` is the exact
+    # function `cogsyndelta.quant.ptq.build_plan` uses for `QuantPlan.fp32_bytes`, the
+    # denominator of a quant receipt's `compression_ratio` -- calling it here, on the
+    # SAME `model` this pass just loaded, is what makes this receipt's `eff.stored_mb`
+    # divide into `benchmark_region_quantized`'s `packed_stored_bytes` at the same
+    # ratio the quantizer itself measured, rather than a second, incompatible number
+    # that happens to also be called "fp32 size" (N5). This receipt's `kind` is "eval"
+    # and its `provenance.eval_target` is "fp32"; a reader dividing this receipt's
+    # `capability_per_mb` by anything but this figure would be comparing capability
+    # against the wrong artifact. The quantized number belongs solely to
+    # `benchmark_region_quantized`'s "eval-quantized" receipt, which measures
     # `packed_stored_bytes` on the artifact it actually opened.
-    stored = Path(train_receipt["checkpoint"]).stat().st_size
+    stored = fp32_reference_bytes(model)
 
     res = _run_battery(model, tok, holdout, cfg, device, stored)
     r, e, rep = res.ranking, res.efficiency, res.representation
@@ -266,6 +277,10 @@ def benchmark_region(
         provenance={
             "holdout_pairs": len(holdout),
             "eval_target": "fp32",
+            # See the `stored` comment above: this is `fp32_reference_bytes`'s
+            # definition, the same one `compression_ratio`'s denominator uses -- never
+            # a checkpoint file's raw `stat().st_size`, which includes optimizer state.
+            "stored_bytes_definition": "weights-only",
         },
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
         started_utc=started_utc,
@@ -401,6 +416,12 @@ def benchmark_region_quantized(
             "quantized_size": True,
             "eval_target": "quantized",
             "width_histogram": packed_width_histogram(packed),
+            # `packed_stored_bytes` counts packed codes/scale/zero for quantized
+            # tensors and 4 bytes/element for the fp32-kept ones it stores verbatim --
+            # weights only, same as the fp32 pass's `fp32_reference_bytes` (see
+            # `benchmark_region`'s `stored` comment). The two receipts' `eff.stored_mb`
+            # are comparable by this shared definition, not by coincidence.
+            "stored_bytes_definition": "weights-only",
         },
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
         started_utc=started_utc,
