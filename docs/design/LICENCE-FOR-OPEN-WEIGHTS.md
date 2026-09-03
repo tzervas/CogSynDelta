@@ -302,7 +302,7 @@ no SNLI document acknowledges.
 
 | source | rows | share | mirror tag | upstream | verdict |
 |---|---|---|---|---|---|
-| `sentence-transformers/gooaq` | 400,000 (capped from 3,012,496) | **77.8%** | none | `allenai/gooaq` — **the LICENSE and the README contradict each other** | **BLOCKING (contested)** |
+| `sentence-transformers/gooaq` | 400,000 (capped from 3,012,496) | **77.8%** | none | `allenai/gooaq` — **the LICENSE and the README contradict each other** | ~~BLOCKING (contested)~~ **ACCEPTED — NC reading (Decision 2026-09-02, below); `retrieve` → NC tier** |
 | `sentence-transformers/natural-questions` | 100,231 | 19.5% | none | `google-research-datasets/natural_questions`, `cc-by-sa-3.0` | **SHARE_ALIKE** |
 | fiqa-pairs (`BeIR/fiqa` ⋈ `BeIR/fiqa-qrels`) | 14,131 | 2.7% | `cc-by-sa-4.0` both | FiQA 2018 challenge | **SHARE_ALIKE** |
 
@@ -355,6 +355,11 @@ which this project already refused on exactly those grounds. If the LICENSE gove
 is `PERMISSIVE_OK` and `retrieve` becomes the cheapest region to fix. **The correct next
 action is to ask AI2 directly** — this is a one-email question with a definitive answer,
 and it is worth far more than any amount of further inference.
+
+**Decided 2026-09-02 — superseded by the operator, not by an answer from AI2.** The README's
+non-commercial reading is accepted, kept, and priced as a licence change rather than resolved
+away. The email to AI2 is no longer blocking (it may still be sent for certainty). Full
+reasoning: [Decision 2026-09-02](#decision-2026-09-02) in *Release licence scenarios*, below.
 
 ### `vl_latent` — `zh-plus/tiny-imagenet`
 
@@ -1851,6 +1856,19 @@ sharper version of "dual licensing" than a single MIT-code/CC-BY-SA-weights spli
   the "Collection, not Adapted Material" architectural argument above has the best chance of
   holding if it is ever tested.
 
+**Extended 2026-09-02 with an NC tier and a composed-model row — see [Decision
+2026-09-02](#decision-2026-09-02), below, for the full reasoning:**
+
+| region | standalone release licence | why |
+|---|---|---|
+| `code` | MIT | no NC or share-alike input, once GitHub-licence-filtered to the permissive ~71.3% |
+| `classify` | MIT | no NC or share-alike input in the catalogue |
+| `reason` | MIT | no NC or share-alike input in the catalogue |
+| `vl_latent` | MIT, once its corpus is replaced | the composite replacement is PERMISSIVE_OK/ATTRIBUTION; tiny-imagenet itself stays BLOCKING (no grant exists at all) regardless of this decision — a different problem than NC, and no licence choice touches it |
+| `compress` | CC BY-SA 4.0 | SNLI (+ `government` + `fiction`) repaired corpus is share-alike; no NC-tagged input identified |
+| `retrieve` | **CC BY-NC-SA 4.0** | GooAQ (**NC, accepted 2026-09-02**) *and* Natural Questions / FiQA (CC BY-SA) are both present in the corpus as trained — the region inherits both restrictions |
+| **composed model** (all regions merged) | **CC BY-NC-SA 4.0** | carries the single strictest term across every dataset, submodel, and the composed model itself — today that is `retrieve`'s GooAQ-driven tier. Per-region tiers above matter only when a region ships as a **standalone** checkpoint; the composed release does not get to pick the most permissive entry |
+
 **What this buys over a uniform CC BY-SA release (scenario B applied to everything):**
 identical corpus availability, with copyleft obligations attaching to 2 of 6 regions instead
 of all 6 — strictly more MIT surface at zero corpus cost, which is exactly the trade the
@@ -1874,4 +1892,96 @@ this exact case — are exactly the kind of question this document has repeatedl
 needing a human, and in several places a lawyer, rather than an agent's best reading of
 primary sources. The operator is explicitly the one who trades corpus access against licence
 purity; this section's job was to put a number on that trade, not to make it.
+
+### Decision 2026-09-02
+
+*This one is a decision, not a recommendation — the first in this section to be one.* It
+answers the single open item the rest of this section repeatedly deferred: which of GooAQ's
+two contradictory terms governs, and what that does to `retrieve` and the composed model.
+
+**Operator decision, verbatim (2026-09-02):** *"no commercial use doesn't really apply to
+this case cuz this isn't the commercial product this is an open weights model. it just
+changes the licensing from MIT to something that restricts commercial use."*
+
+**What this resolves.** GooAQ's contradiction (§`retrieve` — three sources, none of them
+clean, above) is accepted under its restrictive reading and **kept** — the corpus is not
+replaced, dropped, or capped further. **The consequence is a licence change, not a corpus
+change.**
+
+**Evidence this rests on, VERIFIED** (re-stated briefly; full citation is in the `retrieve`
+section above, independently re-confirmed live 2026-09-02):
+- `LICENSE` at `github.com/allenai/gooaq` is stock, unmodified Apache-2.0 — permissive on its
+  face, with the boilerplate `Copyright [yyyy] [name of copyright owner]` placeholder never
+  filled in.
+- `README.md` line 5, verbatim: *"This dataset should not be used for any commercial
+  purposes. See the license for the detailed terms."* — restrictive on its face, citing the
+  same LICENSE file as its authority.
+- GitHub's own licence detector reports `license: null` for the repository despite the
+  Apache-2.0 file being present — GitHub's own tooling does not resolve the contradiction
+  either.
+- HF mirrors drop the note entirely: `allenai/gooaq` states `apache-2.0` with no NC mention
+  anywhere on the card; `sentence-transformers/gooaq` (the copy actually trained on) declares
+  no licence at all (`license: []`/absent).
+- The paper (Khashabi et al. 2021, arXiv:2104.08727) defers entirely to the repo ("available
+  ... under an appropriate license," footnote 1) and adds no resolving information.
+
+**The rule this decision establishes, applied per region:**
+
+1. **A region whose training data carries a non-commercial term releases under a
+   non-commercial licence** — CC BY-NC 4.0, or **CC BY-NC-SA 4.0 where a ShareAlike input is
+   also present in that same region's corpus** — **instead of MIT.** This extends Option D's
+   per-region split, above, with an NC tier; it does not replace it.
+2. **A region with no such input stays MIT.** Nothing here moves `code`, `classify`,
+   `reason`, or `vl_latent`'s eventual composite replacement — none has an NC-tagged input.
+   `vl_latent`'s actual blocker, tiny-imagenet, remains a *missing-grant* problem (BLOCKING),
+   not a *restrictive-term* problem (NC), and this decision — like every scenario in this
+   section — does nothing for it. See "The one distinction the whole section rests on,"
+   above: relicensing the release moves SHARE_ALIKE corpora, and now NC ones too. **It still
+   moves nothing BLOCKING.**
+
+**Preference order, folded in during this session at the operator's direction.**
+As-open-as-possible first; an NC-clause licence is accepted as the easiest deconfliction when
+an input demands it. The optimisation target is **the simplest scheme that satisfies every
+input**, not maximal openness purchased with complexity — e.g. per-tensor sub-licensing by
+originating corpus, or holding an entire release for a corpus fix that does not yet exist.
+Concretely: **one NC-family licence for the composed release; MIT only for a region that
+ships standalone with no restrictive input of its own.**
+
+**Rider 1 — a taxonomy merge inherits the cost.** A region MERGE inherits the most
+restrictive licence of its parts. The taxonomy already floats merging `compress` and
+`retrieve` into one hippocampal region — an open taxonomy decision, not made here. If that
+merge happens, the merged region is CC BY-NC-SA 4.0, because `retrieve` now is. **Any future
+taxonomy decision that performs this merge must state that licence cost explicitly, as part
+of making the merge, not discover it afterward.**
+
+**Rider 2 — training and redistribution stay separate questions.** This decision covers
+**training on GooAQ-derived pairs and releasing weights trained on them.** It does **not**
+cover redistributing the GooAQ-derived pairs themselves — that stays governed by GooAQ's own
+(contested) terms, independent of what CogSynDelta chooses for its own release licence.
+**Dataset publication remains private-HF-only, unchanged by this decision.**
+
+**Composed model.** The composed model (P2.5's "compose" step) is, once assembled, a single
+artifact whose release licence is **the strictest term among every dataset, submodel, and the
+composed model itself** — there is no sub-licensing a merged weights blob by the corpus a
+given tensor came from. **Today that strictest term is `retrieve`'s CC BY-NC-SA 4.0** (GooAQ's
+NC reading, compounded by Natural Questions' and FiQA's CC BY-SA), so **the composed model
+releases CC BY-NC-SA 4.0**, unless `retrieve`'s corpus changes (GooAQ dropped, or its status
+later resolved permissive by AI2) or `compress` also stops needing SNLI. **Per-region tiers
+matter only when a region ships standalone**, as a separate checkpoint file per Option D's
+"Collection, not Adapted Material" architecture — they are not a menu the composed release
+gets to pick the most permissive entry from.
+
+**AI2 email: no longer blocking.** This decision does not depend on an answer from AI2. It
+may still be sent for certainty — a definitive reply could move `retrieve`, and therefore the
+composed model, back toward CC BY-SA or MIT — but nothing here waits on it.
+
+**Updated per-region table:** see the table added to Option D, above (`code`/`classify`/
+`reason`/`vl_latent` → MIT; `compress` → CC BY-SA 4.0; `retrieve` → CC BY-NC-SA 4.0;
+composed model → CC BY-NC-SA 4.0).
+
+**INFERRED, not independently verified this session:** that CC BY-NC-SA 4.0 is the correct
+combined designation for "NC and SA both present in one region's corpus," as opposed to some
+other composition, was not checked against Creative Commons' own compatibility documentation
+this session — the same caveat this document already carries for every CC BY-SA 3.0→4.0
+compatibility claim elsewhere in this section, extended here to the NC+SA combination.
 
