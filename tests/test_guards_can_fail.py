@@ -1025,6 +1025,7 @@ def test_beats_untrained_gate_rejects_a_baseline_below_chance() -> None:
     over a 512-pair eval -- must fail the sanity gate regardless of how good the trained
     model's own number is."""
     pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
     from cogsyndelta.regions.pretrain import _beats_untrained_gate
 
     final = {"recall@1": 0.748046875, "recall@10": 0.94921875}
@@ -1043,6 +1044,7 @@ def test_beats_untrained_gate_accepts_a_sane_baseline_past_the_margin() -> None:
     `chance / 2` does -- and a trained model that clears it by more than the margin
     passes."""
     pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
     from cogsyndelta.regions.pretrain import _beats_untrained_gate
 
     final = {"recall@1": 0.75, "recall@10": 0.95}
@@ -1059,6 +1061,7 @@ def test_beats_untrained_gate_rejects_a_win_too_small_to_be_signal() -> None:
     `_BEATS_UNTRAINED_MARGIN` must not read as `beats_untrained` -- that gap is noise on
     a 512-pair holdout, not evidence of learning."""
     pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
     from cogsyndelta.regions.pretrain import _beats_untrained_gate
 
     baseline = {"recall@1": 1 / 512, "recall@10": 10 / 512}
