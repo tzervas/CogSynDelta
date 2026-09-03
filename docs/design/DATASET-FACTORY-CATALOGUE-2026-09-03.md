@@ -84,22 +84,29 @@ says so.
 
 | faculty | entries | V | **C** | *U* | R | PERMISSIVE_OK | ATTRIBUTION | SHARE_ALIKE | NC | UNVERIFIED | BLOCKING | REFUSE |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `language_code` | 29 | 20 | 5 | 3 | 1 | 9 | 4 | 4 | 1 | 10 | 0 | 1 |
-| `memory` | 39 | 23 | 5 | 6 | 5 | 4 | 5 | 9 | 6 | 8 | 2 | 5 |
+| `language_code` | 29 | 17 | 9 | 2 | 1 | 9 | 5 | 6 | 1 | 6 | 0 | 2 |
+| `memory` | 39 | 21 | 7 | 6 | 5 | 4 | 6 | 10 | 6 | 6 | 2 | 5 |
 | `reasoning` | 19 | 14 | 3 | 1 | 1 | 8 | 2 | 1 | 4 | 3 | 0 | 1 |
 | `numeric_math` | 4 | 3 | 0 | 1 | 0 | 3 | 0 | 0 | 0 | 1 | 0 | 0 |
-| `visual` | 21 | 14 | 4 | 2 | 1 | 3 | 0 | 0 | 0 | 6 | 9 | 3 |
-| `language_trunk` | 26 | 17 | 6 | 1 | 2 | 7 | 5 | 3 | 0 | 6 | 0 | 5 |
-| `moral_safety` | 21 | 14 | 3 | 4 | 0 | 8 | 5 | 3 | 2 | 3 | 0 | 0 |
-| **total** | **159** | **105** | **26** | **18** | **10** | **42** | **21** | **20** | **13** | **37** | **11** | **15** |
+| `visual` | 21 | 12 | 6 | 2 | 1 | 3 | 1 | 1 | 1 | 3 | 9 | 3 |
+| `language_trunk` | 26 | 16 | 8 | 0 | 2 | 8 | 5 | 4 | 0 | 3 | 0 | 6 |
+| `moral_safety` | 21 | 14 | 3 | 4 | 0 | 8 | 5 | 3 | 2 | 2 | 0 | 1 |
+| **total** | **159** | **97** | **36** | **16** | **10** | **43** | **24** | **25** | **14** | **24** | **11** | **18** |
+
+*Pass 2 (claude+grok, 2026-09-03) recount, superseding the row above: 13 of Grok's 17 proposed
+resolutions were independently confirmed at a primary source and adopted (verdict corrected off
+`UNVERIFIED`, `verification_status` -> `CONTRADICTED`); 4 were declined (see §4.6) and stay
+`UNVERIFIED` with a pass-2 note recorded; the remaining 20 stay `UNVERIFIED` with Grok's
+"what would settle it" line recorded in each entry's new `notes` field, per
+`docs/design/evidence/dataset-factory-2026-09-03/41-pass2-verification.md`.*
 
 15 entries carry `usage_tag: EVAL-ONLY`. 11 carry a `MODEL-OUTPUT-TERMS` red flag (§4.5). The
 catalogue spans **106 distinct provenance groups**, which is the number B1/B2 are computed over
 — not 159.
 
-Read the `UNVERIFIED` column as the headline: **37 of 159 candidates (23%) cannot be admitted
-today because no primary source settles their licence**, and 18 of those had a fetch attempted
-and failed. That is the factory's actual backlog, not the refused list.
+Read the `UNVERIFIED` column as the headline: **24 of 159 candidates (15%) cannot be admitted
+today because no primary source settles their licence**, and 16 of those had a fetch attempted
+and failed (`UNVERIFIABLE`). That is the factory's actual backlog, not the refused list.
 
 ---
 
@@ -231,6 +238,46 @@ correct comparison is `HuggingFaceTB/cosmopedia`, which is also synthetic but wa
 Mixtral under **Apache-2.0 weights run locally** — a `SAFE`-class generator that attaches
 nothing. That is the shape to prefer.
 
+### 4.6 Pass 2 — an independent second read of the 37 `UNVERIFIED` entries
+
+2026-09-03, same day, second pass. An independent Grok run re-fetched primary sources for all 37
+`UNVERIFIED` entries and proposed a resolution for 17 of them; Claude then re-fetched each cited
+URL (and, where a domain was unreachable in its own environment, an alternate primary or a
+corroborating route) and decided its own verdict under §1. Full per-entry evidence is in
+`docs/design/evidence/dataset-factory-2026-09-03/40-grok-verify-unverified.{md,json}` (Grok's
+report, copied verbatim) and `41-pass2-verification.md` (Claude's confirmation pass).
+
+**13 of Grok's 17 proposed resolutions were adopted** — the primary confirmed the quote and the
+verdict follows under §1: `OpenCoder-LLM/opc-annealing-corpus` and `OpenCoder-LLM/opc-fineweb-code-corpus`
+(SHARE_ALIKE, ATTRIBUTION — §8 below), `neulab/conala` (SHARE_ALIKE), `allenai/qasper`
+(ATTRIBUTION — resolves the R1 host-diversity gate via arxiv.org), `ltg/en-wiki-paraphrased` and
+`wikimedia/wit_base` (SHARE_ALIKE), `NiteshMethani/PlotQA` (ATTRIBUTION — the CC-BY-4.0/MIT split
+lives in the README, not the LICENSE file the first pass checked), `derek-thomas/ScienceQA` (NC —
+a mirror-lies catch: upstream is CC BY-NC-SA 4.0, the HF tag `cc-by-sa-4.0` omits the NC element),
+`togethercomputer/RedPajama-Data-V2` and `Software Heritage` (REFUSE — distributor disclaims
+ownership of what it distributes), `CourtListener bulk data` (PERMISSIVE_OK — closes the §4.3
+finding), `Papers with Code dataset index` (SHARE_ALIKE, still not an admissible training source),
+and `ucberkeley-dlab/measuring-hate-speech` (REFUSE for training; `EVAL-ONLY` unchanged).
+
+**4 were declined.** Two rest on the same defect: `m-a-p/CodeFeedback-Filtered-Instruction` and
+`nickrosh/Evol-Instruct-Code-80k-v1` were proposed REFUSE-TERMS via the `MODEL-OUTPUT-TERMS`
+class, but §4.5 above explicitly reserves that class as "not auto-refused and not auto-cleared …
+one operator decision covering all eleven" — a decision this pass has no standing to make
+per-entry, and nickrosh's own already-flagged mirror-vs-upstream conflict (Apache-2.0 GitHub vs
+`cc-by-nc-sa-4.0` HF tag) went unaddressed by the proposed fetch besides. `nvidia/Nemotron-CC-v2`
+was proposed REFUSE-TERMS from a **different** HF repo's licence file
+(`nvidia/Nemotron-Pretraining-Dataset-sample`); this entry's own card returned 401 (gated) on
+direct re-fetch, and the prior verify pass's quote from the correct repo reads as enabling
+open-source-licensed training, not a blanket refusal — unconfirmed either way, held `UNVERIFIED`.
+`toxigen/toxigen-data` was proposed PERMISSIVE_OK by reading the CDLA-Permissive-2.0 LICENSE.txt
+as controlling over the README's "research purposes only" sentence; both primary texts were
+already correctly quoted in the first pass, which explicitly called the conflict "an explicit
+operator/legal decision, not a surveyor's call" — declined to override that reservation. All four
+stay `UNVERIFIED`, each with a dated pass-2 note in `verification_note` explaining why.
+
+**The remaining 20** were not resolved by either pass; Grok's "what would settle it" line for
+each is now recorded verbatim in that entry's new `notes` field in the JSON, unchanged in status.
+
 ---
 
 ## 5. Provenance groups
@@ -260,7 +307,7 @@ Legend: **V** = VERIFIED · **C** = CONTRADICTED (this verdict overrides the sur
 Full fields, including the verbatim upstream licence quote, its URL and fetch date, are in
 `docs/design/datasets/catalogue-2026-09-03.json`.
 
-#### `language_code` — candidates (28 listed, 1 refused/blocking below)
+#### `language_code` — candidates (27 listed, 2 refused/blocking below)
 
 | dataset | verdict | verif | provenance group | size | enrichment → licence result |
 |---|---|---|---|---|---|
@@ -285,12 +332,11 @@ Full fields, including the verbatim upstream licence quote, its URL and fetch da
 | `bigcode/commitpack` | UNVERIFIED | **C** | PG-COMMITPACK | not probed (loader 501) | prefer commitpackft (the quality-filtered subset); keep this row only as the provenance-group note → same as commitpackft |
 | `bigcode/commitpackft` | UNVERIFIED | **C** | PG-COMMITPACK | not probed (datasets-server 500 on this loader) | per-row `license`-field filter: keep mit/apache-2.0/bsd-2/3-clause/isc/cc0-1.0/unlicense, judge mpl-2.0/lgpl-2.1/epl-1.0 separately as file-level weak copyleft, drop agpl-3.0 and unknown outright; carry the surviving value into the emitted row's `lic_class`… |
 | `m-a-p/CodeFeedback-Filtered-Instruction` | UNVERIFIED | **C** | evol-instruct-code | 156,526 rows / 371.2 MB | isolate or drop the Evol-Instruct-Code-derived fraction before treating the remainder as an independent permissive source → if Evol-Instruct-Code resolves to CC BY-NC-SA, that fraction drags the derived set to NC-SA under strictest-input; if it resolves to … |
-| `neulab/conala` | UNVERIFIED | V | conala | 596,770 rows / 160.96 MB | n/a pending licence resolution → n/a; if it resolves to Stack Exchange's CC BY-SA it also inherits the per-item attribution problem (R9) |
+| `neulab/conala` | SHARE_ALIKE | **C** | conala | 596,770 rows / 160.96 MB | n/a; if pulled from Stack Exchange, inherits the per-item attribution problem (R9) → CC BY-SA propagates; the CoNaLa repo/project page carries no LICENSE of its own -- the MIT HF tag rests over Stack-Overflow-sourced text |
 | `nickrosh/Evol-Instruct-Code-80k-v1` | UNVERIFIED | V | evol-instruct-code | 78,264 rows / 121.5 MB | n/a pending resolution → unresolvable today: an NC-SA reading and an Apache-2.0 reading emit into different, non-mergeable tiers |
-| `OpenCoder-LLM/opc-annealing-corpus` | UNVERIFIED | V | PG-STACK | 11,643,084 rows (datasets-server, 2026-09-03) | none until the tag conflict is resolved against the OpenCoder technical report and BigCode's opt-out list → if admitted, inherits OpenRAIL-M from PG-STACK; the ODC-BY tag cannot be the operative one over content the card says came from Stack v2 |
-| `OpenCoder-LLM/opc-fineweb-code-corpus` | UNVERIFIED | *U* | opencoder-fineweb | 100,920,235 rows / 147.9 GB original (datasets-server, 2026-09-03) | dedup against StarCoderData/Stack-lineage rows before mixing (crawled docs commonly duplicate repo READMEs already in PG-STACK) → if MIT is confirmed, emits into the clean-permissive tier and imposes nothing; today it cannot be emitted at all |
+| `OpenCoder-LLM/opc-annealing-corpus` | SHARE_ALIKE | **C** | PG-STACK | 11,643,084 rows (datasets-server, 2026-09-03) | none -- inherits PG-STACK's enrichment plan; not independent of PG-STACK for B1/B2 → OpenRAIL-M propagates from The Stack v2 sourcing; the ODC-BY tag does not supersede that parent |
+| `OpenCoder-LLM/opc-fineweb-code-corpus` | ATTRIBUTION | **C** | opencoder-fineweb | 100,920,235 rows / 147.9 GB original (~55B tokens per the card) (datasets-server, 2026-09-03) | dedup against StarCoderData/Stack-lineage rows before mixing (crawled docs commonly duplicate repo READMEs already in PG-STACK) → ODC-By v1.0 propagates from the FineWeb parent, which this entry's own card confirms as its source; the MIT tag covers only OpenCoder's fastText compilation step. See §8 -- this closes most of `language_code`'s B1 gap. |
 | `princeton-nlp/SWE-bench` | UNVERIFIED · EVAL-ONLY | V | PG-SWEBENCH | not probed | none -- held-out eval only → n/a; EVAL-ONLY holds regardless of the licence outcome |
-| `Software Heritage` | UNVERIFIED | V | (access layer -- per-repo) | the broadest source-code archive available, including repos GitHub has lost | per-file SPDX licence detection and filtering to permissively-licensed repos -- a substantial filtering project, not a drop-in dataset. Bulk access requires contacting Software Heritage directly per their terms. → every repository pulled through it still ne… |
 | `SWE-bench/SWE-bench_Verified` | UNVERIFIED · EVAL-ONLY | V | PG-SWEBENCH | not probed | none -- held-out eval only → n/a |
 
 **Refused / blocking in `language_code`**
@@ -298,6 +344,7 @@ Full fields, including the verbatim upstream licence quote, its URL and fetch da
 | dataset | verdict | verif | why refused |
 |---|---|---|---|
 | `newfacade/LeetCodeDataset` | REFUSE | R | the distributor plainly does not own what it redistributes; LeetCode does, and its terms forbid the scraping — Closed REFUSE. Kept in the catalogue so a future pass does not re-discover it. The same REFUSE-TERMS logic applies to any Codeforces/AtCoder/HackerRank problem text reached by direct scr… |
+| `Software Heritage` | REFUSE | **C** | infrastructure, not a licence: "Software Heritage may provide automatically derived information on the software license(s) that may apply to a given software component, but it makes no claim of correctness … You are solely responsible for determining the license" — the operator's named "distributor disclaims ownership" REFUSE class (§1). Every repository pulled through it still needs its own per-repo determination; bulk access is a conversation, not an API pull. |
 
 #### `memory` — candidates (32 listed, 7 refused/blocking below)
 
@@ -327,10 +374,10 @@ Full fields, including the verbatim upstream licence quote, its URL and fetch da
 | `GEM/opusparcus` | NC | V | opensubtitles | six languages; English subset in the hundreds of thousands of pairs | standard cap/sample only → NC tier |
 | `microsoft/ms_marco` | NC | V | ms-marco | ~8.8M passages, ~1M queries | hard-negative mining (BM25 + dense), standard in the field → NC already caps the tier; mining adds nothing. Emits into the NC tier file only. |
 | `RobZamp/sick (SICK)` | NC | V | sick | 9,840 sentence pairs (relatedness 1-5 + entailment label) | none -- ready to use as-is → NC AND SA both attach; the composed model inherits both. Emits into the NC-SA tier, which cannot merge with any CC BY-SA or ODC-By file. |
-| `allenai/qasper` | UNVERIFIED | V | s2orc | not probed | n/a until an independent primary is read → n/a; if it is S2ORC-lineage the corpus half would be ODC-By, a separate tier from a CC BY claims half |
+| `allenai/qasper` | ATTRIBUTION | **C** | s2orc | not probed | joins the `s2orc` group with peS2o, SciFact's corpus and SciDocs -- not independent for B1/B2 → the paper's own data-availability statement (arxiv.org, independent of the HF mirror host) restricts source papers to CC-BY-* arXiv; resolves the R1 host-diversity gate |
 | `BeIR/climate-fever` | UNVERIFIED | *U* | wikipedia | not probed | n/a pending a primary read → n/a |
 | `BeIR/quora` | UNVERIFIED | *U* | quora-qqp | not probed | n/a pending a primary licence read → n/a |
-| `ltg/en-wiki-paraphrased` | UNVERIFIED | V | wikipedia | 5,145,408 rows -- the largest permissive-tagged paraphrase set found | two options: (a) drop the `original` column and use paraphrase-to-paraphrase rewrites only, or (b) accept CC BY-SA propagation from `original` and treat the whole set as share-alike → option (a) may reach the clean-permissive tier; option (b) emits into the… |
+| `ltg/en-wiki-paraphrased` | SHARE_ALIKE | **C** | wikipedia | 5,145,408 rows -- the largest permissive-tagged paraphrase set found | two options remain open: (a) drop the `original` column and use paraphrase-to-paraphrase rewrites only for a clean-permissive cut, or (b) keep `original` and emit the whole set into the share-alike tier (the verdict recorded here) → English Wikipedia (CC BY-SA) is confirmed as the `original` column's source; as distributed, apache-2.0 is the wrong layer |
 | `mteb/sts12-sts .. mteb/sts17-crosslingual-sts, mteb/biosses-sts` | UNVERIFIED | *U* | semeval-sts | not probed | n/a pending one primary read that clears the block → n/a |
 | `mteb/stsbenchmark-sts` | UNVERIFIED | *U* | semeval-sts | 8,628 graded pairs (the standard STS-B split) | none needed -- it is eval-shaped as-is → n/a; do not train on it under a TRAIN_OK-only fetcher until the licence resolves. EVAL-ONLY use is a separate, weaker claim that also needs the primary. |
 | `sentence-transformers/wikianswers-duplicates` | UNVERIFIED | *U* | wikianswers-ppdb | ~24M duplicate-question pairs | n/a pending a primary licence read → n/a |
@@ -393,12 +440,12 @@ Full fields, including the verbatim upstream licence quote, its URL and fetch da
 | `EuroSAT` | PERMISSIVE_OK | V | eurosat | 27,000 labelled Sentinel-2 RGB images, 10 land-use classes | the JEPA-style patch-token pipeline already exists; run a class-balance check against B5 → MIT; clean-permissive tier |
 | `Replacement-vision composite (pxhere, PatchCamelyon, Shapes3D, CLEVR, Fashion-MNIST, EuroSAT-rgb, Quick Draw, Caltech-101/256)` | PERMISSIVE_OK | V | (multi-group composite) | ~497k images | pair with EuroSAT and a Commons pull; the caption layer is what the Commons+SAFE-captioner path is for → clean-permissive tier; attribution manifests for the CC BY members |
 | `Wikimedia Commons (direct, licence-filtered pull)` | PERMISSIVE_OK | **C** | wikimedia-commons | >100M media files total; a photographic, CC0/CC-BY-only, no-NC subset must be built and its size is TBD by the filter | pull a CC0/CC-BY-filtered image subset via the Commons API with the licence read and recorded PER FILE in the receipt, then generate captions with a SAFE-class (Apache-2.0/MIT, locally run) captioner -- converting a pure image source into caption pairs with… |
-| `derek-thomas/ScienceQA` | UNVERIFIED | V | sciqa-curriculum | 21,208 questions, ~10,332 with an image | n/a until the constituent-source question is checked → SHARE_ALIKE if the mirror tag holds at the constituent level; UNVERIFIED today |
+| `derek-thomas/ScienceQA` | NC | **C** | sciqa-curriculum | 21,208 questions, ~10,332 with an image | n/a -- the multi-curriculum constituent-source risk (IXL Learning-origin claim) remains open and is NOT resolved by this pass → upstream (lupantech/ScienceQA, independent of the HF mirror host) is CC BY-NC-SA 4.0; the mirror tag `cc-by-sa-4.0` is a mirror lie that omits the NC element |
 | `DocVQA (task 1)` | UNVERIFIED | V | ucsf-industry-documents | 12,767 images / 50,000 questions | none until the portal terms are read by someone with an account → if the 'evaluation license' phrasing governs, this is the same restrictive shape already REFUSE'd for SA-1B |
 | `lmms-lab/ai2d (AI2D)` | UNVERIFIED | V | ai2-diagram | 4,903 diagrams / ~15,000 multiple-choice questions | n/a until a grant is read → n/a |
 | `Maluuba/FigureQA` | UNVERIFIED | **C** | synthetic-chart-render | ~180,000 synthetic figures (100k train + val/test), ~1.3M QA pairs | none needed if the MSR data-download terms clear; otherwise re-render equivalents with the MIT generator code, which the operator may run outright → if the MSR terms clear, clean-permissive tier; if they do not, the MIT generator code is itself a usable pat… |
-| `NiteshMethani/PlotQA` | UNVERIFIED | **C** | synthetic-chart-render | ~224,000 charts / 28M QA pairs -- by far the largest chart-QA set found | none needed if the discrepancy resolves; the underlying data values may carry their own source licence (World Bank Open Data is itself CC BY 4.0, a favourable sign, unconfirmed) → MIT would emit clean-permissive; CC BY 4.0 would emit into the attribution ti… |
-| `wikimedia/wit_base` | UNVERIFIED | V | wikimedia-commons | ~37.6M image-text pairs across 108 languages; English subset alone ~5.5M | language filtering to the fleet's target set, then a per-file licence-stratification pass: keep CC0/CC BY for the permissive tier, quarantine CC BY-SA → the dataset-level CC BY-SA 4.0 tag cannot be trusted as the per-image FLOOR without the audit; if the au… |
+| `NiteshMethani/PlotQA` | ATTRIBUTION | **C** | synthetic-chart-render | ~224,000 charts / 28M QA pairs -- by far the largest chart-QA set found | none needed; the underlying data values may carry their own source licence (World Bank Open Data is itself CC BY 4.0, a favourable sign, unconfirmed) → the README (distinct from the LICENSE file, which is bare MIT) states the data are CC-BY-4.0 and code is MIT -- resolves the prior discrepancy |
+| `wikimedia/wit_base` | SHARE_ALIKE | **C** | wikimedia-commons | ~37.6M image-text pairs across 108 languages; English subset alone ~5.5M | language filtering to the fleet's target set, then a per-file licence-stratification pass: keep CC0/CC BY for the permissive tier, quarantine CC BY-SA → dataset-level CC BY-SA 4.0 re-confirmed at the primary; the per-image audit against the FLOOR is still required before this is treated as fully admitted -- see §8 |
 
 **Refused / blocking in `visual`**
 
@@ -417,7 +464,7 @@ Full fields, including the verbatim upstream licence quote, its URL and fetch da
 | `LAION-2B / LAION-400M` | REFUSE | R | URL-only, no image rights conveyed of any kind. Same class as Conceptual Captions. |
 | `Segment Anything / SA-1B` | REFUSE | V | a commercial photo licence Meta itself holds, which does not transfer to third-party redistribution or training — A textbook R4 refusal on explicit research-only terms. No redistribution or training grant to third parties beyond research use. |
 
-#### `language_trunk` — candidates (21 listed, 5 refused/blocking below)
+#### `language_trunk` — candidates (20 listed, 6 refused/blocking below)
 
 | dataset | verdict | verif | provenance group | size | enrichment → licence result |
 |---|---|---|---|---|---|
@@ -437,17 +484,17 @@ Full fields, including the verbatim upstream licence quote, its URL and fetch da
 | `Stack Exchange data dump (HuggingFaceH4/stack-exchange-preferences and the raw dump)` | SHARE_ALIKE | V | stackexchange | hundreds of GB across all SE sites; the HF preference-pairs mirror is a filtered subset (10M<n<100M rows) | NONE ADMISSIBLE TODAY -- see the licence result → R9 REFUSE AT INGEST: the attribution obligation is PER-ITEM (a live outbound hyperlink per answer and per author profile) and a dataset-level manifest cannot satisfy it at any scale. 20-enrichment §1.3/§4.5 … |
 | `wikimedia/wikipedia` | SHARE_ALIKE | V | wikipedia | ~6.8M English articles (20231101.en config) | attribution manifest with the article-history hyperlink or author list per the ToU → CC BY-SA 4.0 propagates to any derivative built substantially FROM Wikipedia text (e.g. QA-pair extraction) -- expressly, per CC BY-SA 4.0 §4(b). Whether it reaches the tra… |
 | `allenai/tulu-3-sft-mixture` | UNVERIFIED | **C** | (composite -- decompose) | ~939K examples | per-subset split before whole-corpus admission -- not a spot-check → the blanket ODC-By tag cannot be the operative licence for subsets the card itself says are NC or third-party-model output; splitting produces at least a permissive tier, an NC tier and a … |
-| `CourtListener bulk data (Free Law Project)` | UNVERIFIED | **C** | courtlistener | 10M+ opinions | re-open with a fetch of courtlistener.com/terms/ from a different egress, or ask the operator to paste the terms page → if the Public Domain Mark governs the data, this emits into the clean-permissive tier and is a large independent provenance group for the… |
+| `CourtListener bulk data (Free Law Project)` | PERMISSIVE_OK | **C** | courtlistener | 10M+ opinions | re-opens a large independent provenance group for `language_trunk`; not yet folded into the §8 reach numbers (no byte/token size on record for this entry) → "free of known copyright restrictions," Public Domain Mark, every bulk table individually marked; no CC BY-ND clause on this page (courtlistener.com/terms/ 403 remains unread but covers only the site's presentation layer) |
 | `nvidia/Nemotron-CC-v2` | UNVERIFIED | **C** | common-crawl | multi-trillion tokens across quality tiers plus a synthetic tier | if admitted, the synthetic tier must be separable from the non-synthetic tiers so the Qwen obligations attach to a bounded share → ENCUMBERED-generator flow-through (SYN-L2 / R10): admitting the synthetic tier obliges the released model to carry a 'Built wi… |
-| `Papers with Code dataset index` | UNVERIFIED | *U* | (index only) | n/a | every hit through it still needs the same primary-source licence read → n/a -- record as methodology, not as an admissible source |
+| `Papers with Code dataset index` | SHARE_ALIKE | **C** | (index only) | n/a | every hit through it still needs the same primary-source licence read → the index dump itself is CC-BY-SA; still not an admissible training source -- record as methodology only |
 | `PubMed Central Open Access subset` | UNVERIFIED | V | pmc-oa | millions of full-text biomedical articles; the CC0/CC BY/CC BY-SA slice is the safely usable fraction | MECHANICAL per-article licence filter is REQUIRED before any admission: keep CC0/CC BY/CC BY-SA, filter OUT every ND slice, tag the NC slices NC. Each licence bucket is its own provenance stratum for B1-B5, not one dataset. → three separate emitted tier fil… |
-| `togethercomputer/RedPajama-Data-V2` | UNVERIFIED | V | common-crawl | ~30T tokens across 5 quality-signal tiers | quality-signal-based filtering to FineWeb-Edu-like quality → no HF-native grant exists to propagate; the emitted subset would rest entirely on the Common Crawl ToU, which is an access agreement, not a copyright licence |
 
 **Refused / blocking in `language_trunk`**
 
 | dataset | verdict | verif | why refused |
 |---|---|---|---|
 | `arXiv full-text` | REFUSE | V | ND options present in the full-text layer — The metadata layer is a smaller, separately-assessable, clean candidate. Do NOT conflate the two layers. |
+| `togethercomputer/RedPajama-Data-V2` | REFUSE | **C** | Together grants no independent database-rights instrument over the text (contrast FineWeb's explicit ODC-By v1.0 -- see `language_code`); Common Crawl's own ToU licenses ACCESS to the crawl service, not a copyright grant, and expressly turns third-party copyright compliance back onto the user — the operator's "distributor disclaims ownership" REFUSE class (§1). |
 | `EleutherAI/the_pile_deduplicated` | REFUSE | R | Books3 and other sub-sources carry well-documented, unresolved rights disputes -- plausibly the operator's 'distributors that disclaim owning what they distribute' refusal class — Refused wholesale, not forever. Would decompose into several already-listed groups if split. |
 | `lmsys/lmsys-chat-1m` | REFUSE | V | explicit non-redistribution clause; raw users' conversations collected via a public chat demo, not an explicit research-consent flow -- a live-consent shape closer to Common Voice's than to a standard scrape — Refused on terms AND on consent provenance, which are separate grounds. Deliberately no… |
 | `Muennighoff/flan (FLAN collection)` | REFUSE | R | some constituent tasks (e.g. certain WMT/translation sets) carry mixed terms that a blanket admit would silently import — High-value IF the per-task audit is done; refused wholesale until then. Internally multi-source, which is good for B2 but means the internal composition needs its own audit. |
@@ -476,7 +523,7 @@ Full fields, including the verbatim upstream licence quote, its URL and fetch da
 | `PKU-Alignment/BeaverTails` | NC | **C** | pku-alignment | 364,170 rows (prompt + response + multi-category harm annotation + safety label) | category labels could seed taxonomy-conditioned rationale generation with a SAFE-class generator → NC propagates; same NC tier file as PKU-SafeRLHF |
 | `PKU-Alignment/PKU-SafeRLHF` | NC | V | pku-alignment | 164,236 rows (helpfulness + harmlessness dual-preference comparisons with severity tiers) | none needed for format → NC propagates; emits into the moral corpus's NC tier file, which can never merge with the Social Chemistry share-alike file or the WildGuard ODC-By file |
 | `toxigen/toxigen-data` | UNVERIFIED | V | microsoft-toxigen | 319,301 rows (LLM-generated implicit-hate-speech statements, human-annotated) | n/a pending resolution → IF the CDLA grant governs, this is the BEST-CASE family in the whole catalogue: CDLA-Permissive-2.0 §3.1 expressly states it imposes no restriction on Results, and §5.4 defines Results to INCLUDE machine learning models -- the only … |
-| `ucberkeley-dlab/measuring-hate-speech` | UNVERIFIED · EVAL-ONLY | **C** | measuring-hate-speech | 135,556 rows | n/a pending the grant-scope answer; the continuous score is the best calibration instrument in the survey and belongs in the probe set either way → if the grant covers annotations only, the post text cannot be redistributed and only the scores are usable --… |
+| `ucberkeley-dlab/measuring-hate-speech` | REFUSE · EVAL-ONLY | **C** | measuring-hate-speech | 135,556 rows | none for training; the continuous score is the best calibration instrument in the survey and belongs in the probe set → D-Lab's CC BY 4.0 plausibly covers its own annotations/scores only; the underlying post text is platform-scraped (YouTube/Reddit/Twitter, confirmed via the paper) with no grant from parties not privy to that licence -- REFUSE for training, EVAL-ONLY unchanged |
 | `walledai/TDC23-RedTeaming` | UNVERIFIED | *U* | tdc23-redteaming | not sized in either pass | n/a pending a data-specific grant that may no longer be obtainable → n/a |
 ---
 
@@ -544,9 +591,9 @@ per-row length appropriate to the shape and are recorded in the reach model, not
 
 | faculty | tier | groups | raw reach | `T_B1` | % of 1e10 |
 |---|---|---|---|---|---|
-| **`language_code`** | clean-permissive | 3 | 5.8e9 | **1.5e9** | **15%** |
+| **`language_code`** | clean-permissive | **4** | **4.3e10** | **9.7e9** | **97%** |
 | | OpenRAIL-M (share-alike) | 1 | 2.0e11 | 0 (waiver only) | 0% |
-| | NC-inclusive (union of files) | 4 | 2.1e11 | **1.5e9** | **15%** |
+| | NC-inclusive (union of files) | **5** | **2.4e11** | **7.1e10** | **711%** |
 | **`memory`** | clean-permissive | 8 | 1.3e8 | **1.3e8** | **1.3%** |
 | | share-alike | 2 | 2.0e9 | 3.7e7 | 0.4% |
 | | NC (with MS MARCO) | 6 | 7.3e8 | 3.3e8 | 3.3% |
@@ -558,12 +605,38 @@ per-row length appropriate to the shape and are recorded in the reach model, not
 | | **clean-permissive, running the DeepMind generator** | 9 | unbounded | **unbounded** | **≥100%** |
 | **`numeric_math`** | clean-permissive (generator + MATH + Wikidata) | 3 | unbounded | **unbounded** | **≥100%** |
 | **`visual`** | clean-permissive | 7 | 3.2e7 | **3.2e7** | **0.3%** |
+| | share-alike (wikimedia/wit_base, pending per-file audit) | **1** | **3.5e8–2.4e9** | **0 (waiver only)** | **3.5%–24%** |
 | | NC-inclusive | 7 | 3.2e7 | **3.2e7** | **0.3%** |
 | **`language_trunk`** | clean-permissive | 7 | 9.6e11 | **6.4e11** | **6,359%** |
 | | ODC-By | 2 | 1.35e12 | 8.3e10 | 833% |
 | | NC-inclusive (union of files) | 11 | 2.3e12 | **7.2e11** | **7,192%** |
 | **`moral_safety`** | clean-permissive | 7 | 2.4e8 | **2.4e8** | **2.4%** |
 | | NC-inclusive (union of files) | 12 | 4.2e8 | **2.4e8** | **2.4%** |
+
+**Pass 2 arithmetic (claude+grok, 2026-09-03), the only rows changed from the base pass:**
+`OpenCoder-LLM/opc-fineweb-code-corpus` (147.9 GB, 100,920,235 rows; the card's own text states
+"~55 billion tokens" but the doc's stated 4-bytes/token assumption gives the more conservative
+3.7e10 -- used here) enters `language_code`'s clean-permissive tier as a 4th, now-dominant group,
+independent of PG-STACK/PG-CSN/PG-COMPETITIVE per its own `why` field. `L` = 3.7e10 (the new
+group), `R` = 5.8e9 (the prior 3 groups, unchanged), so `T_B1 = min(L+R, R/0.60) = min(4.28e10,
+9.67e9) = 9.7e9` (97%) -- up from 1.5e9 (15%). This robustly holds even at the card's own larger
+5.5e10-token figure, since `T_B1` here is bound by `R`, not `L`. Folded into the "NC-inclusive
+(union of files)" row (now clean-permissive + OpenRAIL-M + this group, 5 groups): `L` = 2.0e11
+(OpenRAIL-M, still dominant), `R` = 2.428e11 − 2.0e11 = 4.28e10, `T_B1 = min(2.428e11, 7.13e10) =
+7.1e10` (711%) -- up from 1.5e9 (15%). `wikimedia/wit_base` (37.6M image-text pairs, English
+subset ~5.5M; 64 patch tokens/image per the stated assumption) is `visual`'s first share-alike
+candidate at all (previously 0 share-alike and 0 NC groups); as a single provenance group its
+`T_B1` = 0 (waiver only, same pattern as `language_code`'s OpenRAIL-M row) until merged with a
+broader Commons pull, and its own entry still requires the per-file licence-stratification audit
+before being treated as fully admitted -- so this row is not folded into `visual`'s
+clean-permissive or NC-inclusive totals. All other resolved entries this pass either lack a
+byte/token size on record (`CourtListener bulk data`, `allenai/qasper`, `ltg/en-wiki-paraphrased`
+-- the doc's methodology forbids guessing a per-row length) or are too small to move a 2-significant-figure
+number (`neulab/conala` ~4.0e7 tokens; `OpenCoder-LLM/opc-annealing-corpus`, already counted
+inside PG-STACK) or were never counted in an admitted tier either before or after (`REFUSE`
+verdicts: `togethercomputer/RedPajama-Data-V2`, `Software Heritage`,
+`ucberkeley-dlab/measuring-hate-speech`; `Papers with Code dataset index` remains index-only, not
+a training source) -- none of these change a tier's numbers.
 
 ### What this table says
 
@@ -580,17 +653,26 @@ argument that *chasing more NC volume is not the lever*. The lever is **more ind
 PERMISSIVE_OK and ATTRIBUTION provenance groups**, exactly as `10-survey-compress.md` concluded
 for its own faculty. B1, not licence tolerance, is what is binding.
 
-**Three faculties reach the target and four do not.** `language_trunk` reaches it 60× over on
-permissive sources alone with B1 and B2 satisfied. `numeric_math` and `reasoning` reach it — but
-**only by running the DeepMind `mathematics_dataset` generator**, which is the single source in
-the whole catalogue that can supply arbitrary B1-relief volume under a settled Apache-2.0 grant
-without a new licence question. Without it, `reasoning` sits at 2.6%.
+**Four faculties reach the target on their own tier, and language_code very nearly does.**
+`language_trunk` reaches it 60× over on permissive sources alone with B1 and B2 satisfied.
+`numeric_math` and `reasoning` reach it — but **only by running the DeepMind
+`mathematics_dataset` generator**, which is the single source in the whole catalogue that can
+supply arbitrary B1-relief volume under a settled Apache-2.0 grant without a new licence
+question. Without it, `reasoning` sits at 2.6%. **Pass 2 (§4.6) moved `language_code` from
+15% to 97% of target on its clean-permissive tier alone**, and to 711% once its OpenRAIL-M
+share-alike file is unioned in — a single already-catalogued candidate
+(`OpenCoder-LLM/opc-fineweb-code-corpus`) that had sat `UNVERIFIABLE` since the first pass. This
+was previously the fourth faculty short of target; it no longer clearly is.
 
-**`visual` is off by a factor of 300.** Its clean-permissive tier is ~524k images ≈ 3.2e7 patch
-tokens. Reaching 1e10 needs ~1.6e8 images at the current 64-token geometry, or ~5.1e7 images if
-`visual`'s resolution rebuild (W7v) moves to a 224²/16² geometry at 196 tokens per image. Only
-one candidate in the catalogue can plausibly supply that: a licence-filtered Wikimedia Commons
-pull. Every other route in the visual survey dead-ends at BLOCKING.
+**`visual` is off by a factor of 300, though pass 2 opens its first share-alike path.** Its
+clean-permissive tier is still ~524k images ≈ 3.2e7 patch tokens. Reaching 1e10 needs ~1.6e8
+images at the current 64-token geometry, or ~5.1e7 images if `visual`'s resolution rebuild (W7v)
+moves to a 224²/16² geometry at 196 tokens per image. `wikimedia/wit_base` (§4.6) is now confirmed
+SHARE_ALIKE at 37.6M image-text pairs (≈2.4e9 patch tokens unfiltered, ≈3.5e8 for the English
+subset alone) — the licence-filtered Wikimedia Commons pull the survey already named as the only
+non-dead-end, now with one concrete candidate resolved, though its own per-file audit against the
+dataset-level CC BY-SA 4.0 floor is still open and its `T_B1` is 0 as a standalone group. Every
+other route in the visual survey dead-ends at BLOCKING.
 
 **`memory` is the faculty the merge made worse, not better.** Merging `retrieve` and `compress`
 inherits the union of obligations. Post-merge, its clean-permissive tier is 1.3% of target, its
@@ -607,15 +689,15 @@ Priority is by **`T_B1` unlocked per unit of effort**, not by dataset size.
 
 | # | fetch / action | unlocks | balance rules it must satisfy |
 |---|---|---|---|
-| **1** | The **OpenCoder technical report's data-availability section** (arXiv), for `OpenCoder-LLM/opc-fineweb-code-corpus` | 147.9 GB / 1.0e8 rows — the **only** large code source with provenance independent of PG-STACK, PG-CSN and PG-COMPETITIVE. It is what makes `language_code`'s B1 satisfiable at all. | Admit as its own provenance group. Cap at ≤ 0.40 of the emitted tier (B1). Dedup against PG-STACK first — crawled docs commonly duplicate repo READMEs (B4: strided sample, seed recorded). It is MIT-tagged, so it emits into the clean-permissive file, **not** into any PG-STACK OpenRAIL-M file. |
+| **1** | ~~The **OpenCoder technical report's data-availability section** (arXiv), for `OpenCoder-LLM/opc-fineweb-code-corpus`~~ **RESOLVED pass 2 (§4.6):** the entry's own card confirms FineWeb sourcing directly; ODC-By propagates (ATTRIBUTION), not MIT. | 147.9 GB / 1.0e8 rows — the **only** large code source with provenance independent of PG-STACK, PG-CSN and PG-COMPETITIVE. It is what makes `language_code`'s B1 satisfiable at all; see §8. | Admit as its own provenance group. Cap at ≤ 0.40 of the emitted tier (B1). Dedup against PG-STACK first — crawled docs commonly duplicate repo READMEs (B4: strided sample, seed recorded). It is **ODC-By-tagged at the content layer** (not MIT, which covers only OpenCoder's compilation), so it emits into the attribution file. |
 | **2** | **Wikimedia Commons / WIT per-file licence sampling audit** via the Commons API (`imageinfo` + `extmetadata`) | The only non-dead-end in `visual`, which is 300× short of target. Both the surveyor and the verifier name it the highest-value follow-up. | Stratified sample, licence recorded **per file** in the receipt. Keep CC0/CC BY in the permissive file; **quarantine CC BY-SA into a separate share-alike file, never merged** (§4.4). B5 stratum key = Commons category, max stratum ≤ max(0.25, 2/k). Enforce that Commons' guarantee is **policy-and-moderation, not technical** (§4, 30-verify-visual #21) — sample size must be chosen for that, not for a guaranteed floor. |
 | **3** | **Run the DeepMind `mathematics_dataset` generator** at controlled category caps (an action, not a fetch) | Takes `reasoning` from 2.6% to ≥100% of target and unblocks `numeric_math` from PLACEHOLDER — without touching `reasoning`'s spent gsm8k/aqua_rat and without a new licence question. | Counts as **ONE** provenance group under B2 however many categories are generated. Category is the B5 stratum key. B4: the cap is a sample with a recorded method and seed, never a prefix. Cap its own share at ≤ 0.40 so it relieves B1 rather than replacing one monoculture with another. |
 | **4** | **`bigcode/commitpackft` per-row `license` field distribution** | Decides whether PG-COMMITPACK is admissible at all. The card claims blanket "permissive" while its own enum contains `agpl-3.0` and `unknown` (§30-verify-code headline 1). | The filter must be **per row**, and the surviving `license` value must be carried into the emitted row's `lic_class` column (`20-enrichment` §4.2) — not into a sidecar manifest. Drop `agpl-3.0` and `unknown`; judge `mpl-2.0`/`lgpl-2.1`/`epl-1.0` separately as file-level weak copyleft. |
 | **5** | **`nickrosh/Evol-Teacher` licence conflict** — contact the author, or find a release note reconciling the HF `cc-by-nc-sa-4.0` tag with the GitHub `Apache-2.0` LICENSE | Unblocks **two** entries: `Evol-Instruct-Code-80k-v1` (78,264 rows) and, through it, `m-a-p/CodeFeedback-Filtered-Instruction` (156,526 rows), whose feedback/correction shape nothing else in the catalogue covers. | The two readings emit into **different, non-mergeable files** (clean-permissive vs NC-SA), so this must resolve before emission, not after. Both entries also carry the MODEL-OUTPUT-TERMS flag, so §9's decision is a second gate on the same rows. |
-| **6** | **`allenai/qasper`** second independent primary — the QASPER paper's data-availability statement, or a GitHub repo | The second-best `episodic_store`-shaped candidate after NarrativeQA. Blocked purely because `allenai.org/data/qasper` 302s to the HF card, so the only reachable statement fails A0m's host-diversity gate (`R1`). | If it resolves S2ORC-lineage, it joins the `s2orc` group with peS2o, SciFact's corpus and SciDocs — do not count it as independent. If the corpus half is ODC-By and the QA half CC BY, they are **two files**, not one. |
-| **7** | **`FigureQA`'s MSR data-download terms** and **`PlotQA`'s MIT-vs-CC-BY-4.0 discrepancy** | ~404k synthetic charts across the two — the only chart/diagram sources in the catalogue that are structurally clean of the per-photographer trap. FigureQA's generator code is confirmed MIT, so a failed licence read still leaves the option of **running the generator**. | Both sit in the **`synthetic-chart-render`** group with CLEVR and Shapes3D, already in the vision composite — they are **not** independent of it for B2. PlotQA's plotted values carry World Bank Open Data's own terms; check before assuming the render licence covers them. |
+| **6** | ~~**`allenai/qasper`** second independent primary — the QASPER paper's data-availability statement, or a GitHub repo~~ **RESOLVED pass 2 (§4.6):** arxiv.org/html/2105.03011 is independent of the HF mirror host and confirms CC-BY-* sourcing (ATTRIBUTION). | The second-best `episodic_store`-shaped candidate after NarrativeQA. Was blocked purely because `allenai.org/data/qasper` 302s to the HF card, so the only reachable statement failed A0m's host-diversity gate (`R1`) -- now cleared via arXiv. | It joins the `s2orc` group with peS2o, SciFact's corpus and SciDocs — do not count it as independent for B1/B2. |
+| **7** | **`FigureQA`'s MSR data-download terms** (still open) — ~~and `PlotQA`'s MIT-vs-CC-BY-4.0 discrepancy~~ **RESOLVED pass 2 (§4.6):** the README (not the LICENSE file the first pass checked) states data CC-BY-4.0 / code MIT (ATTRIBUTION). | ~404k synthetic charts across the two — the only chart/diagram sources in the catalogue that are structurally clean of the per-photographer trap. FigureQA's generator code is confirmed MIT, so a failed licence read still leaves the option of **running the generator**. | Both sit in the **`synthetic-chart-render`** group with CLEVR and Shapes3D, already in the vision composite — they are **not** independent of it for B2. PlotQA's plotted values carry World Bank Open Data's own terms; check before assuming the render licence covers them. |
 | **8** | **Resolve `sentence-transformers/natural-questions`' grant scope** (§4.1) — does Google's Apache-2.0 reach the Wikipedia passage text, or only the pipeline? | Decides whether `memory`'s clean-permissive tier is 1.3% or ~2.8% of target, and whether the survey's rank-1 recommendation stands. It is the cheapest way to find out whether `memory` has *any* clean retrieval source. | Whatever the answer, NQ joins the **`wikipedia`** group for B1/B2 alongside SQuAD, HotpotQA, FEVER, DBpedia, MIRACL and Mr.TyDi. It cannot raise N_eff; at best it raises the volume the group is allowed to contribute. |
-| **9** | **`courtlistener.com/terms/`** from a different egress (or pasted by the operator past the CloudFront 403) | Re-opens or closes 10M+ court opinions as a large independent provenance group for `language_trunk` and `reasoning` (§4.3). | If the Public Domain Mark governs the data, it emits into the clean-permissive file and is a genuinely new group — one of very few in the catalogue not already collapsed into Wikipedia, Common Crawl, S2ORC or the Stack. |
+| **9** | ~~**`courtlistener.com/terms/`** from a different egress (or pasted by the operator past the CloudFront 403)~~ **RESOLVED pass 2 (§4.6):** wiki.free.law's bulk-data page (independent of that blocked page) confirms Public Domain Mark on every bulk table, no ND clause (PERMISSIVE_OK). | Re-opens 10M+ court opinions as a large independent provenance group for `language_trunk` and `reasoning` (§4.3) — not yet folded into §8's numbers (no byte/token size on record). | Emits into the clean-permissive file, a genuinely new group — one of very few in the catalogue not already collapsed into Wikipedia, Common Crawl, S2ORC or the Stack. The general `courtlistener.com/terms/` page (403, unrelated to the bulk-data page) remains unread but covers only the site's presentation layer. |
 | **10** | **The SemEval-STS block** — one successful primary read of `ixa2.si.ehu.eus/stswiki` (or an archival snapshot) | Clears five candidates at once (`stsb`, `sts12`–`sts17`, and `biosses` alongside) — one provenance group, one fetch. It fills `compress`'s graded-similarity gate, which `00-ground.md` flags as never having run. | Only ~8,628 graded pairs, so it is an **eval** unlock, not a volume one. B3: declare it `held-out-domain` and report an in-mixture number beside it. **SICK is the already-cleared NC+SA alternative** that fills the same gap and is reachable today — reach for that first and treat this fetch as the permissive upgrade. |
 
 **Deliberately not in the top ten**, and why: `bigcode/starcoderdata` (783 GB, the largest single
@@ -667,8 +749,10 @@ visual survey's own #1 open fetch, is already closed (§4.2).
 6. **`toxigen/toxigen-data`'s conflict**: an unrestricted CDLA-Permissive-2.0 data grant (which
    *expressly* states it imposes nothing on machine-learning models — the only family surveyed
    where the Layer-2 question has a written answer) against a README sentence narrowing use to
-   "research purposes only". The two readings are as far apart as the catalogue gets, and both
-   passes deliberately declined to resolve it.
+   "research purposes only". The two readings are as far apart as the catalogue gets, and all
+   three passes to date (survey, verify, and the pass-2 second read at §4.6) have deliberately
+   declined to resolve it, re-confirming both primary texts verbatim each time without settling
+   which one governs.
 7. **Do sui generis database rights apply to a US-domiciled operator at all?** (§5.3.) If none
    applies, a filter-only enrichment may not be Adapted Material and §7's operation table
    over-constrains. The engineering answer is to comply anyway; the commercial answer may differ.
@@ -683,8 +767,9 @@ visual survey's own #1 open fetch, is already closed (§4.2).
   understates FiQA's restriction; its successor should carry NC.
 - **`10-survey-compress.md` is internally inconsistent on `ltg/en-wiki-paraphrased`**: its top-8
   table says "ATTRIBUTION (unsettled)" while its full entry and its refused table both say
-  REFUSE-pending. Resolved here as UNVERIFIED; the survey text should be made consistent so a
-  reader skimming only the table does not treat it as provisionally usable.
+  REFUSE-pending. Resolved here as UNVERIFIED at first pass, and as SHARE_ALIKE at pass 2 (§4.6) --
+  the survey text should be made consistent so a reader skimming only the table does not treat it
+  as provisionally usable under the apache-2.0 mirror tag.
 - **`maveriq/bigbenchhard`'s HF card asserts the upstream `google/BIG-bench` repo is MIT.** It is
   Apache-2.0. Verdict is unaffected (both are PERMISSIVE_OK) but the card's claim must not be
   cited downstream as if it had been checked.
@@ -733,10 +818,11 @@ the tier separation:
 - **The corpus does not target 1e10 tokens.** DEC-59 and the operator's stated preference are
   *"extremely high quality and requirement-complete over large"*. The §8 figure of 2.4% is
   recorded for comparability with the other faculties, not as a shortfall to close.
-- **Two entries must be settled before the corpus is built, not after**: `toxigen/toxigen-data`'s
-  CDLA-vs-README conflict (§10.1 #6) and `ucberkeley-dlab/measuring-hate-speech`'s grant scope
-  (annotations only, or the underlying Twitter/Reddit/YouTube post text too). The second matters
-  less if it is used only as a probe, which is what is recommended.
+- **One entry remains to be settled before the corpus is built, not after**:
+  `toxigen/toxigen-data`'s CDLA-vs-README conflict (§10.1 #6). `ucberkeley-dlab/measuring-hate-speech`'s
+  grant scope was resolved at pass 2 (§4.6): REFUSE for training (D-Lab's CC BY 4.0 covers its
+  own annotations, not the platform-scraped post text), `EVAL-ONLY` unchanged for the probe use
+  already recommended here.
 
 ---
 
