@@ -1,0 +1,626 @@
+{
+  "catalogue_entry": {
+    "caveat": "Gutenberg sub-portion overlaps whatever Gutenberg material is staged for the `language` trunk -- check for double counting.",
+    "faculty": "memory",
+    "grant_scope": "code_only",
+    "provenance_group": "narrativeqa",
+    "repo_id": "deepmind/narrativeqa",
+    "why": "The strongest episodic-store-shaped candidate in the survey, if scoped to the annotation layer."
+  },
+  "fetched_at": "2026-09-03T23:02:36Z",
+  "file_count": 120,
+  "file_manifest": [
+    {
+      "bytes": 1,
+      "path": ".cache/huggingface/.gitignore",
+      "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+    },
+    {
+      "bytes": 191,
+      "path": ".cache/huggingface/CACHEDIR.TAG",
+      "sha256": "f6572428f6d5e1575e73a1502895a8731f10757dfbb634909c6e154b849af91d"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/.gitattributes.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 101,
+      "path": ".cache/huggingface/download/.gitattributes.metadata",
+      "sha256": "2c27b1ca5a8734e98b69ef167d23495c3e7aae902c05739190fc384da1fea788"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/README.md.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 101,
+      "path": ".cache/huggingface/download/README.md.metadata",
+      "sha256": "ab61c2728a9dd6d5b92e9c35b9355d0814fe7353077d3ddfb48787c4a952dbd1"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/narrativeqa-master.zip.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/data/narrativeqa-master.zip.metadata",
+      "sha256": "2ea963502372eed0e833863f8b9221d9858cce95ece601d3d52083056ca6e5c3"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/narrativeqa_full_text.zip.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/narrativeqa_full_text.zip.metadata",
+      "sha256": "d8564110d62ecab359abc2c60778200b6a122b10df3016d7e566bb63da5795da"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/test-00000-of-00008.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/test-00000-of-00008.parquet.metadata",
+      "sha256": "ac76fe89d175b6b788023476eb3c42ac1552921cf960e286f6b577b1a7ff0154"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/test-00001-of-00008.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/data/test-00001-of-00008.parquet.metadata",
+      "sha256": "9dab1835ac791a5e46253926aacfd7c62d20fdb3f1113092f267fef98f7750f6"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/test-00002-of-00008.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/data/test-00002-of-00008.parquet.metadata",
+      "sha256": "b5da918ff7b9ff8448d52426c8e76f64392c13e327d9e236b1850a2ea26c3e1b"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/test-00003-of-00008.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/test-00003-of-00008.parquet.metadata",
+      "sha256": "97484f9028152dc5d8e87996a97eeaf5a74003f14eedcdd7677b5ddf8db4006a"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/test-00004-of-00008.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/test-00004-of-00008.parquet.metadata",
+      "sha256": "b052ea8854f1f9ab9807c25523a5287f4deb6ade0e46a2c2946be6a5bf6a34f3"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/test-00005-of-00008.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/test-00005-of-00008.parquet.metadata",
+      "sha256": "6d6e4bc9573cf63f465a19812c1c7b8c10a3ec7dacc0d6aeccb309743fbf98be"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/test-00006-of-00008.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/test-00006-of-00008.parquet.metadata",
+      "sha256": "d840508a1af4ee44bded90533e556d463fecc0cd25c4b915176c9b9144d8aafc"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/test-00007-of-00008.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/test-00007-of-00008.parquet.metadata",
+      "sha256": "496cddc418c5710df67965917068c8f9db82c35ea2744c5a6dbd49d433a560e8"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00000-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00000-of-00024.parquet.metadata",
+      "sha256": "591869dcca2fc0c4c3bdb02f5763e06f452fb7833ec641dee31de94cafa8cc10"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00001-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00001-of-00024.parquet.metadata",
+      "sha256": "2792cdb7b165048aa102eba33778cbb7207d101d7c1c5dd11c5696e5b045a245"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00002-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00002-of-00024.parquet.metadata",
+      "sha256": "169dc2ab3670e0016939ed3cc9d3a4e9133c04e74ed1f771d9cad197c3d692d9"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00003-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00003-of-00024.parquet.metadata",
+      "sha256": "21bc2a14f53687d3c7c454b4e74e9d0ccfa09cb35c56ca771fc0392b29474db4"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00004-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00004-of-00024.parquet.metadata",
+      "sha256": "77bcd8d0cd9d1baf8aa2f8c45bee5c2538baaabeda300d06ea43b374489bc535"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00005-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/data/train-00005-of-00024.parquet.metadata",
+      "sha256": "2f2f44d8f030e9787114e0a194e44dd54f2b7edd7886ce0b809931937c452149"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00006-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00006-of-00024.parquet.metadata",
+      "sha256": "8ffcf9a632957498c873bc8d9865d3c193abe657d1ea8ef77aba743fedbc7220"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00007-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00007-of-00024.parquet.metadata",
+      "sha256": "4e2fd9a9d1b7a4fe707bb2cca5f7684e29a227c388bddf4386000a93115fa386"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00008-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00008-of-00024.parquet.metadata",
+      "sha256": "9408f9bb18cc6b9660cd8989dc2ee0ae34a62b51dbb0ed0c8de2edeb88fab28d"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00009-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00009-of-00024.parquet.metadata",
+      "sha256": "58ccae77457b0eab20bb3f0839f10c201d51bd0c213031d84902d2e74505f5e0"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00010-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00010-of-00024.parquet.metadata",
+      "sha256": "ce5e144db10eddddc6d1100ca4e29210148b2937cb496d05eccdc5ab41c33950"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00011-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00011-of-00024.parquet.metadata",
+      "sha256": "0e7525197b615f455a9418909c56bdffed8a2fbb0dcd6b9bafe8aca28eb07b33"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00012-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00012-of-00024.parquet.metadata",
+      "sha256": "da81009d140924915f9b45cf6e085794ab2b205478fec2aeb57b4dd779ce3aba"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00013-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00013-of-00024.parquet.metadata",
+      "sha256": "0474289d63ac83fbc3a3487b632f3d8ac028aa89429eff89fead5c1de606210d"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00014-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00014-of-00024.parquet.metadata",
+      "sha256": "5b53ee462ba28115505fb550517f501e6d7e8a1ba523567f3013fef6c4a640a6"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00015-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00015-of-00024.parquet.metadata",
+      "sha256": "6cb53fc27f7477900840ef581c3773466f844f16c8aa83ce6f7a578db94cff8d"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00016-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00016-of-00024.parquet.metadata",
+      "sha256": "90940f8aa8156d6c2a2d71862bb2ac4d9d68e8de2bbe7ae7aefe69d4813bedaf"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00017-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/data/train-00017-of-00024.parquet.metadata",
+      "sha256": "d748f45c7f1146d7822185fb75444cbea94706ff5427fe44dd3f781a7032ed04"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00018-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/data/train-00018-of-00024.parquet.metadata",
+      "sha256": "2ea40b9a0efe15c6f03204b5bcd2c1b48aec03c5c5f86044049173f7479f3626"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00019-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/data/train-00019-of-00024.parquet.metadata",
+      "sha256": "3a4684775c9ef0bf323c19273127c81f443ccc5f6b78ac63d650fea596157093"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00020-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00020-of-00024.parquet.metadata",
+      "sha256": "d2727ddfe2b5e4dcc2bfe0af3c5f0b296491e1b8dd748eda28e93f729842a94c"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00021-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/data/train-00021-of-00024.parquet.metadata",
+      "sha256": "eb1e978a68b223530d4976dddc3a815d8465c410fdf95529b60116f954d64cb0"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00022-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/train-00022-of-00024.parquet.metadata",
+      "sha256": "20fb4214ba58a26250ae9d2002472b6316f59dacfd94bab59ed30996b9bf575f"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/train-00023-of-00024.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/data/train-00023-of-00024.parquet.metadata",
+      "sha256": "7e748329dc101e119ac9f84ea090113db9edecd9b880be5a583e85e525bbe2f6"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/validation-00000-of-00003.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/validation-00000-of-00003.parquet.metadata",
+      "sha256": "3e91e86fa1a7629b93abf3d1bd4a0d251f4fceabfeec43ab2536c971d65f2233"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/validation-00001-of-00003.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/validation-00001-of-00003.parquet.metadata",
+      "sha256": "f0eb79f47e001e393defc8ee79c9ac762fce719fde9c7f0a2e527ee241074ed1"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/data/validation-00002-of-00003.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/data/validation-00002-of-00003.parquet.metadata",
+      "sha256": "3733f600fc21ae85ca6bc19a61f5e98ead2e6fcbec7588bc316868a2c14ea517"
+    },
+    {
+      "bytes": 11986,
+      "path": ".cache/huggingface/trees/2e643e7363944af1c33a652d1c87320d0871c4e4.json",
+      "sha256": "6f0370853c5e43eca54fec9c198582cc1e2803adae4c176e7416c92f1de29003"
+    },
+    {
+      "bytes": 1174,
+      "path": ".gitattributes",
+      "sha256": "40e650854e43f5d4a0efaa68f487161e1226e22bc5480bd0effa0a8dadb5b848"
+    },
+    {
+      "bytes": 10572,
+      "path": "README.md",
+      "sha256": "6bb0cf93487ba1c63b7039892958ea6f23d07513fa2ad9b16c73ce813bbfa3d1"
+    },
+    {
+      "bytes": 5112076,
+      "path": "data/narrativeqa-master.zip",
+      "sha256": "d9fc92d5f53409f845ba44780e6689676d879c739589861b4805064513d1476b"
+    },
+    {
+      "bytes": 187416846,
+      "path": "data/narrativeqa_full_text.zip",
+      "sha256": "3e179a579d348da37b4929f20ece277a721f853fdc5efc11f915904de2a71727"
+    },
+    {
+      "bytes": 8559262,
+      "path": "data/test-00000-of-00008.parquet",
+      "sha256": "638fe830caab599fd40333b5c6783a83e12e431de35c9dde730d329596456f66"
+    },
+    {
+      "bytes": 44507679,
+      "path": "data/test-00001-of-00008.parquet",
+      "sha256": "51acc457d81b38e4cfb048436a239fe415aafa9c559577456720774c0cc5b407"
+    },
+    {
+      "bytes": 101411128,
+      "path": "data/test-00002-of-00008.parquet",
+      "sha256": "83f7672070ca24edb5a2844271cfbb18f351fc1fd84be945411a6814a13eb2e3"
+    },
+    {
+      "bytes": 221739348,
+      "path": "data/test-00003-of-00008.parquet",
+      "sha256": "2b305c1ac27799d710172855265ba665b8fc258430a97a7994d976414db03021"
+    },
+    {
+      "bytes": 60842742,
+      "path": "data/test-00004-of-00008.parquet",
+      "sha256": "c69949be3fe1d57f1171f929f18646eb99410784162b15632e778085a15abb79"
+    },
+    {
+      "bytes": 121182898,
+      "path": "data/test-00005-of-00008.parquet",
+      "sha256": "38b87f8c0a4f0dc139808693bd019e2d0eb3a193f0b52fd52977b20b61f793c4"
+    },
+    {
+      "bytes": 243201775,
+      "path": "data/test-00006-of-00008.parquet",
+      "sha256": "d0c894370b0cd1462582e89d39924a4e66db5caf69fa8d9ecc75e80284e7091a"
+    },
+    {
+      "bytes": 58520238,
+      "path": "data/test-00007-of-00008.parquet",
+      "sha256": "c9eddfda2441b23a7828886c3dad94986e693b989bf663a324c69c87870f2c3b"
+    },
+    {
+      "bytes": 9799947,
+      "path": "data/train-00000-of-00024.parquet",
+      "sha256": "c503bf6f9dc99f624cf23d592cbab393bcf8ec83ae72ee8bda9fe78dc975684a"
+    },
+    {
+      "bytes": 67193596,
+      "path": "data/train-00001-of-00024.parquet",
+      "sha256": "d6916659f26644945dcdbcba0cb153af8ce42c2482b6e6ee455af8a03aae0287"
+    },
+    {
+      "bytes": 232543098,
+      "path": "data/train-00002-of-00024.parquet",
+      "sha256": "d876d0df116532d476e2cf9b0a6f22d3844b9a2837a66ff431fe5473b9651acb"
+    },
+    {
+      "bytes": 27237144,
+      "path": "data/train-00003-of-00024.parquet",
+      "sha256": "beef361d669198b2ca60b3906df894474bfc29ab86e3ed5b901deaf818bc1034"
+    },
+    {
+      "bytes": 88349123,
+      "path": "data/train-00004-of-00024.parquet",
+      "sha256": "66703341abb91e44300106d7fd0c87e9a4d86b1e6bbd33ebe855fc557f73126f"
+    },
+    {
+      "bytes": 206395732,
+      "path": "data/train-00005-of-00024.parquet",
+      "sha256": "162781ba93739daad62786144572cd8ff3c77b63ca1a1c0c788c02d74548aeba"
+    },
+    {
+      "bytes": 39407269,
+      "path": "data/train-00006-of-00024.parquet",
+      "sha256": "6a7d3c25d3185c3c0df8272664494fbc53b78e5c79f53efc4bf620aee36a9495"
+    },
+    {
+      "bytes": 132425662,
+      "path": "data/train-00007-of-00024.parquet",
+      "sha256": "a33131a90ca1de261125065d66f6a2bd9a4403f34b3d2d525e77488ad905f54d"
+    },
+    {
+      "bytes": 10295374,
+      "path": "data/train-00008-of-00024.parquet",
+      "sha256": "207b66118655892930c495da7b7a036c03d167b57b248a7c27bdfd937e1be29c"
+    },
+    {
+      "bytes": 49453135,
+      "path": "data/train-00009-of-00024.parquet",
+      "sha256": "4b36dc10fd6a1f2d66ca3b26705c1a98ceb0c7c8ea0c99e91b168a59fd86d357"
+    },
+    {
+      "bytes": 125852344,
+      "path": "data/train-00010-of-00024.parquet",
+      "sha256": "abc135b05617d6e627197b2d43715a7e8f1ea2262d750c9b2d2b23c152e841f2"
+    },
+    {
+      "bytes": 13545900,
+      "path": "data/train-00011-of-00024.parquet",
+      "sha256": "674c0876d1f2f60ef1f3b8f0d7d48d0f731baefd59d12c4b2b7ab715a5ad301f"
+    },
+    {
+      "bytes": 105091430,
+      "path": "data/train-00012-of-00024.parquet",
+      "sha256": "66253913e5c161d37eef2d5212e54ae26f63ddd73dac1966dd3a55800e16a516"
+    },
+    {
+      "bytes": 135517273,
+      "path": "data/train-00013-of-00024.parquet",
+      "sha256": "edfb135333a47a9c7a307af8d01474a598bf2db307e16b9be026f375ed972363"
+    },
+    {
+      "bytes": 34954998,
+      "path": "data/train-00014-of-00024.parquet",
+      "sha256": "67c5b1dcc311b2a12c102f32d2f49758a97d7928cb578527cf3df2242e3c6e5c"
+    },
+    {
+      "bytes": 73411063,
+      "path": "data/train-00015-of-00024.parquet",
+      "sha256": "3317553c52f6093ee3a36b94861d9de5c4b34d2adf4ebbd38fb0072974b6125c"
+    },
+    {
+      "bytes": 193825786,
+      "path": "data/train-00016-of-00024.parquet",
+      "sha256": "1eda7b63549691eaffb613afbb5f87f1f65a74f4562546e9f6e4afb86c2e62b8"
+    },
+    {
+      "bytes": 61561710,
+      "path": "data/train-00017-of-00024.parquet",
+      "sha256": "3f0b1b763c5b7fbed56b6a264cee4b2bff4ad4a84abe6fdee3282eca434cbddd"
+    },
+    {
+      "bytes": 106649283,
+      "path": "data/train-00018-of-00024.parquet",
+      "sha256": "48183a438c60d8fe80a1fab74f871db3a3ec2de3799607aaa791940272acab99"
+    },
+    {
+      "bytes": 194924664,
+      "path": "data/train-00019-of-00024.parquet",
+      "sha256": "9edd6ce0ddb59e9e71424d2441a22ea5afdc64459efb3337e54d2096589f86a7"
+    },
+    {
+      "bytes": 74241909,
+      "path": "data/train-00020-of-00024.parquet",
+      "sha256": "7348a1895950b08039f72abadcede635886b0af1e9ee33a79a5bd5af7123542e"
+    },
+    {
+      "bytes": 177583097,
+      "path": "data/train-00021-of-00024.parquet",
+      "sha256": "198cca049bb959dd668920ce9ac3b14e68ba9537da9824dd49b52fcbe4f04a30"
+    },
+    {
+      "bytes": 11929083,
+      "path": "data/train-00022-of-00024.parquet",
+      "sha256": "9d5333d8d0132bc3cf7662f4c491c4ab00b29e1562c04f444b3e8fb01478aeef"
+    },
+    {
+      "bytes": 97778313,
+      "path": "data/train-00023-of-00024.parquet",
+      "sha256": "cac81336b130e9265f11f508825e7c9f16c247f9bb09e2893a16d78b04490c7b"
+    },
+    {
+      "bytes": 9995351,
+      "path": "data/validation-00000-of-00003.parquet",
+      "sha256": "5bd4cfb854ec4c22b98583fa4b6b16f5e6f7461d8bfc13cfe8e7eb12b30871d0"
+    },
+    {
+      "bytes": 24882497,
+      "path": "data/validation-00001-of-00003.parquet",
+      "sha256": "2f0728b3f819c1ccf67a1d0e1c37bfe8523063a46a5742275770d3db2c2ed799"
+    },
+    {
+      "bytes": 67995850,
+      "path": "data/validation-00002-of-00003.parquet",
+      "sha256": "3f6da16ec6688f788947023d84408bb7af71de7fd379d86b4ea517c42297d39b"
+    }
+  ],
+  "licence_fetch_date": "2026-09-03",
+  "licence_mirror_tag": "apache-2.0",
+  "licence_upstream_source": "https://github.com/deepmind/narrativeqa",
+  "licence_upstream_verbatim": "Repo licence badge: Apache License, Version 2.0. The fetch found NO mention of rights to the underlying books or movie/TV scripts.",
+  "mirror_url": "https://huggingface.co/datasets/deepmind/narrativeqa",
+  "provenance_group": "narrativeqa",
+  "resolved_revision": "2e643e7363944af1c33a652d1c87320d0871c4e4",
+  "tool_version": "0.1.0",
+  "total_bytes": 3425363365,
+  "upstream_url": "https://github.com/deepmind/narrativeqa",
+  "verdict": "PERMISSIVE_OK",
+  "verification_status": "VERIFIED"
+}
