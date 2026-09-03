@@ -1,0 +1,23 @@
+# gitleaks fingerprint ignore list.
+#
+# Each entry is the exact "<commit>:<file>:<rule>:<line>" fingerprint gitleaks
+# itself prints for a finding (see `gitleaks detect --verbose`). Ignores here
+# are scoped to one specific, already-reviewed occurrence -- never a whole
+# file, directory, or rule -- so a new secret introduced anywhere else,
+# including later in these same files, still fails the scan.
+#
+# The two entries below are the docs/ratified-design-2026-09-02 merge
+# (PR #5, fleet-security / gitleaks, run 2026-09-03T11:28:54Z): the
+# "generic-api-key" rule matches the substring "token" inside "tokenizer"
+# and flags a plain filesystem path in evidence-run prose, not a credential.
+# Both files are committed, byte-for-byte experiment outputs -- one is
+# checksummed in docs/design/evidence/w1d-readout-probe-2026-09-02/SHA256SUMS
+# -- so the fix is a scoped ignore rather than a reword that would corrupt
+# the recorded evidence.
+#
+# docs/design/evidence/w1-token-rank-2026-09-02/results.json:350
+#   "tokenizer loaded from /mnt/fleet-datasets/tritter/gpt2_tokenizer.json, vocab_size=50257"
+27b0e4d4f0f949764693c6996fdd14d0d6acfef2:docs/design/evidence/w1-token-rank-2026-09-02/results.json:generic-api-key:350
+# docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:590
+#   "tokenizer loaded from /mnt/fleet-datasets/tritter/gpt2_tokenizer.json, vocab_size=50257"
+27b0e4d4f0f949764693c6996fdd14d0d6acfef2:docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:generic-api-key:590
