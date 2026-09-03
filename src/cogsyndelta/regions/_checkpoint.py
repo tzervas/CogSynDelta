@@ -11,10 +11,18 @@ two copies that will eventually drift.
 What is deliberately NOT here: anything about what goes INSIDE a checkpoint (model
 state_dict, RNG state, the untrained baseline, ...). That is per-harness, built by each
 caller into a plain dict before it ever reaches :func:`atomic_save`.
+
+:func:`load_checkpoint` is the fourth thing that lives here once rather than as several
+copies (design row W0c, DEC-40): the one production entry point for `torch.load` on a
+checkpoint file, verifying a content hash BEFORE the file is ever opened when the caller
+has one to check against. See its own docstring for the threat model, and
+`tests/test_checkpoint_loader_lint.py` for the guard that keeps every other production
+`torch.load` of a checkpoint routed through it instead of called directly.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -24,6 +32,90 @@ from typing import Any
 import torch
 
 _STEP_RE = re.compile(r"step-(\d+)\.pt$")
+
+
+class ChecksumMismatchError(RuntimeError):
+    """A checkpoint's content hash did not match the hash the caller expected.
+
+    Raised by :func:`load_checkpoint` BEFORE `torch.load` ever opens the file -- a
+    mismatch never reaches the unpickler, malicious or not.
+    """
+
+
+def sha256_file(path: Path, chunk_size: int = 1 << 20) -> str:
+    """Content hash of a file on disk, read in chunks rather than loaded whole."""
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(chunk_size), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def load_checkpoint(
+    path: Path | str,
+    *,
+    expected_sha256: str | None = None,
+    map_location: str | torch.device = "cpu",
+    weights_only: bool = True,
+) -> dict[str, Any]:
+    """The one production entry point for `torch.load` on a checkpoint file.
+
+    WHY A HASH CHECK BEFORE `torch.load`, NOT JUST `weights_only=True`
+    `tests/test_checkpoint_load_security.py` covers a DIFFERENT threat: a checkpoint path
+    read out of a receipt JSON on an NFS export mounted `rw,no_root_squash` could point at
+    a hostile pickle payload that runs code the moment it is unpickled --
+    `weights_only=True` closes that by refusing to construct anything outside a small
+    allow-list of tensor/container/numeric types.
+
+    That guard proves the bytes cannot run code. It does not prove they are the SAME
+    bytes a caller who recorded an expected hash (a receipt's `checkpoint_sha256`, most
+    often) is expecting. A checkpoint silently overwritten, truncated, or swapped for a
+    different -- still `weights_only`-safe -- file after that hash was recorded loads
+    without complaint under the old per-call-site pattern; the numbers it produces would
+    then describe weights the receipt does not actually name. Hashing the whole file
+    before `torch.load` ever opens it closes that: a mismatch is refused outright, before
+    a single byte reaches the unpickler.
+
+    Every production `torch.load` of a checkpoint in this project routes through here --
+    `load_resumable` below, `scripts/csd-quantize.py`, `scripts/csd-benchmark.py` -- and
+    `tests/test_checkpoint_loader_lint.py` greps the source tree to keep it that way: a
+    stray `torch.load(` outside this function is a checkpoint that skipped the check, not
+    a style violation.
+
+    Args:
+        path: The checkpoint file.
+        expected_sha256: If given, `path`'s content hash must match BEFORE the file is
+            ever handed to `torch.load` -- a mismatch raises without attempting to load
+            it. `None` (the default) skips the check: not every caller has a prior hash
+            to verify against (`load_resumable`, resuming its own training loop, has no
+            independently-recorded hash for the checkpoint it is about to read) -- for
+            those callers this function is still the one place `torch.load` is invoked,
+            which is what the lint enforces.
+        map_location: Forwarded to `torch.load`.
+        weights_only: Forwarded to `torch.load`. Defaults `True` -- see
+            `test_checkpoint_load_security.py` for what this defends against; this
+            function adds a check upstream of it, and does not change that default.
+
+    Returns:
+        The loaded checkpoint dict, exactly as `torch.load` returns it.
+
+    Raises:
+        FileNotFoundError: `path` does not exist.
+        ChecksumMismatchError: `expected_sha256` was given and did not match.
+    """
+    p = Path(path)
+    if not p.is_file():
+        raise FileNotFoundError(f"load_checkpoint: no such file: {p}")
+    if expected_sha256 is not None:
+        actual = sha256_file(p)
+        if actual != expected_sha256:
+            raise ChecksumMismatchError(
+                f"checkpoint {p} sha256 {actual} does not match expected "
+                f"{expected_sha256} -- refusing to load. The file may have been "
+                f"overwritten, truncated, or replaced since the expected hash was "
+                f"recorded."
+            )
+    return torch.load(p, map_location=map_location, weights_only=weights_only)
 
 
 def atomic_save(obj: dict[str, Any], path: Path) -> None:
@@ -149,7 +241,7 @@ def load_resumable(
     path = latest_checkpoint_path(ckpt_dir)
     if path is None:
         return None
-    ckpt = torch.load(path, map_location="cpu", weights_only=True)
+    ckpt = load_checkpoint(path, map_location="cpu")
     if "config_fingerprint" not in ckpt:
         if allow_unfingerprinted:
             print(

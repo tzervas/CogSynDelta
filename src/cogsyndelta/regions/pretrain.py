@@ -54,7 +54,13 @@ from cogsyndelta.eval import (
     screen_pair_contamination,
     spearman_correlation,
 )
-from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
+from cogsyndelta.regions._checkpoint import (
+    atomic_save,
+    load_resumable,
+    rotate_checkpoints,
+    sha256_file,
+)
+from cogsyndelta.regions._receipt import trainer_defaults, write_receipt
 from cogsyndelta.regions._tokencache import corpus_token_cache
 from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig, info_nce
 
@@ -555,8 +561,10 @@ def _beats_untrained_gate(
     final: dict[str, float],
     baseline: dict[str, float],
     eval_pairs: float,
+    graded_final: dict[str, float] | None = None,
+    graded_baseline: dict[str, float] | None = None,
 ) -> tuple[dict[str, float], dict[str, bool]]:
-    """Chance floor and sanity-gated `beats_untrained["recall@1"/"recall@10"]`.
+    """Chance floor and sanity-gated `beats_untrained["recall@1"/"recall@10"/"spearman"]`.
 
     WHY A SANITY GATE, NOT JUST A COMPARISON
     `beats_untrained` used to be `final[m] > baseline[m]` alone. That is trivially
@@ -590,15 +598,57 @@ def _beats_untrained_gate(
     one an in-batch diagonal eval is built around; a `recall@1` baseline this broken
     means the whole eval run is not trustworthy, not just one column of it.
 
+    WHAT `baseline_sane`'S THRESHOLD ACTUALLY CATCHES
+    `baseline_sane` is `baseline["recall@1"] >= chance["recall@1"] / 2`, i.e.
+    `>= 1 / (2 * eval_pairs)`. For a REAL `recall@1` value -- always some integer hit
+    count `h` over `eval_pairs` rows, so a multiple of `1 / eval_pairs` -- the smallest
+    possible nonzero value is `1 / eval_pairs`, which is twice the threshold. That means
+    on real data this gate has exactly one live outcome: `h == 0` fails it, and every
+    `h >= 1` passes regardless of how small `eval_pairs` is. It is a "the diagonal eval
+    produced literally zero hits" detector, not a graduated quality gate -- and that is
+    the rule that matters here, not the arithmetic: it is precisely the shape of the real
+    defect this function exists to catch (receipts/retrieve-20260902T203759Z.json's
+    `recall@1 == 0.0`), and nothing finer, because a `1`-hit baseline on a bad-but-not-
+    degenerate run is exactly as "sane" to this gate as one with a hundred hits. The
+    receipt records both operands a reader needs to judge that for themselves --
+    `chance` (this function's own output) and `eval_pairs`/`n_pairs` (`held_out`'s and
+    `graded_held_out`'s own field) -- so "was baseline_sane's threshold meaningful for
+    this run's `eval_pairs`" is answerable from the receipt alone, not by trusting this
+    docstring. A synthetic, non-quantised `baseline["recall@1"]` (as a unit test can pass
+    directly, never as something `evaluate()` produces) CAN land strictly between 0 and
+    `chance / 2` and fail the gate on a value other than zero -- e.g. `eval_pairs=8`,
+    `chance/2 = 0.0625`, `baseline["recall@1"] = 0.05` -- which is the shape
+    `test_beats_untrained_gate_baseline_sane_rejects_a_non_zero_value_below_chance_half`
+    exercises; it just never happens from a real quantised measurement.
+
+    SPEARMAN SHARES THE GATE, NOT THE METRIC
+    When `graded_final`/`graded_baseline` are given (both non-empty -- a region with no
+    graded eval set passes neither, and gets no `"spearman"` key back), `beats["spearman"]`
+    is gated the same three ways as recall: `baseline_sane` (still computed from
+    `recall@1`'s baseline -- see above; there is no separate "was the graded baseline
+    sane" signal, because a `recall@1` baseline this broken means the untrained model
+    itself is suspect, which taints the graded measurement too), a chance floor (a rank
+    correlation's chance value is 0 -- an untrained encoder's ranking is no better than
+    random ordering in expectation, unlike recall@1's `1/N` floor), and
+    `_BEATS_UNTRAINED_MARGIN`. Before this, `beats_untrained["spearman"]` was
+    `graded_final["spearman"] > graded_baseline["spearman"]` with none of the three:
+    hardcoding it `True` broke no test, and a win of 1e-9 over an insane baseline read
+    identically to a trained model that had actually learned something.
+
     Args:
         final: The trained model's `evaluate()` result.
         baseline: The untrained model's `evaluate()` result, from BEFORE any training.
         eval_pairs: Size of the held-out set the two were scored over.
+        graded_final: The trained model's `evaluate_graded()` result, or `None`/`{}` for
+            a region with no graded eval set.
+        graded_baseline: The untrained model's `evaluate_graded()` result, from BEFORE
+            any training, or `None`/`{}` to match `graded_final`.
 
     Returns:
-        `(chance, beats)` -- `chance` maps `"recall@1"`/`"recall@10"` to their floors;
-        `beats` maps the same keys to whether the trained model both cleared a sane
-        baseline AND beat `max(baseline, chance) + _BEATS_UNTRAINED_MARGIN`.
+        `(chance, beats)` -- `chance` maps `"recall@1"`/`"recall@10"` (and `"spearman"`,
+        always `0.0`, when graded results were given) to their floors; `beats` maps the
+        same keys to whether the trained model both cleared a sane baseline AND beat
+        `max(baseline, chance) + _BEATS_UNTRAINED_MARGIN`.
     """
     chance = {
         "recall@1": (1.0 / eval_pairs) if eval_pairs else 0.0,
@@ -612,6 +662,15 @@ def _beats_untrained_gate(
         )
         for metric in ("recall@1", "recall@10")
     }
+    if graded_final and graded_baseline:
+        # A rank correlation's chance floor is "no correlation" -- 0.0 -- not the
+        # `1/eval_pairs` shape recall@k's floor takes; it is not a quantised hit-count.
+        chance["spearman"] = 0.0
+        beats["spearman"] = bool(
+            baseline_sane
+            and graded_final["spearman"]
+            > max(graded_baseline["spearman"], chance["spearman"]) + _BEATS_UNTRAINED_MARGIN
+        )
     return chance, beats
 
 
@@ -825,15 +884,6 @@ def _split_code_fingerprint() -> str:
     h.update(Path(__file__).read_bytes())
     h.update(b"\x00eval/metrics.py\x00")
     h.update(Path(_split_code_metrics_module.__file__).read_bytes())
-    return h.hexdigest()
-
-
-def _sha256_file(path: Path, chunk_size: int = 1 << 20) -> str:
-    """Content hash of a file on disk, read in chunks rather than loaded whole."""
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(chunk_size), b""):
-            h.update(chunk)
     return h.hexdigest()
 
 
@@ -1163,7 +1213,13 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     elapsed = prior_elapsed + (time.time() - session_start)
     final = evaluate(model, tok, holdout, cfg.max_len, device)
     graded_final = evaluate_graded(model, tok, graded, cfg.max_len, device) if graded else {}
-    chance, beats = _beats_untrained_gate(final, baseline, final["n_pairs"])
+    chance, beats = _beats_untrained_gate(
+        final,
+        baseline,
+        final["n_pairs"],
+        graded_final=graded_final,
+        graded_baseline=graded_baseline,
+    )
 
     # A run that reports numbers but keeps no weights cannot be re-evaluated. The periodic
     # checkpoints stop before the last step, so without this the finished model -- the only
@@ -1190,7 +1246,7 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     # A content hash of the file `checkpoint` actually names, recorded next to it -- so
     # a reader does not have to trust the path alone, and a checkpoint silently swapped
     # or truncated on disk after the receipt was written no longer passes as a match.
-    checkpoint_sha256 = _sha256_file(final_ckpt)
+    checkpoint_sha256 = sha256_file(final_ckpt)
 
     receipt: dict[str, Any] = {
         "schema": "csd-pretrain-receipt/v1",
@@ -1219,6 +1275,7 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         "config": {
             **{k: v for k, v in asdict(cfg).items() if k not in ("shards", "encoder")},
             "encoder": asdict(encoder_cfg),
+            "trainer_defaults": trainer_defaults(cfg),
         },
         "parameters": params,
         "checkpoint": str(final_ckpt),
@@ -1279,22 +1336,15 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         # independent measurements when they were one.
         "untrained_baseline_seed": cfg.seed,
         "chance": chance,
-        "beats_untrained": {
-            **beats,
-            **(
-                {"spearman": graded_final["spearman"] > graded_baseline["spearman"]}
-                if graded
-                else {}
-            ),
-        },
+        "beats_untrained": beats,
         "capability_per_param": final["recall@1"] / (params / 1e6) if params else 0.0,
     }
 
     _assert_graded_gate_present(cfg, receipt)
 
-    out = Path(cfg.out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    path = out / f"{cfg.region}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
-    path.write_text(json.dumps(receipt, indent=2) + "\n")
-    receipt["receipt_path"] = str(path)
+    write_receipt(
+        receipt,
+        Path(cfg.out_dir),
+        f"{cfg.region}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json",
+    )
     return receipt

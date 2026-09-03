@@ -59,6 +59,7 @@ def quantize_text_region(
 
     from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
     from cogsyndelta.quant.ptq import build_plan
+    from cogsyndelta.regions._checkpoint import load_checkpoint
     from cogsyndelta.regions.pretrain import PretrainConfig, build_splits, evaluate
     from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
 
@@ -127,10 +128,20 @@ def quantize_text_region(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tok = Tokenizer.from_file(cfg.tokenizer_path)
     model = TextEncoder(TextEncoderConfig(**enc_d), name=region).to(device)
-    # weights_only=True: `receipt["checkpoint"]` is a path read out of a receipt JSON on
+    # load_checkpoint: `receipt["checkpoint"]` is a path read out of a receipt JSON on
     # the NFS-exported receipts tree (rw, no_root_squash) -- anyone who can write there
-    # can name an arbitrary file, so this load must not execute arbitrary pickle bytecode.
-    ck = torch.load(receipt["checkpoint"], map_location=device, weights_only=True)
+    # can name an arbitrary file, so this load must not execute arbitrary pickle bytecode
+    # (weights_only=True, passed explicitly below and matching load_checkpoint's own
+    # default) and must refuse a file that does not hash to what the SAME receipt
+    # already recorded (expected_sha256) -- both BEFORE torch.load ever opens it. Older
+    # receipts (pre-R9) have no checkpoint_sha256; `or None` skips the hash check for
+    # those rather than refusing every one of them.
+    ck = load_checkpoint(
+        receipt["checkpoint"],
+        expected_sha256=receipt.get("checkpoint_sha256") or None,
+        map_location=device,
+        weights_only=True,
+    )
     model.load_state_dict(ck["model"])
     model.eval()
 
@@ -200,6 +211,8 @@ def quantize_text_region(
 
 
 def main() -> int:
+    from cogsyndelta.regions._receipt import write_receipt
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", default=str(DEFAULT_STATE))
     ap.add_argument("--regions", default="code,compress,retrieve")
@@ -232,9 +245,11 @@ def main() -> int:
             print(f"    FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
             failures.append(region)
             continue
-        path = out_dir / f"{region}-quant-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
-        path.write_text(json.dumps(rec, indent=2) + "\n")
-        rec["receipt_path"] = str(path)
+        write_receipt(
+            rec,
+            out_dir,
+            f"{region}-quant-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json",
+        )
         results.append(rec)
         if not rec["within_budget"]:
             failures.append(region)

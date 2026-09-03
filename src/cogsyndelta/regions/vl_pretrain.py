@@ -53,6 +53,7 @@ from torch import nn
 from cogsyndelta.corpus import stable_cache_tag
 from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig
 from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
+from cogsyndelta.regions._receipt import trainer_defaults, write_receipt
 
 
 @dataclass
@@ -599,7 +600,12 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         "parameters": params,
         "train_images": int(x_tr.size(0)),
         "probe_classes": n_classes,
-        "config": {"jepa": asdict(cfg.jepa), "steps": cfg.steps, "batch_size": cfg.batch_size},
+        "config": {
+            "jepa": asdict(cfg.jepa),
+            "steps": cfg.steps,
+            "batch_size": cfg.batch_size,
+            "trainer_defaults": trainer_defaults(cfg),
+        },
         "untrained_baseline": baseline,
         "held_out": final,
         "untrained_transfer": baseline_transfer,
@@ -612,9 +618,9 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         "resumed_from_step": (resume["step"] if resume is not None else 0),
         "beats_untrained": beats,
     }
-    out = Path(cfg.out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    path = out / f"{cfg.region}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
-    path.write_text(json.dumps(receipt, indent=2) + "\n")
-    receipt["receipt_path"] = str(path)
+    write_receipt(
+        receipt,
+        Path(cfg.out_dir),
+        f"{cfg.region}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json",
+    )
     return receipt

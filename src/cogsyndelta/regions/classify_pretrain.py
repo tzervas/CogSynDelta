@@ -100,6 +100,7 @@ from torch import nn
 from cogsyndelta.corpus import CORPUS_FINGERPRINT_SCHEME, fingerprint_corpus
 from cogsyndelta.eval.metrics import _content_fingerprint, assert_no_contamination
 from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
+from cogsyndelta.regions._receipt import trainer_defaults, write_receipt
 from cogsyndelta.regions._tokencache import corpus_token_cache
 from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
 
@@ -958,6 +959,7 @@ def pretrain_classify_region(cfg: ClassifyPretrainConfig) -> dict[str, Any]:
         "config": {
             **{k: v for k, v in asdict(cfg).items() if k not in ("shards", "encoder")},
             "encoder": asdict(encoder_cfg),
+            "trainer_defaults": trainer_defaults(cfg),
         },
         "parameters": params,
         "checkpoint": str(final_ckpt),
@@ -984,9 +986,9 @@ def pretrain_classify_region(cfg: ClassifyPretrainConfig) -> dict[str, Any]:
         "capability_per_param": capability_per_param,
     }
 
-    out = Path(cfg.out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    path = out / f"{cfg.region}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
-    path.write_text(json.dumps(receipt, indent=2) + "\n")
-    receipt["receipt_path"] = str(path)
+    write_receipt(
+        receipt,
+        Path(cfg.out_dir),
+        f"{cfg.region}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json",
+    )
     return receipt

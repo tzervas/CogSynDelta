@@ -17,7 +17,6 @@ the keyword is present -- and that a real checkpoint still loads under it.
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 
 import pytest
@@ -26,6 +25,56 @@ import torch
 pytestmark = pytest.mark.cpu
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_checkpoint_call_text(source: str, checkpoint_expr: str) -> str:
+    """Full text of a `load_checkpoint(<checkpoint_expr>, ...)` call, balanced-paren
+    aware -- NOT a `[^)]*` regex, which stops at the FIRST `)` in the call.
+    `receipt.get("checkpoint_sha256")`, a nested and perfectly balanced call inside the
+    kwargs both production sites pass, hits its own closing paren before
+    `load_checkpoint`'s -- a `[^)]*` regex silently truncates the match there, so a
+    `weights_only=True` that appears (as it does at both real call sites) AFTER that
+    point in the source is never even looked at. Counting paren depth instead captures
+    the whole call regardless of what nested, balanced calls appear inside it.
+    """
+    needle = "load_checkpoint("
+    start = source.find(needle)
+    while start != -1:
+        after = source[start + len(needle) :].lstrip()
+        if after.startswith(checkpoint_expr):
+            depth = 1
+            i = start + len(needle)
+            while depth > 0:
+                if source[i] == "(":
+                    depth += 1
+                elif source[i] == ")":
+                    depth -= 1
+                i += 1
+            return source[start:i]
+        start = source.find(needle, start + len(needle))
+    raise AssertionError(f"no load_checkpoint({checkpoint_expr}, ...) call found in source")
+
+
+def test_load_checkpoint_call_text_is_not_fooled_by_a_nested_balanced_call() -> None:
+    """Proof the helper above does what the module-scope regex it replaced did not: a
+    `[^)]*`-style match would stop at the `)` that closes `receipt.get(...)`, never
+    reaching `weights_only=True` two lines later. This constructs exactly that shape by
+    hand and asserts the full call -- including the part after the nested `)` -- comes
+    back."""
+    source = (
+        "ck = load_checkpoint(\n"
+        '    receipt["checkpoint"],\n'
+        '    expected_sha256=receipt.get("checkpoint_sha256") or None,\n'
+        "    map_location=device,\n"
+        "    weights_only=True,\n"
+        ")\n"
+    )
+
+    call_text = _load_checkpoint_call_text(source, 'receipt["checkpoint"]')
+
+    assert "weights_only=True" in call_text
+    assert call_text.startswith('load_checkpoint(\n    receipt["checkpoint"],')
+    assert call_text.endswith(")")
 
 
 class _MaliciousReduce:
@@ -86,23 +135,36 @@ def test_legitimate_tensor_checkpoint_still_loads_under_weights_only(tmp_path: P
         ("csd-benchmark.py", 'train_receipt["checkpoint"]'),
     ],
 )
-def test_production_sites_load_receipt_checkpoints_with_weights_only_true(
+def test_production_sites_load_receipt_checkpoints_through_load_checkpoint(
     script: str, checkpoint_expr: str
 ) -> None:
-    """Regression guard: the receipt-driven `torch.load` call must stay weights_only=True.
+    """Regression guard, updated for `cogsyndelta.regions._checkpoint.load_checkpoint`
+    (design row W0c, DEC-40 -- see `tests/test_checkpoint_loader_lint.py`): both sites
+    used to call `torch.load(..., weights_only=True)` directly; they now route through
+    `load_checkpoint`, plus a content-hash check neither site had before.
 
-    This is the site the threat model flagged -- `receipt["checkpoint"]` /
+    This is still the site the threat model flagged -- `receipt["checkpoint"]` /
     `train_receipt["checkpoint"]` is a path chosen by whatever wrote the receipt JSON,
-    not by this process, so it must never be loaded with `weights_only=False` again.
+    not by this process -- so this pins two things: the call goes through
+    `load_checkpoint` (not a raw `torch.load`, which `test_checkpoint_loader_lint.py`'s
+    lint separately refuses to allow here at all), and `weights_only=True` is passed
+    EXPLICITLY at the call site -- a positive assertion, not merely the absence of
+    `weights_only=False`. The two are not equivalent: `load_checkpoint`'s own default is
+    `True` (also proven directly, with the train group, by
+    `test_checkpoint_loader_lint.py`), but that file needs `torch`/`tokenizers` and
+    naturally skips absent the train group, while THIS file has no such dependency and
+    runs in every CI job (`.github/workflows/ci.yml`, `code-quality.yml`,
+    `scripts/ci_local.sh` -- all `uv sync --group dev`, no train group ever installed).
+    Asserting only `"weights_only=False" not in call_kwargs` would pass for
+    `load_checkpoint(..., weights_only=some_flag)` with no guarantee `some_flag` is ever
+    `True` -- this asserts the call site itself is unambiguous, independent of what
+    `load_checkpoint`'s default happens to be, in the one test file that is guaranteed
+    to run.
     """
     source = (_REPO_ROOT / "scripts" / script).read_text()
-    pattern = re.compile(
-        r"torch\.load\(\s*" + re.escape(checkpoint_expr) + r"\s*,([^)]*)\)", re.DOTALL
+    call_text = _load_checkpoint_call_text(source, checkpoint_expr)
+    assert "weights_only=True" in call_text, (
+        f"{script}: load_checkpoint({checkpoint_expr}, ...) must pass weights_only=True "
+        f"explicitly -- found call: {call_text!r}"
     )
-    match = pattern.search(source)
-    assert match is not None, f"expected a torch.load({checkpoint_expr}, ...) call in {script}"
-    call_kwargs = match.group(1)
-    assert "weights_only=True" in call_kwargs, (
-        f"{script} loads {checkpoint_expr} without weights_only=True: {call_kwargs!r}"
-    )
-    assert "weights_only=False" not in call_kwargs
+    assert "weights_only=False" not in call_text
