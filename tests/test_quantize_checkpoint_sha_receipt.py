@@ -109,11 +109,12 @@ def trained_receipt(tmp_path: Path) -> dict:
     receipt = pretrain_region(cfg)
 
     def fake_load_regions_spec() -> dict:
-        def _shards(glob_pat: str) -> list[str]:
+        def _shards(glob_pat: str, root: Path | None = None) -> list[str]:
             return [str(shard_path)]
 
         class _Entry:
             sources: ClassVar = [("pairs.parquet", ("anchor", "positive"), 0)]
+            root = tmp_path
 
         return {"REGIONS": {}, "_shards": _shards, "region_spec": lambda name: _Entry()}
 
