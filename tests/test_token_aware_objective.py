@@ -179,6 +179,67 @@ def test_mlm_token_loss_is_a_zero_no_grad_tensor_when_nothing_is_masked() -> Non
     assert not loss.requires_grad
 
 
+def test_l_token_gradient_reaches_trunk_parameters_through_the_real_loss_assembly() -> None:
+    """B1 direct proof, independent of any rank comparison: with the SAME assembly the
+    real training step uses -- `0.5 * (token_loss_a + token_loss_p)` from two real
+    `_mlm_token_loss` calls (not a mock, not a re-implementation) -- the trunk's own
+    parameters (`model.blocks`) receive nonzero gradient. Detaching `token_loss` -- the
+    exact control mutation this test rules out (`token_loss = token_loss.detach()` in
+    place of the training loop's assembly line) -- must zero that gradient out entirely.
+
+    Why this exists ALONGSIDE the rank-comparison tests below: a rank comparison can only
+    observe L_token's effect indirectly, through a full training run, and B1 showed that
+    indirection is exactly where a no-op L_token can hide behind a healthy L_decorr. This
+    test needs no training loop and no L_decorr in the picture at all -- it inspects the
+    gradient directly, so nothing else can carry the signal.
+
+    A zero-coefficient `anchor` term (`0.0 * sum(p.sum() for p in model.blocks.parameters())`)
+    keeps `.backward()` valid even when `token_loss` itself has been detached (a fully
+    detached scalar has no `grad_fn`, and `.backward()` on it alone would raise, not
+    merely under-count -- `model.pos_embed` will not do for `anchor` either: it is a
+    registered BUFFER, not a `Parameter`, so it carries no `grad_fn` on its own). `anchor`
+    is built from real trunk `Parameter`s so it always has a live graph, and its `0.0`
+    coefficient means it contributes nothing numerically to any parameter's gradient --
+    whatever gradient the trunk ends up with is attributable to `token_loss` alone, on or
+    off.
+    """
+    torch.manual_seed(0)
+    cfg = TextEncoderConfig(vocab_size=30, dim=8, depth=2, n_heads=2, max_len=16)
+    model = TextEncoder(cfg)
+    from cogsyndelta.regions.pretrain import _build_mlm_head
+
+    head, mask_emb = _build_mlm_head(cfg.dim, cfg.vocab_size, torch.device("cpu"))
+    a_ids = torch.randint(1, 30, (4, 10))
+    a_mask = torch.ones(4, 10, dtype=torch.long)
+    p_ids = torch.randint(1, 30, (4, 10))
+    p_mask = torch.ones(4, 10, dtype=torch.long)
+
+    def trunk_grad_abs_sum(*, detach: bool) -> float:
+        model.zero_grad(set_to_none=True)
+        token_loss_a, n_masked_a = _mlm_token_loss(model, head, mask_emb, a_ids, a_mask, 0.5)
+        token_loss_p, n_masked_p = _mlm_token_loss(model, head, mask_emb, p_ids, p_mask, 0.5)
+        assert n_masked_a > 0 and n_masked_p > 0
+        # The training loop's own assembly line (regions/pretrain.py's training step):
+        token_loss = 0.5 * (token_loss_a + token_loss_p)
+        if detach:
+            token_loss = token_loss.detach()  # the B1 control mutation, applied here
+        anchor = 0.0 * sum(p.sum() for p in model.blocks.parameters())
+        total = (
+            anchor + 1.0 * token_loss
+        )  # weight=1.0, same shape as `cfg.token_loss_weight * token_loss`
+        total.backward()
+        return sum(
+            p.grad.abs().sum().item() for p in model.blocks.parameters() if p.grad is not None
+        )
+
+    grad_attached = trunk_grad_abs_sum(detach=False)
+    grad_detached = trunk_grad_abs_sum(detach=True)
+    assert grad_attached > 0.0, "L_token produced no trunk gradient even when attached"
+    assert grad_detached == 0.0, (
+        f"detaching L_token should zero the trunk's gradient from this term; got {grad_detached}"
+    )
+
+
 # ---------------------------------------------------------------------------------------
 # Config plumbing: opt-in, resume-relevant, and off by default.
 # ---------------------------------------------------------------------------------------
@@ -246,6 +307,70 @@ def test_token_aware_terms_raise_the_final_block_token_global_pr_rank(
     off_ratio = off_rank["token_global_pr_rank"] / off_rank["pooled_pr_rank"]
     on_ratio = on_rank["token_global_pr_rank"] / on_rank["pooled_pr_rank"]
     assert on_ratio > off_ratio
+
+
+def test_each_term_alone_measurably_changes_the_final_block_token_global_pr_rank(
+    tiny_cfg: PretrainConfig,
+) -> None:
+    """B1: the combined-arm comparison above (`token_loss_weight=1.0, decorr_weight=4.0`
+    vs both off) passes even when `L_token` is a COMPLETE no-op (the control run: applying
+    `token_loss.detach()` at the training loop's assembly line left that test green,
+    12/12), because `L_decorr` at weight 4.0 already moves the rank on its own and the
+    `>` assertion never distinguishes which term did the work. This test isolates each
+    term against the SAME "both off" baseline, so a broken `L_token` can no longer hide
+    behind a healthy `L_decorr` (or vice versa):
+
+    - `token_loss_weight>0, decorr_weight=0` vs both off.
+    - `token_loss_weight=0, decorr_weight>0` vs both off.
+
+    Asserts a MEASURABLE CHANGE (`!=`), not a raise (`>`), on purpose: on this tiny
+    fixture `L_token`'s effect on the PR-rank statistic is small and not reliably signed
+    run-to-run (unlike the combined arm's, which is large enough to raise it reliably --
+    see the test above -- and unlike `L_decorr`'s alone, which raised it consistently in
+    every configuration explored while building this test). Requiring a specific sign
+    here would make the guard flaky on the very axis it is supposed to be robust on. What
+    a no-op CANNOT survive, whichever way a healthy term happens to move the rank on a
+    given fixture: if `token_loss_weight>0` contributed nothing (parsed but never added
+    to the loss, or added as `token_loss.detach()`), the token-only arm trains BYTE-
+    IDENTICALLY to the all-off arm -- same seed, same corpus, same architecture, zero
+    contribution from anything else -- so its rank would be EXACTLY the off arm's, not
+    merely close to it. `abs(diff) > 1e-6` catches that exact-equality collapse while
+    tolerating ordinary floating-point noise, which this is nowhere near: the mutation
+    proof below found the "off" and detached-`token_loss` arms differ by 0.0, not by a
+    rounding error.
+    """
+    off_cfg = replace(tiny_cfg, out_dir=str(Path(tiny_cfg.out_dir).parent / "off2"))
+    token_only_cfg = replace(
+        tiny_cfg,
+        out_dir=str(Path(tiny_cfg.out_dir).parent / "token-only"),
+        token_loss_weight=1.0,
+        decorr_weight=0.0,
+    )
+    decorr_only_cfg = replace(
+        tiny_cfg,
+        out_dir=str(Path(tiny_cfg.out_dir).parent / "decorr-only"),
+        token_loss_weight=0.0,
+        decorr_weight=4.0,
+    )
+
+    off_rank = pretrain_region(off_cfg)["token_aware"]["final_block_rank"]["token_global_pr_rank"]
+    token_rank = pretrain_region(token_only_cfg)["token_aware"]["final_block_rank"][
+        "token_global_pr_rank"
+    ]
+    decorr_rank = pretrain_region(decorr_only_cfg)["token_aware"]["final_block_rank"][
+        "token_global_pr_rank"
+    ]
+
+    assert abs(token_rank - off_rank) > 1e-6, (
+        f"L_token ALONE produced no measurable change in the final-block token-global PR "
+        f"rank: off={off_rank!r} token_only={token_rank!r} -- a detached/no-op L_token "
+        f"would leave this arm byte-identical to 'off' (L_decorr is untouched here, "
+        f"weight 0.0, so it cannot be the one carrying this comparison)."
+    )
+    assert abs(decorr_rank - off_rank) > 1e-6, (
+        f"L_decorr ALONE produced no measurable change in the final-block token-global "
+        f"PR rank: off={off_rank!r} decorr_only={decorr_rank!r}"
+    )
 
 
 def test_receipt_records_both_rank_definitions_weights_and_the_flag(
