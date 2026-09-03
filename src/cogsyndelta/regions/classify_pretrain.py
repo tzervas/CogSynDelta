@@ -62,8 +62,11 @@ living in this one file and sharing its scaffolding.
 THE GATE, AND WHY THE CHANCE FLOOR IS PART OF THE RECEIPT
 `beats_untrained` compares against the SAME model architecture with ZERO optimiser steps
 applied -- identical in spirit to `regions/pretrain.py`'s untrained InfoNCE baseline,
-which is not a formality (a random-init encoder already scores recall@1 0.40 on
-CodeSearchNet from lexical overlap). Here the untrained baseline is a randomly
+which is not a formality (a random-init encoder already scores recall@1 0.23 on
+CodeSearchNet from lexical overlap -- measured 0.2285, docs/design/evidence/
+w2c-untrained-baselines-2026-09-03/README.md; an earlier ~0.40 figure traces to a
+measurement taken before the 2026-09-02 shuffle fix, against code's then-unshuffled,
+two-repository-confined holdout). Here the untrained baseline is a randomly
 initialised head on a randomly initialised encoder, evaluated with NO training at all,
 which is the honest lower bound a classifier has to clear.
 

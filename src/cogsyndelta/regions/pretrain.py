@@ -161,10 +161,15 @@ class PretrainConfig:
 def _lr_at(step: int, cfg: PretrainConfig) -> float:
     """Linear warmup then cosine decay.
 
-    Warmup is not decoration here. Measured on CodeSearchNet: a random-init encoder
-    already scores recall@1 0.40 from lexical overlap, and stepping straight in at peak
-    LR destroys that before anything replaces it -- recall fell to 0.02 and never
-    recovered. Warmup lets the model leave that basin gradually.
+    Warmup is not decoration here. Measured on CodeSearchNet, before the 2026-09-02
+    shuffle fix, against code's then-unshuffled, two-repository-confined holdout: a
+    random-init encoder scored recall@1 0.40 from lexical overlap there, and stepping
+    straight in at peak LR destroyed that before anything replaced it -- recall fell to
+    0.02 and never recovered. The measured floor against the current (shuffled,
+    443-repository) holdout is 0.2285, not 0.40 (docs/design/evidence/
+    w2c-untrained-baselines-2026-09-03/README.md); the destructive-LR dynamic warmup
+    guards against does not depend on which holdout the floor is measured on. Warmup
+    lets the model leave that basin gradually.
     """
     if step < cfg.warmup_steps:
         return cfg.lr * step / max(1, cfg.warmup_steps)
@@ -1087,10 +1092,14 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         history: list[dict[str, float]] = []
         prior_elapsed = 0.0
         # The untrained model is a real baseline, not a formality: lexical overlap alone
-        # scores recall@1 ~0.40 here. A trained model that does not beat this has not
-        # learned, it has merely rearranged. Recorded so the comparison cannot be
-        # skipped -- and, on a RESUMED run, never re-measured (see below): the model is
-        # no longer untrained, so re-measuring here would compare it against itself.
+        # scores recall@1 0.2285 here (measured against the current, shuffled holdout --
+        # docs/design/evidence/w2c-untrained-baselines-2026-09-03/README.md; an earlier
+        # ~0.40 figure traces to a measurement taken before the 2026-09-02 shuffle fix,
+        # against code's then-unshuffled, two-repository-confined holdout). A trained
+        # model that does not beat this has not learned, it has merely rearranged.
+        # Recorded so the comparison cannot be skipped -- and, on a RESUMED run, never
+        # re-measured (see below): the model is no longer untrained, so re-measuring
+        # here would compare it against itself.
         baseline = evaluate(model, tok, holdout, cfg.max_len, device)
         graded_baseline = evaluate_graded(model, tok, graded, cfg.max_len, device) if graded else {}
         print(f"    {cfg.region}: no valid checkpoint in {ckpt_dir} -- starting fresh", flush=True)

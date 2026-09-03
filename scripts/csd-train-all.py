@@ -26,10 +26,14 @@ total run length. A resumed region logs it and the receipt records it
 receipt afterwards can tell a resumed run from a fresh one.
 
 MEASURING THE RIGHT THING
-Every run evaluates the UNTRAINED model first. On CodeSearchNet a random-init encoder
-scores recall@1 0.40 from lexical overlap alone, and early training DESTROYS that before
-learned structure replaces it -- recall dips to 0.03 around step 1000 and recovers to
-0.94 by step 6000. Judging a run before that inversion, or without the baseline, produces
+Every run evaluates the UNTRAINED model first. On CodeSearchNet, measured before the
+2026-09-02 shuffle fix against code's then-unshuffled, two-repository-confined holdout,
+a random-init encoder scored recall@1 0.40 from lexical overlap alone, and early training
+DESTROYS that before learned structure replaces it -- recall dips to 0.03 around step 1000
+and recovers to 0.94 by step 6000. The measured floor against the current (shuffled)
+holdout is 0.2285, not 0.40 (docs/design/evidence/w2c-untrained-baselines-2026-09-03/
+README.md); the early-destruction dynamic is unaffected by which holdout the floor is
+measured on. Judging a run before that inversion, or without the baseline, produces
 exactly the wrong conclusion. `beats_untrained` is therefore the gate, not raw recall.
 
 SIZING, learned by measurement rather than assumed:
