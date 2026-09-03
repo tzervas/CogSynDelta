@@ -26,12 +26,22 @@ from pathlib import Path
 
 import pytest
 import torch
+
+from cogsyndelta.eval.benchmark import participation_ratio, pr_effective_rank
+
+# `_final_block_rank_stats` (via `cogsyndelta.regions.pretrain`) pulls in the `train`
+# dependency group (`tokenizers`, transitively `pyarrow`) at import time; skip the whole
+# module rather than error at collection where that group is not installed (e.g.
+# `scripts/ci_local.sh`'s own minimal dev-group venv) -- matching
+# `tests/test_token_aware_objective.py`'s own convention.
+pytest.importorskip("pyarrow", reason="train group not installed")
+pytest.importorskip("tokenizers", reason="train group not installed")
+
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
 from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.trainers import WordLevelTrainer
 
-from cogsyndelta.eval.benchmark import participation_ratio, pr_effective_rank
 from cogsyndelta.regions.pretrain import _final_block_rank_stats, _tokenize
 from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
 
