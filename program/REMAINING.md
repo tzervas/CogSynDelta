@@ -67,6 +67,9 @@ INTENDED REGION SHAPE, operator's framing:
   frontal cortex                 unification of regional outputs into one coherent state
   plus AI-specific regions       the architecture is not required to be a literal brain
 
+MOTOR REGION: explicitly deferred until after the Rust reimplementation (operator,
+2026-09-02) -- not a region, not a P-row.
+
 WHAT THIS INVALIDATES IN THE CURRENT TREE:
   classify_banking77    NOT A REGION. 77 banking intents is a domain, not a faculty.
                         Trained and gated (0.8453 top-1 vs 0.0130 chance) -- the model is
@@ -269,6 +272,11 @@ homelab holds only the `OFFLOADED.json` stub. `tests/test_corpus.py`'s four tiny
 tests now skip with an explicit reason instead of failing with `FileNotFoundError` (commit
 `bb0815fd`, "test(corpus): skip the tinystories tests while that corpus is tiered off").
 
+**Storage policy (operator, 2026-09-02):** everything tiered to `gpu5080:/bulk` was acquired
+from HuggingFace or another trusted source and is re-acquirable at this phase; a gap in the
+cold copy is a re-fetch onto `gpu5080:/bulk`, not a recovery item or an operator decision --
+sample-verify cheaply (P0.4b), re-fetch what is missing.
+
 ### P0.6 detail — the measurement is not what it looks like
 
 `build_splits` shuffles only when `extra_sources` is non-empty:
@@ -402,6 +410,17 @@ AUDITED at mirror AND upstream. A clean >100k-pair mix exists.
 | castorini/mr-tydi | ~167k | Apache-2.0, built on tydiqa which is also Apache-2.0 |
 | miracl/miracl | ~40k queries | Apache-2.0 -- under 100k queries, flagged honestly |
 | THUIR/T2Ranking | 258k queries | Apache-2.0 in README ONLY; LICENSE file 404s. Verify before use |
+
+**DECIDED 2026-09-02** (docs/design/LICENCE-FOR-OPEN-WEIGHTS.md, "Decision 2026-09-02",
+commit `4c5dfb5`): GooAQ's NC reading is accepted and the corpus is kept -- "no commercial
+use doesn't really apply to this case cuz this isn't the commercial product this is an open
+weights model. it just changes the licensing from MIT to something that restricts commercial
+use." A region whose input carries an NC term releases NC, not MIT (today: `retrieve`); the
+COMPOSED model carries the strictest licence among all its inputs and sub-models (today: NC);
+preferred deconfliction is the simplest scheme that satisfies every input, not maximal
+openness bought with complexity. RIDER: a region MERGE inherits the most restrictive licence
+of its parts -- merging `compress` and `retrieve` into one hippocampal `memory` region would
+make that region NC.
 
 IMMEDIATE ACTION: we source gooaq and natural-questions from the `sentence-transformers`
 mirrors. EVERY dataset under that account declares NO LICENCE -- all 75. The upstream
@@ -582,7 +601,11 @@ Foundation is step 4, not step 1.
 |----|------|------|--------|
 | P4 | Router over trained regions | routing accuracy beats uniform baseline | todo |
 | P5 | Composed mind | composed beats best single region on a mixed set | todo |
+| P5.1 | Toy-scale experiment: quantize and/or fine-tune regions BEFORE whole-mind training vs the canonical path | matched runs on the same reserved data: peak VRAM during phase 3, composed metric vs canonical, per-region drop from quantize-before vs quantize-after, all against untrained baselines; reported as capability per parameter and per VRAM-GB | todo — blocked on phase 3 existing |
 | P6 | Foundation training | after P4 and P5, never before | todo |
+
+If P5.1 wins, the interconnect must train against quantized region activations, not fp32/bf16
+ones, so its inputs at train time match deployment (operator, 2026-09-02).
 
 ## P7 — Publication
 
@@ -628,6 +651,7 @@ rank above raw parallelism: filling one card well beats spreading a small batch 
 | P10.1 | Make the runner able to execute a region on a named host | a region trains on gpu5080 and writes a receipt back | todo |
 | P10.2 | Region-to-host scheduling (independent regions run concurrently) | two regions training simultaneously on two hosts | todo |
 | P10.3 | Measure the composed-model footprint before P6 | actual params/bytes recorded; decide if one card constrains it | todo |
+| P10.4 | Swarm of CSD toy agents vs comparably sized models and swarm sizes, across all three GPUs | runs only after phase 3 (whole-mind training) is green; KV cache and activation budget per instance computed up front so no run OOMs; receipts per run through gpu-timeshare; reports capability per parameter and per VRAM-GB vs the comparison models | deferred |
 
 DEPENDENCY: P10 lands AFTER P9.1/P9.2. Filling one card is worth more than splitting a
 small batch across two, and a batch-size change alters what fits per host -- doing P10
@@ -831,6 +855,21 @@ the design's mistakes into a language where they are more expensive to fix. CSD 
 is the reference implementation that makes the Rust version a translation rather than a
 redesign.
 
+## P16 — Ternary (trits/trytes) implementation (deferred)
+
+Operator, 2026-09-02: once the binary path is proven, a fully ternary (trits and trytes,
+not bits and bytes) implementation is planned, for higher quality, performance and fidelity
+at lower VRAM. ORDER, crawl-walk-run, do not skip a step: binary toy (now) -> binary big
+model -> ternary toy -> ternary big model. Language policy as everywhere else in CSD: Python
+first, always; Rust only after Python proves the idea. Prior art: `tzervas/embeddenator`
+(Forgejo first, GitHub mirror) is NOT a model repo -- it is filesystem and low-level
+primitives accelerating VSA, embeddings and ternary arithmetic on binary hardware, the
+substrate a ternary CSD would run on. Read it before designing anything ternary.
+
+| id | task | gate | status |
+|----|------|------|--------|
+| P16.1 | Ternary toy, after the binary big model is proven | ternary toy beats its own untrained baseline and matches the binary toy's composed metric within a stated margin at lower bits/param | deferred |
+
 ## P14 — Model instantiation policy (its own repo)
 
 Manifests make this possible: once a model's resources are DECLARED, they are something you
@@ -904,6 +943,18 @@ operator's -- owned by dark-harold), gha-runner-ctl, slovo, python-field-notes,
 ap-fleet-work-images, self-hosted-ai, range, rust-ai-core, pybench, bitnet-quantize,
 notes-sandbox. Those are the candidates for placement.
 
+## P17 — Active learning: memory-gate overlays
+
+Persona and skill specialisation lives in differential weight/activation overlays, never
+edits to base weights (repos `tzervas/memory-gate`, `tzervas/memory-gate-rs`). Residency is
+tiered -- VRAM / GPU cache / disk, scored on importance, size, age and utility, not
+all-on-disk. This is the first real user of the dynamic-paging seam the interconnect design
+leaves open (see REGION TAXONOMY above, "Dynamic paging is planned, not built").
+
+| id | task | gate | status |
+|----|------|------|--------|
+| P17.1 | memory-gate overlays: persona/skill differential offsets with tiered residency | an overlay applied then disconnected reproduces the base model's receipt metrics exactly and the disconnect is logged; residency tiers (VRAM / GPU cache / disk) are scored on importance, size, age and utility and the policy is measured on hit rate, page-in latency and VRAM held; an overlay refuses to attach to a base whose fingerprint it was not trained against | todo |
+
 ## P15 — The long arc (operator vision, context not backlog)
 
 Recorded so the near-term work stays pointed at it. None of this is scheduled.
@@ -916,6 +967,11 @@ argument that vision may be the cheaper channel per unit of decision-relevant in
 languages, and eventually mycelium. The specialisation targets are software engineering, AI
 engineering, architecture, research and design -- broad competence with deep spikes, not
 uniform mediocrity.
+
+**Official language documentation as a corpus.** Deferred. Raw material already exists (an
+`official-docs` dataset in the tiered corpus, plus RAG and the Obsidian vault) but it needs
+enrichment and a licence verdict before it is a candidate corpus. Revisit when the language
+trunk becomes real.
 
 **Mycelium as a first-class training target.** The language is designed to be natively good
 for AI without being machine-first: one language that sugars up to human-readable and
