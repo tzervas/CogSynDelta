@@ -168,6 +168,16 @@ class Dataset:
     file_prefix: str = ""
     """hf_files_bounded only: restrict the repo's file tree to paths starting with this
     (e.g. "en/" for VoxPopuli's English config, "clean/train-" for People's Speech)."""
+    sample_within_prefix: str = ""
+    """hf_files_bounded only: when set, files under `file_prefix` but NOT under this
+    sub-prefix are always taken in full (never randomized or budget-skipped), and only
+    files under it compete for the seeded-random budget. FSD50K needs this: metadata and
+    licence-column JSON live outside "clips/" and are load-bearing for the per-clip
+    CC0/CC-BY filter a consumer MUST apply (see its caveat) -- if they were mixed into the
+    same random draw as ~50,000 audio clips, a small file could get budget-skipped by
+    chance and this entry's caveat claim ("pulls metadata+labels in full") would be false
+    some fraction of the time. Empty string (the default) means the whole `file_prefix`
+    subtree is randomized, unchanged from before this field existed."""
     archive_url: str = ""
     """http_archive only: the single URL to stream to disk."""
     max_fetch_bytes: int = 0
@@ -493,6 +503,7 @@ CATALOGUE: list[Dataset] = [
         provenance_group="freesound",
         approx_hours=108.0,
         fetch_kind="hf_files_bounded",
+        sample_within_prefix="clips/",
         max_fetch_bytes=6 * 1024**3,
         bounded_slice=True,
         why="general sound events, not speech; the mix's non-speech auditory diversity",
@@ -950,12 +961,22 @@ def _fetch_hf_files_bounded(ds: Dataset, token: str | None) -> tuple[int, int]:
 
     api = HfApi()
     info = api.dataset_info(ds.repo_id, files_metadata=True, token=token)
-    candidates = [
+    in_scope = [
         (s.rfilename, s.size or 0)
         for s in info.siblings
         if s.rfilename.startswith(ds.file_prefix) and (s.size or 0) > 0
     ]
-    random.Random(1337).shuffle(candidates)  # noqa: S311 -- sampling, not cryptographic
+    if ds.sample_within_prefix:
+        # Files outside sample_within_prefix are always taken, in full, before the random
+        # budget draw even starts -- see the field's own docstring (FSD50K's metadata/
+        # licence-column JSON must never be at the mercy of a random shuffle).
+        always_take = [f for f in in_scope if not f[0].startswith(ds.sample_within_prefix)]
+        sampled_pool = [f for f in in_scope if f[0].startswith(ds.sample_within_prefix)]
+    else:
+        always_take = []
+        sampled_pool = in_scope
+    random.Random(1337).shuffle(sampled_pool)  # noqa: S311 -- sampling, not cryptographic
+    candidates = always_take + sampled_pool
 
     budget = ds.max_fetch_bytes or float("inf")
     taken: list[str] = []
