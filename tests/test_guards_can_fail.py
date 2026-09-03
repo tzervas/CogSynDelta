@@ -1137,3 +1137,64 @@ def test_checkpoint_directory_is_vintage_prefixed_and_receipt_records_a_checksum
     assert final_ckpt.is_file()
     assert receipt["checkpoint"] == str(final_ckpt)
     assert receipt["checkpoint_sha256"] == hashlib.sha256(final_ckpt.read_bytes()).hexdigest()
+
+
+def test_checkpoint_directory_changes_when_split_code_fingerprint_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Companion to `test_config_fingerprint_also_moves_when_the_split_building_code_does`,
+    but for `_vintage_fingerprint` specifically -- the function that names the checkpoint
+    DIRECTORY, not the one that decides whether a resume is valid. The two call
+    `_split_code_fingerprint()` at separate sites; a test that only proves
+    `_config_fingerprint` moves says nothing about whether a code-vintage change actually
+    lands in its own directory on disk. Verified by mutation: deleting the
+    `h.update(_split_code_fingerprint().encode())` line from `_vintage_fingerprint` left
+    every existing test green before this one was added.
+
+    Exercises `pretrain_region` end to end under two different `_split_code_fingerprint`
+    return values (standing in for `build_splits`/`screen_pair_contamination` actually
+    changing -- commit 883c9d4's shape) with the SAME `PretrainConfig` otherwise, and
+    asserts the two runs land in two different checkpoint directories, each holding its
+    own `final.pt` -- the exact "code-checkpoints/ mixes pre- and post-fix files" failure
+    this defect is named for.
+    """
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    import cogsyndelta.regions.pretrain as pretrain_mod
+    from cogsyndelta.regions.text_encoder import TextEncoderConfig
+    from tests.test_pretrain_resume import _build_pairs_parquet, _build_tokenizer
+
+    tok_path = tmp_path / "tok.json"
+    shard = tmp_path / "pairs.parquet"
+    _build_tokenizer(tok_path, 40)
+    _build_pairs_parquet(shard, 40)
+
+    def _make_cfg() -> pretrain_mod.PretrainConfig:
+        return pretrain_mod.PretrainConfig(
+            region="fp8-split-code-test",
+            pair_columns=("anchor", "positive"),
+            shards=[str(shard)],
+            steps=2,
+            batch_size=4,
+            holdout_pairs=4,
+            eval_every=2,
+            checkpoint_every=0,
+            max_len=16,
+            seed=0,
+            device="cpu",
+            encoder=TextEncoderConfig(dim=8, depth=1, n_heads=2, max_len=16),
+            tokenizer_path=str(tok_path),
+            out_dir=str(tmp_path / "run"),
+        )
+
+    monkeypatch.setattr(pretrain_mod, "_split_code_fingerprint", lambda: "code-version-A")
+    receipt_a = pretrain_mod.pretrain_region(_make_cfg())
+
+    monkeypatch.setattr(pretrain_mod, "_split_code_fingerprint", lambda: "code-version-B")
+    receipt_b = pretrain_mod.pretrain_region(_make_cfg())
+
+    dir_a = Path(receipt_a["checkpoint"]).parent
+    dir_b = Path(receipt_b["checkpoint"]).parent
+    assert dir_a != dir_b
+    assert (dir_a / "final.pt").is_file()
+    assert (dir_b / "final.pt").is_file()

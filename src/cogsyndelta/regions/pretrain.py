@@ -146,8 +146,10 @@ class PretrainConfig:
     17:07-17:08 post-fix files with nothing on disk to tell them apart -- exactly the
     silent-adoption shape a permissive default here would keep reproducing for any
     checkpoint written before fingerprinting covered the corpus and split-building code.
-    Named to read as a CLI flag (`--allow-unfingerprinted-resume`) for whatever runner
-    wires it through."""
+    Wired to `--allow-unfingerprinted-resume` in `scripts/csd-train-all.py`'s
+    `run_region` (the `code`/`compress`-style entrypoint); `run_vl_region` and
+    `run_classify_region` call `load_resumable` positionally and keep its own
+    permissive default instead, so this flag has no effect there."""
 
 
 def _lr_at(step: int, cfg: PretrainConfig) -> float:
