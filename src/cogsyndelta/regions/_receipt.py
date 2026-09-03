@@ -32,6 +32,7 @@ always runs images through the encoder in fp32 rather than switching on a `bf16`
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -64,6 +65,21 @@ def capture_code_revision(repo_root: Path | None = None) -> dict[str, Any]:
     worktree, where `git rev-parse HEAD` reports the WORKTREE's own HEAD, not the main
     checkout's), so this does not need to locate `.git` itself.
 
+    Strips every `GIT_*` variable from the subprocess environment before running.
+    `cwd`-based discovery is only what actually happens when NOTHING already tells git
+    which repository to use -- but `GIT_DIR` (and `GIT_WORK_TREE`, `GIT_INDEX_FILE`, ...)
+    override that discovery outright, and git sets them in ITS OWN environment while
+    running a hook so the hook's own nested `git` calls resolve unambiguously. That
+    leaks to every subprocess the hook's script spawns, this one included: this
+    project's OWN `.githooks/pre-push` -> `scripts/ci_local.sh` -> `pytest` -> this
+    function, called with a `repo_root` that is deliberately NOT a git repository (the
+    "outside a git checkout" test case) -- silently reported THIS repo's real SHA and
+    branch instead of the honest "unknown" fallback, because `GIT_DIR` set by the outer
+    hook process was still in the environment `subprocess.run` inherited by default.
+    Passing an explicit, `GIT_*`-free `env` closes that: `cwd` is then the ONLY thing
+    telling git which repository to look at, exactly as this function's docstring above
+    already claims.
+
     Never raises. If `git` is missing, this is not a git checkout, or any command fails
     or times out, the fallback below is returned instead -- explicit "unknown" values
     with `dirty` forced `True` (an unverifiable revision must never be recorded as
@@ -72,6 +88,7 @@ def capture_code_revision(repo_root: Path | None = None) -> dict[str, Any]:
     raising and the caller having to decide whether that is fatal.
     """
     root = repo_root or Path(__file__).resolve().parent
+    clean_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     try:
         # S607: `git` is resolved from PATH deliberately -- every dev/CI environment on
         # this fleet has one, its location varies host to host, and this reads local
@@ -79,6 +96,7 @@ def capture_code_revision(repo_root: Path | None = None) -> dict[str, Any]:
         sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],  # noqa: S607
             cwd=root,
+            env=clean_env,
             capture_output=True,
             text=True,
             timeout=10,
@@ -87,6 +105,7 @@ def capture_code_revision(repo_root: Path | None = None) -> dict[str, Any]:
         branch = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],  # noqa: S607
             cwd=root,
+            env=clean_env,
             capture_output=True,
             text=True,
             timeout=10,
@@ -95,6 +114,7 @@ def capture_code_revision(repo_root: Path | None = None) -> dict[str, Any]:
         status = subprocess.run(
             ["git", "status", "--porcelain"],  # noqa: S607
             cwd=root,
+            env=clean_env,
             capture_output=True,
             text=True,
             timeout=10,

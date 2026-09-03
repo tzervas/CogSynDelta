@@ -96,6 +96,38 @@ def test_capture_code_revision_forces_dirty_true_when_git_commands_fail() -> Non
     assert revision == {"git_sha": "unknown", "dirty": True, "branch": "unknown"}
 
 
+def test_capture_code_revision_ignores_an_ambient_git_dir_pointing_elsewhere(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression this test file's own CI run tripped over: git sets `GIT_DIR` (and
+    `GIT_WORK_TREE`, `GIT_INDEX_FILE`, ...) in ITS OWN environment while running a hook,
+    so a hook's nested `git` calls resolve unambiguously -- but that leaks to every
+    subprocess the hook's script spawns. `.githooks/pre-push` here runs
+    `scripts/ci_local.sh`, which runs `pytest`, which runs THIS test suite -- and before
+    the fix this regression test pins, `capture_code_revision`'s subprocess calls
+    inherited that ambient `GIT_DIR` by default, so a `repo_root` that is NOT a git
+    repository (exactly `test_capture_code_revision_forces_dirty_true_when_git_commands_
+    fail`'s case, just above) silently reported the AMBIENT repository -- this project's
+    OWN checkout, whatever branch the hook happened to be pushing -- instead of the
+    honest "unknown" fallback. This simulates the leak directly rather than relying on
+    happening to run inside a hook: `GIT_DIR` set to THIS real repo's actual git-dir,
+    `repo_root` an unrelated, definitely-not-a-repo `tmp_path`.
+    """
+    real_git_dir = subprocess.run(
+        ["git", "rev-parse", "--absolute-git-dir"],  # noqa: S607
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert real_git_dir, "could not resolve this checkout's own git-dir to simulate with"
+    monkeypatch.setenv("GIT_DIR", real_git_dir)
+
+    revision = capture_code_revision(tmp_path)
+
+    assert revision == {"git_sha": "unknown", "dirty": True, "branch": "unknown"}
+
+
 def test_write_receipt_stamps_code_revision_and_writes_the_file(tmp_path: Path) -> None:
     receipt: dict = {"region": "test", "held_out": {"recall@1": 0.5}}
 
