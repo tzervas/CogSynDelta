@@ -500,6 +500,43 @@ def check_apply_auth(header: str) -> bool:
     return hmac.compare_digest(got, want)
 
 
+def check_api_auth(auth_header: str) -> tuple[int, bytes] | None:
+    """The single auth gate for every /api route -- GET and POST alike.
+
+    dispatch_api_get() and dispatch_api_post() both call this as their FIRST
+    statement, unconditionally, on every path they are given -- before
+    UPSTREAM/proxy_eligible is even consulted, before any known-route
+    match, and before the final "not found" fallback. Nothing downstream
+    (proxy_upstream, handle_lab, or any local handler) runs for an
+    unauthenticated caller, so an unauthenticated caller learns nothing
+    about which /api routes exist: everything under /api behaves
+    identically -- 401, or 503 if the console itself has no token -- until
+    a valid bearer token is presented. There is deliberately no separate
+    per-route auth check anywhere else in this file; a new route added to
+    either dispatch table is gated by construction because it cannot be
+    reached without going through this function first.
+
+    Fail-closed distinctly from "wrong token": an empty/unset
+    CSD_APPLY_TOKEN (and no CSD_APPLY_TOKEN_FILE) means the console itself
+    is misconfigured, not that this particular caller is unauthorized, so
+    it is reported as 503 rather than 401 -- check_apply_auth() already
+    fails closed to False on an empty token, which would otherwise read
+    identically to "your token was wrong" instead of "no token is set
+    anywhere and every caller will be refused."
+
+    Reuses check_apply_auth()/CSD_APPLY_TOKEN -- the exact bearer mechanism
+    POST /api/apply already used before this change -- rather than
+    inventing a second token or comparison.
+    """
+    if not apply_token():
+        return 503, json.dumps(
+            {"error": "lab console misconfigured: CSD_APPLY_TOKEN is not set"}
+        ).encode()
+    if not check_apply_auth(auth_header):
+        return 401, b'{"error":"unauthorized"}'
+    return None
+
+
 def http_apply(worktree: str, rel: str, content: str) -> dict:  # noqa: PLR0911
     """Allowlisted worktree write. Never kang-main-wip.
 
@@ -1011,8 +1048,16 @@ def proxy_upstream(
         return 502, json.dumps({"error": "prime agent down", "detail": str(exc)[:200]}).encode()
 
 
-def dispatch_api_get(apipath: str, query: str) -> tuple[int, bytes]:  # noqa: PLR0911
-    """Route one GET /api/* request. Pure function so proxy/auth order is testable."""
+def dispatch_api_get(apipath: str, query: str, auth_header: str) -> tuple[int, bytes]:  # noqa: PLR0911
+    """Route one GET /api/* request. Pure function so proxy/auth order is testable.
+
+    check_api_auth() is the first statement, unconditionally -- see its
+    docstring. No GET route (proxied, /api/status, /api/sessions, or a
+    handle_lab route) is reachable without it passing first.
+    """
+    denied = check_api_auth(auth_header)
+    if denied is not None:
+        return denied
     if UPSTREAM:
         if not proxy_eligible(apipath):
             return 404, b'{"error":"not found"}'
@@ -1045,16 +1090,26 @@ def dispatch_api_post(  # noqa: PLR0911
 ) -> tuple[int, bytes]:
     """Route one POST /api/* request. Pure function so proxy/auth order is testable.
 
-    /api/apply is handled here, unconditionally, before UPSTREAM is even
-    consulted -- it never reaches proxy_upstream, regardless of whether this
-    node is proxying. That is the OD-2 fix: apply auth used to run only in
-    the branch taken when UPSTREAM was unset, so a proxying node relayed the
-    client's raw Authorization header upstream for /api/apply without ever
-    calling check_apply_auth.
+    check_api_auth() is the first statement, unconditionally -- see its
+    docstring. Every POST route (apply, proxied, or a handle_lab/local
+    route) is gated by that single call before any of the branches below
+    run.
+
+    /api/apply is still handled here before UPSTREAM is even consulted --
+    it never reaches proxy_upstream, regardless of whether this node is
+    proxying. That was the original OD-2 fix (apply auth used to run only
+    in the branch taken when UPSTREAM was unset, so a proxying node relayed
+    the client's raw Authorization header upstream for /api/apply without
+    ever calling check_apply_auth); the auth gate above now makes that
+    ordering true for every route, not only this one, so the per-route
+    check_apply_auth() call that used to live in this branch is gone -- the
+    shared gate already refused an unauthenticated /api/apply caller before
+    this function body executed a single line.
     """
+    denied = check_api_auth(auth_header)
+    if denied is not None:
+        return denied
     if postpath == "/api/apply":
-        if not check_apply_auth(auth_header):
-            return 401, b'{"error":"unauthorized"}'
         try:
             payload = json.loads(raw_in or b"{}")
         except json.JSONDecodeError:
@@ -1126,7 +1181,9 @@ def serve(port: int) -> None:
                 return
             parsed = urlparse(self.path)
             apipath = parsed.path[4:] if parsed.path.startswith("/lab/") else parsed.path
-            code, raw = dispatch_api_get(apipath, parsed.query)
+            code, raw = dispatch_api_get(
+                apipath, parsed.query, self.headers.get("Authorization") or ""
+            )
             self._send(code, raw)
 
         def do_POST(self) -> None:

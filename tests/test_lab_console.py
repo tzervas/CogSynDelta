@@ -204,6 +204,8 @@ def test_apply_refused_before_any_upstream_call(
     This is the exact OD-2 bug: previously a proxying node forwarded a POST
     to /api/apply upstream, client Authorization header verbatim, before
     check_apply_auth ever ran. Prove refusal happens with zero upstream calls.
+    Now this is one instance of the general rule (check_api_auth gates every
+    /api route, apply included) rather than an apply-specific check.
     """
     mod = load_lab(tmp_path, monkeypatch)
     mod.UPSTREAM = "http://prime.internal:9118"
@@ -213,15 +215,17 @@ def test_apply_refused_before_any_upstream_call(
 
     monkeypatch.setattr(mod, "proxy_upstream", boom)
 
-    # No apply token configured at all -> check_apply_auth fails closed.
+    # No apply token configured at all -> the console itself is
+    # misconfigured, fail closed with 503 (not 401 -- see check_api_auth).
     code, raw = mod.dispatch_api_post("/api/apply", "Bearer whatever", b'{"path": "src/x.py"}')
-    assert code == 401
-    assert json.loads(raw) == {"error": "unauthorized"}
+    assert code == 503
+    assert "CSD_APPLY_TOKEN" in json.loads(raw)["error"]
 
     # Configure a real token; a wrong bearer must still be refused locally.
     monkeypatch.setenv("CSD_APPLY_TOKEN", "s3cr3t")
     code, raw = mod.dispatch_api_post("/api/apply", "Bearer nope", b'{"path": "src/x.py"}')
     assert code == 401
+    assert json.loads(raw) == {"error": "unauthorized"}
 
     # And /api/apply is excluded from the allowlist as an independent guard.
     assert mod.proxy_eligible("/api/apply") is False
@@ -233,21 +237,25 @@ def test_proxy_default_deny_and_no_credential_relay(
     """A non-allowlisted route is denied; an allowlisted one mints its own token."""
     mod = load_lab(tmp_path, monkeypatch)
     mod.UPSTREAM = "http://prime.internal:9118"
+    monkeypatch.setenv("CSD_APPLY_TOKEN", "s3cr3t")
+    auth = "Bearer s3cr3t"
 
     # Non-allowlisted GET and POST routes never reach the network: assert
     # this with monkeypatch's own context manager so the block is undone
     # before the allowlisted-route checks below need the real function.
+    # Authenticated (the auth gate runs first regardless -- these calls are
+    # about proxy default-deny, not about auth, so they carry a valid token).
     with monkeypatch.context() as denied:
 
         def boom(*_a: object, **_k: object) -> tuple[int, bytes]:
             raise AssertionError("must not proxy a non-allowlisted route")
 
         denied.setattr(mod, "proxy_upstream", boom)
-        code, _raw = mod.dispatch_api_get("/api/git", "")
+        code, _raw = mod.dispatch_api_get("/api/git", "", auth)
         assert code == 404
-        code, _raw = mod.dispatch_api_post("/api/git", "", b"{}")
+        code, _raw = mod.dispatch_api_post("/api/git", auth, b"{}")
         assert code == 404
-        code, _raw = mod.dispatch_api_post("/api/forgejo/pr-create", "", b"{}")
+        code, _raw = mod.dispatch_api_post("/api/forgejo/pr-create", auth, b"{}")
         assert code == 404
 
     captured: dict[str, object] = {}
@@ -274,17 +282,19 @@ def test_proxy_default_deny_and_no_credential_relay(
     mod.UPSTREAM_TOKEN = fake_token
 
     # An allowlisted route proxies -- with a server-minted token, never the
-    # caller's Authorization header (dispatch_api_get never even accepts one).
-    code, _raw = mod.dispatch_api_get("/api/status", "")
+    # caller's own bearer (proxy_upstream() takes no header argument at all --
+    # it structurally cannot relay whatever the caller authenticated with to
+    # the console with; the caller's Authorization header is consumed by the
+    # auth gate and never forwarded).
+    code, _raw = mod.dispatch_api_get("/api/status", "", auth)
     assert code == 200
     assert captured["headers"].get("Authorization") == f"Bearer {fake_token}"
 
     # No upstream token configured -> no Authorization header at all, and
-    # crucially never one lifted from a client request (proxy_upstream takes
-    # no header argument -- it structurally cannot relay a client credential).
+    # crucially never one lifted from a client request.
     captured.clear()
     mod.UPSTREAM_TOKEN = ""
-    code, _raw = mod.dispatch_api_get("/api/status", "")
+    code, _raw = mod.dispatch_api_get("/api/status", "", auth)
     assert code == 200
     assert "Authorization" not in captured["headers"]
 
