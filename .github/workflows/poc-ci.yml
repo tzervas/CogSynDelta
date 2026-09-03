@@ -82,7 +82,8 @@ jobs:
           # the printed provenance marks the output as a code-path smoke, not a result.
           uv run --no-sync python -m cogsyndelta.poc.cli train --device cpu --steps 10 \
             --stream synthetic --checkpoint /tmp/poc_vae.pt
-          uv run --no-sync python -m cogsyndelta.poc.cli compress --device cpu --batch 4
+          uv run --no-sync python -m cogsyndelta.poc.cli compress --device cpu --batch 4 \
+            --stream synthetic
           uv run --no-sync python -m cogsyndelta.poc.cli route --device cpu --batch 8
           uv run --no-sync python -m cogsyndelta.poc.cli train-route --device cpu --steps 10 \
             --stream synthetic

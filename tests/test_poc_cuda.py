@@ -59,7 +59,8 @@ def test_compression_bench_cuda() -> None:
     """Basis residual stays high-fidelity on a CUDA tensor."""
     cfg = CompressionConfig(embed_dim=128, basis_rank=32, quant_bits=8, min_fidelity=0.85)
     ctx = DeviceContext.resolve("cuda")
-    records = run_compression_bench(cfg, ctx, batch=8, seed=7)
+    stream = SyntheticStream(cfg.embed_dim, ctx.device, seed=7)
+    records = run_compression_bench(cfg, ctx, batch=8, seed=7, stream=stream)
     by_name = {r.name: r for r in records}
     assert by_name["basis_residual"].status == MetricsStatus.PASS
     assert by_name["basis_residual"].device.startswith("cuda")

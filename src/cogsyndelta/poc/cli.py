@@ -56,6 +56,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     compress = sub.add_parser("compress", help="Measure shared-memory compression")
     _add_device(compress)
+    _add_stream(compress)
     compress.add_argument("--bits", type=int, default=8)
     compress.add_argument("--embed-dim", type=int, default=512)
     compress.add_argument("--batch", type=int, default=16)
@@ -131,7 +132,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "compress":
         cfg.compression.quant_bits = args.bits
         cfg.compression.embed_dim = args.embed_dim
-        records = run_compression_bench(cfg.compression, ctx, batch=args.batch, seed=args.seed)
+        records = run_compression_bench(
+            cfg.compression,
+            ctx,
+            batch=args.batch,
+            seed=args.seed,
+            stream=_stream_for(args, cfg.compression.embed_dim, ctx),
+        )
         print(json.dumps([r.to_dict() for r in records], indent=2))
         return 0 if all(r.status == MetricsStatus.PASS for r in records) else 1
 
@@ -140,7 +147,12 @@ def main(argv: list[str] | None = None) -> int:
         train_result = train_latent_vae(
             cfg.train, ctx, seed=args.seed, stream=_stream_for(args, cfg.train.input_dim, ctx)
         )
-        records = run_compression_bench(cfg.compression, ctx, seed=args.seed)
+        records = run_compression_bench(
+            cfg.compression,
+            ctx,
+            seed=args.seed,
+            stream=_stream_for(args, cfg.compression.embed_dim, ctx),
+        )
         records.append(
             MetricsRecord(
                 name="latent_vae_train",
