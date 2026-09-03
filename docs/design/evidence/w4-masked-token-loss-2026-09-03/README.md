@@ -140,10 +140,88 @@ whole-card) and batch 1280 (does not fit, fails at ~19.6–21.0 GiB before the s
 finishes) — this evidence does not locate that ceiling more precisely, since the task
 scope was batch 512 vs. 1280, not a search between them.
 
+## 4. Chunked re-probe at batch=1280 (branch `feat/w4-masked-token-loss`)
+
+The follow-up: `_mlm_token_loss` gained a `chunk` parameter
+(`PretrainConfig.token_loss_chunk`, default 2048, threaded through
+`cogsyndelta.regions._token_objective._chunked_masked_ce_sum`) that processes the
+masked-position vocabulary projection `chunk` rows at a time under
+`torch.utils.checkpoint.checkpoint(..., use_reentrant=False)`, so only one chunk's
+`[chunk, vocab_size]` logits are ever resident instead of the full
+`[n_masked, vocab_size]` at once — mathematically identical loss and gradients (see
+`tests/test_token_loss_masked_equivalence.py`'s `test_chunked_matches_unchunked_*`
+tests), memory-only change. `measure_w4_batch1280_probe_chunked.py` re-runs exactly
+the OOM'ing config from §3 above, with `token_loss_chunk=2048` (the field's own
+default) added, `steps=20`, `batch_size=1280`, terms on, `PYTORCH_CUDA_ALLOC_CONF=
+expandable_segments:True`, `CUDA_VISIBLE_DEVICES=0`, scratch state under
+`/akula-data/session-backup-staging/w4-chunked/probe/` (cleared between runs — a
+stale checkpoint silently RESUMED at step 20/20 on the first attempt here and reported
+a near-zero peak; discarded, not used). A second process sampled `nvidia-smi
+--query-gpu=memory.used` on GPU 0 every 0.5s for the whole run.
+
+**Result: the run itself completes — no `OutOfMemoryError` — but the driver-observed
+peak still narrowly exceeds the task's own safety margin.**
+
+| metric | value |
+|---|---:|
+| `torch.cuda.max_memory_allocated` | 20,357.0 MiB |
+| `torch.cuda.max_memory_reserved` | 20,726.0 MiB |
+| `nvidia-smi memory.used` peak, raw (68 samples, 0.5s) | 22,120 MiB |
+| pre-run desktop/OS baseline (`nvidia-smi`, before the job started) | 981 MiB |
+| driver peak attributable to this training process (`22,120 − 981`) | 21,139 MiB |
+| card total | 23,028 MiB |
+| task's fits threshold (`23,028 − 2,048`) | 20,980 MiB |
+| fits by `peak_allocated`/`peak_reserved` | **Yes** (margin 254–623 MiB) |
+| fits by driver peak (raw or training-attributable) | **No** (over by 159–1,140 MiB) |
+| **fits (this evidence's verdict)** | **False** |
+
+**Why the verdict uses the driver number, not the friendlier allocator one:**
+`torch.cuda.memory_summary()` at the end of the run (`batch1280-chunked-memory-
+summary.txt`) shows **zero** non-releasable or fragmented bytes — `GPU reserved
+memory` peaks at exactly 20,726 MiB with nothing unaccounted inside PyTorch's own
+caching allocator. The ~400–1,140 MiB gap between that number and the driver's own
+peak is real GPU memory this run used that the allocator's counters do not track —
+CUDA context and driver bookkeeping overhead, not fragmentation and not an artifact of
+sampling method (68 samples across a 7.6s training loop plus tokenisation/setup is
+dense enough to catch a peak that persists for the load-bearing training steps, and the
+last several samples before the peak sit at 22,082–22,120 MiB, i.e. the peak is not a
+one-sample outlier). Reporting `fits=true` on the allocator numbers alone — the ones a
+casual read of `pretrain_region`'s own receipt would show — would say this batch fits
+with hundreds of MiB to spare when the same 3090 Ti, sampled directly, shows it using
+essentially the entire card (22.1 of 23.0 GiB) with only ~900 MiB of slack under the
+hard ceiling and NEGATIVE slack under the task's own 2 GiB margin. That is exactly the
+gap the task's "report the driver peak too" instruction exists to catch (see this
+repo's own `measure-the-thing-not-the-proxy` convention).
+
+**Reading:** chunking closed most, not all, of the gap. The unchunked probe (§3) OOM'd
+outright — it never got a completed step, `torch.cuda.max_memory_allocated` peaked at
+19,573.9 MiB mid-crash while trying to allocate 2.06 GiB more it did not have. The
+chunked run completes all 20 steps and both its own allocator peaks sit ~250–600 MiB
+under the margin threshold — but the actual hardware ceiling (driver-observed) sits
+~150–1,150 MiB over it. Batch 1280 at `token_loss_chunk=2048` is therefore a near
+miss, not a clean fit: whether it is usable in production depends on how strictly the 2
+GiB margin convention is meant to be enforced and how much headroom the actual training
+host's desktop/other-process load leaves (this workstation's ~981 MiB–1,057 MiB of
+KDE/Xorg/Firefox overhead, visible in both this probe and §3's, is itself variable and
+not present on a headless training host). A smaller `token_loss_chunk` (1024 or 512)
+would trade a little more recompute for a smaller peak-logits chunk and was not probed
+here — the task specified `chunk=2048` as the default to measure, not a chunk-size
+sweep, and batch size itself was, per instruction, not lowered to find a number that
+cleanly fits.
+
 ## Files here
 
-- `measure_w4_batch1280_probe.py` — the probe script, a throwaway measurement script
-  (not part of the test suite), following the convention of
-  `docs/design/evidence/w4-control-arm-2026-09-03/measure_w4_control_arm.py`.
-- `batch1280-summary.json` — the probe's own JSON output (OOM error text, peak
+- `measure_w4_batch1280_probe.py` — the batch=1280, UNCHUNKED probe script (§3), a
+  throwaway measurement script (not part of the test suite), following the convention
+  of `docs/design/evidence/w4-control-arm-2026-09-03/measure_w4_control_arm.py`.
+- `batch1280-summary.json` — that probe's own JSON output (OOM error text, peak
   allocated/reserved, config).
+- `measure_w4_batch1280_probe_chunked.py` — the batch=1280, CHUNKED (`token_loss_
+  chunk=2048`) re-probe script (§4).
+- `batch1280-chunked-summary.json` — that probe's JSON output, extended with the
+  driver-peak sampling summary and this evidence's `fits` verdict and rationale.
+- `batch1280-chunked-memory-summary.txt` — `torch.cuda.memory_summary()` captured at
+  the end of the chunked run (its tables report historical peaks, not live state, so
+  this reflects the peak even though execution has moved past it by the time it prints).
+- `batch1280-chunked-nvidia-smi-samples.csv` — the raw `(timestamp, memory.used)`
+  samples (0.5s interval) the chunked probe's driver-peak numbers were computed from.
