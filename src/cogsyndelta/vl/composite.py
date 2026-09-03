@@ -124,10 +124,12 @@ class TileSpec:
         return _checker(width, height, self.colors[0], self.colors[1], self.block)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to the JSON-safe shape `from_dict` reads back."""
         return {"kind": self.kind, "colors": [list(c) for c in self.colors], "block": self.block}
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> TileSpec:
+        """Deserialize from the shape `to_dict` produces, validating colors."""
         colors = tuple(_check_color(c, name="tile.colors[]") for c in data["colors"])
         return TileSpec(kind=data["kind"], colors=colors, block=int(data.get("block", 8)))
 
@@ -175,6 +177,7 @@ class PanelSpec:
     tile: TileSpec
 
     def __post_init__(self) -> None:
+        """Reject panels with non-positive extent or negative placement."""
         if self.width <= 0 or self.height <= 0:
             raise ValueError(f"panel {self.id!r} must have positive width/height")
         if self.x < 0 or self.y < 0:
@@ -186,6 +189,7 @@ class PanelSpec:
         return (self.x, self.y, self.x + self.width, self.y + self.height)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to the JSON-safe shape `from_dict` reads back."""
         return {
             "id": self.id,
             "x": self.x,
@@ -197,6 +201,7 @@ class PanelSpec:
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> PanelSpec:
+        """Deserialize from the shape `to_dict` produces."""
         return PanelSpec(
             id=str(data["id"]),
             x=int(data["x"]),
@@ -217,6 +222,11 @@ class CompositeSpec:
     panels: tuple[PanelSpec, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
+        """Validate the layout once at construction: this is the layout engine's checks.
+
+        In-bounds and non-overlapping panels are what make the renderer deterministic
+        regardless of panel order — see `render_composite`.
+        """
         if self.frame_size <= 0:
             raise ValueError("frame_size must be positive")
         if self.frame_size % self.patch_size != 0:
@@ -245,6 +255,7 @@ class CompositeSpec:
         return grid * grid
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to the JSON layout description `from_dict`/`load_spec` reads back."""
         return {
             "frame_size": self.frame_size,
             "patch_size": self.patch_size,
@@ -254,6 +265,7 @@ class CompositeSpec:
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> CompositeSpec:
+        """Deserialize from the shape `to_dict`/`save_spec` produces."""
         background = _check_color(tuple(data.get("background", [255, 255, 255])), name="background")
         panels = tuple(PanelSpec.from_dict(p) for p in data.get("panels", []))
         return CompositeSpec(
