@@ -56,7 +56,7 @@ from cogsyndelta.eval import (
     screen_pair_contamination,
     spearman_correlation,
 )
-from cogsyndelta.eval.benchmark import effective_rank, participation_ratio
+from cogsyndelta.eval.benchmark import effective_rank, pr_effective_rank
 from cogsyndelta.regions._checkpoint import (
     atomic_save,
     load_checkpoint,
@@ -358,18 +358,33 @@ def _final_block_rank_stats(
     device: torch.device,
     batch: int = 64,
 ) -> dict[str, float]:
-    """Both rank definitions the W4/W7 gate needs, on the FINAL block's token surface.
+    """Both rank definitions the W4/W7 gate needs, on the FINAL block's token surface --
+    measured IDENTICALLY to the pre-committed W1 harness
+    (`docs/design/evidence/w1-token-rank-2026-09-02/measure_w1.py`), not merely
+    same-shaped: the SAME side of the held-out pairs (index 0 -- `anchors = [a for a, _p
+    in holdout]` in that script; for `memory`'s `("query", "passage")` pair columns that
+    is `query`), the SAME `pr_effective_rank` (full surface, no subsampling, `nan` below
+    2 rows -- :func:`cogsyndelta.eval.benchmark.pr_effective_rank`, not
+    :func:`~cogsyndelta.eval.benchmark.participation_ratio`, which subsamples and
+    disagrees with W1's own harness for exactly that reason). A gate reading this
+    function's PR-rank output against W1's own recorded ratios (0.66x-1.30x on the
+    production regions) is reading the same statistic, not a look-alike one.
 
     "Both ranks are participation ratio, and the receipt says so" (§4.0) -- the entropy
     definition is recorded ALONGSIDE it, never in its place, because the two disagreed in
     sign on every production region at W1 and conflating them is the exact ambiguity that
-    section's gate exists to close.
+    section's gate exists to close. Entropy is also measured on the FULL surface here
+    (``sample=`` the surface's own size, disabling `effective_rank`'s default
+    subsampling), matching how W1's `entropy_eff_rank_full` called it.
 
     Args:
         model: A `TextEncoder`, in whatever mode (trained or freshly initialised).
         tok: Tokenizer.
-        pairs: Held-out (anchor, positive) pairs -- both sides pooled into ONE surface,
-            matching how `evaluate()` reads this same holdout.
+        pairs: Held-out pairs, e.g. (anchor, positive) or (query, passage) -- ONLY THE
+            FIRST element of each pair is measured (W1's `anchors` side), not both. A
+            region's `evaluate()` call on this same holdout measures both sides (that is
+            its own, unrelated read of the holdout); this rank measurement's held-out
+            surface is deliberately the one side W1's rule was pre-committed against.
         max_len: Token truncation length.
         device: Where to run.
         batch: Encoding chunk size.
@@ -386,7 +401,10 @@ def _final_block_rank_stats(
     with torch.no_grad():
         for i in range(0, len(pairs), batch):
             chunk = pairs[i : i + batch]
-            texts = [a for a, _ in chunk] + [b for _, b in chunk]
+            # W1-aligned: ONE side only (index 0), the same side
+            # docs/design/evidence/w1-token-rank-2026-09-02/measure_w1.py's `anchors =
+            # [a for a, _p in holdout]` measured -- not both sides concatenated.
+            texts = [a for a, _b in chunk]
             ids, m = _tokenize(tok, texts, max_len, device)
             h, tmask = model.tokens(ids, m)
             pooled_chunks.append(model.pool(h, tmask).float().cpu())
@@ -395,12 +413,13 @@ def _final_block_rank_stats(
         model.train()
     pooled = torch.cat(pooled_chunks, dim=0) if pooled_chunks else torch.zeros(0, model.out_dim)
     token_global = torch.cat(token_chunks, dim=0) if token_chunks else torch.zeros(0, model.cfg.dim)
+    n = token_global.size(0)
     return {
-        "pooled_pr_rank": participation_ratio(pooled),
-        "pooled_entropy_rank": effective_rank(pooled),
-        "token_global_pr_rank": participation_ratio(token_global),
-        "token_global_entropy_rank": effective_rank(token_global),
-        "n_tokens": float(token_global.size(0)),
+        "pooled_pr_rank": pr_effective_rank(pooled),
+        "pooled_entropy_rank": effective_rank(pooled, sample=max(1, pooled.size(0))),
+        "token_global_pr_rank": pr_effective_rank(token_global),
+        "token_global_entropy_rank": effective_rank(token_global, sample=max(1, n)),
+        "n_tokens": float(n),
     }
 
 
