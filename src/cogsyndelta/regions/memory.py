@@ -389,6 +389,7 @@ def run_memory_pretrain(
     checkpoint_every: int = 500,
     token_loss_weight: float = TOKEN_LOSS_WEIGHT,
     decorr_weight: float = DECORR_WEIGHT,
+    token_loss_chunk: int = 2048,
     encoder: TextEncoderConfig | None = None,
     tokenizer_path: str = "/mnt/fleet-datasets/tritter/gpt2_tokenizer.json",
     out_dir: str = "receipts",
@@ -413,6 +414,13 @@ def run_memory_pretrain(
             divergence between the two parents' tables is measured
             (`embedding_table_divergence`) and recorded, even though only `retrieve`'s
             table is the one actually inherited.
+        token_loss_chunk: Forwarded to `PretrainConfig.token_loss_chunk` (see that
+            field's own docstring in `regions/pretrain.py` for the chunk-and-checkpoint
+            mechanism this controls). Defaults to that field's own default (2048) so
+            existing callers are unaffected; a production launch at a batch size where
+            the default overshoots the card (see
+            `docs/design/evidence/w4-masked-token-loss-2026-09-03/README.md`) passes a
+            smaller value explicitly, memory-only trade, no change to loss or gradients.
         eval_root: Dataset root for the BEIR eval (FiQA pool/qrels); defaults to
             `cogsyndelta.eval.beir_fiqa.DEFAULT_FIQA_ROOT`. Independent of `MEMORY_ROOT`
             (which resolves TRAINING sources) so a test can point them at different
@@ -443,6 +451,7 @@ def run_memory_pretrain(
         checkpoint_every=checkpoint_every,
         token_loss_weight=token_loss_weight,
         decorr_weight=decorr_weight,
+        token_loss_chunk=token_loss_chunk,
         encoder=encoder or TextEncoderConfig(dim=256, depth=4, n_heads=4, max_len=max_len),
         tokenizer_path=tokenizer_path,
         out_dir=out_dir,
@@ -544,6 +553,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--token-loss-weight", type=float, default=TOKEN_LOSS_WEIGHT)
     parser.add_argument("--decorr-weight", type=float, default=DECORR_WEIGHT)
+    parser.add_argument(
+        "--token-loss-chunk",
+        type=int,
+        default=2048,
+        help="PretrainConfig.token_loss_chunk -- masked-position vocab projection chunk "
+        "size (memory-only trade, see regions/pretrain.py's field docstring). Defaults "
+        "to that field's own default; a larger batch size may need this lowered to fit "
+        "the card (see docs/design/evidence/w4-masked-token-loss-2026-09-03/README.md).",
+    )
     parser.add_argument("--eval-split", default="dev", choices=["dev", "test"])
     parser.add_argument("--retrieve-checkpoint", default=None)
     parser.add_argument("--compress-checkpoint", default=None)
@@ -564,6 +582,7 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         token_loss_weight=args.token_loss_weight,
         decorr_weight=args.decorr_weight,
+        token_loss_chunk=args.token_loss_chunk,
         eval_split=args.eval_split,
         retrieve_checkpoint=args.retrieve_checkpoint,
         compress_checkpoint=args.compress_checkpoint,
