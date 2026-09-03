@@ -163,6 +163,7 @@ LICENCE_TIER: dict[str, str] = {
     "vl_latent": "mit",
     "compress": "cc-by-sa-4.0",
     "retrieve": "cc-by-nc-sa-4.0",
+    "memory": "cc-by-nc-sa-4.0",
     "composed": "cc-by-nc-sa-4.0",
     "cogsyndelta": "cc-by-nc-sa-4.0",
 }
@@ -196,6 +197,10 @@ LICENCE_WHY: dict[str, str] = {
     "no NC-tagged input identified",
     "retrieve": "GooAQ (NC, accepted 2026-09-02) and Natural Questions / FiQA "
     "(CC BY-SA) are both present in the corpus as trained",
+    "memory": "region MERGE of compress (CC BY-SA 4.0) and retrieve (CC BY-NC-SA "
+    "4.0) per Rider 1 (LICENCE-FOR-OPEN-WEIGHTS.md, Decision 2026-09-02): a merge "
+    "inherits the most restrictive parent licence, and memory also trains directly "
+    "on retrieve's GooAQ/NQ/FiQA corpus",
     "composed": "carries the single strictest term across every dataset, submodel, "
     "and the composed model itself",
     "cogsyndelta": "carries the single strictest term across every dataset, submodel, "

@@ -303,14 +303,25 @@ def test_no_public_flag_exists() -> None:
         ("reason", "mit"),
         ("compress", "cc-by-sa-4.0"),
         ("retrieve", "cc-by-nc-sa-4.0"),
+        ("memory", "cc-by-nc-sa-4.0"),
     ],
 )
 def test_licence_tier_matches_decision_2026_09_02(region: str, tier: str) -> None:
     assert mod.licence_tier(region) == tier
 
 
+def test_memory_licence_tier_equals_retrieve() -> None:
+    # docs/design/LICENCE-FOR-OPEN-WEIGHTS.md, Decision 2026-09-02, Rider 1: a region
+    # MERGE inherits the most restrictive licence of its parts. `memory` merges
+    # `compress` (CC BY-SA 4.0) and `retrieve` (CC BY-NC-SA 4.0) and trains directly on
+    # retrieve's corpus, so it must carry exactly retrieve's tier -- not a value that
+    # happens to match today by coincidence.
+    assert mod.licence_tier("memory") == mod.licence_tier("retrieve")
+
+
 @pytest.mark.parametrize("region", ["residual_mlp", "stream_vae", "some_unaudited_region"])
 def test_licence_tier_unknown_aborts(region: str) -> None:
+    # Adding memory's tier must not weaken the refusal for a region that still has none.
     with pytest.raises(mod.PublishAbortError, match="licence tier"):
         mod.licence_tier(region)
 
