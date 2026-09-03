@@ -155,6 +155,105 @@ def effective_rank(embeddings: torch.Tensor, sample: int = 2048, seed: int = 0) 
     return float(torch.exp(-(p * p.log()).sum()).item())
 
 
+def participation_ratio(embeddings: torch.Tensor, sample: int = 2048, seed: int = 0) -> float:
+    """Participation-ratio effective rank: ``(sum s_i^2)^2 / sum s_i^4`` over the singular
+    values of the column-centered matrix.
+
+    A DIFFERENT quantity from :func:`effective_rank` (Shannon entropy of the LINEAR
+    spectrum) -- the two disagree in sign on this project's own text regions (W1:
+    participation-ratio ratios of 0.66x-1.30x against entropy ratios of 1.16x-1.84x for
+    the same four checkpoints, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md §4.0), so
+    conflating them is the exact ambiguity that section's gate was written to close.
+    "Both ranks are participation ratio, and the receipt says so" is the rule the W4/W7
+    retrain gate states for exactly this reason -- name the definition, do not let a
+    reader infer it from whichever column they see first.
+
+    THE SAME FORMULA, BUT NOT THE SAME MEASUREMENT AS W1's OWN.
+    ``docs/design/evidence/w1-token-rank-2026-09-02/measure_w1.py``'s ``pr_effective_rank``
+    -- the function the W1/W1d/W4 gates were pre-committed against -- computes this exact
+    ``(sum s_i^2)^2 / sum s_i^4`` quantity, but this function is NOT byte-for-byte it: this
+    one subsamples to ``sample`` rows by default (W1's never subsamples: it runs the SVD on
+    the full surface, however large) and returns ``0.0`` for fewer than 2 rows (W1's
+    returns ``nan``, so a degenerate run cannot silently read as "rank zero"). A gate that
+    needs the W1-comparable number -- the retrain gate this docstring used to claim this
+    function already was -- reads :func:`pr_effective_rank` instead, the transplant of
+    W1's own function that keeps both of those differences intact. This function stays
+    the general-purpose, cost-bounded participation ratio existing callers (e.g.
+    :func:`effective_rank`-comparable receipt fields outside the W1-lineage gates) use.
+
+    Args:
+        embeddings: ``[N, D]``. Row 0 of ``N`` is any representation -- pooled vectors,
+            or every valid token position of a batch flattened into one matrix (the
+            "token-global" surface the retrain gate reads).
+        sample: Subsample to this many rows before the SVD, for cost control on a large
+            token-global surface. Matches :func:`effective_rank`'s own default so the two
+            are comparable at the same N.
+        seed: Subsampling seed.
+
+    Returns:
+        A value in ``[1, min(N, D)]``; ``0.0`` for fewer than 2 rows (nothing to rank) or
+        a degenerate (all-zero) matrix.
+    """
+    x = embeddings.detach().float()
+    if x.size(0) < 2:
+        return 0.0
+    if x.size(0) > sample:
+        g = torch.Generator().manual_seed(seed)
+        x = x[torch.randperm(x.size(0), generator=g)[:sample]]
+    x = x - x.mean(dim=0, keepdim=True)
+    sv = torch.linalg.svdvals(x)
+    s2 = sv.double() ** 2
+    denom = (s2**2).sum()
+    if denom <= 0:
+        return 0.0
+    return float((s2.sum() ** 2 / denom).item())
+
+
+def pr_effective_rank(embeddings: torch.Tensor) -> float:
+    """W1's own participation-ratio effective rank, transplanted byte-for-byte (same
+    formula, same edge-case behaviour) from
+    ``docs/design/evidence/w1-token-rank-2026-09-02/measure_w1.py``'s ``pr_effective_rank``
+    (that file's lines 198-212) -- the function the W1, W1d and W4 retrain-gate rank
+    clauses were pre-committed against, before this promotion existed. That file is frozen
+    evidence (its own README: "Nothing here is regenerated on read") and is never edited
+    or imported at runtime; this is the same computation given a second, importable home
+    so every retrain gate after W1 reads the SAME measurement W1 itself did, rather than a
+    same-shaped one that quietly diverges from it. ``tests/test_pr_effective_rank_w1_alignment.py``
+    asserts this function and the frozen script's agree to 1e-6.
+
+    Differs from :func:`participation_ratio` in exactly two ways, both deliberate:
+
+    - No subsampling, ever. W1 measured the FULL token-global surface (however many rows
+      it has), because a subsampled comparison across regions of different corpus/holdout
+      shapes is not the same measurement `participation_ratio`'s ``sample`` parameter was
+      built for cost control, not for this.
+    - ``nan`` (not ``0.0``) for fewer than 2 rows, so a degenerate surface cannot silently
+      read as "rank zero, gate failed cleanly" -- it reads as "not measured".
+
+    Args:
+        embeddings: ``[N, D]``, the full surface -- pooled vectors or the flattened
+            token-global matrix. Never subsampled internally; a caller with a surface too
+            large to run an exact SVD on has to subsample before calling this, deliberately
+            and visibly, not have it happen inside the function.
+
+    Returns:
+        A value in ``[1, min(N, D)]``; ``nan`` for fewer than 2 rows; ``0.0`` for a
+        degenerate (all-zero) matrix.
+    """
+    x = embeddings.detach().float()
+    if x.size(0) < 2:
+        return float("nan")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    xc = x - x.mean(dim=0, keepdim=True)
+    s = torch.linalg.svdvals(xc.to(device) if device.type == "cuda" else xc)
+    s2 = s.double() ** 2
+    denom = (s2**2).sum()
+    if denom <= 0:
+        return 0.0
+    num = s2.sum() ** 2
+    return float((num / denom).item())
+
+
 @dataclass
 class LatencyProfile:
     """Inference cost, as percentiles rather than a single mean."""

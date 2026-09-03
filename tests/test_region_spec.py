@@ -46,6 +46,20 @@ def test_latent_vae_requires_latent_dim() -> None:
         _region("v", kind="latent_vae")
 
 
+def test_merged_region_cannot_also_be_live() -> None:
+    """DEC-02 (row W4): `compress`/`retrieve` are marked `merged_into: "memory"` and
+    stay `live: False` -- a region cannot claim to be both a live implementation and
+    folded into another one's training, or a reader cannot tell which receipt a `live`
+    flag is even describing."""
+    with pytest.raises(ValueError, match="merged"):
+        _region("compress", merged_into="memory", live=True)
+
+
+def test_merged_region_not_live_is_fine() -> None:
+    spec = _region("compress", merged_into="memory", live=False)
+    assert spec.merged_into == "memory"
+
+
 def test_top_k_bounded_by_region_count() -> None:
     with pytest.raises(ValueError, match="top_k"):
         MindSpec(stream_dim=64, regions=[_region("a")], top_k=2)
@@ -121,6 +135,22 @@ def test_shipped_catalogue_is_valid_and_honest() -> None:
             assert region.pretrain.available, (
                 f"{region.name} is live but its pretrain corpus is marked unavailable"
             )
+
+
+def test_catalogue_records_the_dec02_merge() -> None:
+    """`compress` and `retrieve` stay in the catalogue (old receipts still name them) but
+    both point at `memory` as the region their training regime was folded into, and
+    `memory` itself exists, is not live (not yet built), and is not marked merged into
+    anything else."""
+    spec = MindSpec.from_json(CATALOGUE)
+    by_name = {r.name: r for r in spec.regions}
+    assert by_name["compress"].merged_into == "memory"
+    assert by_name["retrieve"].merged_into == "memory"
+    assert not by_name["compress"].live
+    assert not by_name["retrieve"].live
+    assert "memory" in by_name
+    assert by_name["memory"].merged_into is None
+    assert not by_name["memory"].live
 
 
 def test_catalogue_records_vl_as_latent_not_text() -> None:
