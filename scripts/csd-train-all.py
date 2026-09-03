@@ -54,6 +54,7 @@ import math
 import os
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
@@ -297,6 +298,39 @@ against.
 """
 
 
+TOKEN_AWARE_REGIONS: dict[str, tuple[float, float]] = {
+    # MUST match regions/memory.py's own TOKEN_LOSS_WEIGHT/DECORR_WEIGHT -- duplicated as
+    # bare numbers, not a `from cogsyndelta.regions import memory` import, because
+    # `regions/memory.py` imports torch/tokenizers at module scope (it needs `TextEncoder`
+    # for the BEIR eval) and `run_region`'s own docstring is explicit that `--dry-run`
+    # must work without torch present for every region, `memory` included. Kept honest by
+    # `tests/test_token_aware_dry_run_plan.py`'s
+    # `test_token_aware_regions_matches_the_memory_modules_own_constants`, the same
+    # pattern `REGIONS["compress"]`'s duplicated `GRADED_SHARD` already uses.
+    "memory": (0.1, 0.1),
+}
+"""Per-region `(token_loss_weight, decorr_weight)` -- §4.0's opt-in terms
+(`regions/pretrain.py`'s `PretrainConfig.token_loss_weight`/`decorr_weight`), as this
+runner applies them. Absent = `(0.0, 0.0)`: every region trained before this dict
+existed -- and every region not in it today -- is unchanged.
+
+`language_code`/`reasoning` (W7a) and `visual` (W7v) are the next rows expected to join
+this table, once their own retrains are scheduled -- see
+docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W4's own note that it is "the
+natural first instance" of the token-aware retrain, not the only one."""
+
+SHARED_EMBEDDING_TABLE_SOURCE: dict[str, str] = {"memory": "retrieve"}
+"""DEC-24 (§6.2): which region's token embedding table a region is DESIGNED to inherit
+(`memory` <- `retrieve`, "because it is the parent whose gate ... survives as `memory`'s
+gate"). This is INTENT, printed in the dry-run plan so a reader sees the design decision
+without re-deriving it from the design doc -- it does not by itself point at a real
+checkpoint file. `--init-embedding-from` (or `run_region`'s own `init_embedding_from`
+argument) supplies the actual path, and `regions/pretrain.py`'s
+`PretrainConfig.init_embedding_from` is what applies it; a region present here with no
+path given trains from a random init, exactly as before DEC-24, with the plan/receipt
+saying so rather than silently matching intent to action."""
+
+
 def _shards(pattern: str, root: Path = CORPUS) -> list[str]:
     return sorted(str(p) for p in root.glob(pattern))
 
@@ -424,6 +458,43 @@ REGIONS: dict[str, tuple[list[SourceSpec], str, int, GradedSpec | None]] = {
         # At 256 both fall under 1.1% truncated.
         256,
         None,
+    ),
+    "memory": (
+        # DEC-02 (row W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md): merges
+        # `compress` + `retrieve` into one hippocampal faculty -- one shared trunk, two
+        # EVALUATION heads read off the same pooled embedding space (consolidation's
+        # graded STS-B gate below via `graded=`; retrieval's BEIR full-pool gate is
+        # bolted on separately by `regions/memory.py`, the same way `regions/retrieve.py`
+        # already bolts its own BEIR ranking onto `pretrain_region`'s diagonal-holdout
+        # evaluation -- see that module's docstring for why the pool size makes the two
+        # different measurements).
+        #
+        # The corpus is the UNION of both parents' declared sources -- not a fresh
+        # decision, the two are simply concatenated through the same `extra_sources`
+        # mechanism every multi-source region already uses. `retrieve`'s FiQA pairs are
+        # listed FIRST (not `compress`'s AllNLI): DEC-24 (§6.2) has `memory` inherit
+        # `retrieve`'s token embedding table, "because it is the parent whose gate (the
+        # FiQA BEIR pool) survives as `memory`'s gate, so its tokenisation statistics are
+        # the ones the surviving eval is calibrated against" -- and the FIRST source is
+        # what a single-source-shaped consumer (a dry run's `pair_columns`, an old script
+        # reading `REGIONS[name][0][0]`) will see as "the" corpus if it looks at only one.
+        [
+            ("region/retrieve/fiqa-pairs/train.parquet", ("query", "passage"), 0),
+            ("region/compress/all-nli/pair/train*.parquet", ("anchor", "positive"), 0),
+            ("region/retrieve/natural-questions/**/train*.parquet", ("query", "answer"), 0),
+            ("region/retrieve/gooaq/**/train*.parquet", ("question", "answer"), 400_000),
+        ],
+        "hippocampus: consolidation (compress) + retrieval (retrieve) on one shared "
+        "trunk, DEC-02; the first token-aware retrain (§4.0, row W4)",
+        96,
+        # Consolidation's graded gate -- STS-B, held out entirely from training, exactly
+        # as `regions/compress.py`'s module docstring explains. Must match that module's
+        # `GRADED_SHARD`/`graded_columns`/`graded_name` (see `regions/memory.py`).
+        (
+            "region/compress/stsb/data/validation-00000-of-00001.parquet",
+            ("sentence1", "sentence2", "score"),
+            "stsb-validation",
+        ),
     ),
 }
 
@@ -610,6 +681,7 @@ def run_region(
     max_len: int | None = None,
     allow_unfingerprinted_resume: bool = False,
     allow_missing: bool = False,
+    init_embedding_from: str | None = None,
 ) -> dict | None:
     """Train one region and return its receipt.
 
@@ -626,6 +698,10 @@ def run_region(
             the fp32 arm -- the only way to tell "bf16 cost recall" apart from "the batch
             or the schedule did", which is a question that has to be answerable from the
             runner rather than from a one-off script nobody can rerun.
+        init_embedding_from: DEC-24 -- forwarded to `PretrainConfig.init_embedding_from`
+            when set (a real checkpoint path). `None` (the default) trains a random-init
+            table for every region, including one `SHARED_EMBEDDING_TABLE_SOURCE` names
+            as DESIGNED to inherit one -- intent alone applies nothing.
         max_len: Override this region's default max_len (see `REGIONS`). None keeps the
             region's own default. Feeds BOTH `PretrainConfig.max_len` (tokenisation
             truncation) and `TextEncoderConfig.max_len` (the positional table's width,
@@ -767,6 +843,7 @@ def run_region(
         # default: printing `graded_columns: ["sentence1","sentence2","score"]` for
         # `code`/`retrieve`/`reason`, which have no graded set at all, would misread as
         # those columns being attached to that region.
+        token_loss_weight, decorr_weight = TOKEN_AWARE_REGIONS.get(name, (0.0, 0.0))
         plan = {
             "region": name,
             "pair_columns": list(pair_cols),
@@ -782,6 +859,18 @@ def run_region(
             "graded_shards": graded_shards,
             "graded_columns": list(graded_cols) if graded_cols is not None else None,
             "graded_name": graded_name,
+            # §4.0's token-aware terms (row W4) -- see TOKEN_AWARE_REGIONS.
+            "token_loss_weight": token_loss_weight,
+            "decorr_weight": decorr_weight,
+            "token_aware": bool(token_loss_weight or decorr_weight),
+            # DEC-24 -- see SHARED_EMBEDDING_TABLE_SOURCE. `applied` is what actually
+            # happens THIS run (a real path was given), `designed_source` is the intent
+            # named regardless of whether one was.
+            "shared_embedding_table": {
+                "designed_source": SHARED_EMBEDDING_TABLE_SOURCE.get(name),
+                "init_embedding_from": init_embedding_from,
+                "applied": init_embedding_from is not None,
+            },
         }
         print("    resolved PretrainConfig (dry run, no training started):", flush=True)
         print(json.dumps(plan, indent=2), flush=True)
@@ -791,6 +880,7 @@ def run_region(
     from cogsyndelta.regions import PretrainConfig, pretrain_region
     from cogsyndelta.regions.text_encoder import TextEncoderConfig
 
+    token_loss_weight, decorr_weight = TOKEN_AWARE_REGIONS.get(name, (0.0, 0.0))
     cfg = PretrainConfig(
         region=name,
         pair_columns=pair_cols,
@@ -826,6 +916,9 @@ def run_region(
         graded_columns=graded_cols or ("sentence1", "sentence2", "score"),
         graded_name=graded_name or "",
         allow_unfingerprinted_resume=allow_unfingerprinted_resume,
+        token_loss_weight=token_loss_weight,
+        decorr_weight=decorr_weight,
+        init_embedding_from=init_embedding_from,
     )
     started = time.time()
     receipt = pretrain_region(cfg)
@@ -861,6 +954,174 @@ def run_region(
         flush=True,
     )
     return receipt
+
+
+MEMORY_RUNNER_DESCRIPTION = "pretrain + BEIR eval + w4 gates"
+"""What `run_memory_region` does that `run_region`/`pretrain_region` alone do not --
+printed verbatim in both the console banner and the dry-run plan (see `run_memory_region`)
+so a reader scanning either sees the difference without cross-referencing
+`regions/memory.py`. Matches `run_memory_pretrain`'s own module-level description of what
+it layers onto `pretrain_region`'s output: the retrieval head's full-57,638-passage BEIR
+ranking, a BM25 reference, and the five pre-registered W4 gates
+(`cogsyndelta.eval.beir_fiqa.w4_gates`)."""
+
+
+def run_memory_region(
+    name: str,
+    state: Path,
+    steps: int,
+    batch: int,
+    dry: bool,
+    max_len: int | None = None,
+    init_embedding_from: str | None = None,
+) -> dict | None:
+    """Train `memory` through its OWN entry point, `regions/memory.py`'s
+    `run_memory_pretrain` -- not the generic `run_region` -> `pretrain_region` path every
+    other text region uses.
+
+    WHY THIS EXISTS
+    `run_region` dispatches every region in `REGIONS` (`memory` included -- it has a
+    `REGIONS["memory"]` entry, kept for `region_spec()`'s other consumers:
+    `csd-quantize.py`/`csd-benchmark.py`) to the generic `pretrain_region`, which trains
+    the InfoNCE objective and writes `held_out`/`graded_held_out` -- the consolidation
+    head's diagonal recall and STS-B Spearman. It never calls
+    `cogsyndelta.eval.beir_fiqa`, so the retrieval head's real gate -- the full-pool BEIR
+    ranking, a BM25 reference, and the five pre-registered W4 conditions
+    (`cogsyndelta.eval.beir_fiqa.w4_gates`) -- silently never runs, and `memory`'s receipt
+    never carries a `retrieval` or `gates` block. Only `run_memory_pretrain` (and, from
+    the command line, `python -m cogsyndelta.regions.memory`) does training -> BEIR eval
+    -> gates in one process. `REGION_RUNNERS` (below) is what routes `main()`'s
+    `--regions memory` here instead of the generic path; see that table's docstring.
+
+    Forwards the SAME CLI knobs `run_region` derives for every other text region: `steps`,
+    `batch` (and its derived `lr`, see `lr_for_batch` -- `run_memory_pretrain` takes `lr`
+    directly rather than deriving it itself, so this runner derives it identically before
+    the call), `max_len` (falling back to `REGIONS["memory"]`'s own `default_max_len` when
+    not overridden, exactly as `run_region` does), `--init-embedding-from` (forwarded as
+    `retrieve_checkpoint` -- DEC-24's `SHARED_EMBEDDING_TABLE_SOURCE` names `memory` as
+    the region DESIGNED to inherit `retrieve`'s token embedding table), and the state root
+    (`out_dir=state/"receipts"`, matching `run_region`'s own `out_dir`). `seed` is left at
+    `run_memory_pretrain`'s own default (0) -- the same default `PretrainConfig.seed`
+    already has, which `run_region` also never overrides, so the two paths agree without
+    either one naming a `--seed` CLI flag that does not exist yet. `--shard-limit`,
+    `--allow-missing`, `--allow-unfingerprinted-resume` and `--no-bf16` are NOT forwarded:
+    `memory_config()` resolves its own full corpus with no shard cap or missing-source
+    tolerance (mirroring `compress_config`'s required-source contract), has no resume
+    path of its own to opt into unfingerprinted checkpoints for, and `PretrainConfig`'s
+    own `bf16=True` default already matches `run_region`'s default (`--no-bf16` not
+    passed) for every region including this one.
+
+    Args:
+        name: Always `"memory"` in practice; accepted (rather than hardcoded) so this
+            function's signature matches every other `run_*_region` runner's, which is
+            what lets `REGION_RUNNERS` dispatch to it uniformly.
+        state: Durable state directory; `out_dir=state/"receipts"`, matching `run_region`.
+        steps: Optimizer steps, forwarded to `run_memory_pretrain(steps=...)`.
+        batch: Physical batch size; forwarded as `batch_size`, with `lr` derived from it
+            via `lr_for_batch` (same derivation `run_region` uses).
+        dry: Resolve and print the call `run_memory_pretrain` would receive, then stop
+            without starting a run or importing torch -- mirrors `run_region`'s own dry
+            run, so `--dry-run --regions memory` still works with no train dependency
+            group installed.
+        max_len: Override `REGIONS["memory"]`'s default max_len for this invocation. None
+            keeps the region's own default.
+        init_embedding_from: DEC-24 -- forwarded to `run_memory_pretrain`'s
+            `retrieve_checkpoint`. `None` (the default) trains a random-init embedding
+            table, exactly as `run_region`'s own `init_embedding_from=None` does for
+            every other region.
+
+    Returns:
+        The receipt `run_memory_pretrain` returns (with its `retrieval`/`gates` blocks
+        already written to `receipt["receipt_path"]`), or `None` when `dry` is set.
+    """
+    _, _, default_max_len, _, _ = region_spec(name)
+    resolved_max_len = default_max_len if max_len is None else max_len
+    lr = lr_for_batch(batch)
+    out_dir = str(state / "receipts")
+    print(
+        f"\n=== {name} — {MEMORY_RUNNER_DESCRIPTION} (regions.memory.run_memory_pretrain)",
+        flush=True,
+    )
+    print(
+        f"    steps={steps} batch={batch} lr={lr:.2e} max_len={resolved_max_len}"
+        + (f" (default {default_max_len})" if resolved_max_len != default_max_len else ""),
+        flush=True,
+    )
+
+    if dry:
+        plan = {
+            "region": name,
+            "runner": "cogsyndelta.regions.memory.run_memory_pretrain",
+            "note": MEMORY_RUNNER_DESCRIPTION,
+            "steps": steps,
+            "batch_size": batch,
+            "lr": lr,
+            "max_len": resolved_max_len,
+            "out_dir": out_dir,
+            "shared_embedding_table": {
+                "designed_source": SHARED_EMBEDDING_TABLE_SOURCE.get(name),
+                "init_embedding_from": init_embedding_from,
+                "applied": init_embedding_from is not None,
+            },
+            "gates": "cogsyndelta.eval.beir_fiqa.w4_gates (five pre-registered W4 conditions)",
+        }
+        print("    resolved run_memory_pretrain call (dry run, no training started):", flush=True)
+        print(json.dumps(plan, indent=2), flush=True)
+        return None
+
+    # Imported here so --dry-run works without torch present (same convention as
+    # run_region's own deferred import, immediately below its own `if dry:` return).
+    from cogsyndelta.regions.memory import run_memory_pretrain
+
+    started = time.time()
+    receipt = run_memory_pretrain(
+        steps=steps,
+        batch_size=batch,
+        lr=lr,
+        max_len=resolved_max_len,
+        out_dir=out_dir,
+        retrieve_checkpoint=init_embedding_from,
+    )
+    if receipt.get("resumed"):
+        print(
+            f"    resumed from step {receipt['resumed_from_step']}/{steps} "
+            f"(checkpoint from a matching config)",
+            flush=True,
+        )
+    else:
+        print("    fresh run (no matching checkpoint found)", flush=True)
+    b, h = receipt["untrained_baseline"], receipt["held_out"]
+    print(
+        f"    untrained r@1={b['recall@1']:.4f} r@10={b['recall@10']:.4f}  ->  "
+        f"trained r@1={h['recall@1']:.4f} r@10={h['recall@10']:.4f} mrr={h['mrr']:.4f}",
+        flush=True,
+    )
+    gates = receipt.get("gates") or {}
+    print(
+        f"    beats_untrained={receipt['beats_untrained']}  w4_gates_passed={gates.get('passed')}  "
+        f"({time.time() - started:.0f}s, {receipt['parameters']:,} params)",
+        flush=True,
+    )
+    return receipt
+
+
+REGION_RUNNERS: dict[
+    str, Callable[[str, Path, int, int, bool, int | None, str | None], dict | None]
+] = {"memory": run_memory_region}
+"""Per-region override naming a DEDICATED runner instead of the generic `run_region` /
+`pretrain_region` path -- consulted by `main()`'s dispatch loop the same way
+`VL_REGIONS`/`CLASSIFY_REGIONS` above already are, except the runner itself is looked up
+IN the table (`REGION_RUNNERS[name](...)`) rather than hardcoded per family
+(`run_vl_region`/`run_classify_region`), so `main()` carries no `if name == "memory"`
+special case -- a future region needing its own training->eval->gates entry point adds
+one entry here with a matching signature, not a new branch in `main()`.
+
+`memory` is the only region here today: `run_region`/`pretrain_region` alone never call
+`cogsyndelta.eval.beir_fiqa`, so dispatching `memory` through the generic path silently
+drops the retrieval head's real gate (full-pool BEIR ranking, BM25 reference, the five
+pre-registered W4 conditions) from its receipt -- see `run_memory_region`'s own
+docstring for the full account.
+"""
 
 
 def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> dict | None:
@@ -1124,6 +1385,18 @@ def main() -> int:
             "root than an intentionally partial run (see CorpusSourceMissingError)."
         ),
     )
+    ap.add_argument(
+        "--init-embedding-from",
+        default=None,
+        help=(
+            "DEC-24: path to another region's TextEncoder checkpoint whose token "
+            "embedding table this run's model inherits instead of a random init "
+            "(PretrainConfig.init_embedding_from). Forwarded to run_region only. "
+            "SHARED_EMBEDDING_TABLE_SOURCE names which region is DESIGNED to inherit "
+            "from which (memory <- retrieve, today) -- this flag supplies the actual "
+            "checkpoint path; naming the design without it trains from a random init."
+        ),
+    )
     args = ap.parse_args()
     _require_train_deps(args.dry_run)
 
@@ -1157,6 +1430,16 @@ def main() -> int:
                 receipt = run_classify_region(
                     name, state, args.steps, args.batch, args.dry_run, bf16=not args.no_bf16
                 )
+            elif name in REGION_RUNNERS:
+                receipt = REGION_RUNNERS[name](
+                    name,
+                    state,
+                    args.steps,
+                    args.batch,
+                    args.dry_run,
+                    args.max_len,
+                    args.init_embedding_from,
+                )
             else:
                 receipt = run_region(
                     name,
@@ -1169,6 +1452,7 @@ def main() -> int:
                     max_len=args.max_len,
                     allow_unfingerprinted_resume=args.allow_unfingerprinted_resume,
                     allow_missing=args.allow_missing,
+                    init_embedding_from=args.init_embedding_from,
                 )
         except Exception as exc:
             print(f"  {name}: FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)

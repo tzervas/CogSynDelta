@@ -71,10 +71,11 @@
         "corpus": "fiqa",
         "objective": "rank",
         "available": false,
-        "notes": "NOT on disk. SciFact and NFCorpus are eval-only per license (NC / ToS) and must not be trained on."
+        "notes": "NOT on disk. SciFact and NFCorpus are eval-only per license (NC / ToS) and must not be trained on. MERGED (DEC-02, W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W4) into `memory`'s retrieval head -- see this entry's own `merged_into`. Kept readable for old receipts (e.g. the 2026-09-02 FiQA BEIR-pool receipt W4's own gates compare against); not retrained standalone after W4 lands."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
-      "live": false
+      "live": false,
+      "merged_into": "memory"
     },
     {
       "name": "compress",
@@ -89,7 +90,26 @@
         "corpus": "stsb+allnli-10k",
         "objective": "contrastive-pair",
         "available": false,
-        "notes": "NOT on disk. WikiText-2 is later-assembly reconstruction, not first pretrain."
+        "notes": "NOT on disk. WikiText-2 is later-assembly reconstruction, not first pretrain. MERGED (DEC-02, W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W4) into `memory`'s consolidation head -- see this entry's own `merged_into`. Kept readable for old receipts (e.g. the 2026-09-02 STS-B/AllNLI receipt W4's own gates compare against); not retrained standalone after W4 lands."
+      },
+      "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
+      "live": false,
+      "merged_into": "memory"
+    },
+    {
+      "name": "memory",
+      "kind": "contrastive_encoder",
+      "stream_dim": 512,
+      "hidden_dim": 1024,
+      "latent_dim": null,
+      "modality": "text",
+      "role": "hippocampus: consolidation and retrieval",
+      "router_trigger": "Sentence pair or embedding to reconstruct (consolidation); a query plus candidate passages (retrieval) -- both routed to the same trunk (DEC-02).",
+      "pretrain": {
+        "corpus": "union of compress's all-nli/pair training corpus and retrieve's fiqa+natural-questions+gooaq (region_spec('memory'), scripts/csd-train-all.py), graded on stsb-validation (consolidation) and the BEIR FiQA full-pool eval (retrieval, cogsyndelta.eval.beir_fiqa)",
+        "objective": "contrastive-pair",
+        "available": false,
+        "notes": "NOT on disk. DEC-02: one hippocampal faculty, one shared trunk (TextEncoder), two evaluation heads -- consolidation (compress's graded STS-B gate) and retrieval (retrieve's BEIR full-pool gate) read off the SAME pooled embedding space, not two separate projection layers. Row W4 (docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md): DESIGNED AS THE FIRST TOKEN-AWARE RETRAIN -- trains with L_token/L_decorr (regions/pretrain.py PretrainConfig.token_loss_weight/decorr_weight) ON. DEC-24: inherits `retrieve`'s token embedding table (the parent whose gate -- the FiQA BEIR pool -- survives as memory's gate); the divergence from `compress`'s table is measured and recorded in the receipt. Merges and retires `compress`+`retrieve`'s standalone training (see their own entries' `merged_into`)."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
       "live": false

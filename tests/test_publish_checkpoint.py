@@ -13,6 +13,8 @@ import hashlib
 import importlib.machinery
 import importlib.util
 import json
+import os
+import re
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -21,6 +23,16 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
+from torch import nn
+
+from cogsyndelta.quant.ptq import (
+    QuantPlan,
+    load_packed_artifact,
+    packed_stored_bytes,
+    packed_width_histogram,
+    save_packed_artifact,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "csd-publish-checkpoint.py"
@@ -162,13 +174,54 @@ def make_eval_receipt(
     return path
 
 
+def write_packed_artifact(path: Path, bits: int = 3) -> tuple[int, int, dict[str, int]]:
+    """Write a REAL `csd-ptq-v1` artifact at `path`; return its (fp32_bytes,
+    stored_bytes, width_histogram) as a quant receipt would record them.
+
+    A stand-in blob would do for the sha256 checks alone, but the publisher now loads
+    this file and re-measures the numbers the card prints, so the fixture has to be a
+    real artifact or every test would be exercising the "unreadable artifact" abort
+    instead of the behaviour it names. Small on purpose: one quantizable tensor (8192
+    elements, over `quantizable`'s floor) plus three that stay fp32.
+    """
+    torch.manual_seed(0)
+    model = nn.Sequential(nn.Linear(64, 128), nn.Linear(128, 8))
+    plan = QuantPlan(bits={"0.weight": bits})
+    plan.fp32 = [n for n, _ in model.named_parameters() if n not in plan.bits]
+    save_packed_artifact(model, plan, path)
+    packed = load_packed_artifact(path)
+    fp32_bytes = sum(p.numel() * 4 for p in model.parameters())
+    return fp32_bytes, packed_stored_bytes(packed), packed_width_histogram(packed)
+
+
 def make_quant_receipt(
     tmp_path: Path,
     checkpoint: Path,
     region: str = "compress",
     checkpoint_sha256: str | None = "USE_REAL",
     recorded: str | None = None,
+    quantized_artifact: bool = True,
+    quantized_sha256: str | None = "USE_REAL",
+    quantized_path: Path | None = None,
+    stored_bytes: int | None = None,
+    width_histogram: dict[str, int] | None = None,
 ) -> Path:
+    """`quantized_artifact`: when True (the realistic case -- every quant receipt
+    scripts/csd-quantize.py writes now names a persisted packed artifact), a real
+    packed artifact is written next to `checkpoint`, at the same derived path
+    csd-quantize.py uses, and the receipt's measured numbers are taken from it.
+
+    `quantized_sha256`: the sentinel "USE_REAL" (default) declares that file's actual
+    sha256, matching a correctly-bound receipt; pass an explicit (wrong) value to
+    test a mismatch, or `None` to test the field's absence -- both leave the file on
+    disk, so the mismatch is the only thing under test.
+
+    `quantized_path` / `stored_bytes` / `width_histogram` override what the receipt
+    *claims* while leaving the artifact on disk untouched, which is the shape every
+    substitution and tampering test needs: the receipt is the attacker-controlled
+    document, the file is the ground truth, and the publisher is supposed to notice
+    when the two disagree.
+    """
     sha = mod.sha256_of(checkpoint) if checkpoint_sha256 == "USE_REAL" else checkpoint_sha256
     receipt: dict[str, Any] = {
         "region": region,
@@ -180,12 +233,23 @@ def make_quant_receipt(
         "quantized_metric": 0.488,
         "drop": 0.0078,
         "within_budget": True,
-        "fp32_bytes": 64084992,
-        "stored_bytes": 6519016,
-        "compression_ratio": 9.83,
     }
     if sha is not None:
         receipt["checkpoint_sha256"] = sha
+    if quantized_artifact:
+        quant_file = checkpoint.with_name(f"{checkpoint.stem}.ptq.pt")
+        fp32_bytes, measured_bytes, measured_hist = write_packed_artifact(quant_file)
+        receipt["fp32_bytes"] = fp32_bytes
+        receipt["stored_bytes"] = measured_bytes if stored_bytes is None else stored_bytes
+        receipt["compression_ratio"] = fp32_bytes / measured_bytes
+        receipt["width_histogram"] = measured_hist if width_histogram is None else width_histogram
+        named = quant_file if quantized_path is None else quantized_path
+        artifacts: dict[str, Any] = {"quantized_path": str(named)}
+        real_q_sha = mod.sha256_of(quant_file)
+        q_sha = real_q_sha if quantized_sha256 == "USE_REAL" else quantized_sha256
+        if q_sha is not None:
+            artifacts["quantized_sha256"] = q_sha
+        receipt["artifacts"] = artifacts
     path = tmp_path / f"{region}-quant-20260902T181604Z.json"
     path.write_text(json.dumps(receipt))
     return path
@@ -412,6 +476,133 @@ def test_build_plan_aborts_when_quant_receipt_unbound(tmp_path: Path) -> None:
         mod.build_plan(
             "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
         )
+
+
+# --------------------------------------------------- quantized artifact (this fix)
+#
+# scripts/csd-quantize.py now persists the packed artifact next to the checkpoint and
+# records artifacts.quantized_path / artifacts.quantized_sha256 in the quant receipt.
+# These tests pin the publisher half: the artifact is verified by sha256 -- exactly as
+# strictly as the fp32 checkpoint is bound to its receipts -- before it ever enters the
+# upload plan, and it is uploaded ALONGSIDE final.pt, never in place of it.
+
+
+def test_quant_artifact_sha_mismatch_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(
+        tmp_path, checkpoint, region="compress", quantized_sha256="0" * 64
+    )
+    with pytest.raises(mod.PublishAbortError, match="does not match the quantized artifact"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_quant_artifact_missing_sha_field_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress", quantized_sha256=None)
+    with pytest.raises(mod.PublishAbortError, match=r"no artifacts\.quantized_sha256"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_quant_artifact_missing_path_field_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(
+        tmp_path, checkpoint, region="compress", quantized_artifact=False
+    )
+    with pytest.raises(mod.PublishAbortError, match=r"no artifacts\.quantized_path"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_quant_artifact_never_becomes_the_primary(tmp_path: Path) -> None:
+    """The checkpoint stays the required, unconditional file regardless of the quant
+    artifact's own name or presence -- `plan.checkpoint_path` names final.pt, not the
+    packed artifact, even though both are now uploaded."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+    )
+    assert plan.checkpoint_path == checkpoint
+    assert plan.quantized_path is not None
+    assert plan.quantized_path != plan.checkpoint_path
+    assert checkpoint.name in plan.files
+    assert plan.quantized_path.name in plan.files
+    assert plan.files[checkpoint.name] == checkpoint
+
+
+def test_quant_artifact_consistent_trio_publishes_both_files(tmp_path: Path) -> None:
+    """The checkpoint AND the quantized artifact are both uploaded when the quant
+    receipt correctly binds to both (mocked HfApi; no network)."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, quant_path
+    )
+    assert plan.quantized_path is not None
+    assert {checkpoint.name, plan.quantized_path.name}.issubset(plan.files.keys())
+
+    fake_api = MagicMock()
+    fake_api.repo_info.return_value = SimpleNamespace(private=True)
+    fake_api.get_paths_info.return_value = []
+    with (
+        patch("huggingface_hub.HfApi", return_value=fake_api),
+        patch.dict("os.environ", {"HF_TOKEN": "tok"}),
+    ):
+        result = mod.publish(plan)
+    assert checkpoint.name in result["uploaded"]
+    assert plan.quantized_path.name in result["uploaded"]
+    assert "Quantized artifact" in plan.card
+    assert plan.quantized_sha256 is not None
+    assert plan.quantized_sha256 in plan.card
+
+    # N1 regression guard: the card's filename and the actual upload key must be the
+    # SAME string, and both must come from the checkpoint stem -- never from a
+    # resolved foreign basename a symlink or a receipt could otherwise substitute in.
+    card_filename_match = re.search(r"\*\*File:\*\* `([^`]+)`", plan.card)
+    assert card_filename_match is not None
+    card_filename = card_filename_match.group(1)
+    assert card_filename == plan.quantized_path.name
+    assert card_filename == f"{checkpoint.stem}.ptq.pt"
+    assert card_filename in plan.files
+    assert plan.files[card_filename] == plan.quantized_path
+
+
+def test_dry_run_lists_checkpoint_and_quantized_artifact(tmp_path: Path, capsys: Any) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+
+    with patch("huggingface_hub.HfApi", side_effect=AssertionError("no network in --dry-run")):
+        rc = mod.main(
+            [
+                "--region",
+                "compress",
+                "--receipt",
+                str(train_path),
+                "--quant-receipt",
+                str(quant_path),
+                "--repo",
+                "tzervas/cogsyndelta-region-compress",
+                "--dry-run",
+            ]
+        )
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert checkpoint.name in out
+    assert f"{checkpoint.stem}.ptq.pt" in out
+    assert "Quantized artifact" in out
+    assert "not primary" in out
 
 
 def test_consistent_synthetic_trio_publishes(tmp_path: Path) -> None:
@@ -962,3 +1153,370 @@ def test_content_matches_git_blob_sha1_for_non_lfs(tmp_path: Path) -> None:
     p.write_bytes(data)
     assert mod._content_matches(p, repo_file("README.md", blob_id=git_blob_sha1(data))) is True
     assert mod._content_matches(p, repo_file("README.md", blob_id="deadbeef")) is False
+
+
+# ------------------------------------- quantized artifact: derived, not receipt-named
+#
+# The three tests above check that the artifact a receipt names hashes to what that
+# receipt says. That is a real check and it is not enough: one document supplied both
+# the path and the expected hash, so it agreed with itself, and containment passed for
+# anything under an allow-listed root. The publisher therefore DERIVES the artifact
+# path from the checkpoint it has already verified and uses the receipt's claim only
+# to assert agreement. These tests are the attacks that derivation closes and the
+# receipt-vs-artifact disagreements it now refuses.
+
+
+def test_quant_receipt_naming_a_decoy_with_the_checkpoint_basename_aborts(
+    tmp_path: Path,
+) -> None:
+    """The substitution attack, in full.
+
+    A second allow-listed `.pt` whose basename is `final.pt`, in another directory.
+    Before derivation this rebound `files["final.pt"]` to the decoy while the card
+    still carried the real checkpoint's sha256 -- a published `final.pt` whose bytes
+    were not the ones attested. It must now abort, and abort before any HfApi object
+    is even constructed.
+    """
+    checkpoint = make_checkpoint(tmp_path)
+    decoy_dir = tmp_path / "deadbeef"
+    decoy_dir.mkdir()
+    decoy = decoy_dir / checkpoint.name  # same basename as the real checkpoint
+    decoy.write_bytes(b"ATTACKER-CHOSEN-WEIGHTS" * 100)
+
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(
+        tmp_path, checkpoint, region="compress", quantized_path=decoy, quantized_sha256="unused"
+    )
+
+    class Boom:
+        def __init__(self, *a: Any, **k: Any) -> None:
+            raise AssertionError("HfApi constructed despite an aborting plan")
+
+    with (
+        patch("huggingface_hub.HfApi", Boom),
+        patch.dict("os.environ", {"HF_TOKEN": "tok"}),
+        pytest.raises(mod.PublishAbortError, match="but this checkpoint's artifact is"),
+    ):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_quant_receipt_naming_an_unrelated_allowlisted_pt_aborts(tmp_path: Path) -> None:
+    """The same hole without the basename trick: any other `.pt` the receipt cares to
+    name, hashed by the receipt itself, was publishable as this region's quantized
+    weights."""
+    checkpoint = make_checkpoint(tmp_path)
+    other = tmp_path / "some-other-region.pt"
+    other.write_bytes(b"SOME-OTHER-REGIONS-WEIGHTS" * 100)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(
+        tmp_path, checkpoint, region="compress", quantized_path=other, quantized_sha256="unused"
+    )
+    with pytest.raises(mod.PublishAbortError, match="but this checkpoint's artifact is"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_quant_receipt_path_outside_allowed_roots_aborts(tmp_path: Path) -> None:
+    """The real packed artifact `make_quant_receipt` writes always lands at the
+    derived, contained location beside the checkpoint (it ignores `quantized_path`
+    for where it WRITES, only for what the receipt CLAIMS) -- so this receipt's
+    `outside` claim disagrees with the derived path itself, and is caught by that
+    disagreement check, not by containment (which the derived path here legitimately
+    passes: it never left the checkpoint's own, allow-listed directory). The
+    symlink-and-containment tests below cover the case where the artifact's actual
+    on-disk location, not merely the receipt's claim about it, is made to point
+    outside the allow-listed roots."""
+    import tempfile
+
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    with tempfile.TemporaryDirectory() as outside_dir:
+        outside = Path(outside_dir) / "final.ptq.pt"
+        outside.write_bytes(b"outside-the-roots")
+        quant_path = make_quant_receipt(
+            tmp_path,
+            checkpoint,
+            region="compress",
+            quantized_path=outside,
+            quantized_sha256="unused",
+        )
+        with pytest.raises(mod.PublishAbortError, match="but this checkpoint's artifact is"):
+            plan = mod.build_plan(
+                "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+            )
+            assert plan.quantized_path != outside  # unreachable; states the property
+
+
+# --------------------------------------------------- N1: derived-path symlink bypass
+#
+# The disagreement checks above compare the RECEIPT's claim about the artifact path
+# to the derived path -- they say nothing about what the on-disk entry AT the derived
+# path actually is. A symlink at `<checkpoint-stem>.ptq.pt` is followed silently by
+# `Path.resolve()`, and a receipt whose `artifacts.quantized_path` simply names the
+# same target the symlink already points at agrees with that (already-compromised)
+# resolution -- containment on the checkpoint itself never runs on the symlink's
+# target, because nothing about `quantized_artifact_path()` re-checked it. These
+# tests are the exact reviewer-found bypass (N1) and its regression guards.
+
+
+def _symlinked_quant_receipt(tmp_path: Path, checkpoint: Path, target: Path) -> Path:
+    """A quant receipt whose artifacts.quantized_path / quantized_sha256 / measured
+    numbers all correctly describe `target` -- the receipt AGREES with whatever the
+    symlink at the derived location resolves to, which is exactly the shape that let
+    the old disagreement check pass trivially."""
+    quant_path = make_quant_receipt(
+        tmp_path, checkpoint, region="compress", quantized_artifact=False
+    )
+    receipt = json.loads(quant_path.read_text())
+    packed = load_packed_artifact(target)
+    receipt["stored_bytes"] = packed_stored_bytes(packed)
+    receipt["width_histogram"] = packed_width_histogram(packed)
+    receipt["artifacts"] = {
+        "quantized_path": str(target),
+        "quantized_sha256": mod.sha256_of(target),
+    }
+    quant_path.write_text(json.dumps(receipt))
+    return quant_path
+
+
+class _BoomHfApi:
+    """Construction is itself the failure: reaching `publish()` at all means the
+    plan should never have built."""
+
+    def __init__(self, *a: Any, **k: Any) -> None:
+        raise AssertionError("HfApi constructed despite an aborting plan")
+
+
+def test_symlinked_quant_artifact_outside_roots_aborts_before_hfapi(tmp_path: Path) -> None:
+    """N1, the reviewer's exact finding: `<checkpoint-stem>.ptq.pt` is a symlink to a
+    real, correctly-hashed packed artifact OUTSIDE every allow-listed root. This must
+    abort with PublishAbortError before `HfApi` is ever constructed -- proven to FAIL
+    (upload proceeds) on commit 8ac8fbb; see the session's verification script."""
+    import tempfile
+
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+
+    with tempfile.TemporaryDirectory() as outside_dir:
+        outside_artifact = Path(outside_dir) / "someone-elses-region.ptq.pt"
+        write_packed_artifact(outside_artifact)
+
+        link = checkpoint.with_name(f"{checkpoint.stem}.ptq.pt")
+        link.symlink_to(outside_artifact)
+
+        quant_path = _symlinked_quant_receipt(tmp_path, checkpoint, outside_artifact)
+
+        with (
+            patch("huggingface_hub.HfApi", _BoomHfApi),
+            patch.dict("os.environ", {"HF_TOKEN": "tok"}),
+            pytest.raises(mod.PublishAbortError, match="is a symlink"),
+        ):
+            mod.build_plan(
+                "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+            )
+
+
+def test_symlinked_quant_artifact_inside_roots_but_other_region_aborts(tmp_path: Path) -> None:
+    """N1 variant: the symlink's target is itself inside an allow-listed root (plain
+    containment on the target alone would pass) but sits in a DIFFERENT region's
+    directory, not beside this checkpoint. Caught by the same symlink refusal --
+    the derived location must never be a symlink at all, regardless of where it
+    points -- so this also aborts before `HfApi` is constructed."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+
+    other_region_dir = tmp_path / "some-other-regions-checkpoints"
+    other_region_dir.mkdir()
+    other_artifact = other_region_dir / "final.ptq.pt"
+    write_packed_artifact(other_artifact)
+
+    link = checkpoint.with_name(f"{checkpoint.stem}.ptq.pt")
+    link.symlink_to(other_artifact)
+
+    quant_path = _symlinked_quant_receipt(tmp_path, checkpoint, other_artifact)
+
+    with (
+        patch("huggingface_hub.HfApi", _BoomHfApi),
+        patch.dict("os.environ", {"HF_TOKEN": "tok"}),
+        pytest.raises(mod.PublishAbortError, match="is a symlink"),
+    ):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_hardlinked_quant_artifact_is_allowed(tmp_path: Path) -> None:
+    """Regression guard: a HARD link at the derived location -- a second directory
+    entry for the same inode, not a symlink -- must still publish. The fix refuses
+    symlinks specifically (the thing `Path.resolve()` follows unchecked), not every
+    non-canonical directory entry."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+
+    real_artifact = tmp_path / "real-storage.ptq.pt"
+    write_packed_artifact(real_artifact)
+
+    link = checkpoint.with_name(f"{checkpoint.stem}.ptq.pt")
+    os.link(real_artifact, link)  # hard link: NOT a symlink
+    assert not link.is_symlink()
+
+    quant_path = _symlinked_quant_receipt(tmp_path, checkpoint, link)
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+    )
+    assert plan.quantized_path == link.resolve()
+    assert link.name in plan.files
+
+
+def test_regular_file_quant_artifact_is_allowed(tmp_path: Path) -> None:
+    """Regression guard: the ordinary case -- a plain regular file written directly
+    at the derived location, no link involved -- must still publish. Already covered
+    indirectly by most tests above (`make_quant_receipt`'s default), pinned here
+    explicitly as the counterpart to the symlink and hard-link tests."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+    )
+    assert plan.quantized_path is not None
+    assert not plan.quantized_path.is_symlink()
+
+
+def test_quant_receipt_stored_bytes_tampered_aborts(tmp_path: Path) -> None:
+    """A receipt can hash the artifact correctly and still carry compression numbers
+    measured on something else. The card prints those numbers, so they are checked
+    against the artifact rather than transcribed from the receipt."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress", stored_bytes=1)
+    with pytest.raises(mod.PublishAbortError, match="stored_bytes 1 does not match"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_quant_receipt_histogram_tampered_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(
+        tmp_path, checkpoint, region="compress", width_histogram={"2": 99}
+    )
+    with pytest.raises(mod.PublishAbortError, match=r"width_histogram .* does not match"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_quant_receipt_missing_stored_bytes_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    receipt = json.loads(quant_path.read_text())
+    del receipt["stored_bytes"]
+    quant_path.write_text(json.dumps(receipt))
+    with pytest.raises(mod.PublishAbortError, match="no stored_bytes"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_unreadable_quant_artifact_aborts(tmp_path: Path) -> None:
+    """The artifact is loaded to be measured, so a file that is not a packed artifact
+    -- however correctly the receipt hashes it -- cannot be published."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    artifact = checkpoint.with_name(f"{checkpoint.stem}.ptq.pt")
+    artifact.write_bytes(b"not a torch file at all")
+    receipt = json.loads(quant_path.read_text())
+    receipt["artifacts"]["quantized_sha256"] = mod.sha256_of(artifact)
+    quant_path.write_text(json.dumps(receipt))
+    with pytest.raises(mod.PublishAbortError, match="not a readable packed artifact"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_card_prints_measured_numbers_and_does_not_repeat_the_budget(tmp_path: Path) -> None:
+    """The `## Quantized artifact` section carries facts about the file; the
+    ratio/drop/tolerance/within_budget story stays in the single `### quantization`
+    table above it."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+    )
+    section = plan.card.split("## Quantized artifact", 1)[1].split("## Training config", 1)[0]
+
+    assert plan.quantized_stored_bytes is not None
+    assert str(plan.quantized_stored_bytes) in section
+    assert str(plan.quantized_width_histogram) in section
+    assert plan.quantized_path is not None
+    assert str(plan.quantized_path.stat().st_size) in section
+    for repeated in ("Compression ratio", "Within budget", "tolerance", "Metric drop"):
+        assert repeated not in section, f"{repeated!r} is duplicated in the artifact section"
+    # ...and is still reported once, in the table.
+    assert "compression_ratio" in plan.card
+    assert "within_budget" in plan.card
+
+
+def test_full_publish_with_quant_is_idempotent_including_the_ptq_file(tmp_path: Path) -> None:
+    """The F7 gap: idempotency was only ever tested on an fp32-only plan, so nothing
+    pinned that the `.ptq.pt` file compares by its LFS sha256 and is skipped on a
+    second run. A re-publish must upload nothing at all."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, quant_path
+    )
+    assert plan.quantized_path is not None
+    ptq_name = f"{checkpoint.stem}.ptq.pt"
+    assert ptq_name in plan.files
+
+    # What the repo looks like after a first, successful publish: both .pt files
+    # LFS-tracked (sha256), everything else a plain git blob.
+    remote = []
+    for path_in_repo, item in plan.files.items():
+        if path_in_repo == checkpoint.name:
+            remote.append(repo_file(path_in_repo, sha256=plan.checkpoint_sha256, size=1))
+        elif path_in_repo == ptq_name:
+            remote.append(repo_file(path_in_repo, sha256=plan.quantized_sha256, size=1))
+        else:
+            data = item.read_bytes() if isinstance(item, Path) else item
+            remote.append(repo_file(path_in_repo, blob_id=git_blob_sha1(data)))
+
+    fake_api = MagicMock()
+    fake_api.repo_info.return_value = SimpleNamespace(private=True)
+    fake_api.get_paths_info.return_value = remote
+    with (
+        patch("huggingface_hub.HfApi", return_value=fake_api),
+        patch.dict("os.environ", {"HF_TOKEN": "tok"}),
+    ):
+        result = mod.publish(plan)
+
+    assert result["uploaded"] == []
+    assert ptq_name in result["skipped"]
+    assert set(result["skipped"]) == set(plan.files.keys())
+    fake_api.upload_file.assert_not_called()
+
+
+def test_quant_artifact_repo_name_comes_from_the_checkpoint_stem(tmp_path: Path) -> None:
+    """The upload path is derived, not taken from the artifact's on-disk name -- so a
+    checkpoint called `step-8000.pt` publishes `step-8000.ptq.pt`, and the checkpoint's
+    own slot in the plan is untouched."""
+    checkpoint = make_checkpoint(tmp_path, name="step-8000.pt")
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+    )
+    assert "step-8000.ptq.pt" in plan.files
+    assert plan.files["step-8000.pt"] == checkpoint
+    assert plan.files["step-8000.ptq.pt"] == plan.quantized_path
