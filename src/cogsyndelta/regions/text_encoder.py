@@ -85,10 +85,15 @@ class TextEncoder(nn.Module):
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(
+    def tokens(
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None
-    ) -> torch.Tensor:
-        """Encode to ``[B, out_dim]``.
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Region-native representation BEFORE pooling and BEFORE ``proj`` (DEC-14/DEC-15).
+
+        This is everything ``forward`` used to do up to (and including) the final norm --
+        unchanged, weight for weight -- just no longer thrown away one line later. The
+        pooling line moved to :meth:`pool`; nothing about the blocks or the attention mask
+        handling below changed.
 
         Args:
             input_ids: ``[B, T]`` token ids.
@@ -96,8 +101,10 @@ class TextEncoder(nn.Module):
                 every position is treated as real.
 
         Returns:
-            ``[B, out_dim]`` unnormalised embeddings. Normalisation is the caller's
-            choice -- a contrastive loss wants unit vectors, a regression head may not.
+            ``(h [B, T, dim], mask [B, T])``. ``mask`` is ``attention_mask`` when given,
+            else an all-ones mask of the same shape -- :meth:`pool` always receives an
+            explicit mask, so "no padding" and "masked mean over an all-real batch" are
+            the same code path rather than two.
         """
         b, t = input_ids.shape
         if t > self.cfg.max_len:
@@ -113,16 +120,51 @@ class TextEncoder(nn.Module):
             h = block(h, attention_mask)
         h = self.norm(h)
 
-        if attention_mask is None:
-            pooled = h.mean(dim=1)
-        else:
-            # Mask BEFORE summing. Averaging over padding pulls every short text toward
-            # the same vector, which reads as "the model learned similarity" and is in
-            # fact averaging in a constant.
-            mask = attention_mask.unsqueeze(-1).to(h.dtype)
-            pooled = (h * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1e-6)
+        mask = (
+            torch.ones(b, t, dtype=h.dtype, device=h.device)
+            if attention_mask is None
+            else attention_mask
+        )
+        return h, mask
 
+    def pool(self, h: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """``[B, T, dim] -> [B, out_dim]``: masked mean, then ``proj``.
+
+        The region's standalone answer (DEC-14/DEC-15), kept so every existing receipt
+        stays reproducible and comparable. Same masked-mean expression ``forward`` used to
+        contain -- moved here, not rewritten.
+
+        Args:
+            h: ``[B, T, dim]`` token representations, as returned by :meth:`tokens`.
+            mask: ``[B, T]`` with 1 for real positions, 0 for padding.
+
+        Returns:
+            ``[B, out_dim]`` unnormalised embeddings. Normalisation is the caller's
+            choice -- a contrastive loss wants unit vectors, a regression head may not.
+        """
+        # Mask BEFORE summing. Averaging over padding pulls every short text toward
+        # the same vector, which reads as "the model learned similarity" and is in
+        # fact averaging in a constant.
+        m = mask.unsqueeze(-1).to(h.dtype)
+        pooled = (h * m).sum(dim=1) / m.sum(dim=1).clamp_min(1e-6)
         return self.proj(pooled)
+
+    def forward(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Encode to ``[B, out_dim]``.
+
+        Args:
+            input_ids: ``[B, T]`` token ids.
+            attention_mask: ``[B, T]`` with 1 for real tokens, 0 for padding. When None
+                every position is treated as real.
+
+        Returns:
+            ``[B, out_dim]`` unnormalised embeddings. Normalisation is the caller's
+            choice -- a contrastive loss wants unit vectors, a regression head may not.
+        """
+        h, mask = self.tokens(input_ids, attention_mask)
+        return self.pool(h, mask)
 
     def encode(self, inputs: torch.Tensor | tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         """StreamEncoder role: map text to ``[B, D]``.

@@ -205,7 +205,50 @@ class ViTEncoder(nn.Module):
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
         """Pool to a single ``[B, D]`` latent — the CSD shared-stream surface."""
-        return self.forward(x).mean(dim=1)
+        h, mask = self.tokens(x)
+        return self.pool(h, mask)
+
+    def tokens(
+        self, x: torch.Tensor, keep: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Region-native representation BEFORE pooling (DEC-14/DEC-15).
+
+        Images carry no padding, unlike text, so unlike :class:`TextEncoder` there is no
+        masked-out content here -- every patch position `tokens()` returns is real. The
+        mask return value exists anyway because :meth:`pool` and the Faculty contract
+        (§2.2) take one uniformly across regions; here it is always all-ones.
+
+        Args:
+            x: ``[B, C, H, W]``.
+            keep: Optional ``[B, K]`` long tensor of patch indices to retain -- see
+                :meth:`forward`.
+
+        Returns:
+            ``(h [B, N or K, D], mask [B, N or K])``, ``mask`` all-ones.
+        """
+        h = self.forward(x, keep=keep)
+        mask = torch.ones(h.shape[0], h.shape[1], dtype=h.dtype, device=h.device)
+        return h, mask
+
+    def pool(self, h: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """``[B, T, D] -> [B, D]``: masked mean over patch tokens (DEC-14/DEC-15).
+
+        With an all-ones mask (the only mask :meth:`tokens` ever produces) this is
+        ``h.mean(dim=1)`` written as a masked mean instead, so it is the same expression
+        :meth:`TextEncoder.pool` uses and the two regions share one contract. There is no
+        ``proj`` here: unlike the text regions, `ViTEncoder`'s output width already is the
+        shared-stream width the catalogue declares for `visual` (DEC-15), so pooling is
+        the whole of it.
+
+        Args:
+            h: ``[B, T, D]`` patch representations, as returned by :meth:`tokens`.
+            mask: ``[B, T]``, real-position indicator (all-ones for `ViTEncoder`).
+
+        Returns:
+            ``[B, D]``.
+        """
+        m = mask.unsqueeze(-1).to(h.dtype)
+        return (h * m).sum(dim=1) / m.sum(dim=1).clamp_min(1e-6)
 
 
 class JEPAPredictor(nn.Module):
@@ -385,3 +428,30 @@ class IJEPA(nn.Module):
         it is the smoothed, more stable of the two.
         """
         return self.target_encoder.embed(images)
+
+    @torch.no_grad()
+    def tokens(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """`visual`'s pre-pool token surface for the CSD shared stream (DEC-14/DEC-15).
+
+        Delegates to the **target (EMA) encoder**, not the context encoder: DEC-34
+        establishes that the target encoder is the deployed half -- ``encode`` above
+        already reads through it exclusively -- so the token surface a controller would
+        read has to come from the same network ``encode`` and every existing receipt
+        does, or ``pool(tokens(x))`` and ``encode(x)`` would silently be about two
+        different models.
+
+        Returns:
+            ``(h [B, 64, 384], mask [B, 64])`` at this module's default config, mask
+            all-ones (images carry no padding).
+        """
+        return self.target_encoder.tokens(images)
+
+    @torch.no_grad()
+    def pool(self, h: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """``[B, T, D] -> [B, D]``, via the target encoder's pooling (DEC-34).
+
+        ``pool(tokens(x))`` reproduces ``encode(x)`` exactly: both are the target
+        encoder's masked mean over its own patch tokens, computed through the same
+        module rather than two independently-written expressions that merely agree.
+        """
+        return self.target_encoder.pool(h, mask)
