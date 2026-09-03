@@ -97,6 +97,7 @@ def test_probe_requested(monkeypatch) -> None:
 
 
 def test_report_peak_prints_once_with_int(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("GPU_PACK_BUDGET_MIB", "4096")
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "max_memory_reserved", lambda idx: 1234 * 2**20 + 7)
 
@@ -109,7 +110,21 @@ def test_report_peak_prints_once_with_int(monkeypatch, capsys) -> None:
     assert isinstance(peak, int)
 
 
+def test_report_peak_prints_once_when_probe_set(monkeypatch, capsys) -> None:
+    monkeypatch.delenv("GPU_PACK_BUDGET_MIB", raising=False)
+    monkeypatch.setenv("GPU_PACK_PROBE", "1")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "max_memory_reserved", lambda idx: 1 * 2**20)
+
+    peak = gpu_budget.report_peak()
+
+    captured = capsys.readouterr()
+    lines = [line for line in captured.err.splitlines() if line.startswith("GPU_PACK_PEAK_MIB=")]
+    assert lines == [f"GPU_PACK_PEAK_MIB={peak}"]
+
+
 def test_report_peak_is_noop_without_cuda(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("GPU_PACK_BUDGET_MIB", "4096")
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
 
     peak = gpu_budget.report_peak()
@@ -117,3 +132,22 @@ def test_report_peak_is_noop_without_cuda(monkeypatch, capsys) -> None:
     captured = capsys.readouterr()
     assert peak is None
     assert "GPU_PACK_PEAK_MIB" not in captured.err
+
+
+def test_report_peak_is_silent_when_unset(monkeypatch, capsys) -> None:
+    monkeypatch.delenv("GPU_PACK_BUDGET_MIB", raising=False)
+    monkeypatch.delenv("GPU_PACK_PROBE", raising=False)
+    called = False
+
+    def boom(*_a, **_k):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(torch.cuda, "is_available", boom)
+
+    peak = gpu_budget.report_peak()
+
+    captured = capsys.readouterr()
+    assert peak is None
+    assert captured.err == ""
+    assert called is False  # must not even touch CUDA when not opted in

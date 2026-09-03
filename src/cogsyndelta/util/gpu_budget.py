@@ -12,7 +12,9 @@ env vars it hands a launched job through, plus the one line it reads back:
   (`PROBE_STEPS`) instead of the full config -- used by pretrain.py's entry point.
 - `report_peak()`: on completion, prints ``GPU_PACK_PEAK_MIB=<n>`` to stderr so a
   launcher never has to scrape a training log for the number it needs to size the next
-  concurrent batch. Unset budget or no CUDA: no line, matching prior behaviour.
+  concurrent batch. Only prints when the caller opted in via `GPU_PACK_BUDGET_MIB` or
+  `GPU_PACK_PROBE` -- an ordinary CSD run with neither set must stay completely silent,
+  even with CUDA available. No CUDA: no line either way.
 
 Deliberately free of any torch import at module load time is not required here (torch is
 already a hard dependency of every caller), but every function below is a no-op unless
@@ -72,12 +74,21 @@ def probe_requested() -> bool:
 
 
 def report_peak(device_index: int = 0) -> int | None:
-    """Print ``GPU_PACK_PEAK_MIB=<n>`` to stderr once, if CUDA was used this process.
+    """Print ``GPU_PACK_PEAK_MIB=<n>`` to stderr once, if opted in and CUDA was used.
 
-    No-op (returns ``None``, prints nothing) when CUDA is unavailable -- a CPU-only run
-    (tests, the 1080 Ti when its torch build lacks CUDA support, ...) has no peak to
-    report and must not gain a spurious line gpu-pack would otherwise try to parse.
+    No-op (returns ``None``, prints nothing) unless the caller opted in by setting
+    `GPU_PACK_BUDGET_MIB` or `GPU_PACK_PROBE` in the environment -- an ordinary CSD run
+    that ignores gpu-pack entirely must not gain a spurious line it never asked for.
+
+    Also a no-op when CUDA is unavailable -- a CPU-only run (tests, the 1080 Ti when its
+    torch build lacks CUDA support, ...) has no peak to report.
     """
+    if not (
+        _truthy(os.environ.get("GPU_PACK_PROBE"))
+        or os.environ.get("GPU_PACK_BUDGET_MIB") is not None
+    ):
+        return None
+
     import torch
 
     if not torch.cuda.is_available():

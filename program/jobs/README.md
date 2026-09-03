@@ -55,6 +55,25 @@ must refuse this spec rather than guess; do not hand it an explicit `budget_mib`
 50-step `MEASURED_VRAM_AT_BATCH_512` note above — that number is a different step count
 than this spec's 8000 and has not been re-measured with `gpu_budget`'s cap wired in.
 
+### PYTHONPATH and the editable install
+
+Every spec's `argv[0]` here points at `/home/kang/code/personal/tzervas/CogSynDelta/.venv/bin/python`
+— the **main checkout's** venv. That venv's editable install (`pip install -e .`) pins
+the main checkout's `src/` on `sys.path` via a `.pth`/finder entry, not this worktree's.
+So a spec that runs `cwd=/home/.../CogSynDelta` with no `PYTHONPATH` override — every
+spec in this directory, today — imports `cogsyndelta` from the **main** checkout, not
+from `CogSynDelta-wt-vram-env`, even though these files live in this worktree's
+`program/jobs/`.
+
+That is fine for specs whose whole point is to exercise the main checkout (as these
+four are). It is a trap for a future spec meant to exercise *this worktree's* code
+(e.g. the `gpu_budget` adapter changes here before they land on main): such a spec
+**must** set `"env": {"PYTHONPATH": "/home/kang/code/personal/tzervas/csd-worktress/CogSynDelta-wt-vram-env/src"}`
+(or the equivalent for whichever worktree it targets), or it will silently run against
+stale main-checkout code and the run's `code_revision` field will not match what
+actually executed. None of the four specs in this directory need this today — call it
+out explicitly here so the next spec added for a worktree branch doesn't skip it.
+
 ## Running one by hand (bypassing gpu-pack, for smoke-testing the adapter itself)
 
 ```bash
