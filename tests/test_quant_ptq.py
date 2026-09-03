@@ -8,6 +8,7 @@ rather than where tensor size suggests they might.
 
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -179,3 +180,163 @@ def test_save_packed_artifact_writes_hashable_file(tmp_path: Path) -> None:
     # Smaller than the equivalent fp32 dump -- the whole point of packing.
     fp32_bytes = sum(p.numel() * 4 for p in model.parameters())
     assert out.stat().st_size < fp32_bytes
+
+
+# --------------------------------------------------- artifact shape, device, buffers
+
+
+class _WithPersistentBuffer(nn.Module):
+    """A module whose state_dict carries something named_parameters() never yields."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fc = nn.Linear(64, 64)
+        self.register_buffer("running_mean", torch.zeros(64))  # persistent by default
+
+
+class _WithDerivedBuffer(nn.Module):
+    """The pattern regions/text_encoder.py uses for a recomputable buffer."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fc = nn.Linear(64, 64)
+        self.register_buffer("pos", torch.zeros(64), persistent=False)
+
+
+def test_pack_state_dict_refuses_a_persistent_buffer() -> None:
+    """A persistent buffer would be dropped in silence and the artifact would still
+    claim to be a complete model, so packing must refuse rather than round it down."""
+    from cogsyndelta.quant.ptq import QuantPlan, pack_state_dict
+
+    model = _WithPersistentBuffer()
+    plan = QuantPlan(bits=dict.fromkeys(quantizable(model), 4))
+    with pytest.raises(ValueError, match="running_mean"):
+        pack_state_dict(model, plan)
+
+
+def test_pack_state_dict_allows_a_non_persistent_buffer() -> None:
+    """persistent=False is exactly the escape hatch the refusal above points at: the
+    buffer is absent from state_dict() by design, so nothing is being dropped."""
+    from cogsyndelta.quant.ptq import QuantPlan, pack_state_dict
+
+    model = _WithDerivedBuffer()
+    plan = QuantPlan(bits=dict.fromkeys(quantizable(model), 4))
+    packed = pack_state_dict(model, plan)
+    assert "pos" not in packed["fp32"]
+    assert set(packed["fp32"]) | set(packed["bits"]) == {n for n, _ in model.named_parameters()}
+
+
+def test_load_packed_artifact_roundtrips_and_measures(tmp_path: Path) -> None:
+    from cogsyndelta.quant.ptq import (
+        QuantPlan,
+        load_packed_artifact,
+        packed_stored_bytes,
+        packed_width_histogram,
+        save_packed_artifact,
+        unpack_state_dict,
+    )
+
+    torch.manual_seed(0)
+    model = nn.Sequential(nn.Linear(128, 128), nn.Linear(128, 8))
+    names = quantizable(model)
+    plan = QuantPlan(bits=dict.fromkeys(names, 4))
+    plan.fp32 = [n for n, _ in model.named_parameters() if n not in plan.bits]
+
+    out = tmp_path / "final.ptq.pt"
+    save_packed_artifact(model, plan, out)
+    packed = load_packed_artifact(out)
+
+    restored = unpack_state_dict(packed)
+    live, measured = apply_plan(model, plan)
+    for name, p in live.named_parameters():
+        assert torch.allclose(restored[name], p.detach(), atol=1e-5)
+
+    # The whole point of packed_stored_bytes: it is apply_plan's number, recomputed
+    # from the file, so a receipt's stored_bytes can be checked instead of copied.
+    assert packed_stored_bytes(packed) == measured
+    assert packed_width_histogram(packed) == {"4": len(names)}
+
+
+def test_load_packed_artifact_rejects_a_foreign_file(tmp_path: Path) -> None:
+    from cogsyndelta.quant.ptq import load_packed_artifact
+
+    plain = tmp_path / "not-ours.pt"
+    torch.save({"model": {"w": torch.zeros(2)}}, plain)
+    with pytest.raises(ValueError, match="missing top-level key"):
+        load_packed_artifact(plain)
+
+
+def test_load_packed_artifact_rejects_disagreeing_sections(tmp_path: Path) -> None:
+    """`bits` naming a tensor the code sections do not carry is a truncated or
+    hand-edited artifact, not a smaller one."""
+    from cogsyndelta.quant.ptq import QuantPlan, load_packed_artifact, pack_state_dict
+
+    torch.manual_seed(0)
+    model = nn.Sequential(nn.Linear(64, 64))
+    plan = QuantPlan(bits=dict.fromkeys(quantizable(model), 4))
+    packed = pack_state_dict(model, plan)
+    packed["bits"]["0.nonexistent"] = 4
+    bad = tmp_path / "bad.ptq.pt"
+    torch.save(packed, bad)
+    with pytest.raises(ValueError, match="sections disagree"):
+        load_packed_artifact(bad)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA device")
+def test_packed_artifact_from_a_cuda_module_has_no_cuda_tags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """torch.save records each tensor's device. Packing a CUDA model must still write a
+    file a CPU-only host can load with no map_location -- and, by the same token, the
+    same bytes a CPU host would have written."""
+    from cogsyndelta.quant.ptq import QuantPlan, save_packed_artifact
+
+    torch.manual_seed(0)
+    model = nn.Sequential(nn.Linear(128, 128), nn.Linear(128, 8)).cuda()
+    plan = QuantPlan(bits=dict.fromkeys(quantizable(model), 4))
+    out = tmp_path / "cuda.ptq.pt"
+    save_packed_artifact(model, plan, out)
+
+    # No map_location, and CUDA made to look absent: this is exactly what a CPU-only
+    # consumer does, and it raised before pack_state_dict moved tensors to the CPU.
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    loaded = torch.load(out, weights_only=True)
+    assert all(t.device.type == "cpu" for t in loaded["fp32"].values())
+
+    # And the bytes themselves carry no cuda location tag.
+    with zipfile.ZipFile(out) as zf:
+        pickles = [n for n in zf.namelist() if n.endswith("data.pkl")]
+        assert pickles
+        assert all(b"cuda" not in zf.read(n) for n in pickles)
+
+
+def test_cpu_and_gpu_packing_produce_identical_bytes(tmp_path: Path) -> None:
+    """The sha256 a receipt records must be a fact about the weights, not about which
+    machine ran the quantizer. Skips the GPU half when there is no GPU, and still pins
+    that packing the same weights twice is byte-identical.
+
+    Both writes use the SAME basename in different directories, deliberately.
+    ``torch.save`` names the zip archive inside the file after the file itself, so two
+    artifacts holding bit-identical tensors under different names differ in bytes for a
+    reason that has nothing to do with devices. The name is not a free variable here:
+    `scripts/csd-quantize.py` derives it from the checkpoint stem and
+    `scripts/csd-publish-checkpoint.py` re-derives the same one, so holding it fixed is
+    what the real pipeline does and the device is the only thing left varying.
+    """
+    from cogsyndelta.quant.ptq import QuantPlan, save_packed_artifact
+    from cogsyndelta.regions._checkpoint import sha256_file
+
+    torch.manual_seed(0)
+    model = nn.Sequential(nn.Linear(128, 128), nn.Linear(128, 8))
+    plan = QuantPlan(bits=dict.fromkeys(quantizable(model), 4))
+
+    cpu_out = tmp_path / "cpu" / "final.ptq.pt"
+    cpu_sha = save_packed_artifact(model, plan, cpu_out)
+    assert cpu_sha == sha256_file(cpu_out)
+
+    other = tmp_path / "other" / "final.ptq.pt"
+    if torch.cuda.is_available():
+        other_sha = save_packed_artifact(model.cuda(), plan, other)
+    else:
+        other_sha = save_packed_artifact(model, plan, other)
+    assert other_sha == cpu_sha
