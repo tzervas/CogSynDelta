@@ -171,13 +171,40 @@ def test_production_sites_load_receipt_checkpoints_through_load_checkpoint(
     )
 
 
+def _load_checkpoint_signature_text(source: str) -> str:
+    """Text of `load_checkpoint`'s own `def ... (...)` parameter list, balanced-paren
+    aware -- same technique as `_load_checkpoint_call_text` above, anchored to the
+    definition instead of a call site."""
+    needle = "def load_checkpoint("
+    start = source.index(needle)
+    depth = 1
+    i = start + len(needle)
+    while depth > 0:
+        if source[i] == "(":
+            depth += 1
+        elif source[i] == ")":
+            depth -= 1
+        i += 1
+    return source[start:i]
+
+
 def test_load_checkpoint_has_no_weights_only_parameter() -> None:
     """Structural guarantee, not a convention: no argument exists that could make
     `load_checkpoint` call `torch.load` with anything other than `weights_only=True`.
     This is what makes the per-call-site checks above about a caller passing
-    `weights_only=True` unnecessary -- there is no keyword left to pass."""
-    import inspect
+    `weights_only=True` unnecessary -- there is no keyword left to pass.
 
-    from cogsyndelta.regions._checkpoint import load_checkpoint
-
-    assert "weights_only" not in inspect.signature(load_checkpoint).parameters
+    Checked by parsing the signature text, NOT `from cogsyndelta.regions._checkpoint
+    import load_checkpoint` + `inspect.signature`: importing that name runs
+    `cogsyndelta/regions/__init__.py`, which imports `regions.pretrain`, which needs
+    `tokenizers` (the `train` dependency group). This file has no such dependency and
+    is guaranteed to run in every CI job (`.github/workflows/ci.yml`, `code-quality.yml`,
+    `scripts/ci_local.sh` -- all `uv sync --group dev`, no train group ever installed) --
+    see `test_production_sites_load_receipt_checkpoints_through_load_checkpoint` above
+    for the same reasoning applied to the call-site checks.
+    """
+    source = (_REPO_ROOT / "src" / "cogsyndelta" / "regions" / "_checkpoint.py").read_text()
+    signature = _load_checkpoint_signature_text(source)
+    assert "weights_only" not in signature, (
+        f"load_checkpoint must not accept a weights_only parameter -- found: {signature!r}"
+    )
