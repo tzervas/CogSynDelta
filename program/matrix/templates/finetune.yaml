@@ -1,0 +1,31 @@
+# The `finetune` block for one region in `program/matrix/csd-matrix.yaml` (DESIGN.v2
+# §6.4). NOT YET RUNNABLE: it depends on `--init-from-checkpoint` on
+# `scripts/csd-train-all.py` / `cogsyndelta.regions.memory` (adapter A4), which is not on
+# `main` at this file's `run.code.sha` -- confirmed absent by grep, 2026-09-03. This
+# template documents the shape so the feature is easy to wire in once A4 lands; do not
+# add a `finetune:` block to a real matrix config before then, the pipeline has nowhere
+# to route it (`pipeline.finetune` names the stage sequence, but no command exists to run).
+#
+# DEFINITION (unchanged once A4 lands): continued pretraining from a PARENT variant's
+# verified fp32 checkpoint, under a fresh PretrainConfig whose corpus and/or objective
+# differs from the parent's in a stated way, for a stated number of steps. Not a resume
+# -- the optimizer starts fresh and the run gets its own fingerprint directory.
+
+regions:
+  <region-name>:
+    # ... the region's normal block (see templates/region.yaml) ...
+    finetune:
+      name: <short-label> # e.g. "terms"; becomes part of the child's cell_id
+      from:
+        variant: best_of_region # or an explicit variant_id from a prior run's matrix.json
+      steps: 1000
+      lr_scale: 0.3
+      objective_delta: {} # fields that differ from the parent's PretrainConfig
+        # token_w: 0.1
+        # decorr_w: 0.1
+      corpus_delta: null # or {extra_sources: [...]} -- if set, `beats_parent` can only
+        # be computed by re-evaluating the parent on the CHILD's split
+        # (H7); see docs/design/MATRIX-PIPELINE.md
+
+pipeline:
+  finetune: [finetune, test, quantize, test-quant, collect, publish, verify]

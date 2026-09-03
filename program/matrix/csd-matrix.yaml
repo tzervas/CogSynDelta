@@ -1,0 +1,277 @@
+# CSD's first train -> test -> quantize -> test matrix.
+#
+# Consumed by `tzervas/model-matrix` (a separate repo -- see
+# `tooling-lives-in-its-own-repo`; not built here). This file is CSD's half of the
+# contract: the config schema, the stage commands, and every measured number this repo
+# can honestly provide today. Schema, identifier scheme, budget-key rules and gate
+# semantics are `program/matrix/README.md`'s § references to
+# `/akula-data/session-backup-staging/matrix-harness/DESIGN.v2.md` (the ratified spec);
+# this file does not repeat that reasoning, only its result.
+#
+# STATUS (see docs/design/MATRIX-PIPELINE.md for how to read/run this):
+#   - `run.code.sha` pins `main` at the commit this file was written against. It has NO
+#     `--quantized`/`--quant-receipt`/`--train-receipt` flags on csd-benchmark.py or
+#     csd-quantize.py -- those adapters (A6, A7) are implemented and tested on
+#     `feat/matrix-config` (this branch), not yet merged. `stages.test-quant.enabled`
+#     is therefore `false`, matching what `main` can actually run; the harness pipeline
+#     runs `train, test, quantize, collect, publish, verify` and the matrix table
+#     carries the labelled interim PTQ column (`quantize:$.quantized_metric`) per §5.1.
+#   - ACTIVATION STEP, once this branch's PR merges to `main`: update `run.code.sha` to
+#     the merge commit, flip `stages.test-quant.enabled` to `true`, and re-run the
+#     preflight (`model-matrix validate`) before launching -- see MATRIX-PIPELINE.md.
+#   - Every `budgets` entry not sourced from a real `report_peak()` measurement is
+#     `null` (H4's convention): the harness's wave 0 probes those before launching any
+#     full cell. This is deliberately a LARGER probe set than a naive first draft would
+#     carry -- see DESIGN.v2 §11.1/§11.2 for the reasoning and the resulting wave plan.
+
+schema: model-matrix/v2
+
+run:
+  id: csd-m1-20260904
+  project: cogsyndelta
+  code:
+    repo: /home/kang/code/personal/tzervas/CogSynDelta
+    sha: f48fd8a07df9024687da2fce01536963371efcb9 # main, 2026-09-03 -- memory licence tier merged (#10); NOT feat/vl-jepa
+  state_root: /akula-data/csd/matrix
+  finals_root: /akula-data/csd/finals # must be inside retention.prune_roots (loader-enforced)
+  events_dir: /akula-data/csd/events
+  evidence_dir: docs/design/evidence
+
+hosts:
+  akula-prime:
+    gpu_index: 0
+    total_mib: 23028
+    foreign_floor_mib: 1100 # live desktop measured ~980-1054 MiB tonight; 1100 leaves ~50-120 MiB margin
+    cwd: /home/kang/code/personal/tzervas/CogSynDelta
+    python: /home/kang/code/personal/tzervas/CogSynDelta/.venv/bin/python
+    pythonpath: /home/kang/code/personal/tzervas/CogSynDelta/src
+    state_root: /akula-data/csd/matrix
+    roles: [train, eval, quantize]
+  gpu5080:
+    gpu_index: 0
+    total_mib: 16303
+    foreign_floor_mib: 0 # no desktop session on this host
+    cwd: /home/tzervas/CogSynDelta
+    python: /home/tzervas/CogSynDelta/.venv/bin/python
+    pythonpath: /home/tzervas/CogSynDelta/src
+    state_root: /bulk/csd-train-state/matrix
+    local_view: /mnt/bulk/csd-train-state/matrix # NFS 4.2 mount on akula-prime; collect reads from here
+    roles: [train, eval, quantize]
+  # gpu-1080ti: excluded -- the fleet's pinned torch cannot run there (get_arch_list floors
+  # at sm_75; the VM's driver caps CUDA 12.2); its role is inference/RAG, not fp32 training.
+
+gpu_pack:
+  ledger: /akula-data/csd/vram-budgets.json
+  registry: /akula-data/csd/gpu-admitted.json
+  receipts: /akula-data/csd/receipts
+  margin_mib: 1024
+  probe_first: true
+
+corpus:
+  fingerprint_probe: "{python} scripts/csd-train-all.py --regions {region} --print-corpus-fingerprint --dry-run"
+
+stages:
+  train:
+    kind: train
+    gpu: true
+    receipt_kind: train
+    receipt: "receipts/{region}-2*.json"
+    gate: "$.beats_untrained.*"
+    complete_on_gate_fail: true
+  finetune:
+    kind: train
+    gpu: true
+    receipt_kind: train
+    receipt: "receipts/{region}-2*.json"
+    gate: "$.finetune.beats_parent"
+    complete_on_gate_fail: true
+  test:
+    kind: eval
+    gpu: true
+    receipt_kind: eval
+    receipt: "receipts/cogsyndelta-{region}-eval-*.json"
+    gate: "$.gates.*"
+    bound_to: train
+    complete_on_gate_fail: true
+    requires: [train]
+  quantize:
+    kind: quantize
+    gpu: true
+    receipt_kind: quant
+    receipt: "receipts/{region}-quant-*.json"
+    gate: "$.within_budget"
+    bound_to: train
+    complete_on_gate_fail: true
+    requires: [test]
+  test-quant:
+    kind: eval
+    gpu: true
+    receipt_kind: eval-quant
+    receipt: "receipts/cogsyndelta-{region}-eval-quantized-*.json" # Receipt.write() filenames from `kind`; kind=eval-quantized
+    gate: "$.gates.*"
+    bound_to: quantize
+    complete_on_gate_fail: true
+    requires: [quantize]
+    enabled: false # true once this branch's A6/A7 PR merges to main -- see the header note
+  collect:
+    kind: collect
+    gpu: false
+    requires: [quantize] # shifts to test-quant once enabled: true above
+  publish:
+    kind: publish
+    gpu: false
+    requires: [collect]
+  verify:
+    kind: verify
+    gpu: false
+    requires: [publish]
+
+pipeline:
+  base: [train, test, quantize, test-quant, collect, publish, verify]
+  finetune: [finetune, test, quantize, test-quant, collect, publish, verify]
+
+identifier:
+  pattern: "{region}-{axes}-{sha7}-{date}"
+  axes_sep: "-"
+
+regions:
+  defaults:
+    steps: 4000
+    max_len: 96
+    shard_limit: 2 # script default; today's receipts show 1 shard for compress/retrieve/reason, 4 for code -- open question, see MATRIX-PIPELINE.md
+    tolerance: 0.01
+    aggressive_bits: 3
+    max_bits: 8
+    hosts: [gpu5080, akula-prime]
+    env: { PYTHONPATH: "{pythonpath}" }
+    commands:
+      train: >-
+        {python} scripts/csd-train-all.py --regions {region} --steps {steps} --batch {batch}
+        --max-len {max_len} --shard-limit {shard_limit} --seed {seed} --state {state}
+      test: "{python} scripts/csd-benchmark.py --regions {region} --state {state} --train-receipt {train_receipt}"
+      quantize: >-
+        {python} scripts/csd-quantize.py --regions {region} --state {state} --train-receipt {train_receipt}
+        --tolerance {tolerance} --aggressive-bits {aggressive_bits} --max-bits {max_bits}
+      test-quant: >-
+        {python} scripts/csd-benchmark.py --regions {region} --state {state} --quantized {quantized_path}
+        --quant-receipt {quant_receipt} --train-receipt {train_receipt}
+      publish: >-
+        {python} scripts/csd-publish-checkpoint.py --region {region} --repo {hub_repo}
+        --receipt {train_receipt} --eval-receipt {eval_receipt} --quant-receipt {quant_receipt}
+        --revision {hub_branch} --base-ref {base_ref}
+    primary_metric: "train:$.held_out.recall@1"
+    references: [untrained]
+    eval_key:
+      [
+        "train:$.corpus.fingerprint",
+        "train:$.config.holdout_pairs",
+        "train:$.config.steps",
+        "train:$.config.max_len",
+      ]
+    gates_read:
+      beats_untrained: "train:$.beats_untrained.recall@1"
+      eval_pass: "test:$.gates.*"
+      quant_budget: "quantize:$.within_budget"
+    axis_short: { batch: b, seed: s, terms: tok, chunk: c }
+    variance_axes: [seed] # a seed change also resamples the holdout split (build_splits uses cfg.seed for both) -- declared, not hidden
+    budget_axes: [batch]
+
+  code:
+    axes: { batch: [512, 1280], seed: [0, 1] }
+    # batch=1280/seed=0 is today's production baseline (held_out.recall@1=0.9863, sha
+    # 9df6526, corpus.fingerprint e493273b...); batch=512 and seed=1 are unrun. Neither
+    # fp32 VRAM budget below is report_peak-sourced (H4) -- both probe.
+    budgets:
+      "batch=512": { mib: null, source: probe }
+      "batch=1280": { mib: null, source: probe }
+
+  compress:
+    axes: { batch: [512, 1280], seed: [0, 1] }
+    # batch=1280/seed=0 baseline: held_out.recall@1=0.7754, sha 9df6526.
+    budgets:
+      "batch=512": { mib: null, source: probe }
+      "batch=1280": { mib: null, source: probe }
+
+  retrieve:
+    axes: { batch: [512, 1280], seed: [0, 1] }
+    # batch=1280/seed=0 baseline: held_out.recall@1=0.7559, sha 9df6526.
+    budgets:
+      "batch=512": { mib: null, source: probe }
+      "batch=1280": { mib: null, source: probe }
+
+  reason:
+    max_len: 256
+    axes: { batch: [256, 512], seed: [0, 1] }
+    # batch=512/seed=0 baseline: held_out.recall@1=0.1152, sha 0026a3d (reason OOM'd at
+    # batch 1280/max_len 256 on the 3090 Ti -- 640 MiB short of 22 GiB [V]; batch=256 is
+    # the unrun axis value, not a re-test of the 1280 cell that never completed).
+    budgets:
+      "batch=256": { mib: null, source: probe }
+      "batch=512": { mib: null, source: probe }
+    hosts: [akula-prime, gpu5080]
+
+  memory:
+    commands:
+      train: >-
+        {python} -m cogsyndelta.regions.memory --steps {steps} --batch-size {batch} --lr {lr}
+        --max-len {max_len} --seed {seed} --token-loss-weight {token_w} --decorr-weight {decorr_w}
+        --token-loss-chunk {chunk} --eval-split dev --out-dir {state}/receipts
+    derive: { lr: "3e-4 * (batch / 256) ** 0.5" }
+    axes:
+      batch: [512, 1280]
+      terms: { off: { token_w: 0.0, decorr_w: 0.0 }, on: { token_w: 0.1, decorr_w: 0.1 } }
+      chunk: [512, 2048]
+      seed: [0]
+    exclude:
+      - { batch: 1280, chunk: 2048 } # raw peak measured 22,120 MiB -- does not fit the 3090 Ti
+      - { terms: off, chunk: 2048 } # dead when the token loss is off: identical argv to (off, 512)
+    budget_axes: [batch, terms, chunk]
+    budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
+    budgets:
+      # b1280/tokon/c512 is TODAY's V2 production cell (369351bf): held_out.recall@1=0.8535,
+      # ptq_recall@1(plan)=0.8516 at 9.79x (memory-20260903T184441Z.json,
+      # memory-quant-20260903T203342Z.json). b512/tokon/c512 is V1 (d96be64b):
+      # held_out.recall@1=0.8145 -> PTQ 0.8086 at 9.60x. Both already published on
+      # tzervas/cogsyndelta-region-memory as ad hoc pilot branches (H1's repair, tracked
+      # separately -- see MATRIX-PIPELINE.md), so a matrix run of these two EXACT cells
+      # would collide with pre-matrix history; the harness's variant identity (region +
+      # code sha + corpus fingerprint) makes that an explicit refusal, not a silent
+      # overwrite (see DESIGN.v2 C4/G2).
+      "batch=512,terms=on,chunk=512": { mib: 11700, source: report_peak } # peak_reserved 11,678 MiB measured
+      "batch=512,terms=on,chunk=2048": { mib: null, source: probe }
+      "batch=512,terms=off,chunk=512": { mib: null, source: probe }
+      "batch=1280,terms=on,chunk=512": { mib: null, source: probe } # today's V2 cell; re-source via report_peak before relying on it
+      "batch=1280,terms=off,chunk=512": { mib: null, source: probe }
+    hosts: [akula-prime, gpu5080] # the packer keeps >~15 GiB cells off the 5080 by arithmetic, not by this list
+    followup:
+      - { axis: seed, values: [1], select: best_by_primary_metric, among: gate_complete }
+    primary_metric: "train:$.held_out.recall@1"
+    references: [untrained, bm25]
+    gates_read:
+      beats_untrained: "train:$.beats_untrained.recall@1"
+      w4_gates: "train:$.gates.passed" # measured false today: gates (c)/(e) fail as the receipt computes them -- OD-17's call, not this config's
+      eval_pass: "test:$.gates.*"
+      quant_budget: "quantize:$.within_budget"
+    extra_columns:
+      full_pool_r10: "train:$.retrieval.full_pool.trained.recall@10"
+      full_pool_mrr: "train:$.retrieval.full_pool.trained.mrr"
+      graded_spearman: "train:$.graded_held_out.spearman"
+
+publish:
+  repo_pattern: "tzervas/cogsyndelta-region-{region}"
+  base_ref: "variants/base"
+  branch: "{variant_id}"
+  tags: { fp32: "{variant_id}--fp32", ptq: "{variant_id}--ptq" }
+  private: true
+  promote_main: manual # runner prints the promotion it would make; `model-matrix promote` executes it
+  main_rule: best_primary_metric_all_gates_pass
+
+retention:
+  working_set: [unfinished, keep, current_final]
+  prune_order: [step_checkpoints, token_cache, remote_copies, fp32_final, ptq_final]
+  prune_roots: [/akula-data/csd/matrix, /mnt/bulk/csd-train-state/matrix, /akula-data/csd/finals]
+  finals_per_region: 1
+
+emit:
+  unit_prefix: mm
+  foreign_floor_mib: 1100
