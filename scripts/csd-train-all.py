@@ -50,6 +50,7 @@ import math
 import sys
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 # Durable, never a temp dir. /tmp filled at 0 bytes free when checkpoints landed there.
 DEFAULT_STATE = Path("/akula-data/csd")
@@ -325,6 +326,64 @@ REGIONS: dict[str, tuple[list[SourceSpec], str, int, GradedSpec | None]] = {
 }
 
 
+class RegionEntry(NamedTuple):
+    """A `REGIONS[name]` value, typed and named instead of unpacked positionally.
+
+    Fields are declared in the SAME order as a `REGIONS` value's tuple elements
+    (`sources, note, default_max_len, graded`), so `RegionEntry(*REGIONS[name])` and
+    plain positional unpacking of a `RegionEntry` both still work -- this is a naming
+    layer over the existing shape, not a new one.
+    """
+
+    sources: list[SourceSpec]
+    note: str
+    default_max_len: int
+    graded: GradedSpec | None
+
+
+def region_spec(name: str) -> RegionEntry:
+    """Resolve one `REGIONS` entry through its one typed shape.
+
+    `REGIONS` stays the single source of truth -- this only names its shape once. Every
+    consumer (this module's own `run_region`, and every script that loads `REGIONS` out
+    of this module -- `scripts/csd-quantize.py`, `scripts/csd-benchmark.py`) must go
+    through here instead of unpacking `REGIONS[name]` directly.
+
+    Why this exists: commit 0786a77 added the graded-gate field to every `REGIONS`
+    value, turning it from a 3-tuple into a 4-tuple, to fix a DIFFERENT regression (the
+    graded gate silently going missing -- see `GradedSpec`'s docstring). That change was
+    correct and well-tested for what it touched, but `csd-quantize.py` and
+    `csd-benchmark.py` each unpack `REGIONS[region]` themselves with their own fixed
+    arity (`sources, _note = ...`), so the new field broke both of them with a bare
+    `ValueError: too many values to unpack` before either script did anything useful --
+    and nothing caught it, because neither script had a test that actually imported and
+    called into `csd-train-all.py`'s `REGIONS`. Centralising the unpack here means the
+    shape can only break in ONE place, and that place is tested (see
+    tests/test_region_spec_consumers.py) -- including a regression test that constructs
+    the OLD shape and asserts this function rejects it rather than silently misreading
+    it.
+
+    Raises:
+        KeyError: `name` is not a key in `REGIONS`.
+        ValueError: `REGIONS[name]` is not the current 4-tuple
+            `(sources, note, default_max_len, graded)` shape -- e.g. a stale 2-tuple or
+            3-tuple from before the graded-gate field existed.
+    """
+    if name not in REGIONS:
+        raise KeyError(f"no REGIONS entry for {name!r}; known regions: {sorted(REGIONS)}")
+    entry = REGIONS[name]
+    if not isinstance(entry, tuple) or len(entry) != 4:
+        got = len(entry) if isinstance(entry, tuple) else type(entry).__name__
+        raise ValueError(
+            f"REGIONS[{name!r}] is not the current (sources, note, default_max_len, "
+            f"graded) 4-tuple shape (got {got}): {entry!r}. Every REGIONS entry must "
+            f"carry the graded-gate field -- None for a region that declares no graded "
+            f"gate -- see GradedSpec's docstring for what silently drops if it is "
+            f"missing instead of raising here."
+        )
+    return RegionEntry(*entry)
+
+
 # The visual region does not fit the text (left, right) pair shape: its objective is
 # latent prediction over image patches, its metric is a linear probe rather than recall,
 # and its data is an image struct rather than two text columns. So it gets its own entry
@@ -452,7 +511,7 @@ def run_region(
     Returns:
         The receipt, or None when the region has no usable sources or `dry` is set.
     """
-    sources, note, default_max_len, graded_spec = REGIONS[name]
+    sources, note, default_max_len, graded_spec = region_spec(name)
     resolved_max_len = default_max_len if max_len is None else max_len
     corpus_root = REGION_CORPUS_ROOT.get(name, CORPUS)
     print(f"\n=== {name} — {note}", flush=True)

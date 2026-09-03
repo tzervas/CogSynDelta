@@ -36,7 +36,7 @@ def _regions_spec() -> dict:
     spec = importlib.util.spec_from_file_location("csd_train_all", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return {"REGIONS": mod.REGIONS, "_shards": mod._shards}
+    return {"REGIONS": mod.REGIONS, "_shards": mod._shards, "region_spec": mod.region_spec}
 
 
 def benchmark_region(region: str, state: Path) -> Receipt | None:
@@ -52,7 +52,7 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
     train_receipt = json.loads(receipts[-1].read_text())
 
     spec = _regions_spec()
-    sources, _ = spec["REGIONS"][region]
+    sources = spec["region_spec"](region).sources
     resolved = [(spec["_shards"](g), tuple(c), cap) for g, c, cap in sources]
     wanted = train_receipt.get("corpus", {}).get("shards", [])
     by_name = {Path(p).name: p for p in resolved[0][0]}
