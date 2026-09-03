@@ -233,6 +233,54 @@ def test_build_ledger_writes_the_union_with_correct_draw_membership(
     assert m["gate"]["passed"] is True
 
 
+def test_build_ledger_draw_contributions_report_new_fingerprints_not_row_counts(
+    shard: list[str], tmp_path: Path
+) -> None:
+    """The reporting must state each draw's real CONTRIBUTION -- new fingerprints not
+    already covered by draws folded in before it -- not the tautological 'N/N rows
+    covered' the gate already guarantees for every draw by construction."""
+    result = ledger.build_ledger(shard, seed=0, cap=_CAP, receipts_dir=tmp_path / "no-receipts")
+    m = result["manifest"]
+    by_draw = {c["draw"]: c for c in m["draw_contributions"]}
+    assert set(by_draw) == {"R", "P"}
+    # R is first, so its "new" count equals its own unique-fingerprint count exactly.
+    assert by_draw["R"]["new_fingerprints"] == by_draw["R"]["unique_fingerprints"]
+    # P's "new" count can only be <= its own unique count (some of its rows may already
+    # be covered by R).
+    assert by_draw["P"]["new_fingerprints"] <= by_draw["P"]["unique_fingerprints"]
+    assert by_draw["P"]["new_fingerprints"] == len(
+        set(ledger.fingerprint_pairs(ledger.draw_prefix(shard, cap=_CAP)))
+        - set(ledger.fingerprint_pairs(ledger.draw_reservoir(shard, seed=0, cap=_CAP)))
+    )
+
+
+def test_build_ledger_pool_floor_note_reports_against_the_design_doc_bound(
+    shard: list[str], tmp_path: Path
+) -> None:
+    result = ledger.build_ledger(shard, seed=0, cap=_CAP, receipts_dir=tmp_path / "no-receipts")
+    m = result["manifest"]
+    pfn = m["pool_floor_note"]
+    assert pfn["design_doc_bound"] == 2 * _CAP
+    assert pfn["union_size"] == m["union_size"]
+    assert pfn["clean_pool_size"] == pfn["corpus_size"] - m["union_size"]
+    assert pfn["exceeds_design_doc_bound"] is (m["union_size"] > 2 * _CAP)
+
+
+def test_build_ledger_pool_floor_note_flags_exceeding_the_bound_with_an_ondisk_draw(
+    shard: list[str], tmp_path: Path
+) -> None:
+    """Burning a discovered on-disk draw with rows outside R∪P pushes the union past
+    2*cap -- `pool_floor_note` must say so explicitly, not leave it implicit."""
+    _write_ondisk_draw(tmp_path, "sample-25-seed0.parquet", _pairs(_CAP))
+    result = ledger.build_ledger(
+        shard, seed=0, cap=_CAP, receipts_dir=tmp_path / "no-receipts", corpus_root=tmp_path
+    )
+    m = result["manifest"]
+    assert m["union_size"] > 2 * _CAP
+    assert m["pool_floor_note"]["exceeds_design_doc_bound"] is True
+    assert "re-derived" in m["pool_floor_note"]["note"]
+
+
 def test_build_ledger_is_idempotent(shard: list[str], tmp_path: Path) -> None:
     """Run twice, identical output -- the requirement this module's `write_ledger`
     docstring is built around (no wall-clock field in either written file)."""
@@ -326,6 +374,65 @@ def test_establish_code_revision_reports_mtime_evidence_when_a_receipt_exists(
     assert result["established"] is True
     assert len(result["evidence"]) == 1
     assert result["evidence"][0]["before_c42203c"] is False  # written after c42203c, per mtime
+
+
+def test_establish_code_revision_folds_in_ondisk_draws_and_sibling_manifest_as_evidence(
+    tmp_path: Path,
+) -> None:
+    """CRITICAL review finding: `note` used to claim 'nothing else on disk dates the
+    run' while a discovered draw's own `mtime_utc` -- a dated check-(iv) artefact --
+    sat unweighed in the very same manifest. With `ondisk_draws` given, every
+    discovered draw's mtime must appear in `evidence`, and (when `corpus_root` is also
+    given and a sibling MANIFEST.json exists) that manifest's declared
+    `sampling_method`/`generated_utc` must appear too -- `established` must reflect
+    that this evidence exists, not that the question is settled."""
+    empty_receipts = tmp_path / "receipts"
+    empty_receipts.mkdir()
+    corpus_root = tmp_path / "corpus"
+    _write_ondisk_draw(corpus_root, "sample-4982-seed0.parquet", _pairs(_CAP))
+    derived = corpus_root / "reason" / "aqua_rat-raw" / "derived"
+    (derived / "MANIFEST.json").write_text(
+        json.dumps(
+            {
+                "sampling_method": "numpy Generator(PCG64).permutation(n)[:N_SAMPLE]",
+                "generated_utc": "2026-09-02T23:05:45Z",
+            }
+        )
+    )
+    draws, unreadable = ledger.discover_ondisk_draws(corpus_root, cap=_CAP)
+    assert unreadable == []
+
+    result = ledger.establish_code_revision(
+        empty_receipts, region="reason", corpus_root=corpus_root, ondisk_draws=draws
+    )
+    assert result["established"] is True
+    kinds = [e["kind"] for e in result["evidence"]]
+    assert "ondisk_draw" in kinds
+    assert "derived_sample_manifest" in kinds
+    manifest_evidence = next(
+        e for e in result["evidence"] if e["kind"] == "derived_sample_manifest"
+    )
+    assert manifest_evidence["declared_sampling_method"] == (
+        "numpy Generator(PCG64).permutation(n)[:N_SAMPLE]"
+    )
+    assert manifest_evidence["declared_generated_utc"] == "2026-09-02T23:05:45Z"
+    assert "before_c42203c" in manifest_evidence
+    assert "before_b9a082e_cap_introduced" in manifest_evidence
+    ondisk_evidence = next(e for e in result["evidence"] if e["kind"] == "ondisk_draw")
+    assert "before_c42203c" in ondisk_evidence
+    assert "before_b9a082e_cap_introduced" in ondisk_evidence
+
+
+def test_establish_code_revision_still_absent_without_ondisk_draws_or_receipts(
+    tmp_path: Path,
+) -> None:
+    empty_receipts = tmp_path / "receipts"
+    empty_receipts.mkdir()
+    result = ledger.establish_code_revision(
+        empty_receipts, region="reason", corpus_root=tmp_path, ondisk_draws=[]
+    )
+    assert result["established"] is False
+    assert result["evidence"] == []
 
 
 def test_infer_seed_reads_surviving_receipts(tmp_path: Path) -> None:
@@ -465,6 +572,21 @@ def test_discover_ondisk_draws_no_matches_is_silently_fine(tmp_path: Path) -> No
     draws, unreadable = ledger.discover_ondisk_draws(tmp_path, cap=_CAP)
     assert draws == []
     assert unreadable == []
+
+
+def test_discover_ondisk_draws_drops_whitespace_only_sides_like_iter_pairs(
+    tmp_path: Path,
+) -> None:
+    """Non-blocking review finding: discovery must use the SAME non-empty/strip filter
+    `_iter_pairs`/`load_pairs` use -- a row with a whitespace-only side was never a
+    candidate row for any draw, ondisk or otherwise."""
+    pairs = _pairs(_CAP - 1) + [("   ", "not blank")]
+    _write_ondisk_draw(tmp_path, "sample-ws.parquet", pairs)
+    draws, unreadable = ledger.discover_ondisk_draws(tmp_path, cap=_CAP)
+    assert unreadable == []
+    assert len(draws) == 1
+    assert draws[0]["row_count"] == _CAP  # raw row count unaffected
+    assert len(draws[0]["pairs"]) == _CAP - 1  # the whitespace-only row is dropped
 
 
 def test_discover_ondisk_draws_finds_multiple_matching_files(tmp_path: Path) -> None:
@@ -750,6 +872,25 @@ def test_integration_real_aqua_rat_union_covers_every_draw_in_full(tmp_path: Pat
     if known is not None:
         assert known["row_count"] == ledger.CAP
         assert known["rows_covered"] == known["rows_non_empty_pairs"]
+
+        # The reviewer's own measurement against this same real corpus: draw R∪P is
+        # 9,577 (4,951+4,946 unique minus 320 overlap), and the known on-disk draw
+        # contributes 4,369 fingerprints not already in that union -- taking the full
+        # union to 13,946 and the clean pool to 83,521 of 97,467.
+        by_draw = {c["draw"]: c for c in m["draw_contributions"]}
+        print(
+            "[integration] draw contributions: "
+            + ", ".join(
+                f"{c['draw']!r}: {c['new_fingerprints']} new (of {c['unique_fingerprints']} unique)"
+                for c in m["draw_contributions"]
+            )
+        )
+        assert by_draw[known_name]["new_fingerprints"] == 4_369
+        assert m["union_size"] == 13_946
+        pfn = m["pool_floor_note"]
+        assert pfn["clean_pool_size"] == 83_521
+        assert pfn["exceeds_design_doc_bound"] is True
+        print(f"[integration] pool_floor_note: {pfn}")
 
 
 @needs_real_corpus

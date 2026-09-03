@@ -113,6 +113,14 @@ C42203C_COMMIT_TIME_UTC = "2026-09-02T23:32:52+00:00"
 UTC. The DELIBERATE correctness change (prefix -> reservoir sampling) that makes which
 draw the `reason` run used ambiguous; see the module docstring."""
 
+B9A082E_SHA = "b9a082ed4e170401a90ac10894d3855484a156c3"
+B9A082E_COMMIT_TIME_UTC = "2026-09-02T23:41:03+00:00"
+"""`git show -s --format='%H %ci' b9a082e` -> `2026-09-02 19:41:03 -0400`, converted to
+UTC. The commit that FIRST adds the 4,982 cap literal to `scripts/csd-train-all.py`'s
+`REGIONS["reason"]` -- an artefact dated before THIS commit could not have been produced
+in response to the cap existing, which matters when weighing `establish_code_revision`'s
+folded-in evidence (see that function's docstring)."""
+
 
 class LedgerGateError(ValueError):
     """Raised when a ledger does not cover every row of every draw -- R, P, and every
@@ -273,18 +281,38 @@ def _epoch(iso: str) -> float:
 
 
 def establish_code_revision(
-    receipts_dir: Path = RECEIPTS_DIR, region: str = REGION
+    receipts_dir: Path = RECEIPTS_DIR,
+    region: str = REGION,
+    corpus_root: Path | None = None,
+    ondisk_draws: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """DEC-42 check (iv), the one that can fail: which code revision produced the
     `region` run. Looks for a receipt (`{region}-*.json`) or a checkpoint
     (`{region}-checkpoints/`) under `receipts_dir` and compares its mtime against
     `C42203C_COMMIT_TIME_UTC`. The caller burns the union regardless of this function's
     result -- check (iv) is the one check DEC-42 explicitly allows to proceed
-    unestablished. (Discovered on-disk draws' own provenance -- including their mtimes --
-    is recorded separately, under `ondisk_draws` in the manifest; this function only
-    covers `region`'s own receipt/checkpoint evidence.)
+    unestablished.
+
+    When `ondisk_draws` is given (the same list `discover_ondisk_draws` returns), EVERY
+    discovered draw's own mtime is folded into `evidence` too -- a discovered draw's file
+    is itself a dated, on-disk artefact bearing on check (iv), and it must never be left
+    out of this function's evidence just because it arrived via `discover_ondisk_draws`
+    rather than `receipts_dir` (this was the review's CRITICAL finding: `note` used to
+    claim "nothing else on disk dates the run" while `ondisk_draws[0].mtime_utc` -- 27
+    minutes before c42203c -- sat right there, unweighed, in the very same manifest).
+    When `corpus_root` is ALSO given, each discovered draw's sibling `MANIFEST.json` (the
+    file next to it under the same `derived/` directory, when one exists and is readable)
+    is folded in as a further, distinct evidence entry -- its DECLARED `sampling_method`
+    and `generated_utc` are recorded, but never trusted as ground truth for what the file
+    actually contains (this function still only dates the file; `discover_ondisk_draws`
+    is what reads its rows).
+
+    "Absence of evidence must not become the evidence" (§5.1) cuts both ways: this
+    function must not report `established: False` while sitting on evidence it simply
+    didn't look at.
     """
     c42203c_epoch = _epoch(C42203C_COMMIT_TIME_UTC)
+    b9a082e_epoch = _epoch(B9A082E_COMMIT_TIME_UTC)
     receipts = sorted(receipts_dir.glob(f"{region}-*.json"))
     checkpoints_dir = receipts_dir / f"{region}-checkpoints"
     checkpoints = sorted(checkpoints_dir.glob("*")) if checkpoints_dir.is_dir() else []
@@ -299,32 +327,88 @@ def establish_code_revision(
                 "before_c42203c": mtime < c42203c_epoch,
             }
         )
+
+    manifests_seen: set[Path] = set()
+    for d in ondisk_draws or []:
+        draw_mtime = _epoch(d["mtime_utc"])
+        evidence.append(
+            {
+                "kind": "ondisk_draw",
+                "path": d["path"],
+                "mtime_utc": d["mtime_utc"],
+                "before_c42203c": draw_mtime < c42203c_epoch,
+                "before_b9a082e_cap_introduced": draw_mtime < b9a082e_epoch,
+                "note": (
+                    "a discovered on-disk derived-sample file whose row count matches "
+                    "cap -- see `ondisk_draws` in the manifest for its full provenance "
+                    "(sha256, row count, coverage). Its own mtime dates when the FILE "
+                    "was written, not when (or whether) `reason` consumed it -- a human "
+                    "still has to weigh that against `before_c42203c`."
+                ),
+            }
+        )
+        if corpus_root is None:
+            continue
+        manifest_path = corpus_root / Path(d["path"]).parent / "MANIFEST.json"
+        if manifest_path in manifests_seen or not manifest_path.is_file():
+            continue
+        manifests_seen.add(manifest_path)
+        manifest_mtime = manifest_path.stat().st_mtime
+        try:
+            declared = json.loads(manifest_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            declared = {}
+        evidence.append(
+            {
+                "kind": "derived_sample_manifest",
+                "path": str(manifest_path),
+                "mtime_utc": _iso_utc(manifest_mtime),
+                "before_c42203c": manifest_mtime < c42203c_epoch,
+                "before_b9a082e_cap_introduced": manifest_mtime < b9a082e_epoch,
+                "declared_sampling_method": declared.get("sampling_method", ""),
+                "declared_generated_utc": declared.get("generated_utc", ""),
+                "note": (
+                    "the sibling MANIFEST.json next to a discovered draw -- its "
+                    "`sampling_method` and `generated_utc` are recorded as DECLARED by "
+                    "the file, never trusted as ground truth for what the parquet "
+                    "actually contains (see `ondisk_draws` for the measured row/"
+                    "fingerprint counts this script computed itself)."
+                ),
+            }
+        )
+
     if not evidence:
         return {
             "established": False,
             "note": (
-                f"no {region!r} receipt under {receipts_dir} ({region}-*.json) and no "
-                f"{checkpoints_dir} directory -- the {region} receipt was deleted (see "
-                f"W1b) and nothing else on disk dates the run. The code revision the "
-                f"{region} run used cannot be determined from artefacts on disk; "
-                f"recorded as such rather than assumed."
+                f"no {region!r} receipt under {receipts_dir} ({region}-*.json), no "
+                f"{checkpoints_dir} directory, and no discovered on-disk draw or sibling "
+                f"manifest either -- the {region} receipt was deleted (see W1b) and "
+                f"nothing else on disk dates the run. The code revision the {region} run "
+                f"used cannot be determined from artefacts on disk; recorded as such "
+                f"rather than assumed."
             ),
             "c42203c_sha": C42203C_SHA,
             "c42203c_commit_time_utc": C42203C_COMMIT_TIME_UTC,
+            "b9a082e_sha": B9A082E_SHA,
+            "b9a082e_commit_time_utc": B9A082E_COMMIT_TIME_UTC,
             "evidence": [],
         }
     return {
         "established": True,
         "note": (
             f"evidence exists bearing on {region!r}'s code revision -- see `evidence` "
-            f"for each artefact's `kind` and mtime against c42203c; a human still has "
-            f"to weigh whether it settles which sampling method ran (a "
-            f"preserved-after-the-fact commit does not date the run that produced it "
-            f"-- §5.1). `established: True` here means evidence exists to weigh, NOT "
-            f"that the question is settled."
+            f"for each artefact's `kind`, mtime, and dating against c42203c (and, for "
+            f"discovered draws and their manifests, against the cap-introducing commit "
+            f"b9a082e too); a human still has to weigh whether it settles which "
+            f"sampling method ran (a preserved-after-the-fact commit does not date the "
+            f"run that produced it -- §5.1). `established: True` here means evidence "
+            f"exists to weigh, NOT that the question is settled."
         ),
         "c42203c_sha": C42203C_SHA,
         "c42203c_commit_time_utc": C42203C_COMMIT_TIME_UTC,
+        "b9a082e_sha": B9A082E_SHA,
+        "b9a082e_commit_time_utc": B9A082E_COMMIT_TIME_UTC,
         "evidence": evidence,
     }
 
@@ -396,7 +480,10 @@ def discover_ondisk_draws(
             continue
         try:
             table = pq.read_table(path, columns=list(COLUMNS))
-            raw_bytes = path.read_bytes()
+            digest = hashlib.sha256()
+            with path.open("rb") as fh:
+                for chunk in iter(lambda: fh.read(1 << 20), b""):
+                    digest.update(chunk)
         except (OSError, pa.ArrowException) as exc:
             unreadable.append({"path": rel, "mtime_utc": _iso_utc(mtime), "error": str(exc)})
             continue
@@ -405,13 +492,17 @@ def discover_ondisk_draws(
             continue
         col_a = table.column(COLUMNS[0]).to_pylist()
         col_b = table.column(COLUMNS[1]).to_pylist()
-        pairs = [(a, b) for a, b in zip(col_a, col_b, strict=True) if a and b]
+        # Same non-empty/strip filter as _iter_pairs/load_pairs -- a row with a
+        # whitespace-only side was never a candidate row for any draw either.
+        pairs = [
+            (a, b) for a, b in zip(col_a, col_b, strict=True) if a and b and a.strip() and b.strip()
+        ]
         draws.append(
             {
                 "name": rel,
                 "path": rel,
                 "mtime_utc": _iso_utc(mtime),
-                "sha256": hashlib.sha256(raw_bytes).hexdigest(),
+                "sha256": digest.hexdigest(),
                 "row_count": row_count,
                 "pairs": pairs,
             }
@@ -522,6 +613,66 @@ def build_ledger(
 
     corpus_fp = fingerprint_corpus(shards, columns=COLUMNS)
 
+    # Real per-draw contribution, not the tautological "N/N rows covered" the gate
+    # already guarantees by construction: for each draw IN THE ORDER R, P, then the
+    # discovered on-disk draws sorted by name, how many of ITS fingerprints are new
+    # relative to every draw folded in before it. `draw_r`'s "new" count equals its own
+    # unique-fingerprint count (nothing came before it); a later draw's "new" count is
+    # what it actually adds that no earlier draw already covered.
+    running: set[str] = set()
+    draw_contributions: list[dict[str, Any]] = []
+    for draw_name, draw_row_count, draw_fps in [
+        ("R", len(r_first), set_r),
+        ("P", len(p_first), set_p),
+        *sorted(
+            ((d["name"], len(d["pairs"]), ondisk_sets[d["name"]]) for d in draws),
+            key=lambda t: t[0],
+        ),
+    ]:
+        new = draw_fps - running
+        draw_contributions.append(
+            {
+                "draw": draw_name,
+                "rows": draw_row_count,
+                "unique_fingerprints": len(draw_fps),
+                "new_fingerprints": len(new),
+            }
+        )
+        running |= draw_fps
+
+    pool_size = 97_467 - len(union)
+    # DEC-42's stated bound is "<= 9,964", i.e. 2 * the production cap (4,982) -- the
+    # R-and-P-only, no-overlap worst case. Generalised to whatever `cap` this run was
+    # actually invoked at, so a synthetic test at a small cap exercises the same
+    # arithmetic the real run does, and reduces to the literal 9,964 figure in
+    # production (cap=4,982).
+    design_doc_bound = 2 * cap
+    exceeds_bound = len(union) > design_doc_bound
+    pool_floor_note = {
+        "design_doc_bound": design_doc_bound,
+        "union_size": len(union),
+        "exceeds_design_doc_bound": exceeds_bound,
+        "corpus_size": 97_467,
+        "clean_pool_size": pool_size,
+        "note": (
+            (
+                f"union size {len(union)} exceeds "
+                f"docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md's stated <= "
+                f"{design_doc_bound} (2 * cap, the R-and-P-only worst case) -- burning "
+                f"every discovered on-disk draw too, per the orchestrator decision, "
+                f"widened the union past that bound. §5.1 (the pool table, the B1 "
+                f"accounting) and §9.2 must be re-derived from `clean_pool_size` (= "
+                f"{pool_size} of {97_467}), not from the stale <= {design_doc_bound} "
+                f"figure."
+            )
+            if exceeds_bound
+            else (
+                f"union size {len(union)} is within the design doc's stated <= "
+                f"{design_doc_bound}; no re-derivation of §5.1/§9.2 is triggered."
+            )
+        ),
+    }
+
     manifest: dict[str, Any] = {
         "region": REGION,
         "source": SOURCE_ID,
@@ -551,7 +702,11 @@ def build_ledger(
         "unreadable_ondisk_draws": unreadable,
         "union_size": len(union),
         "intersection_r_p_size": len(set_r & set_p),
-        "code_revision": establish_code_revision(receipts_dir, region=REGION),
+        "draw_contributions": draw_contributions,
+        "pool_floor_note": pool_floor_note,
+        "code_revision": establish_code_revision(
+            receipts_dir, region=REGION, corpus_root=corpus_root, ondisk_draws=draws
+        ),
         "gate": {
             "cap": cap,
             "draw_r_rows_covered": covered_r,
@@ -625,21 +780,30 @@ def main(argv: list[str] | None = None) -> int:
     manifest_path = write_ledger(args.out, result)
     m = result["manifest"]
     n_draws_total = 2 + len(m["ondisk_draws"])
-    ondisk_summary = "\n".join(
-        f"  ondisk draw {d['name']!r}: {d['rows_covered']}/{d['rows_non_empty_pairs']} rows "
-        f"covered ({d['row_count']} raw rows, sha256={d['sha256'][:12]}...)"
-        for d in m["ondisk_draws"]
+    # Per-draw CONTRIBUTION, not "N/N covered" -- the gate already guarantees every
+    # draw's own rows are fully covered by construction, so reporting that back is
+    # tautological. What actually varies, and matters, is how many NEW fingerprints
+    # each draw adds once the earlier draws' fingerprints are already accounted for.
+    ondisk_row_counts = {d["name"]: d["row_count"] for d in m["ondisk_draws"]}
+    contribution_summary = "\n".join(
+        f"  draw {c['draw']!r}: {c['rows']} rows, {c['unique_fingerprints']} unique, "
+        f"{c['new_fingerprints']} NEW vs every draw folded in before it"
+        + (
+            f" ({ondisk_row_counts[c['draw']]} raw rows on disk)"
+            if c["draw"] in ondisk_row_counts
+            else ""
+        )
+        for c in m["draw_contributions"]
     )
+    pfn = m["pool_floor_note"]
     print(
         f"wrote {len(result['rows'])} burned fingerprints to {args.out} "
-        f"(union of {n_draws_total} draw(s); <= {m['cap'] * n_draws_total} of 97,467 "
-        f"possible)\n"
-        f"  draw R: {m['draw_r_rows']} rows ({m['draw_r_unique_fingerprints']} unique)\n"
-        f"  draw P: {m['draw_p_rows']} rows ({m['draw_p_unique_fingerprints']} unique)\n"
-        + (ondisk_summary + "\n" if ondisk_summary else "")
-        + f"  union: {m['union_size']}  R∩P: {m['intersection_r_p_size']}\n"
-        f"  gate: covered {m['gate']['draw_r_rows_covered']}/{m['gate']['cap']} (R), "
-        f"{m['gate']['draw_p_rows_covered']}/{m['gate']['cap']} (P)\n"
+        f"(union of {n_draws_total} draw(s))\n"
+        f"{contribution_summary}\n"
+        f"  union: {m['union_size']}  R∩P: {m['intersection_r_p_size']}\n"
+        f"  clean pool: {pfn['clean_pool_size']} of {pfn['corpus_size']}\n"
+        f"  design-doc bound (<= {pfn['design_doc_bound']}): "
+        f"{'EXCEEDED -- §5.1/§9.2 must be re-derived' if pfn['exceeds_design_doc_bound'] else 'within bound'}\n"
         f"  code revision established: {m['code_revision']['established']}\n"
         f"  manifest: {manifest_path}",
         file=sys.stderr,
