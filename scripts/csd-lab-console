@@ -1285,6 +1285,32 @@ button,textarea{font:inherit}textarea{width:100%;background:#000;color:#ddd;bord
 </main>
 <script>
 const BASE=location.pathname.indexOf('/lab')===0?'/lab':'';
+// Every /api/* route now requires the same bearer token POST /api/apply
+// always required (check_apply_auth / CSD_APPLY_TOKEN). This page has no
+// server session of its own, so it asks the operator for the token once
+// per browser tab (sessionStorage, not localStorage: cleared when the tab
+// closes) and attaches it to every fetch below via apiFetch(). A stale or
+// wrong token is dropped on a 401 so the NEXT call re-prompts instead of
+// looping silently against a token that will never work.
+function csdToken(){
+  let t=null;
+  try{ t=sessionStorage.getItem('csdApplyToken'); }catch(e){ t=null; }
+  if(t===null){
+    t=window.prompt('CSD lab console token (required for every /api/* call this session)')||'';
+    try{ sessionStorage.setItem('csdApplyToken', t); }catch(e){ /* private mode etc: re-prompt next call */ }
+  }
+  return t;
+}
+function csdForgetToken(){
+  try{ sessionStorage.removeItem('csdApplyToken'); }catch(e){ /* nothing stored to forget */ }
+}
+async function apiFetch(url, opts){
+  opts=Object.assign({}, opts||{});
+  opts.headers=Object.assign({'Authorization':'Bearer '+csdToken()}, opts.headers||{});
+  const r=await fetch(url, opts);
+  if(r.status===401) csdForgetToken();
+  return r;
+}
 function tab(id){
   document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on', p.id===id));
   document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===id));
@@ -1337,20 +1363,20 @@ function render(d){
 }
 async function spawnNow(){
   const alias=document.getElementById('sa').value||'local/code';
-  const r=await fetch(BASE+'/api/spawn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alias,why:'lab-spawn'})});
+  const r=await apiFetch(BASE+'/api/spawn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alias,why:'lab-spawn'})});
   document.getElementById('so').textContent=JSON.stringify(await r.json(),null,2);
   refresh();
 }
 async function refresh(){
-  const r=await fetch(BASE+'/api/status'); const d=await r.json();
+  const r=await apiFetch(BASE+'/api/status'); const d=await r.json();
   render(d);
 }
 async function steer(body){
-  await fetch(BASE+'/api/steer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  await apiFetch(BASE+'/api/steer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   refresh();
 }
 async function loadHist(){
-  const r=await fetch(BASE+'/api/sessions'); const d=await r.json();
+  const r=await apiFetch(BASE+'/api/sessions'); const d=await r.json();
   const rows=d.sessions||[];
   document.getElementById('hlist').innerHTML=rows.map(s=>
     '<p><button onclick="openSess(\\''+esc(s.id)+'\\')">'+esc(s.kind)+' '+esc(s.id)+'</button> '
@@ -1358,13 +1384,13 @@ async function loadHist(){
   ).join('') || '<p class=muted>none yet</p>';
 }
 async function openSess(id){
-  const r=await fetch(BASE+'/api/sessions?id='+encodeURIComponent(id));
+  const r=await apiFetch(BASE+'/api/sessions?id='+encodeURIComponent(id));
   const d=await r.json();
   document.getElementById('hview').textContent=JSON.stringify(d,null,2);
 }
 async function go(){
   const prompt=document.getElementById('p').value;
-  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
+  const r=await apiFetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
   const d=await r.json();
   document.getElementById('c').textContent=d.content||JSON.stringify(d);
 }
