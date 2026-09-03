@@ -9,7 +9,8 @@ Status: `todo` | `wip` | `done` | `blocked` | `deferred`
 
 ## SCALE TARGET AND PHASES — the current model is a TOY, deliberately
 
-Today: ~87M parameters across all regions, ~450 MB fp32. **Target: as close to a 30B-class
+Today: measured 3 x 16,021,248 + 22,905,216 = 70.97M params, ~284 MB fp32 for the four
+trained regions (450 MB assumed 7 x 16M). **Target: as close to a 30B-class
 model as reasonably achievable.** The present size is scaffolding to get the architecture
 right the first time, not the deliverable. Judge current work on whether the STRUCTURE is
 correct, not on its numbers.
@@ -192,11 +193,24 @@ Use `git commit -m "..." -- PATH`. That mistake was made twice today.
 
 | id | defect | status |
 |----|--------|--------|
-| P0.10a | contamination guard vacuous -- same hash as dedup | fix dispatched |
-| P0.10b | `_fingerprint_corpus` omits extra_sources; covers ~3% of `retrieve` | fix dispatched |
-| P0.10c | caps truncate rather than sample (prefix, not a sample) | fix dispatched |
-| P0.10d | `_decode_split` cache never hits (salted hash) | fix dispatched |
-| P0.10e | tests asserting every guard CAN fail | fix dispatched |
+| P0.10a | contamination guard vacuous -- same hash as dedup | done — c16362c |
+| P0.10b | `_fingerprint_corpus` omits extra_sources; covers ~3% of `retrieve` | done — b957ec4 |
+| P0.10c | caps truncate rather than sample (prefix, not a sample) | done — c42203c |
+| P0.10d | `_decode_split` cache never hits (salted hash) | done — f20734c |
+| P0.10e | tests asserting every guard CAN fail | done — landed across c16362c..2f305d2 (test_guards_can_fail.py, 21/21 passing) |
+
+### P0.10 extended channels — measured on real corpora 2026-09-02
+
+Extended channels measured on real corpora 2026-09-02: `code` 0/512 pair_content, `compress`
+1/512 (0.195%), `retrieve` 35/512 (6.84%); the guard discriminates -- it fires on real
+leakage in `compress`/`retrieve` and correctly reports zero on `code`. Commit `3203952`
+("fix(eval): extend the contamination channels, preserved at session end") is the code
+change that made the measurement possible; the figures themselves are recorded verbatim in
+the `build_splits` comment at `src/cogsyndelta/regions/pretrain.py:562-564` ("code 0 of
+512, compress 1 of 512, retrieve 35 of 512 (6.84%)") and reproduced by an independent
+`build_splits()` run this session. No training receipt yet carries these. Follow-up tasks
+P0.11 and P0.12 are tracked in the main P0 table below (P0 — Correctness debt), not here,
+so a reader scanning that table for open work sees them.
 
 ## P0 — Correctness debt. Blocks everything downstream.
 
@@ -206,19 +220,54 @@ every metric was batch-composition dependent.
 | id | task | gate | status |
 |----|------|------|--------|
 | P0.1 | Retrain code, compress, retrieve with attention masking fixed | 3 receipts, all `beats_untrained` true | wip |
-| P0.6 | **Make the corpus shuffle unconditional** | code's holdout spans >2 repos; batch negatives are cross-repo | todo — BLOCKS P0.2/P0.3 |
-| P0.7 | Retrain code + compress AGAIN after P0.6 | receipts on a representative holdout | wip — running |
+| P0.6 | **Make the corpus shuffle unconditional** | code's holdout spans >2 repos; batch negatives are cross-repo | done — 883c9d4 |
+| P0.7 | Retrain code + compress AGAIN after P0.6 | receipts on a representative holdout | done — receipts code-20260902T210830Z, compress-20260902T211539Z |
 | P0.8 | Checkpoint fingerprint does not cover CODE changes | a checkpoint from before a data-path change refuses to resume | todo |
 | P0.2 | Re-run benchmark battery on retrained regions | eval receipts written, anisotropy < 0.9 | todo |
 | P0.3 | Re-run PTQ against retrained fp32 baselines | quant receipts, drop within 0.01 | todo |
 | P0.4 | Fix csd-storage-tier verification | manifest honours the SAME excludes as the rsync | done — homelab SSD 1.5T -> 2.1T free |
+| P0.4b | Sample-verify the cold copy is readable (parquet footers) since it is now the only copy | a stratified sample of at least 5% of parquet files per dataset (17 datasets under `tritter/pretrain`, 1654 parquet files total) opens with pyarrow and reports a row count; every file that fails is listed and re-fetched onto `gpu5080:/bulk`; the paths+sizes digest recomputed with `_manifest_cmd()` equals `7300c204` (self-consistency only, not a content check) | todo |
 | P0.5 | Commit the train-dependency guard in csd-train-all.py | committed, gate green | done |
+| P0.11 | Retrain code/compress/retrieve with the fixed guard so receipts carry the multi-channel report (see P0.10 extended channels above) | 3 receipts with `contamination.channels` present and `gated_channels` reported | todo |
+| P0.12 | Eval/quant receipts must record a checkpoint content hash, not a mutable path | receipt names a sha256 that matches the file it was computed from | todo |
 
-**P0.4 detail.** The 661 GB offload transferred and then failed verification:
-`hot_manifest 4c4c6c0b` vs `cold_manifest 7300c204`. Cause is mine — the rsync excludes
-receipts/checkpoints/manifest.json/*.log, but the manifest hashes every file on both sides,
-so a mismatch is guaranteed. The hot copy was correctly kept. Fix the comparison, re-verify,
-and only then reclaim. Do NOT delete anything until a corrected manifest matches.
+P0.11 evidence for `todo` (not `wip`): none of `code-20260902T210830Z.json`,
+`compress-20260902T211539Z.json`, `retrieve-20260902T203759Z.json` carries
+`contamination.channels` or `gated_channels`, and `ps -eo pid,etime,cmd` on both
+akula-prime .98 and gpu5080 .251 shows no `csd-train`/pretrain process running --
+akula-prime shows only `scripts/model-pipeline-console` (pid 2423667), gpu5080 shows
+nothing matching. No retrain against the fixed guard has been dispatched anywhere yet.
+
+P0.12 evidence: the code-eval receipt (14:37) and code-quant receipt (14:15) both name
+`code-checkpoints/final.pt`, whose mtime is 17:08 -- the file they name was overwritten
+hours after the receipts were written.
+
+**P0.4 detail.** First attempt failed verification: `hot_manifest 4c4c6c0b` vs
+`cold_manifest 7300c204`. Cause: the rsync excludes `receipts`, `checkpoints`, `manifest.json`
+and `*.log` via `NEVER_MOVE_GLOBS`, but the manifest comparison hashed every file on both sides
+regardless, so a mismatch was guaranteed even for a correct transfer. The comparison was
+fixed (applied to the working tree, committed 2m22s after the successful run as `18abe38`,
+2026-09-02 16:07:24 -0400, "fix(scripts): honour NEVER_MOVE_GLOBS in offload verification
+manifest"). Re-verification then matched, which `scripts/csd-storage-tier.py` proves by
+construction: it returns `"VERIFY FAILED — hot copy kept, nothing deleted"` and exits
+*before* writing any stub whenever the hot and cold manifests differ, so the mere existence
+of `OFFLOADED.json` is proof the two matched at run time -- the operator confirmed the
+deletion followed a successful match. The stub records `manifest_md5 7300c204` -- the hot
+digest (the script's variable `a`, not the cold `b`), which the `a != b` guard at
+`scripts/csd-storage-tier.py:183-194` only lets through once it equals the cold one. All
+times below are given as -0400 (the stub's `offloaded_utc` field is recorded in UTC; its
+value `2026-09-02T20:05:02Z` converts to `2026-09-02 16:05:02 -0400`). The hot copy was
+reclaimed at 16:05:02 -0400, 2m22s *before* `18abe38`'s 16:07:24 -0400 commit timestamp --
+i.e. the corrected tool ran from the working tree before it was committed. `18abe38`'s own
+commit message states this directly, not as an inference: "Re-verified manually against the
+live hosts with the fix applied: hot_manifest == cold_manifest == 7300c204d2c425cdfef4b535e3ef97bd.
+Ran the tool's own --apply path to reclaim the hot copy; homelab /data free space rose by
+660.4 GB (of 661.3 GB expected -- the gap is btrfs discard=async trickling in)" -- the same
+sequence, recorded independently of the reclaim timestamp itself. The corpus
+now lives at `gpu5080:/bulk/csd-archive/tritter/pretrain` (616 GB measured via `du -sh`);
+homelab holds only the `OFFLOADED.json` stub. `tests/test_corpus.py`'s four tinystories
+tests now skip with an explicit reason instead of failing with `FileNotFoundError` (commit
+`bb0815fd`, "test(corpus): skip the tinystories tests while that corpus is tiered off").
 
 ### P0.6 detail — the measurement is not what it looks like
 
@@ -230,6 +279,8 @@ and only then reclaim. Do NOT delete anything until a corrected manifest matches
 three, so it is. Measured consequence for `code`:
 
   - the first 3000 rows of shard 0 span 5 repositories; pandas-dev/pandas alone is 1626
+    [RETRACTED below: this was a pre-shuffle HEAD artifact, not a property of the corpus --
+    see "CORRECTION TO AN EARLIER CLAIM IN THIS FILE" later in this file]
   - **the first 512 rows -- the entire holdout -- span 2 repositories**
 
 So recall@1 0.9355 is "tell pandas docstrings apart from each other", not "retrieve the
@@ -269,7 +320,7 @@ NOT used to judge quality). Full results: /mnt/bulk/csd-corpus-analysis/analysis
 |----|---------|----------------|--------|
 | P0.9a | `code` truncates 93.9% of code-side tokens at max_len=96 | ANSWERED — see below. Truncation inflated the BASELINE, not the trained score | done |
 | P0.9b | `retrieve` holdout has 53.7% near-dupes (>=0.90) in train | 0.748 is inflated. But see the split below -- not all of it is leakage | todo |
-| P0.9c | `compress` graded/STS-B gate NEVER RAN (`graded_shards=[]`) | a documented gate that silently did nothing | todo |
+| P0.9c | `compress` graded/STS-B gate ran once at 11:36 (spearman 0.4956, `receipts/compress-20260902T153612Z.json`) then silently stopped when `csd-train-all.py` became the runner (`842db5e`); `graded_shards` is set only at `regions/compress.py:88` | a documented gate that silently stopped running, not one that never ran | todo |
 | P0.9d | 646 anchor==positive pairs in compress (0.23%) | a free InfoNCE win that teaches nothing | todo |
 | P0.9e | anchor-only dedup drops valid one-to-many structure | one FiQA question with 23 relevant passages collapses to one, losing 22 real positives | todo |
 
@@ -294,7 +345,13 @@ BASELINE rather than the trained score. The trained model is better with more co
 wins decisively: 0.902 against 0.752.
 
 WHAT THIS SUPPORTS, stated narrowly: truncation at 96 was NOT the mechanism producing the
-high number. 0.9863 can be trusted.
+high number. The authoritative post-shuffle-fix `code` recall@1 is **0.9766**
+(`code-20260902T210830Z.json`, untrained baseline 0.2285). **No receipt records 0.9863 as
+a code recall@1** -- the only `0.986328125` on disk is a `held_recall@10` at step 3000 of
+`code-20260902T200323Z.json` (steps=6000, batch=256), a different metric at a different
+step, and the comment at `scripts/csd-train-all.py:183` attributes "0.9863" to a third,
+unreceipted config (steps=4000, batch=1280) that matches no receipt in
+`/akula-data/csd/receipts`.
 
 WHAT IT DOES NOT SUPPORT -- an earlier version of this entry overclaimed "the encoder was
 starved of context". Two corrections:
@@ -377,7 +434,8 @@ unarchive -> flip -> re-archive, so the archived state they started in is restor
 
 ## P2 — Corpus expansion
 
-`/bulk` is 5.9 TB at ~10% used; the eviction threshold is 50%. Catalogue holds 11
+`/bulk` is 6.0 TB (5.5 TiB) at 14% used (measured: 741G/5.5T; `df -H` reports 6.0T/795G/14%,
+`df -h` reports 5.5T/741G/14% -- same filesystem, TB vs TiB); the eviction threshold is 50%. Catalogue holds 11
 licence-verified datasets across 6 domains, none fetched.
 
 | id | task | gate | status |
@@ -456,8 +514,7 @@ THE THREE HARD REQUIREMENTS, in priority order:
    Every candidate gets an overlap check against what is already held, BEFORE download.
    Downloading a terabyte of duplicate is worse than downloading nothing.
 
-3. NO SINGLE-CORPUS DOMINANCE. `retrieve` is 79.1% GooAQ / 19.8% NQ / 1.09% FiQA POST-DEDUP
-   (the pre-dedup 77.8/19.5/2.7 figures repeated earlier in this file were wrong).
+3. NO SINGLE-CORPUS DOMINANCE. `retrieve` is 79.1% GooAQ / 19.8% NQ / 1.09% FiQA POST-DEDUP.
 
    CORRECTION -- the "evaluated on financial-domain FiQA" transfer test DOES NOT EXIST on
    the training path. build_splits shuffles the concatenated pool and takes all_pairs[:512],
@@ -545,7 +602,10 @@ MEASURED FACTS
 - 3090 Ti (24 GiB) on akula-prime .98; RTX 5080 (16 GiB) on gpu5080 .251.
 - They are on DIFFERENT HOSTS, linked at 1000 Mb/s.
 - A live region run uses ~5 GiB of 23 GiB at 39% utilisation. The 5080 sits at 10 MiB.
-- All regions trained so far total 87M parameters / 348 MB fp32.
+- All regions trained so far total: measured 3 x 16,021,248 + 22,905,216 = 70.97M params,
+  ~284 MB fp32 for the four trained regions (see the scale-target note at the top of this
+  file for how the 450 MB seven-region estimate relates; the earlier 348 MB figure at this
+  spot followed from a stale 87M-parameter estimate).
 
 WHY NOT DDP ACROSS THE TWO CARDS
 Data-parallel synchronises gradients every step. A 16M-parameter model is ~64 MB of
