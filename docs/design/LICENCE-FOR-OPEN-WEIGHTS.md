@@ -1867,6 +1867,7 @@ sharper version of "dual licensing" than a single MIT-code/CC-BY-SA-weights spli
 | `vl_latent` | MIT, once its corpus is replaced | the composite replacement is PERMISSIVE_OK/ATTRIBUTION; tiny-imagenet itself stays BLOCKING (no grant exists at all) regardless of this decision — a different problem than NC, and no licence choice touches it |
 | `compress` | CC BY-SA 4.0 | SNLI (+ `government` + `fiction`) repaired corpus is share-alike; no NC-tagged input identified |
 | `retrieve` | **CC BY-NC-SA 4.0** | GooAQ (**NC, accepted 2026-09-02**) *and* Natural Questions / FiQA (CC BY-SA) are both present in the corpus as trained — the region inherits both restrictions |
+| `memory` | **CC BY-NC-SA 4.0** *(added 2026-09-03)* | region MERGE of `compress` (CC BY-SA 4.0) and `retrieve` (CC BY-NC-SA 4.0) per **Rider 1**, below — a merge inherits the most restrictive parent licence — and `memory`'s own training corpus independently confirms it: it trains directly on `retrieve`'s GooAQ + Natural Questions + FiQA pairs, plus `compress`'s AllNLI |
 | **composed model** (all regions merged) | **CC BY-NC-SA 4.0** | carries the single strictest term across every dataset, submodel, and the composed model itself — today that is `retrieve`'s GooAQ-driven tier. Per-region tiers above matter only when a region ships as a **standalone** checkpoint; the composed release does not get to pick the most permissive entry |
 
 **What this buys over a uniform CC BY-SA release (scenario B applied to everything):**
@@ -1953,6 +1954,14 @@ restrictive licence of its parts. The taxonomy already floats merging `compress`
 merge happens, the merged region is CC BY-NC-SA 4.0, because `retrieve` now is. **Any future
 taxonomy decision that performs this merge must state that licence cost explicitly, as part
 of making the merge, not discover it afterward.**
+
+**Rider 1 applied, 2026-09-03.** The merge Rider 1 anticipated has happened: `memory` (W4,
+`config/mind/csd-regions.json`) "Merges and retires `compress`+`retrieve`'s standalone
+training" and trains on the union of `compress`'s AllNLI corpus and `retrieve`'s
+FiQA+Natural-Questions+GooAQ corpus. Per Rider 1, `memory` = **CC BY-NC-SA 4.0**, the more
+restrictive of its two parents (`retrieve`'s tier, since `compress` alone is only CC BY-SA
+4.0) — see the updated per-region table, above, and `LICENCE_TIER`/`LICENCE_WHY` in
+`scripts/csd-publish-checkpoint.py`.
 
 **Rider 2 — training and redistribution stay separate questions.** This decision covers
 **training on GooAQ-derived pairs and releasing weights trained on them.** It does **not**
