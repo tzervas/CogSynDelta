@@ -209,6 +209,77 @@ here — the task specified `chunk=2048` as the default to measure, not a chunk-
 sweep, and batch size itself was, per instruction, not lowered to find a number that
 cleanly fits.
 
+## 5. Chunked re-probe #2 at batch=1280, `token_loss_chunk=512`: fits
+
+Section 4's `token_loss_chunk=2048` re-probe closed most of the OOM gap but was a near
+miss on the driver-observed peak (22,120 MiB raw against a 20,980 MiB fits threshold).
+The reviewer who read that result estimated chunk=512 would cost ~3.7% more step time
+than chunk=2048, with the projection step's own isolated peak at ~0.38x of the
+unchunked (§3) figure, and ~1.1-1.2 GiB freed at batch 1280 — enough headroom to try
+before giving up on batch 1280 and falling back to 512. This section tests that
+estimate directly rather than trusting it.
+
+`measure_w4_batch1280_probe_chunk512.py` (this directory) — identical to
+`measure_w4_batch1280_probe_chunked.py` (§4) except `token_loss_chunk=512` and a
+separate `out_dir`, so the chunk size is the only variable that changed. `steps=20`,
+`batch_size=1280`, `max_len=96`, terms on (`memory_config()`'s own defaults),
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, `CUDA_VISIBLE_DEVICES=0`,
+`PYTHONPATH` pointed at this worktree's `src/` (the shared venv's editable install
+resolves `cogsyndelta` to the main repo checkout, which has no `token_loss_chunk` field
+at all — confirmed by grep before running), scratch state under
+`/akula-data/session-backup-staging/w4-chunked/probe512/`, started from an **empty**
+directory (removed and recreated immediately before the run) so no stale checkpoint
+could silently resume, matching §4's own discarded-resume caution. A second process
+sampled `nvidia-smi --query-gpu=memory.used` on GPU 0 every 0.5s for the whole run
+(64 samples). The pre-existing desktop/OS baseline was measured with `nvidia-smi`
+immediately before the run started, with no training process running: **1,057 MiB**.
+
+**Result: the run completes all 20 steps, no `OutOfMemoryError`, and this time the
+driver-observed peak clears the threshold too — a real fit, not just a looser-criterion
+pass.**
+
+| metric | chunk=2048 (§4) | chunk=512 (this section) |
+|---|---:|---:|
+| `torch.cuda.max_memory_allocated` | 20,357.0 MiB | **19,079.7 MiB** |
+| `torch.cuda.max_memory_reserved` | 20,726.0 MiB | **19,444.0 MiB** |
+| `nvidia-smi memory.used` peak, raw (0.5s samples) | 22,120 MiB (68 samples) | **20,883 MiB** (64 samples) |
+| pre-run desktop/OS baseline | 981 MiB | 1,057 MiB |
+| driver peak, training-attributable | 21,139 MiB | **19,826 MiB** |
+| mean step time | 380.0 ms | **390.0 ms** (+2.6%) |
+| card total | 23,028 MiB | 23,028 MiB |
+| task's fits threshold (`23,028 − 2,048`) | 20,980 MiB | 20,980 MiB |
+| fits by `peak_allocated`/`peak_reserved` | Yes | **Yes** |
+| fits by driver peak (raw or training-attributable) | **No** (over by 159–1,140 MiB) | **Yes** (margin 97–1,154 MiB) |
+| **fits (§4/§5's own threshold convention)** | **False** | **True** |
+| this task's launch criterion (raw driver peak ≤ 22,000 MiB) | n/a (not this task's config) | **True**, margin 1,117 MiB; card headroom 2,145 MiB (≥ 1,028 required) |
+
+The step-time cost (+2.6%, 390.0 vs 380.0 ms/step) lands close to, and a little under,
+the reviewer's ~3.7% estimate — halving the chunk from 2048 to 512 buys real VRAM
+headroom (torch's own reserved peak drops 1,282 MiB; the driver-observed peak drops
+1,237 MiB) for a small, not negligible, recompute cost, consistent with
+`torch.utils.checkpoint`'s trade (recompute the forward inside each chunk during
+backward, rather than hold every chunk's activations at once).
+
+**Why the driver-raw margin (97 MiB) is trustworthy despite being narrow:** the last 10
+consecutive samples before the run ended sit at 20,845–20,883 MiB
+(`batch1280-chunk512-nvidia-smi-samples.csv`) — a sustained plateau across the
+load-bearing final training steps, not a single transient sample this probe got lucky
+on. `torch.cuda.memory_summary()` (`batch1280-chunk512-memory-summary.txt`) again shows
+zero non-releasable/fragmented bytes, so — as in §4 — the ~1.3–1.8 GiB gap between the
+allocator's own peak and the driver's is real CUDA context/driver bookkeeping the
+caching allocator's counters do not track, not fragmentation, and not a measurement
+artifact.
+
+**Chunk=256 was not probed.** The task's own instruction was to try 256 only "if [512]
+still overshoots" the launch criterion; chunk=512 clears both the launch criterion
+(raw driver peak ≤ 22,000 MiB, margin 1,117 MiB) and the stricter fits-threshold
+convention §3/§4 established (margin 97 MiB on the driver-raw reading), so there was no
+overshoot to react to. `token_loss_chunk=512` is the value the production
+`csd-run-w4-memory-b1280-*` launch (see the launch note under
+`/akula-data/csd/receipts/`) passes explicitly — `PretrainConfig.token_loss_chunk`'s own
+default remains 2048, unchanged by this evidence; the production launch is the thing
+that carries the chunk override, not the code.
+
 ## Files here
 
 - `measure_w4_batch1280_probe.py` — the batch=1280, UNCHUNKED probe script (§3), a
@@ -225,3 +296,13 @@ cleanly fits.
   this reflects the peak even though execution has moved past it by the time it prints).
 - `batch1280-chunked-nvidia-smi-samples.csv` — the raw `(timestamp, memory.used)`
   samples (0.5s interval) the chunked probe's driver-peak numbers were computed from.
+- `measure_w4_batch1280_probe_chunk512.py` — the batch=1280, CHUNKED (`token_loss_
+  chunk=512`) re-probe script (§5), identical to the chunk=2048 script except the chunk
+  size and `out_dir`.
+- `batch1280-chunk512-summary.json` — that probe's JSON output, extended with the
+  driver-peak sampling summary, this evidence's `fits` verdict, and this task's own
+  launch-criterion verdict.
+- `batch1280-chunk512-memory-summary.txt` — `torch.cuda.memory_summary()` captured at
+  the end of the chunk=512 run.
+- `batch1280-chunk512-nvidia-smi-samples.csv` — the raw `(timestamp, memory.used)`
+  samples (0.5s interval) the chunk=512 probe's driver-peak numbers were computed from.
