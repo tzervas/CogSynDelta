@@ -954,8 +954,20 @@ def _fetch_hf_files_bounded(ds: Dataset, token: str | None) -> tuple[int, int]:
     here risks the same shape of bias (e.g. VoxPopuli shards from only the earliest
     sessions). random.Random(seed) with a fixed seed keeps this reproducible across runs
     without keeping the bias.
+
+    The download loop itself is CONCURRENT (a small thread pool), not sequential.
+    Measured on this fleet: FSD50K's clip pool is ~50,000 files averaging well under 1MB
+    each, so a 6GB budget is ten-plus thousand individual files -- sequential
+    `hf_hub_download` calls are dominated by per-request HTTPS/auth round-trip latency,
+    not bandwidth, and at that per-file rate a 6GB budget projected to tens of HOURS, not
+    minutes (confirmed live: ~150 files in ~10 minutes, sequential, this session). A
+    handful of files in flight at once amortises that per-request latency the same way
+    `huggingface_hub.snapshot_download`'s own internal downloader does; VoxPopuli/People's
+    Speech (tens of large shards) are far less sensitive to this but are unaffected
+    either way.
     """
     import random
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     from huggingface_hub import HfApi, hf_hub_download
 
@@ -978,23 +990,37 @@ def _fetch_hf_files_bounded(ds: Dataset, token: str | None) -> tuple[int, int]:
     random.Random(1337).shuffle(sampled_pool)  # noqa: S311 -- sampling, not cryptographic
     candidates = always_take + sampled_pool
 
+    # Decide the file SET first (cheap, no network) -- greedy over the seeded-random
+    # order, exactly as before -- then download that fixed set concurrently. Deciding
+    # membership up front (rather than racing budget checks across threads) keeps the
+    # selected set identical to the sequential version's, so it stays reproducible.
     budget = ds.max_fetch_bytes or float("inf")
-    taken: list[str] = []
+    selected: list[str] = []
     total_bytes = 0
     for rfilename, size in candidates:
         if total_bytes + size > budget:
             continue  # keep scanning -- a later, smaller file may still fit the budget
-        hf_hub_download(
-            repo_id=ds.repo_id,
-            repo_type="dataset",
-            filename=rfilename,
-            local_dir=str(ds.local),
-            token=token,
-        )
-        taken.append(rfilename)
+        selected.append(rfilename)
         total_bytes += size
 
-    return len(taken), total_bytes
+    max_workers = min(16, max(1, len(selected)))
+    if selected:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [
+                pool.submit(
+                    hf_hub_download,
+                    repo_id=ds.repo_id,
+                    repo_type="dataset",
+                    filename=rfilename,
+                    local_dir=str(ds.local),
+                    token=token,
+                )
+                for rfilename in selected
+            ]
+            for future in as_completed(futures):
+                future.result()  # surface the first real download error, if any
+
+    return len(selected), total_bytes
 
 
 def _fetch_http_archive(ds: Dataset) -> tuple[int, int]:
