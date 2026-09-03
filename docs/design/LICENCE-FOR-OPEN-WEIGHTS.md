@@ -2203,3 +2203,24 @@ include *"machine learning models"*. That should be a tiebreak rule in the surve
 not an afterthought. **CDLA-Sharing** is likewise the friendliest share-alike family for this
 project's shape (open weights, private datasets): its obligations attach only on publication of
 *data* (§3.1 opens *"If You Publish"*) and §3.5 disclaims any reach into the model.
+
+### The weights question: the reading must be stated
+
+The composed model's ratified CC BY-NC-SA 4.0 tag is coherent **only under the permissive
+reading** of whether trained weights are Adapted Material — the finding already made in the
+compatibility matrix above and restated as **OD-18** item 1 in the design doc
+(`docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md`): under the cautious reading there is no
+compliant release licence for the composed model at all. The actionable half needs no lawyer —
+**the model card must state the reading it takes**, and today it states none. Drafts of both
+the permissive and cautious model-card texts, plus a quote-by-quote verification of every
+primary-source citation each draft rests on, are in
+`docs/design/evidence/dataset-factory-2026-09-03/`: `42-model-card-licence-reading-drafts.md`
+and `43-card-drafts-verification.md`. Both drafts predate the `memory`-region-tier fix (Rider 1
+applied, 2026-09-03, above) and still describe `compress` as if it still ships as a
+**standalone CC BY-SA 4.0** checkpoint; `compress`'s standalone training has since been merged
+into and retired by `memory` (`config/mind/csd-regions.json`, W4), which inherits the more
+restrictive parent and is tagged **CC BY-NC-SA 4.0** throughout, matching `retrieve`. Any
+per-region table in either draft that still shows `compress` as a separate BY-SA checkpoint
+must be corrected against the per-region table above before the draft is used for anything.
+**Neither draft is legal advice** — both say so explicitly and quote primary sources rather
+than conclude from them.
