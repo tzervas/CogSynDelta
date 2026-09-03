@@ -967,7 +967,7 @@ def _fetch_hf_files_bounded(ds: Dataset, token: str | None) -> tuple[int, int]:
     either way.
     """
     import random
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
     from huggingface_hub import HfApi, hf_hub_download
 
@@ -996,17 +996,33 @@ def _fetch_hf_files_bounded(ds: Dataset, token: str | None) -> tuple[int, int]:
     # selected set identical to the sequential version's, so it stays reproducible.
     budget = ds.max_fetch_bytes or float("inf")
     selected: list[str] = []
+    per_file_size: dict[str, int] = {}
     total_bytes = 0
     for rfilename, size in candidates:
         if total_bytes + size > budget:
             continue  # keep scanning -- a later, smaller file may still fit the budget
         selected.append(rfilename)
+        per_file_size[rfilename] = size
         total_bytes += size
 
-    max_workers = min(16, max(1, len(selected)))
+    # A per-run wall-clock deadline, not a per-file one: `hf_hub_download` has no total-
+    # transfer timeout of its own (confirmed live on gpu5080 -- a single stalled
+    # connection blocked an entire ThreadPoolExecutor().__exit__(), which waits for every
+    # submitted future by default, for well over ten minutes with zero bytes moving and
+    # zero CPU time accruing). Below the deadline, completed files are kept and the pool
+    # is shut down WITHOUT waiting for whatever is still in flight (`cancel_futures=True`
+    # drops anything not yet started; anything mid-download is simply abandoned -- its
+    # thread may leak until process exit, which is acceptable for a one-shot script).
+    # This is a bounded FIRST fetch: under-shooting max_fetch_bytes because a handful of
+    # files hung is an acceptable outcome. Silently hanging forever is not.
+    max_workers = min(8, max(1, len(selected)))
+    fetched_bytes = 0
+    fetched_count = 0
     if selected:
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = [
+        deadline = time.time() + 600  # 10 minutes for this entry's whole file set
+        pool = ThreadPoolExecutor(max_workers=max_workers)
+        try:
+            future_to_name = {
                 pool.submit(
                     hf_hub_download,
                     repo_id=ds.repo_id,
@@ -1014,13 +1030,28 @@ def _fetch_hf_files_bounded(ds: Dataset, token: str | None) -> tuple[int, int]:
                     filename=rfilename,
                     local_dir=str(ds.local),
                     token=token,
-                )
+                ): rfilename
                 for rfilename in selected
-            ]
-            for future in as_completed(futures):
-                future.result()  # surface the first real download error, if any
+            }
+            pending = set(future_to_name)
+            while pending and time.time() < deadline:
+                done, pending = wait(pending, timeout=15, return_when=FIRST_COMPLETED)
+                for future in done:
+                    name = future_to_name[future]
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        # Skip one bad file, keep the rest of the entry -- see this
+                        # function's docstring on why a hang or a per-file error must
+                        # never abort the whole bounded slice.
+                        print(f"      ! {name}: {type(exc).__name__}: {exc}", file=sys.stderr)
+                        continue
+                    fetched_count += 1
+                    fetched_bytes += per_file_size.get(name, 0)
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
 
-    return len(selected), total_bytes
+    return fetched_count, fetched_bytes
 
 
 def _fetch_http_archive(ds: Dataset) -> tuple[int, int]:
