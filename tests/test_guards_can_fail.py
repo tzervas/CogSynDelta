@@ -1200,6 +1200,72 @@ def test_checkpoint_directory_changes_when_split_code_fingerprint_does(
     assert (dir_b / "final.pt").is_file()
 
 
+def test_checkpoint_directory_changes_when_corpus_content_fingerprint_does(
+    tmp_path: Path,
+) -> None:
+    """Symmetric twin of `test_checkpoint_directory_changes_when_split_code_fingerprint_does`,
+    for `_vintage_fingerprint`'s OTHER half: the corpus-content line, not the split-code
+    one. `_vintage_fingerprint` calls `_corpus_content_fingerprint` and
+    `_split_code_fingerprint` independently, so a test that only changes the code side
+    says nothing about whether a corpus rewrite under the SAME shard path -- 883c9d4's
+    other named case, and the actual R9 gap this branch closes -- lands in its own
+    directory rather than colliding with the prior vintage's checkpoint. Verified by
+    mutation: deleting `h.update(_corpus_content_fingerprint(cfg).encode())` from
+    `_vintage_fingerprint` leaves the entire suite green, including this file, before
+    this test was added -- the two runs below land in the SAME directory and the second
+    one is refused by `load_resumable`'s pre-existing config-mismatch check instead of
+    getting its own vintage.
+
+    Rewrites the shard PARQUET FILE in place at the same path (40 rows -> 60 rows, i.e. a
+    byte-size change -- `fingerprint_corpus` hashes shard name + byte size, not full file
+    content, so a same-size content edit would not move this fingerprint either) between
+    two `pretrain_region` calls that otherwise share the identical `PretrainConfig`
+    (literally the same object, so no config field differs at all), and asserts the two
+    runs land in two different checkpoint directories, each holding its own `final.pt`.
+    """
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import PretrainConfig, pretrain_region
+    from cogsyndelta.regions.text_encoder import TextEncoderConfig
+    from tests.test_pretrain_resume import _build_pairs_parquet, _build_tokenizer
+
+    tok_path = tmp_path / "tok.json"
+    shard = tmp_path / "pairs.parquet"
+    _build_tokenizer(tok_path, 60)
+    _build_pairs_parquet(shard, 40)
+
+    cfg = PretrainConfig(
+        region="fp8-corpus-vintage-test",
+        pair_columns=("anchor", "positive"),
+        shards=[str(shard)],
+        steps=2,
+        batch_size=4,
+        holdout_pairs=4,
+        eval_every=2,
+        checkpoint_every=0,
+        max_len=16,
+        seed=0,
+        device="cpu",
+        encoder=TextEncoderConfig(dim=8, depth=1, n_heads=2, max_len=16),
+        tokenizer_path=str(tok_path),
+        out_dir=str(tmp_path / "run"),
+    )
+
+    receipt_a = pretrain_region(cfg)
+
+    # Rewrite the corpus IN PLACE at the same path: same `cfg`, same `cfg.shards`, but
+    # different content on disk -- exactly 883c9d4's "corpus content changed under an
+    # unchanged config" shape.
+    _build_pairs_parquet(shard, 60)
+    receipt_b = pretrain_region(cfg)
+
+    dir_a = Path(receipt_a["checkpoint"]).parent
+    dir_b = Path(receipt_b["checkpoint"]).parent
+    assert dir_a != dir_b
+    assert (dir_a / "final.pt").is_file()
+    assert (dir_b / "final.pt").is_file()
+
+
 # DEFECT 6 -- `beats_untrained` was satisfiable by a broken baseline.
 #
 # receipts/retrieve-20260902T203759Z.json recorded `untrained_baseline["recall@1"] ==
