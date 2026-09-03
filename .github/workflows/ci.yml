@@ -48,9 +48,17 @@ jobs:
     - name: Ruff format check
       run: uvx ruff@${{ env.RUFF_VERSION }} format --check src/ tests/ benchmarks/ scripts/ examples/
 
+    - name: Set up Python 3.12
+      run: uv python install 3.12
+
+    # Pinned to 3.12: mypy's parser runs under whichever interpreter invokes
+    # it, regardless of --python-version / [tool.mypy] target. The bare
+    # `uvx` default resolves to the job image's system python3, which is
+    # older than the project floor (3.12) and cannot parse PEP 695 syntax
+    # (e.g. `def f[T](...)`), failing with a bogus "Expected '('" error.
     - name: Type check with mypy
       run: >
-        uvx --from mypy==${{ env.MYPY_VERSION }} --with types-PyYAML
+        uvx --python 3.12 --from mypy==${{ env.MYPY_VERSION }} --with types-PyYAML
         mypy src/
 
   pre-commit:
@@ -81,9 +89,29 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
+    - name: Verify uv (baked into job image)
+      run: |
+        # uv is baked into the job image (fleet-ci-base), so nothing is installed
+        # here: no network dependency, and no tar extraction -- which is what forced
+        # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+        # must fail loudly and name the image, not silently skip the step.
+        command -v uv >/dev/null 2>&1 || {
+          echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+        uv --version
+
+    - name: Set up Python 3.12
+      run: uv python install 3.12
+
+    # Stdlib only, still pinned to 3.12: quality_control.py parses source
+    # with ast.parse under whatever interpreter runs it. The job image's
+    # bare python3 is older than the project floor (3.12) and cannot parse
+    # PEP 695 syntax, which quality_control.py reports as a syntax error
+    # (docked -5, dropping the score below --fail-under 90).
+    # --no-project: this script has no third-party deps, so skip syncing
+    # the full project (and its CPU/GPU torch extras) just to get a 3.12
+    # interpreter on PATH.
     - name: Run quality checks (90+ required)
-      # Stdlib only. Runner image already has python3.
-      run: python3 scripts/quality_control.py src/ --fail-under 90
+      run: uv run --python 3.12 --no-project python3 scripts/quality_control.py src/ --fail-under 90
 
   test:
     name: Test on Python 3.12
