@@ -143,13 +143,22 @@ jobs:
         mkdir -p "$UV_CACHE_DIR"
         # Use --no-sources to bypass pyproject.toml torch source (cu128)
         # Use --index-strategy unsafe-best-match to allow packages from all indexes
-        uv sync --group dev --no-sources --no-compile-bytecode --link-mode copy \
+        # --group train: pyarrow + tokenizers, both pure CPU wheels (no CUDA
+        # pull — verified locally: this exact sync leaves torch on the +cpu
+        # build with cuda_available=False). Without this group, ~85 guard
+        # tests across tests/test_corpus.py, test_guards_can_fail.py and
+        # others hit `pytest.importorskip("pyarrow" / "tokenizers", reason=
+        # "train group not installed")` and silently skip in CI on every run.
+        uv sync --group dev --group train --no-sources --no-compile-bytecode --link-mode copy \
           --extra-index-url https://download.pytorch.org/whl/cpu \
           --index-strategy unsafe-best-match
 
     - name: Run tests with pytest
       run: |
-        uv run --no-sync pytest tests/ -q --tb=short --cov=cogsyndelta --cov-report=xml --cov-report=term
+        # -rs: print a summary line for every skip, so a skip (e.g. a
+        # dependency group silently not installed) is visible in the log
+        # instead of vanishing into the passed/failed counts.
+        uv run --no-sync pytest tests/ -q -rs --tb=short --cov=cogsyndelta --cov-report=xml --cov-report=term
 
     # Codecov action is not mirrored on data.forgejo.org; cloning it
     # aborted the whole job before pytest. Coverage XML stays in the
