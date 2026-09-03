@@ -448,6 +448,68 @@ def _prepare_graded(
     return kept, report
 
 
+def _assert_graded_gate_present(cfg: PretrainConfig, receipt: dict[str, Any]) -> None:
+    """Refuse to write a receipt that drops a graded gate its config declared.
+
+    Keyed on `cfg.graded_shards` OR `cfg.graded_name`, not `graded_shards` alone. A
+    config can declare a graded gate (`graded_name` set) while `graded_shards` is empty
+    -- that is exactly the shape a caller produces when it resolves a declared graded
+    glob against a corpus root where the shard is missing (an unmounted NFS export, a
+    renamed upstream dataset directory, a typo in the glob) but does not itself refuse to
+    proceed: `graded_name` survives the resolution failure, `graded_shards` does not.
+    Keying on `graded_shards` alone lets that exact case sail through -- `_prepare_graded`
+    reads an empty `graded_shards` as "no graded set declared" (correct for a region that
+    never declares one, wrong for one whose declared source failed to resolve) and
+    produces a receipt with no `graded_held_out`, which this guard would then wave
+    through because its own trigger condition was never true. Checking `graded_name` too
+    closes that: a config that names a gate it has no shards for is caught here even if
+    every caller upstream stays silent about the resolution failure.
+
+    `scripts/csd-train-all.py`'s `run_region` now raises `GradedSourceMissingError`
+    before a `PretrainConfig` with that inconsistent shape can even be constructed (see
+    its module comment), so this guard should be unreachable through that entry point.
+    It stays here as the second line of defence for any OTHER caller that builds a
+    `PretrainConfig` directly -- a hand-run script, a notebook, a future runner -- so the
+    gate cannot silently drop again just because it was reached a different way.
+
+    Ordinarily `cfg.graded_shards` non-empty is what "this region has a graded gate"
+    MEANS at the config level (see the field's own docstring, and
+    `regions/compress.py`'s `compress_config`, which sets it directly). Once that is
+    true, `_prepare_graded` above either raises (fewer than two graded pairs survive
+    contamination filtering) or returns a non-empty `graded` list, which is what makes
+    `pretrain_region` include `graded_held_out`/`untrained_graded_baseline`/
+    `beats_untrained["spearman"]` in the receipt below. So on the `graded_shards`-only
+    trigger this could only fire if that invariant were broken by a future change to the
+    code between `_prepare_graded` and the receipt dict literal -- which is the shape of
+    bug this guards against: `compress`'s graded/STS-B gate ran once (receipts/compress-
+    20260902T153612Z.json, `graded_held_out.spearman` 0.4956) and then silently vanished
+    from every receipt after, because the CALLER (scripts/csd-train-all.py) stopped
+    setting `graded_shards` at all -- no exception anywhere, just an absent key nobody
+    was checking for. This is the check that would have made that loud: a declared gate
+    that goes missing from the receipt about to be written is a defect in the run, not a
+    variant of it, and gets raised rather than shipped.
+
+    Args:
+        cfg: The run's config.
+        receipt: The receipt dict as built, before it is written to disk.
+
+    Raises:
+        RuntimeError: If `cfg.graded_shards` or `cfg.graded_name` is set but `receipt`
+            has no `graded_held_out`.
+    """
+    if (cfg.graded_shards or cfg.graded_name) and "graded_held_out" not in receipt:
+        raise RuntimeError(
+            f"region {cfg.region!r} declares a graded gate (graded_shards="
+            f"{[Path(s).name for s in cfg.graded_shards]}, graded_name={cfg.graded_name!r}) "
+            f"but the receipt about to be written has no graded_held_out -- the graded "
+            f"gate would silently disappear, exactly as it did for compress between "
+            f"receipts/compress-20260902T153612Z.json and every run after scripts/csd-"
+            f"train-all.py became the runner. Fix whatever stopped producing "
+            f"graded_held_out (including a graded source that failed to resolve); do not "
+            f"write this receipt."
+        )
+
+
 def build_splits(
     cfg: PretrainConfig,
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str]], dict[str, Any]]:
@@ -976,6 +1038,8 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         },
         "capability_per_param": final["recall@1"] / (params / 1e6) if params else 0.0,
     }
+
+    _assert_graded_gate_present(cfg, receipt)
 
     out = Path(cfg.out_dir)
     out.mkdir(parents=True, exist_ok=True)

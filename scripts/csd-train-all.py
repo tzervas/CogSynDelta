@@ -107,6 +107,20 @@ class ReservedSourceError(RuntimeError):
     """
 
 
+class GradedSourceMissingError(RuntimeError):
+    """Raised when a region declares a `GradedSpec` but its glob resolves no shards.
+
+    Fails closed, matching `regions/compress.py`'s `compress_config` (which raises
+    `FileNotFoundError` on exactly this case -- "rather than training on nothing"). A
+    declared graded gate that cannot resolve its shard is not "no graded set", it is a
+    broken corpus mount or a stale glob, and letting the run continue with `graded_name`
+    set but `graded_shards` empty is what would have reproduced the R4 regression this
+    runner exists to close: a receipt written with the gate silently absent. See
+    `regions/pretrain.py`'s `_assert_graded_gate_present`, which is the second line of
+    defence if a caller ever constructs a `PretrainConfig` this way directly.
+    """
+
+
 def _refuse_reserved_shards(region: str, glob_pat: str, shards: list[str]) -> None:
     """Raise :class:`ReservedSourceError` if any resolved shard is under a reserved corpus."""
     for shard in shards:
@@ -562,33 +576,32 @@ def run_region(
     # never resolve it, `PretrainConfig.graded_shards` stayed `[]`, and the Spearman gate
     # silently stopped appearing in every receipt after the one hand-run at 11:36 on
     # 2026-09-02 (receipts/compress-20260902T153612Z.json). A region with no `graded_spec`
-    # (every region but `compress`, today) resolves to an empty `graded_shards`, which
+    # (every region but `compress`, today) resolves to `graded_shards=None`, which
     # `pretrain_region` correctly reads as "no graded gate declared" -- see
-    # `regions/pretrain.py`'s `_prepare_graded`/`_assert_graded_gate_present`.
-    graded_shards: list[str] = []
-    graded_cols: tuple[str, str, str] = ("sentence1", "sentence2", "score")
-    graded_name = ""
+    # `regions/pretrain.py`'s `_prepare_graded`/`_assert_graded_gate_present`. A region
+    # WITH a `graded_spec` whose glob resolves nothing is a different case entirely -- a
+    # declared gate that failed to resolve, not an undeclared one -- and is refused
+    # outright below, the same way `regions/compress.py`'s `compress_config` raises
+    # `FileNotFoundError` "rather than training on nothing" for the identical shard.
+    graded_shards: list[str] | None = None
+    graded_cols: tuple[str, str, str] | None = None
+    graded_name: str | None = None
     if graded_spec is not None:
         graded_glob, graded_cols, graded_name = graded_spec
         graded_shards = _shards(graded_glob, corpus_root)
-        if graded_shards:
-            print(
-                f"    graded  {len(graded_shards):>2} shard(s)  {graded_cols}  "
-                f"name={graded_name!r}  {graded_glob}",
-                flush=True,
+        if not graded_shards:
+            raise GradedSourceMissingError(
+                f"region {name!r} declares a graded gate ({graded_name!r}) at "
+                f"{graded_glob!r} (root {corpus_root}) but that glob resolved no shards "
+                f"-- check the NFS mount, an upstream dataset directory rename, or a typo "
+                f"in the glob. Refusing to start rather than writing a receipt with no "
+                f"graded_held_out, exactly the R4 regression this runner exists to close."
             )
-        else:
-            # Declared but unresolved (e.g. an unmounted export). Do NOT silently drop
-            # the gate here -- print it loudly, and let `pretrain_region`'s own guard
-            # decide: `graded_shards` stays `[]`, which today means "no graded set", the
-            # same as a region that never declared one. If that ever needs to be a hard
-            # refusal instead (missing corpus, not an undeclared gate), it belongs in
-            # `pretrain_region`, not swallowed here.
-            print(
-                f"    graded source MISSING: {graded_glob} -- {name} declares a graded "
-                f"gate but it will not run this time",
-                flush=True,
-            )
+        print(
+            f"    graded  {len(graded_shards):>2} shard(s)  {graded_cols}  "
+            f"name={graded_name!r}  {graded_glob}",
+            flush=True,
+        )
 
     # Pair-draws, not steps, is what is held constant when the batch changes: at
     # batch 256 an 8,000-step run drew 2.05M pairs, and the same 2.05M is 1,600 steps
@@ -605,9 +618,15 @@ def run_region(
         # The resolved PretrainConfig fields, printed without importing PretrainConfig
         # itself (that import pulls in torch/tokenizers -- see the comment below) and
         # without starting a run. `graded_shards`/`graded_columns`/`graded_name` are
-        # included deliberately: a dry run is how `compress`'s graded gate is verified
-        # wired without spending GPU time, which is exactly the check R4 had no way to
-        # make cheaply.
+        # included deliberately when the region declares a graded gate: a dry run is how
+        # `compress`'s graded gate is verified wired without spending GPU time, which is
+        # exactly the check R4 had no way to make cheaply. For a region that declares NO
+        # graded gate (`graded_spec is None`, i.e. `graded_shards is None` here -- the
+        # raise above means a declared-but-unresolved glob never reaches this point with
+        # an empty list), the three keys are omitted rather than filled with the STS-B
+        # default: printing `graded_columns: ["sentence1","sentence2","score"]` for
+        # `code`/`retrieve`/`reason`, which have no graded set at all, would misread as
+        # those columns being attached to that region.
         plan = {
             "region": name,
             "pair_columns": list(pair_cols),
@@ -619,7 +638,7 @@ def run_region(
             "max_len": resolved_max_len,
             "holdout_pairs": 512,
             "graded_shards": graded_shards,
-            "graded_columns": list(graded_cols),
+            "graded_columns": list(graded_cols) if graded_cols is not None else None,
             "graded_name": graded_name,
         }
         print("    resolved PretrainConfig (dry run, no training started):", flush=True)
@@ -655,9 +674,15 @@ def run_region(
         encoder=TextEncoderConfig(dim=256, depth=4, n_heads=4, max_len=resolved_max_len),
         bf16=bf16,
         out_dir=str(state / "receipts"),
-        graded_shards=graded_shards,
-        graded_columns=graded_cols,
-        graded_name=graded_name,
+        # `graded_shards`/`graded_cols`/`graded_name` are `None` above only when
+        # `graded_spec is None` (no graded gate declared); a declared-but-unresolved
+        # glob already raised `GradedSourceMissingError` before this point, so `None`
+        # here can only mean "this region declares no graded gate" -- fall back to
+        # `PretrainConfig`'s own no-gate defaults rather than pass `None` into fields
+        # typed `list[str]`/`tuple[str, str, str]`/`str`.
+        graded_shards=graded_shards or [],
+        graded_columns=graded_cols or ("sentence1", "sentence2", "score"),
+        graded_name=graded_name or "",
     )
     started = time.time()
     receipt = pretrain_region(cfg)

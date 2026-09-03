@@ -16,14 +16,35 @@ structurally incapable of distinguishing from failure:
     system meant "take a prefix in file order" and the later shuffle could not repair it.
   - `_decode_split` keyed its cache on `abs(hash(key))`, which PYTHONHASHSEED salts per
     process, so the decoded-image cache never hit and every VL run re-decoded 100k JPEGs.
+  - `compress`'s graded/STS-B gate ran once by hand (receipts/compress-
+    20260902T153612Z.json, `graded_held_out.spearman` 0.4956) and then silently vanished
+    from every receipt after `scripts/csd-train-all.py` became the runner: its
+    `PretrainConfig(...)` call never set `graded_shards`, `pretrain_region` correctly
+    read the empty default as "no graded set declared", and nothing distinguished that
+    from "this region declared one and it went missing". No exception anywhere -- a
+    receipt just quietly stopped carrying a key. A first repair of this (keying
+    `_assert_graded_gate_present` on `cfg.graded_shards`) was itself unreachable by the
+    actual regression: the reachable path is `run_region` resolving a declared
+    `GradedSpec` to an EMPTY shard list, which used to print a warning and build
+    `PretrainConfig(graded_shards=[], graded_name="stsb-validation")` anyway -- an
+    inconsistent config, accepted, that reproduces the exact silent-drop shape the guard
+    exists to catch. `_assert_graded_gate_present` now keys on `graded_shards OR
+    graded_name`, and `run_region` now raises `GradedSourceMissingError` the moment a
+    declared graded glob resolves nothing, matching `regions/compress.py`'s
+    `compress_config` (`FileNotFoundError`, "rather than training on nothing") instead of
+    being weaker than the path it replaced.
 
-A happy-path test passes against all four. So each test below builds the exact failing
+A happy-path test passes against all five. So each test below builds the exact failing
 input and asserts the guard fires, and several assert the PRE-FIX guard would not have --
 that pairing is the point of the file. Add to it whenever a guard is added: a guard with
 no failing-case test is a comment with a function signature.
 """
 
 from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -519,3 +540,219 @@ def test_the_cache_tag_separates_inputs_that_produce_different_pixels() -> None:
         ("label_col", "fine_label"),
     ):
         assert stable_cache_tag({**base, field: changed}) != tag, f"{field} does not change the tag"
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 5 -- a declared graded gate could vanish from a receipt with nothing raising.
+# ---------------------------------------------------------------------------------------
+
+
+def test_a_declared_graded_gate_missing_from_the_receipt_raises() -> None:
+    """R4: reproduce the receipt-vs-config mismatch directly, without training.
+
+    A config that DOES declare `graded_shards` (the same way `regions/compress.py`'s
+    `compress_config` does, and the same way `scripts/csd-train-all.py`'s `compress`
+    entry now does), paired with the receipt a run would produce if that gate silently
+    dropped out of it. `_assert_graded_gate_present` is the guard that must refuse to let
+    this receipt be written.
+    """
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import PretrainConfig, _assert_graded_gate_present
+
+    cfg = PretrainConfig(
+        region="compress",
+        pair_columns=("anchor", "positive"),
+        shards=["train.parquet"],
+        graded_shards=["stsb-validation.parquet"],
+        graded_columns=("sentence1", "sentence2", "score"),
+        graded_name="stsb-validation",
+    )
+    receipt_missing_gate = {"held_out": {}, "untrained_baseline": {}}  # no graded_held_out
+
+    with pytest.raises(RuntimeError, match="graded_shards"):
+        _assert_graded_gate_present(cfg, receipt_missing_gate)
+
+
+def test_a_region_with_no_graded_shards_declared_is_not_checked() -> None:
+    """Negative control: `code`/`retrieve` declare no graded set at all, so a receipt
+    without `graded_held_out` for them is correct, not a defect. The guard must fire on
+    a promise broken, not on every region that never made one."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import PretrainConfig, _assert_graded_gate_present
+
+    cfg = PretrainConfig(
+        region="code",
+        pair_columns=("docstring", "code"),
+        shards=["train.parquet"],
+    )
+    receipt_no_gate = {"held_out": {}, "untrained_baseline": {}}
+
+    _assert_graded_gate_present(cfg, receipt_no_gate)  # must not raise
+
+
+def test_a_declared_graded_gate_present_in_the_receipt_does_not_raise() -> None:
+    """Positive control: a graded gate that DID make it into the receipt is a pass, not
+    a near-miss the guard should also flag."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import PretrainConfig, _assert_graded_gate_present
+
+    cfg = PretrainConfig(
+        region="compress",
+        pair_columns=("anchor", "positive"),
+        shards=["train.parquet"],
+        graded_shards=["stsb-validation.parquet"],
+        graded_columns=("sentence1", "sentence2", "score"),
+        graded_name="stsb-validation",
+    )
+    receipt_with_gate = {
+        "held_out": {},
+        "untrained_baseline": {},
+        "graded_held_out": {"spearman": 0.4956},
+    }
+
+    _assert_graded_gate_present(cfg, receipt_with_gate)  # must not raise
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 5, continued -- the guard above is unreachable by the actual regression, and the
+# runner it replaces is fail-open where the code path it replaced was fail-closed.
+# ---------------------------------------------------------------------------------------
+
+
+def _load_csd_train_all():
+    """Import scripts/csd-train-all.py the same way tests/test_reserved_corpus_guard.py
+    does (see that file's docstring): the hyphenated filename is not a valid module name,
+    so every consumer loads it via `importlib.util.spec_from_file_location`. A distinct
+    `sys.modules` key from that file's loader keeps the two loads independent.
+    """
+    path = Path(__file__).resolve().parents[1] / "scripts" / "csd-train-all.py"
+    spec = importlib.util.spec_from_file_location("csd_train_all_graded_gate_test", path)
+    assert spec is not None and spec.loader is not None, f"cannot load {path}"
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+mod = _load_csd_train_all()
+
+
+def test_compress_graded_spec_in_the_runner_matches_compress_py() -> None:
+    """Pin `REGIONS["compress"]`'s `GradedSpec` against `regions/compress.py`'s own
+    `GRADED_SHARD`/`graded_columns`/`graded_name` constants.
+
+    `scripts/csd-train-all.py`'s `GradedSpec` docstring and the `REGIONS["compress"]`
+    comment both assert "both paths must agree on what the compress graded gate means",
+    but nothing checked that before this test -- an edit to either side (a renamed STS-B
+    column, a moved shard, a re-tagged gate name) would diverge in silence exactly like
+    the rest of R4 did. `pytest.importorskip` covers `compress.py`'s own import chain
+    (`regions.pretrain`), not this test's assertions, which touch neither torch nor
+    tokenizers.
+    """
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from cogsyndelta.regions.compress import GRADED_SHARD
+
+    _sources, _note, _default_max_len, graded_spec = mod.REGIONS["compress"]
+    assert graded_spec is not None, "compress must declare a GradedSpec"
+    glob_pat, columns, name = graded_spec
+
+    assert glob_pat.endswith(GRADED_SHARD), (glob_pat, GRADED_SHARD)
+    assert columns == ("sentence1", "sentence2", "score")
+    assert name == "stsb-validation"
+
+
+def test_run_region_raises_when_the_declared_graded_source_does_not_resolve(
+    tmp_path: Path,
+) -> None:
+    """Reproduce the exact reachable regression: the training shard is present, the
+    graded (STS-B) shard is not -- an unmounted NFS export, a renamed upstream dataset
+    directory, or a typo in the glob, all of which leave `graded_spec` declared but its
+    glob unresolved. `run_region` must refuse to start rather than build a
+    `PretrainConfig` with `graded_shards=[]`/`graded_name="stsb-validation"` and let
+    `pretrain_region` write a receipt with no `graded_held_out`.
+
+    Before the fix, this printed one line ("graded source MISSING: ... compress declares
+    a graded gate but it will not run this time") and returned a resolved dry-run plan
+    instead of raising -- fail-open, and weaker than `regions/compress.py`'s
+    `compress_config`, which raises `FileNotFoundError` for the identical missing shard.
+    """
+
+    def fake_shards(pattern: str, root: Path = mod.CORPUS) -> list[str]:
+        if "all-nli" in pattern:
+            return [str(tmp_path / "all-nli-train.parquet")]
+        if "stsb" in pattern:
+            return []  # the graded shard: declared, unresolved
+        return []
+
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(mod, "_shards", fake_shards)
+        m.setattr(mod, "_schema_mismatch", lambda shards, cols: None)  # bypass parquet I/O
+        with pytest.raises(mod.GradedSourceMissingError, match="stsb-validation"):
+            mod.run_region(
+                name="compress",
+                state=tmp_path,
+                steps=1,
+                batch=1,
+                shard_limit=0,
+                dry=True,
+            )
+
+
+def test_run_region_dry_run_resolves_the_graded_gate_when_it_is_present(
+    tmp_path: Path,
+) -> None:
+    """Positive control: when both shards resolve, the dry-run plan carries the graded
+    gate through to `graded_shards`/`graded_columns`/`graded_name` rather than raising --
+    the guard above must fire on absence, not on every compress run."""
+
+    def fake_shards(pattern: str, root: Path = mod.CORPUS) -> list[str]:
+        if "all-nli" in pattern:
+            return [str(tmp_path / "all-nli-train.parquet")]
+        if "stsb" in pattern:
+            return [str(tmp_path / "stsb-validation.parquet")]
+        return []
+
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(mod, "_shards", fake_shards)
+        m.setattr(mod, "_schema_mismatch", lambda shards, cols: None)
+        result = mod.run_region(
+            name="compress", state=tmp_path, steps=1, batch=1, shard_limit=0, dry=True
+        )
+
+    assert result is None  # dry run never returns a receipt
+
+
+def test_dry_run_plan_omits_graded_keys_for_a_region_with_no_graded_gate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`code`/`retrieve`/`reason` declare no `GradedSpec`. Before the fix, the dry-run
+    plan still printed `graded_columns: ["sentence1", "sentence2", "score"]` for them --
+    `graded_cols` was initialised to the STS-B default before the `if graded_spec is not
+    None` branch ran, so a reader of the `code` plan saw STS-B column names attached to a
+    region with no graded set at all. `graded_shards`/`graded_columns`/`graded_name` must
+    all be `null` in the emitted JSON, not filled with another region's defaults.
+    """
+
+    def fake_shards(pattern: str, root: Path = mod.CORPUS) -> list[str]:
+        return [str(tmp_path / "codesearchnet-shard.parquet")]
+
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(mod, "_shards", fake_shards)
+        m.setattr(mod, "_schema_mismatch", lambda shards, cols: None)
+        result = mod.run_region(
+            name="code", state=tmp_path, steps=1, batch=1, shard_limit=0, dry=True
+        )
+
+    assert result is None
+    import json as _json
+
+    printed = capsys.readouterr().out
+    plan_json = printed.split("resolved PretrainConfig (dry run, no training started):")[1]
+    plan = _json.loads(plan_json)
+    assert plan["graded_shards"] is None
+    assert plan["graded_columns"] is None
+    assert plan["graded_name"] is None
