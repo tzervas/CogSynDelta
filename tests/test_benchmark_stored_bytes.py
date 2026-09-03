@@ -1,28 +1,38 @@
-"""N5: the fp32 eval receipt must report the fp32 CHECKPOINT's own bytes on disk, never
-a quantized artifact's -- `benchmark_region` used to prefer a same-region
-``{region}-quant-*.json`` receipt's ``stored_bytes`` when one existed, so an fp32 receipt
-scored right next to a quantized one silently reported the SMALLER, quantized size. Only
-`benchmark_region_quantized` (the ``--quantized`` / ``kind="eval-quantized"`` path) may
-report the packed artifact's size.
+"""N5: the fp32 eval receipt and the eval-quantized receipt must report WEIGHTS-ONLY bytes,
+using the SAME definition the quantizer itself uses for `compression_ratio`'s denominator
+(`cogsyndelta.quant.ptq.fp32_reference_bytes`) -- never a checkpoint FILE's raw
+`stat().st_size`. A resumable training checkpoint also carries the Adam optimizer's
+momentum and variance buffers (`opt.state_dict()`, see `regions/pretrain.py`'s checkpoint
+dict), routinely ~2x the weights themselves, so the file's size and the model's fp32 weight
+bytes are two different numbers -- an earlier fix (N5 round 1) reported the FILE's size,
+which fixed the "picked up a smaller quantized receipt" bug but introduced a new mismatch:
+the file-size number does not divide into `benchmark_region_quantized`'s
+`packed_stored_bytes` at the ratio `csd-quantize.py`'s own `compression_ratio` measured.
 
-Two tests:
+Three tests:
 
 1. A real tiny CPU pretrain -> quantize pass (same fixture shape as
    `test_benchmark_quantized_artifact.py`), with the fp32 pass run AFTER the quantized
-   receipt already exists on disk under the same state root -- exactly the condition
-   that used to trigger the bug (`benchmark_region`'s old `{region}-quant-*.json` glob
-   would have matched). Asserts the fp32 receipt's `eff.stored_mb` is derived from
-   the checkpoint FILE's own `stat().st_size`, not the quantized artifact's smaller
-   `stored_bytes`.
+   receipt already exists on disk under the same state root -- exactly the condition the
+   original N5 bug mishandled (a `{region}-quant-*.json` receipt's `stored_bytes`
+   contaminating the fp32 pass). Asserts the fp32 receipt's `eff.stored_mb` equals
+   `fp32_reference_bytes(model)` (weights only), is strictly less than the checkpoint
+   FILE's `stat().st_size` (proof the optimizer-state overhead is excluded), and that both
+   receipts carry `provenance.stored_bytes_definition == "weights-only"`.
 
-2. The exact acceptance case named in the matrix-harness operator brief: today's memory
-   V2 pilot checkpoint + packed artifact under
+2. The ratio between the fp32 receipt's `eff.stored_mb` and the eval-quantized receipt's
+   `eff.stored_mb` equals the quant receipt's own `compression_ratio` -- the acceptance
+   property the round-2 review named: "the ratio in the matrix equals the quant receipt's
+   compression_ratio".
+
+3. The exact acceptance case named in the matrix-harness operator brief: today's memory V2
+   pilot checkpoint + packed artifact under
    `/akula-data/csd/receipts/memory-checkpoints/369351bf-b1280/`. Skipped when those
-   host-local files are absent (a fresh clone, CI, another host). Asserts the fp32
-   receipt's stored bytes equal `final.pt`'s file size and the eval-quantized receipt's
-   stored bytes equal the packed artifact's own `packed_stored_bytes` (what
-   `save_packed_artifact` counted, not raw file bytes -- see `ptq.packed_stored_bytes`'s
-   docstring for why those differ).
+   host-local files are absent (a fresh clone, CI, another host). Asserts the fp32 receipt's
+   stored bytes equal the quantizer's own `fp32_reference_bytes` for that checkpoint, the
+   eval-quantized receipt's stored bytes equal the packed artifact's own
+   `packed_stored_bytes`, and their ratio equals the quant receipt's `compression_ratio`
+   within 1e-6.
 """
 
 from __future__ import annotations
@@ -110,11 +120,9 @@ def _restore_spec_monkeypatches() -> Any:
     quantize_mod._load_regions_spec = orig_quant
 
 
-def test_fp32_receipt_reports_checkpoint_file_size_even_with_a_quant_receipt_present(
-    tmp_path: Path,
-) -> None:
-    """Reproduces the exact condition the old code mishandled: a `{region}-quant-*.json`
-    receipt already sitting under the same state root when the fp32 pass runs."""
+def _train_and_quantize_fixture(tmp_path: Path) -> tuple[dict, dict, Path]:
+    """A real tiny CPU pretrain -> quantize pass. Returns (train_receipt, quant_receipt,
+    quantized_path)."""
     tok_path = tmp_path / "tokenizer.json"
     shard_path = tmp_path / "pairs.parquet"
     _build_tokenizer(tok_path, 48)
@@ -161,10 +169,23 @@ def test_fp32_receipt_reports_checkpoint_file_size_even_with_a_quant_receipt_pre
     assert quant_receipt["bits"], "fixture produced no quantized tensors -- widen the encoder"
     quantized_path = Path(quant_receipt["artifacts"]["quantized_path"])
 
-    # Land it exactly where the old buggy glob (`{region}-quant-*.json` under
-    # `state/receipts`) would have matched it -- the fp32 pass below runs against the
-    # SAME `tmp_path` state root.
+    # Land it exactly where the original N5 bug's glob (`{region}-quant-*.json` under
+    # `state/receipts`) would have matched it -- the fp32 pass runs against the SAME
+    # `tmp_path` state root.
     write_receipt(quant_receipt, tmp_path / "receipts", "benchq-n5-quant-fixture.json")
+    return train_receipt, quant_receipt, quantized_path
+
+
+def test_fp32_receipt_reports_weights_only_bytes_even_with_a_quant_receipt_present(
+    tmp_path: Path,
+) -> None:
+    """Reproduces the exact condition the original N5 bug mishandled, and asserts the fp32
+    receipt reports the quantizer's own `fp32_reference_bytes` -- weights only, never the
+    checkpoint FILE's `stat().st_size` (which also carries Adam optimizer state)."""
+    from cogsyndelta.quant.ptq import fp32_reference_bytes
+
+    train_receipt, quant_receipt, quantized_path = _train_and_quantize_fixture(tmp_path)
+    train_receipt_path = Path(train_receipt["receipt_path"])
 
     checkpoint_path = Path(train_receipt["checkpoint"])
     fp32_file_size = checkpoint_path.stat().st_size
@@ -179,16 +200,48 @@ def test_fp32_receipt_reports_checkpoint_file_size_even_with_a_quant_receipt_pre
     assert rec_fp32 is not None
     assert rec_fp32.kind == "eval"
 
+    # Rebuild the model exactly as benchmark_region does, to get the same weights-only
+    # reference figure independently of the production code path under test.
+    from cogsyndelta.regions._checkpoint import load_checkpoint
+    from cogsyndelta.regions.text_encoder import TextEncoder
+
+    enc_cfg = TextEncoderConfig(**train_receipt["config"]["encoder"])
+    model = TextEncoder(enc_cfg, name="benchq-n5")
+    ck = load_checkpoint(train_receipt["checkpoint"], map_location="cpu")
+    model.load_state_dict(ck["model"])
+    expected_fp32_bytes = fp32_reference_bytes(model)
+
     stored_mb = rec_fp32.metrics["eff.stored_mb"]
-    assert stored_mb == pytest.approx(fp32_file_size / 1e6), (
-        f"fp32 receipt reported stored_mb={stored_mb!r} but the checkpoint file "
-        f"{checkpoint_path} is {fp32_file_size} bytes -- a quant receipt sitting in the "
-        "same state root must not change what the fp32 pass reports"
+    assert stored_mb == pytest.approx(expected_fp32_bytes / 1e6), (
+        f"fp32 receipt reported stored_mb={stored_mb!r} but the quantizer's own "
+        f"fp32_reference_bytes for this checkpoint is {expected_fp32_bytes} bytes -- the "
+        "fp32 eval pass must use the same weights-only definition compression_ratio does"
     )
     assert stored_mb != pytest.approx(quantized_file_size / 1e6), (
         "fp32 receipt's stored_mb must not equal the quantized artifact's size"
     )
+    assert stored_mb < fp32_file_size / 1e6, (
+        "fp32 receipt's stored_mb must be strictly smaller than the checkpoint FILE's own "
+        "size -- the file also carries Adam optimizer state the weights-only figure excludes"
+    )
     assert "quantized_size" not in rec_fp32.provenance
+    assert rec_fp32.provenance["stored_bytes_definition"] == "weights-only"
+
+    rec_q = benchmark_mod.benchmark_region_quantized(
+        "benchq-n5",
+        tmp_path,
+        quantized_path,
+        quant_receipt_path=tmp_path / "receipts" / "benchq-n5-quant-fixture.json",
+        train_receipt_path=train_receipt_path,
+    )
+    assert rec_q.provenance["stored_bytes_definition"] == "weights-only"
+
+    matrix_ratio = rec_fp32.metrics["eff.stored_mb"] / rec_q.metrics["eff.stored_mb"]
+    assert matrix_ratio == pytest.approx(quant_receipt["compression_ratio"], rel=1e-6), (
+        f"fp32/eval-quantized stored_mb ratio ({matrix_ratio!r}) must equal the quant "
+        f"receipt's own compression_ratio ({quant_receipt['compression_ratio']!r}) -- "
+        "both receipts must count bytes the same way the quantizer does"
+    )
 
 
 @pytest.mark.skipif(
@@ -200,20 +253,35 @@ def test_fp32_receipt_reports_checkpoint_file_size_even_with_a_quant_receipt_pre
     ),
     reason="today's memory V2 pilot artifacts are host-local, not part of the repo fixture set",
 )
-def test_memory_v2_stored_bytes_match_each_artifacts_own_size() -> None:
-    from cogsyndelta.quant.ptq import load_packed_artifact, packed_stored_bytes
+def test_memory_v2_stored_bytes_match_quantizers_own_definition_and_ratio() -> None:
+    from cogsyndelta.quant.ptq import (
+        fp32_reference_bytes,
+        load_packed_artifact,
+        packed_stored_bytes,
+    )
+    from cogsyndelta.regions._checkpoint import load_checkpoint
+    from cogsyndelta.regions.text_encoder import TextEncoder
 
     quant_receipt = json.loads(MEMORY_QUANT_RECEIPT.read_text())
+    train_receipt = json.loads(MEMORY_TRAIN_RECEIPT.read_text())
+
+    enc_cfg = TextEncoderConfig(**train_receipt["config"]["encoder"])
+    model = TextEncoder(enc_cfg, name="memory")
+    ck = load_checkpoint(train_receipt["checkpoint"], map_location="cpu")
+    model.load_state_dict(ck["model"])
+    expected_fp32_bytes = fp32_reference_bytes(model)
 
     rec_fp32 = benchmark_mod.benchmark_region(
         "memory", Path("/akula-data/csd"), train_receipt_path=MEMORY_TRAIN_RECEIPT
     )
     assert rec_fp32 is not None
     fp32_stored_mb = rec_fp32.metrics["eff.stored_mb"]
-    assert fp32_stored_mb == pytest.approx(MEMORY_CHECKPOINT.stat().st_size / 1e6), (
-        f"fp32 receipt stored_mb={fp32_stored_mb!r} must equal {MEMORY_CHECKPOINT}'s own "
-        f"file size ({MEMORY_CHECKPOINT.stat().st_size} bytes), not any quantized number"
+    assert fp32_stored_mb == pytest.approx(expected_fp32_bytes / 1e6), (
+        f"fp32 receipt stored_mb={fp32_stored_mb!r} must equal the quantizer's own "
+        f"fp32_reference_bytes ({expected_fp32_bytes} bytes), not the checkpoint file's "
+        f"raw size ({MEMORY_CHECKPOINT.stat().st_size} bytes) and not any quantized number"
     )
+    assert rec_fp32.provenance["stored_bytes_definition"] == "weights-only"
 
     rec_q = benchmark_mod.benchmark_region_quantized(
         "memory",
@@ -223,6 +291,7 @@ def test_memory_v2_stored_bytes_match_each_artifacts_own_size() -> None:
         train_receipt_path=MEMORY_TRAIN_RECEIPT,
     )
     assert rec_q.artifacts["quantized_sha256"] == quant_receipt["artifacts"]["quantized_sha256"]
+    assert rec_q.provenance["stored_bytes_definition"] == "weights-only"
 
     packed = load_packed_artifact(MEMORY_QUANTIZED)
     expected_quantized_mb = packed_stored_bytes(packed) / 1e6
@@ -233,5 +302,11 @@ def test_memory_v2_stored_bytes_match_each_artifacts_own_size() -> None:
     )
     assert q_stored_mb != pytest.approx(fp32_stored_mb), (
         "the two receipts must report DIFFERENT stored sizes -- the packed artifact is "
-        "meant to be smaller than the fp32 checkpoint"
+        "meant to be smaller than the fp32 model"
+    )
+
+    matrix_ratio = fp32_stored_mb / q_stored_mb
+    assert matrix_ratio == pytest.approx(quant_receipt["compression_ratio"], rel=1e-6), (
+        f"fp32/eval-quantized stored_mb ratio ({matrix_ratio!r}) must equal the quant "
+        f"receipt's own compression_ratio ({quant_receipt['compression_ratio']!r})"
     )
