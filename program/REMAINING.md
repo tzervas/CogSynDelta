@@ -235,6 +235,13 @@ every metric was batch-composition dependent.
 | P0.11 | Retrain code/compress/retrieve with the fixed guard so receipts carry the multi-channel report (see P0.10 extended channels above) | 3 receipts with `contamination.channels` present and `gated_channels` reported | wip |
 | P0.12 | Eval/quant receipts must record a checkpoint content hash, not a mutable path | receipt names a sha256 that matches the file it was computed from | todo |
 
+**P0.1 detail.** 2f1202b's `_beats_untrained_gate` classifies `untrained_baseline["recall@1"] == 0.0`
+as a broken eval, and both retrieve receipts on disk (`retrieve-20260902T165842Z.json`,
+`retrieve-20260902T203759Z.json`) carry exactly that value while still recording
+`beats_untrained.recall@1: true` -- a receipt the branch's own gate would now reject.
+P0.1 is two-thirds green (code, compress) plus one receipt to regenerate; P0.11 covers
+the retrieve retrain.
+
 P0.11 evidence for `todo` (not `wip`): none of `code-20260902T210830Z.json`,
 `compress-20260902T211539Z.json`, `retrieve-20260902T203759Z.json` carries
 `contamination.channels` or `gated_channels`, and `ps -eo pid,etime,cmd` on both
@@ -329,7 +336,7 @@ NOT used to judge quality). Full results: /mnt/bulk/csd-corpus-analysis/analysis
 |----|---------|----------------|--------|
 | P0.9a | `code` truncates 93.9% of code-side tokens at max_len=96 | ANSWERED — see below. Truncation inflated the BASELINE, not the trained score | done |
 | P0.9b | `retrieve` holdout has 53.7% near-dupes (>=0.90) in train | 0.748 is inflated. But see the split below -- not all of it is leakage | todo |
-| P0.9c | `compress` graded/STS-B gate ran once at 11:36 (spearman 0.4956, `receipts/compress-20260902T153612Z.json`) then silently stopped when `csd-train-all.py` became the runner (`842db5e`); `graded_shards` is set only at `regions/compress.py:88` | a documented gate that silently stopped running, not one that never ran | done — graded gate restored, commits 7ab9abc/a5d2206 |
+| P0.9c | `compress` graded/STS-B gate ran once at 11:36 (spearman 0.4956, `receipts/compress-20260902T153612Z.json`) then silently stopped when `csd-train-all.py` became the runner (`842db5e`); `graded_shards` is set only at `regions/compress.py:88` | a documented gate that silently stopped running, not one that never ran | wip — graded gate restored in 7ab9abc/a5d2206 (guard mutation-tested), graded_shards is set by scripts/csd-train-all.py (run_region) as well as regions/compress.py; NO receipt on disk yet carries graded_held_out from the restored path — the re-run of compress (P0.11) closes it |
 | P0.9d | 646 anchor==positive pairs in compress (0.23%) | a free InfoNCE win that teaches nothing | todo |
 | P0.9e | anchor-only dedup drops valid one-to-many structure | one FiQA question with 23 relevant passages collapses to one, losing 22 real positives | todo |
 
