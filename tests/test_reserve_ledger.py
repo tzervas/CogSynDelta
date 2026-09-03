@@ -2,15 +2,17 @@
 
 DEC-42 (docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md §5.1/§4.1): `reason`'s aqua_rat
 cap changed sampling method at `c42203c` (prefix -> seeded reservoir) and the receipt that
-would say which one the `reason` run used was deleted. The ledger has to burn BOTH
-candidate draws' fingerprints, and it has to REFUSE to certify a ledger built from only
-one -- that refusal is the actual guard, so every guard test here builds the exact
-condition it exists to catch and asserts it fires (same convention as
-tests/test_guards_can_fail.py).
+would say which one the `reason` run used was deleted. Per the orchestrator decision
+recorded in the script's module docstring, the ledger burns the UNION OF EVERY CANDIDATE
+DRAW it can find -- R, P, and every on-disk derived-sample file whose row count matches
+the cap -- and REFUSES to certify a ledger that omits any one of them. That refusal is
+the actual guard, so every guard test here builds the exact condition it exists to catch
+and asserts it fires (same convention as tests/test_guards_can_fail.py).
 
 Unit tests below use tiny synthetic parquet shards -- no dependency on the real corpus.
-One integration test at the bottom runs against the real aqua_rat shard and reports row
-counts and the union size; it skips when the corpus export is not mounted.
+Integration tests at the bottom run against the real aqua_rat shard (and its one known
+on-disk derived sample) and report row counts and the union size; they skip when the
+corpus export is not mounted.
 """
 
 from __future__ import annotations
@@ -398,171 +400,221 @@ def test_build_ledger_gate_cap_matches_requested_cap_not_draw_length(shard: list
 
 
 # ---------------------------------------------------------------------------------------
-# The third, dated candidate draw: measured and surfaced, never silently dismissed and
-# never silently burned. See the module docstring's "A THIRD, DATED CANDIDATE DRAW".
+# Discovered on-disk draws: every derived-sample file matching the cap row count is
+# burned, and a ledger that omits one is refused. See the module docstring's "ORCHESTRATOR
+# DECISION" and "EXIT CODE 3" sections.
 # ---------------------------------------------------------------------------------------
 
 
-def _write_decoy(root: Path, *, pairs: list[tuple[str, str]] | None = None) -> None:
+def _write_ondisk_draw(
+    root: Path, name: str, pairs: list[tuple[str, str]], *, corrupt: bool = False
+) -> Path:
+    """Writes `root/reason/aqua_rat-raw/derived/<name>` as a parquet file of `pairs`
+    (or, when `corrupt=True`, garbage bytes at that path instead -- simulating a
+    discovered file this script cannot read)."""
     derived = root / "reason" / "aqua_rat-raw" / "derived"
     derived.mkdir(parents=True, exist_ok=True)
-    (derived / "MANIFEST.json").write_text(
-        json.dumps(
-            {
-                "sampling_method": "numpy Generator(PCG64).permutation(n)[:N_SAMPLE]",
-                "seed": 0,
-                "n_sampled_rows": len(pairs) if pairs is not None else 4982,
-            }
-        )
-    )
-    if pairs is not None:
-        questions = [q for q, _ in pairs]
-        rationales = [r for _, r in pairs]
-        pq.write_table(
-            pa.table({"question": questions, "rationale": rationales}),
-            derived / "sample-4982-seed0.parquet",
-        )
+    path = derived / name
+    if corrupt:
+        path.write_bytes(b"not a parquet file")
+        return path
+    questions = [q for q, _ in pairs]
+    rationales = [r for _, r in pairs]
+    pq.write_table(pa.table({"question": questions, "rationale": rationales}), path)
+    return path
 
 
-def test_decoy_note_no_longer_claims_the_hypothesis_set_settles_relevance(
-    tmp_path: Path,
-) -> None:
-    """The review's CRITICAL finding: the old note text ('not draw R under any hypothesis
-    this script tests') was circular -- the hypothesis set is exactly what W2a exists to
-    establish. The new note must not claim non-membership in a fixed hypothesis set
-    settles the file's relevance, and must say a human has to decide."""
-    _write_decoy(tmp_path)
-    note = ledger._note_decoy_derived_sample(tmp_path)
-    assert note is not None
-    assert note["matches_production_reservoir_algorithm"] is False
-    assert "OPERATOR DECISION" in note["note"]
-    assert "any hypothesis this script tests" not in note["note"]
+def _pairs(n: int, tag: str = "ondisk") -> list[tuple[str, str]]:
+    return [(f"{tag} question {i}", f"{tag} rationale {i}") for i in range(n)]
 
 
-def test_decoy_note_records_dating_against_both_commits(tmp_path: Path) -> None:
-    _write_decoy(tmp_path)
-    note = ledger._note_decoy_derived_sample(tmp_path)
-    assert note is not None
-    # The fixture is written "now" (test run time), which is after both commits -- this
-    # asserts the fields exist and are computed, not a specific value; the real corpus's
-    # dating (before both) is exercised by the integration test below.
-    assert "before_c42203c" in note
-    assert "before_b9a082e_cap_introduced" in note
+def test_discover_ondisk_draws_finds_a_file_matching_cap_row_count(tmp_path: Path) -> None:
+    _write_ondisk_draw(tmp_path, "sample-25-seed0.parquet", _pairs(_CAP))
+    draws, unreadable = ledger.discover_ondisk_draws(tmp_path, cap=_CAP)
+    assert unreadable == []
+    assert len(draws) == 1
+    d = draws[0]
+    assert d["name"] == "reason/aqua_rat-raw/derived/sample-25-seed0.parquet"
+    assert d["row_count"] == _CAP
+    assert len(d["pairs"]) == _CAP
+    assert isinstance(d["sha256"], str) and len(d["sha256"]) == 64
+    assert d["mtime_utc"]  # non-empty ISO timestamp
 
 
-def test_decoy_absent_is_silently_fine(tmp_path: Path) -> None:
-    assert ledger._note_decoy_derived_sample(tmp_path) is None
-    assert ledger.evaluate_third_draw_candidate(tmp_path, set()) is None
+def test_discover_ondisk_draws_skips_a_file_with_a_different_row_count(tmp_path: Path) -> None:
+    """A matched file this cap has nothing to do with is skipped without comment -- it is
+    neither a draw nor an unreadable file."""
+    _write_ondisk_draw(tmp_path, "sample-other.parquet", _pairs(_CAP - 1))
+    draws, unreadable = ledger.discover_ondisk_draws(tmp_path, cap=_CAP)
+    assert draws == []
+    assert unreadable == []
 
 
-def test_evaluate_third_draw_candidate_measures_overlap_against_the_union(
-    shard: list[str], tmp_path: Path
-) -> None:
-    """Builds a real ledger union from the synthetic shard, then a decoy file with rows
-    partly inside and partly outside it, and checks the measured counts are exact --
-    the same measurement the review ran by hand against the real corpus (585 covered /
-    4,397 not, out of 4,982)."""
-    draw_r = ledger.draw_reservoir(shard, seed=0, cap=_CAP)
-    draw_p = ledger.draw_prefix(shard, cap=_CAP)
-    union = set(ledger.fingerprint_pairs(draw_r)) | set(ledger.fingerprint_pairs(draw_p))
+def test_discover_ondisk_draws_reports_an_unreadable_file_separately(tmp_path: Path) -> None:
+    """A file this script cannot read has UNKNOWN content -- it must never be silently
+    skipped the way a wrong-row-count file is; see the module docstring's 'EXIT CODE 3'."""
+    _write_ondisk_draw(tmp_path, "sample-corrupt.parquet", [], corrupt=True)
+    draws, unreadable = ledger.discover_ondisk_draws(tmp_path, cap=_CAP)
+    assert draws == []
+    assert len(unreadable) == 1
+    assert unreadable[0]["path"] == "reason/aqua_rat-raw/derived/sample-corrupt.parquet"
+    assert unreadable[0]["error"]
 
-    # Two rows already in the union (won't move the "not covered" count), plus two
-    # entirely new rows the union has never seen.
-    covered_pair = next(iter(draw_r))
-    new_pairs = [
-        ("decoy question 1", "decoy rationale 1"),
-        ("decoy question 2", "decoy rationale 2"),
+
+def test_discover_ondisk_draws_no_matches_is_silently_fine(tmp_path: Path) -> None:
+    draws, unreadable = ledger.discover_ondisk_draws(tmp_path, cap=_CAP)
+    assert draws == []
+    assert unreadable == []
+
+
+def test_discover_ondisk_draws_finds_multiple_matching_files(tmp_path: Path) -> None:
+    """Discovery is not hardcoded to one filename -- any number of matching candidate
+    draws are found, each named by its own relative path."""
+    _write_ondisk_draw(tmp_path, "sample-4982-seed0.parquet", _pairs(_CAP, tag="alpha"))
+    _write_ondisk_draw(tmp_path, "sample-4982-permute.parquet", _pairs(_CAP, tag="beta"))
+    draws, unreadable = ledger.discover_ondisk_draws(tmp_path, cap=_CAP)
+    assert unreadable == []
+    assert sorted(d["name"] for d in draws) == [
+        "reason/aqua_rat-raw/derived/sample-4982-permute.parquet",
+        "reason/aqua_rat-raw/derived/sample-4982-seed0.parquet",
     ]
-    _write_decoy(tmp_path, pairs=[covered_pair, covered_pair, *new_pairs])
-
-    note = ledger.evaluate_third_draw_candidate(tmp_path, union)
-    assert note is not None
-    assert note["measured"] is True
-    assert note["rows_non_empty_pairs"] == 4
-    assert note["rows_covered_by_current_union"] == 2
-    assert note["rows_certified_clean_by_this_ledger_today"] == 2
-    assert note["operator_decision_required"] is True
-    assert note["union_if_burned"] == len(union) + 2
 
 
-def test_evaluate_third_draw_candidate_no_uncovered_rows_does_not_require_a_decision(
+# ---------------------------------------------------------------------------------------
+# verify_gate_for_draws: THE falsifier -- hand it a ledger missing a discovered draw
+# (in full or in part) and confirm it refuses.
+# ---------------------------------------------------------------------------------------
+
+
+def test_verify_gate_for_draws_passes_when_every_draw_fully_covered() -> None:
+    draw_a = _pairs(5, tag="a")
+    draw_b = _pairs(3, tag="b")
+    union = set(ledger.fingerprint_pairs(draw_a)) | set(ledger.fingerprint_pairs(draw_b))
+    covered = ledger.verify_gate_for_draws(union, {"a": draw_a, "b": draw_b})
+    assert covered == {"a": 5, "b": 3}
+
+
+def test_verify_gate_for_draws_refuses_when_a_draw_is_entirely_missing() -> None:
+    """THE falsifier: a ledger built without a discovered draw at all -- 0 rows covered
+    -- must refuse exactly like a partially covered one, not pass because 'it just
+    wasn't there'."""
+    draw_a = _pairs(5, tag="a")
+    draw_b = _pairs(3, tag="b")
+    union = set(ledger.fingerprint_pairs(draw_a))  # draw_b entirely omitted
+
+    with pytest.raises(ledger.LedgerGateError, match=r"'b': 0/3 rows"):
+        ledger.verify_gate_for_draws(union, {"a": draw_a, "b": draw_b})
+
+
+def test_verify_gate_for_draws_refuses_when_a_draw_is_partially_covered() -> None:
+    draw_a = _pairs(5, tag="a")
+    fps_a = ledger.fingerprint_pairs(draw_a)
+    union = set(fps_a[:-1])  # every row of draw_a but one
+
+    with pytest.raises(ledger.LedgerGateError, match=r"'a': 4/5 rows"):
+        ledger.verify_gate_for_draws(union, {"a": draw_a})
+
+
+# ---------------------------------------------------------------------------------------
+# build_ledger folds discovered on-disk draws into the union, the manifest, and the gate.
+# ---------------------------------------------------------------------------------------
+
+
+def test_build_ledger_burns_a_discovered_ondisk_draw_and_folds_its_provenance_into_manifest(
     shard: list[str], tmp_path: Path
 ) -> None:
-    """If a candidate file's rows are ALL already inside the union, burning it would
-    change nothing, so there is nothing for an operator to decide."""
-    draw_r = ledger.draw_reservoir(shard, seed=0, cap=_CAP)
-    covered_pair = next(iter(draw_r))
-    _write_decoy(tmp_path, pairs=[covered_pair])
+    _write_ondisk_draw(tmp_path, "sample-25-seed0.parquet", _pairs(_CAP))
 
-    fps_r = set(ledger.fingerprint_pairs(draw_r))
-    note = ledger.evaluate_third_draw_candidate(tmp_path, fps_r)
-    assert note is not None
-    assert note["rows_certified_clean_by_this_ledger_today"] == 0
-    assert note["operator_decision_required"] is False
+    result = ledger.build_ledger(
+        shard, seed=0, cap=_CAP, receipts_dir=tmp_path / "no-receipts", corpus_root=tmp_path
+    )
+    m = result["manifest"]
+    assert m["unreadable_ondisk_draws"] == []
+    assert len(m["ondisk_draws"]) == 1
+    od = m["ondisk_draws"][0]
+    assert od["name"] == "reason/aqua_rat-raw/derived/sample-25-seed0.parquet"
+    assert od["row_count"] == _CAP
+    assert od["rows_covered"] == od["rows_non_empty_pairs"] == _CAP
+
+    ondisk_fps = set(ledger.fingerprint_pairs(_pairs(_CAP)))
+    fps_in_ledger = {r["pair_fingerprint"] for r in result["rows"]}
+    assert ondisk_fps <= fps_in_ledger
+    assert m["union_size"] == len(fps_in_ledger)
+
+    # A row that came ONLY from the discovered draw is tagged accordingly.
+    ondisk_only_row = next(r for r in result["rows"] if r["pair_fingerprint"] in ondisk_fps)
+    assert ondisk_only_row["draw"] == "ondisk"
+    assert ondisk_only_row["also_in_ondisk_draws"] == [
+        "reason/aqua_rat-raw/derived/sample-25-seed0.parquet"
+    ]
 
 
-def test_establish_code_revision_folds_in_the_decoy_manifest_as_evidence(
-    tmp_path: Path,
+def test_build_ledger_no_ondisk_draws_present_gives_empty_lists(
+    shard: list[str], tmp_path: Path
 ) -> None:
-    """CRITICAL review finding: check (iv) reported `established: False` while a strong
-    dated artefact sat on disk unweighed. With `corpus_root` given, that artefact's mtime
-    must appear in `evidence`, and `established` must reflect that evidence exists (a
-    human still has to weigh it -- this does not mean the question is settled)."""
-    empty_receipts = tmp_path / "receipts"
-    empty_receipts.mkdir()
+    result = ledger.build_ledger(
+        shard, seed=0, cap=_CAP, receipts_dir=tmp_path / "no-receipts", corpus_root=tmp_path
+    )
+    m = result["manifest"]
+    assert m["ondisk_draws"] == []
+    assert m["unreadable_ondisk_draws"] == []
+
+
+def test_build_ledger_without_corpus_root_skips_discovery_entirely(
+    shard: list[str], tmp_path: Path
+) -> None:
+    """`corpus_root=None` (the default) must not attempt discovery at all -- this is the
+    unit-test path every other test in this file uses, and it must not require a real
+    filesystem layout under `derived/`."""
+    result = ledger.build_ledger(shard, seed=0, cap=_CAP, receipts_dir=tmp_path / "no-receipts")
+    m = result["manifest"]
+    assert m["ondisk_draws"] == []
+    assert m["unreadable_ondisk_draws"] == []
+
+
+# ---------------------------------------------------------------------------------------
+# main(): exit codes. 0 when everything discovered is readable (and burned); 3 only when
+# a discovered file could not be read. There is no acknowledgement flag any more -- the
+# earlier "operator decision required" posture is gone (see the module docstring's
+# "ORCHESTRATOR DECISION").
+# ---------------------------------------------------------------------------------------
+
+
+def test_main_exits_0_and_burns_a_discovered_ondisk_draw(shard: list[str], tmp_path: Path) -> None:
     corpus_root = tmp_path / "corpus"
-    _write_decoy(corpus_root)
+    aqua_dir = corpus_root / "reason" / "aqua_rat-raw"
+    aqua_dir.mkdir(parents=True)
+    _write_shard(aqua_dir / "train.parquet")
+    _write_ondisk_draw(corpus_root, "sample-25-seed0.parquet", _pairs(_CAP))
 
-    result = ledger.establish_code_revision(
-        empty_receipts, region="reason", corpus_root=corpus_root
+    out = tmp_path / "ledger.jsonl"
+    rc = ledger.main(
+        [
+            "--corpus-root",
+            str(corpus_root),
+            "--out",
+            str(out),
+            "--cap",
+            str(_CAP),
+            "--receipts-dir",
+            str(tmp_path / "no-receipts"),
+        ]
     )
-    assert result["established"] is True
-    kinds = [e["kind"] for e in result["evidence"]]
-    assert "third_draw_candidate_manifest" in kinds
+    assert rc == 0
+    manifest = json.loads(out.with_suffix(".jsonl.manifest.json").read_text())
+    assert manifest["unreadable_ondisk_draws"] == []
+    assert len(manifest["ondisk_draws"]) == 1
+    assert manifest["ondisk_draws"][0]["rows_covered"] == _CAP
 
 
-def test_establish_code_revision_still_absent_without_a_decoy_or_receipts(
-    tmp_path: Path,
-) -> None:
-    empty_receipts = tmp_path / "receipts"
-    empty_receipts.mkdir()
-    result = ledger.establish_code_revision(empty_receipts, region="reason", corpus_root=tmp_path)
-    assert result["established"] is False
-    assert result["evidence"] == []
-
-
-def test_build_ledger_flags_operator_decision_required_when_decoy_has_uncovered_rows(
+def test_main_exits_3_and_still_writes_the_ledger_when_a_discovered_file_is_unreadable(
     shard: list[str], tmp_path: Path
-) -> None:
-    _write_decoy(tmp_path, pairs=[("brand new question", "brand new rationale")])
-
-    result = ledger.build_ledger(
-        shard, seed=0, cap=_CAP, receipts_dir=tmp_path / "no-receipts", corpus_root=tmp_path
-    )
-    assert result["manifest"]["operator_decision_required"] is True
-    assert (
-        result["manifest"]["third_draw_candidate"]["rows_certified_clean_by_this_ledger_today"] == 1
-    )
-
-
-def test_build_ledger_no_decoy_present_is_not_operator_decision_required(
-    shard: list[str], tmp_path: Path
-) -> None:
-    result = ledger.build_ledger(
-        shard, seed=0, cap=_CAP, receipts_dir=tmp_path / "no-receipts", corpus_root=tmp_path
-    )
-    assert result["manifest"]["operator_decision_required"] is False
-    assert result["manifest"]["third_draw_candidate"] is None
-
-
-def test_main_exits_3_and_still_writes_the_ledger_when_unacknowledged(
-    shard: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     corpus_root = tmp_path / "corpus"
     aqua_dir = corpus_root / "reason" / "aqua_rat-raw"
     aqua_dir.mkdir(parents=True)
     _write_shard(aqua_dir / "train.parquet")
-    _write_decoy(corpus_root, pairs=[("brand new question", "brand new rationale")])
+    _write_ondisk_draw(corpus_root, "sample-corrupt.parquet", [], corrupt=True)
 
     out = tmp_path / "ledger.jsonl"
     rc = ledger.main(
@@ -578,38 +630,14 @@ def test_main_exits_3_and_still_writes_the_ledger_when_unacknowledged(
         ]
     )
     assert rc == 3
-    assert out.exists()  # written for review despite the non-zero exit
+    assert out.exists()  # written for review despite the non-zero exit, from what WAS readable
     manifest = json.loads(out.with_suffix(".jsonl.manifest.json").read_text())
-    assert manifest["operator_decision_required"] is True
-    assert "acknowledged_by_operator_flag" not in manifest["third_draw_candidate"]
-
-
-def test_main_exits_0_when_the_operator_acknowledges_the_candidate(
-    shard: list[str], tmp_path: Path
-) -> None:
-    corpus_root = tmp_path / "corpus"
-    aqua_dir = corpus_root / "reason" / "aqua_rat-raw"
-    aqua_dir.mkdir(parents=True)
-    _write_shard(aqua_dir / "train.parquet")
-    _write_decoy(corpus_root, pairs=[("brand new question", "brand new rationale")])
-
-    out = tmp_path / "ledger.jsonl"
-    rc = ledger.main(
-        [
-            "--corpus-root",
-            str(corpus_root),
-            "--out",
-            str(out),
-            "--cap",
-            str(_CAP),
-            "--receipts-dir",
-            str(tmp_path / "no-receipts"),
-            "--acknowledge-third-draw-candidate",
-        ]
+    assert manifest["ondisk_draws"] == []
+    assert len(manifest["unreadable_ondisk_draws"]) == 1
+    assert (
+        manifest["unreadable_ondisk_draws"][0]["path"]
+        == "reason/aqua_rat-raw/derived/sample-corrupt.parquet"
     )
-    assert rc == 0
-    manifest = json.loads(out.with_suffix(".jsonl.manifest.json").read_text())
-    assert manifest["third_draw_candidate"]["acknowledged_by_operator_flag"] is True
 
 
 # ---------------------------------------------------------------------------------------
@@ -645,7 +673,8 @@ def test_locate_shards_matches_the_declared_glob(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------------------
-# Integration: the real corpus, if mounted. Reports row counts and the union size.
+# Integration: the real corpus, if mounted. Reports row counts and the union size,
+# including whatever on-disk derived draws are actually sitting there.
 # ---------------------------------------------------------------------------------------
 
 
@@ -664,7 +693,7 @@ needs_real_corpus = pytest.mark.skipif(
 
 
 @needs_real_corpus
-def test_integration_real_aqua_rat_union_covers_both_draws_in_full(tmp_path: Path) -> None:
+def test_integration_real_aqua_rat_union_covers_every_draw_in_full(tmp_path: Path) -> None:
     root = _REAL_ROOT
     assert root is not None
     shards = ledger.locate_shards(root)
@@ -674,22 +703,38 @@ def test_integration_real_aqua_rat_union_covers_both_draws_in_full(tmp_path: Pat
         shards, seed=0, receipts_dir=tmp_path / "no-receipts", corpus_root=root
     )
     m = result["manifest"]
+    n_draws_total = 2 + len(m["ondisk_draws"])
 
     print(
         f"\n[integration] draw R: {m['draw_r_rows']} rows "
         f"({m['draw_r_unique_fingerprints']} unique)\n"
         f"[integration] draw P: {m['draw_p_rows']} rows "
         f"({m['draw_p_unique_fingerprints']} unique)\n"
-        f"[integration] union: {m['union_size']}  intersection: {m['intersection_size']}"
+        f"[integration] ondisk draws: {len(m['ondisk_draws'])} "
+        f"({[d['name'] for d in m['ondisk_draws']]})\n"
+        f"[integration] unreadable ondisk draws: {m['unreadable_ondisk_draws']}\n"
+        f"[integration] union: {m['union_size']}  R∩P: {m['intersection_r_p_size']}\n"
+        f"[integration] burned <= {ledger.CAP * n_draws_total} of 97,467 possible "
+        f"({n_draws_total} draw(s))"
     )
+    for d in m["ondisk_draws"]:
+        print(
+            f"[integration]   {d['name']}: {d['rows_covered']}/{d['rows_non_empty_pairs']} "
+            f"rows covered, {d['row_count']} raw rows, sha256={d['sha256']}"
+        )
 
     assert m["draw_r_rows"] == ledger.CAP
     assert m["draw_p_rows"] == ledger.CAP
     assert m["gate"]["passed"] is True
     assert m["gate"]["cap"] == ledger.CAP
-    # DEC-42's stated worst case: at most 2 * CAP, i.e. no overlap at all.
-    assert m["union_size"] <= 2 * ledger.CAP
-    # And it should be a real recovery, not degenerate to one draw entirely.
+    assert m["unreadable_ondisk_draws"] == []
+    # Every discovered draw's rows are fully covered by construction (the union includes
+    # them) -- assert it explicitly rather than trusting `gate.passed` alone.
+    for d in m["ondisk_draws"]:
+        assert d["rows_covered"] == d["rows_non_empty_pairs"]
+    # DEC-42's original worst case (R and P alone, no overlap) generalises to N draws.
+    assert m["union_size"] <= ledger.CAP * n_draws_total
+    # And it should be a real recovery, not degenerate to fewer draws' worth of rows.
     assert m["union_size"] > ledger.CAP
 
     write_target = tmp_path / "burned-aqua_rat.jsonl"
@@ -697,29 +742,14 @@ def test_integration_real_aqua_rat_union_covers_both_draws_in_full(tmp_path: Pat
     lines = write_target.read_text().splitlines()
     assert len(lines) == m["union_size"]
 
-    # The third, dated candidate draw (see the module docstring's "A THIRD, DATED
-    # CANDIDATE DRAW"): report and check what the review measured by hand against this
-    # same real corpus -- 4,982 non-empty pairs, only 585 already inside R union P, so
-    # 4,397 are certified clean by this ledger today.
-    tdc = m["third_draw_candidate"]
-    print(
-        f"\n[integration] third-draw candidate: {tdc}"
-        if tdc is None
-        else (
-            f"\n[integration] third-draw candidate present={tdc['parquet_present']} "
-            f"measured={tdc['measured']} pairs={tdc.get('rows_non_empty_pairs')} "
-            f"covered={tdc.get('rows_covered_by_current_union')} "
-            f"not_covered={tdc.get('rows_certified_clean_by_this_ledger_today')} "
-            f"operator_decision_required={tdc.get('operator_decision_required')}"
-        )
-    )
-    if tdc is not None and tdc["measured"]:
-        assert tdc["rows_non_empty_pairs"] == 4982
-        assert tdc["rows_covered_by_current_union"] == 585
-        assert tdc["rows_certified_clean_by_this_ledger_today"] == 4397
-        assert tdc["operator_decision_required"] is True
-        assert m["operator_decision_required"] is True
-        assert tdc["burning_it_would_exceed_dec42_stated_cap"] is True
+    # The known on-disk derived sample (reason/aqua_rat-raw/derived/sample-4982-seed0.parquet)
+    # measured 4,982 raw rows -- if it is still present and unchanged, it must show up as
+    # a discovered draw, fully covered, and not among the unreadable ones.
+    known_name = "reason/aqua_rat-raw/derived/sample-4982-seed0.parquet"
+    known = next((d for d in m["ondisk_draws"] if d["name"] == known_name), None)
+    if known is not None:
+        assert known["row_count"] == ledger.CAP
+        assert known["rows_covered"] == known["rows_non_empty_pairs"]
 
 
 @needs_real_corpus
