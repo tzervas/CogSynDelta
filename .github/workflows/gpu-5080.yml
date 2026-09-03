@@ -9,8 +9,14 @@ on:
     branches: [feat/agent-harness, main]
 
 concurrency:
+  # cancel-in-progress is exempted for main: Forgejo reports a cancelled run as
+  # `failure`, so cancelling a superseded main run mints a red status that no code
+  # change can clear. Same exemption as poc-ci.yml, ci.yml and fleet-ci.yml.
+  # Keyed on github.ref so push and pull_request for the same branch land in separate
+  # groups (`refs/heads/...` vs `refs/pull/N/merge`) and only supersede runs of the
+  # same event.
   group: gpu5080-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
