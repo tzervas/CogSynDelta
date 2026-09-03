@@ -81,10 +81,15 @@ def make_checkpoint(
 
 
 def _default_recorded(checkpoint: Path) -> str:
-    """A timestamp comfortably after the checkpoint file's own mtime, so a fixture
-    that doesn't care about the older-than-checkpoint check gets a receipt that
-    passes it by default. Fixtures that DO care pass `recorded=` explicitly."""
-    ts = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC) + timedelta(minutes=5)
+    """The realistic case, not a comfortable one: every real receipt producer
+    (csd-quantize.py, csd-benchmark.py, the pretrain loop) stamps `recorded` with
+    time.strftime("%Y-%m-%dT%H:%M:%SZ") moments after torch.save writes the
+    checkpoint -- frequently in the SAME wall-clock second, since the checkpoint
+    mtime carries sub-second precision the receipt's whole-second stamp cannot
+    express. Using a +5-minute offset here would conceal exactly that defect, so
+    this default reproduces the same-second case instead. Fixtures that want a
+    different relationship to the checkpoint's mtime pass `recorded=` explicitly."""
+    ts = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC).replace(microsecond=0)
     return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -321,7 +326,9 @@ def test_binding_sha_absent_aborts(tmp_path: Path) -> None:
 
 def test_binding_older_than_checkpoint_aborts(tmp_path: Path) -> None:
     # sha256 matches (belt-and-braces case: a legacy receipt whose sha happens to be
-    # right) but its recorded timestamp predates the checkpoint file's mtime.
+    # right) but its recorded timestamp predates the checkpoint file's mtime by
+    # hours -- the realistic legacy case (a receipt for a superseded final.pt), well
+    # outside the one-second grace period the same-second fix introduces.
     checkpoint = make_checkpoint(tmp_path)
     mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC)
     stale = (mtime - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -330,6 +337,24 @@ def test_binding_older_than_checkpoint_aborts(tmp_path: Path) -> None:
     with pytest.raises(mod.PublishAbortError, match="predates the checkpoint"):
         mod.assert_receipt_bound_to_checkpoint(
             receipt, mod.sha256_of(checkpoint), mtime, "training"
+        )
+
+
+def test_binding_one_second_before_floored_mtime_aborts(tmp_path: Path) -> None:
+    """The one-second grace period floors the checkpoint's mtime to whole seconds
+    before comparing -- it must NOT become an open-ended grace period. A receipt
+    timestamped one full second before that floored mtime still describes a
+    checkpoint that didn't exist yet, and must still abort."""
+    checkpoint = make_checkpoint(tmp_path)
+    floored_mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC).replace(
+        microsecond=0
+    )
+    too_early = (floored_mtime - timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    receipt_path = make_training_receipt(tmp_path, checkpoint, recorded=too_early)
+    receipt = json.loads(receipt_path.read_text())
+    with pytest.raises(mod.PublishAbortError, match="predates the checkpoint"):
+        mod.assert_receipt_bound_to_checkpoint(
+            receipt, mod.sha256_of(checkpoint), floored_mtime, "training"
         )
 
 
@@ -347,8 +372,12 @@ def test_binding_timestamp_absent_aborts(tmp_path: Path) -> None:
 
 def test_binding_matches_passes(tmp_path: Path) -> None:
     checkpoint = make_checkpoint(tmp_path)
-    mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC)
-    receipt_path = make_training_receipt(tmp_path, checkpoint)  # default: real sha, later timestamp
+    # Floored to whole seconds, matching how the real caller (main()) derives
+    # checkpoint_mtime before ever calling this function -- see its docstring.
+    mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC).replace(microsecond=0)
+    receipt_path = make_training_receipt(
+        tmp_path, checkpoint
+    )  # default: real sha, same-second timestamp
     receipt = json.loads(receipt_path.read_text())
     mod.assert_receipt_bound_to_checkpoint(
         receipt, mod.sha256_of(checkpoint), mtime, "training"
@@ -388,11 +417,43 @@ def test_build_plan_aborts_when_quant_receipt_unbound(tmp_path: Path) -> None:
 def test_consistent_synthetic_trio_publishes(tmp_path: Path) -> None:
     """The positive case: training, eval and quant receipts that all correctly name
     this exact checkpoint's sha256 and are all timestamped after it -- the publish
-    must proceed (mocked HfApi; no network)."""
+    must proceed (mocked HfApi; no network). `_default_recorded` stamps these in the
+    SAME wall-clock second as the checkpoint's mtime (see its docstring), so this is
+    also the realistic case: every producer's whole-second `recorded` stamp landing
+    in the same second as the checkpoint's own (sub-second-precision) mtime."""
     checkpoint = make_checkpoint(tmp_path)
     train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
     eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress")
     quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, quant_path
+    )
+    assert plan.bound_receipt_labels == ("training", "eval", "quant")
+
+    fake_api = MagicMock()
+    fake_api.repo_info.return_value = SimpleNamespace(private=True)
+    fake_api.get_paths_info.return_value = []
+    with (
+        patch("huggingface_hub.HfApi", return_value=fake_api),
+        patch.dict("os.environ", {"HF_TOKEN": "tok"}),
+    ):
+        result = mod.publish(plan)
+    assert set(result["uploaded"]) == set(plan.files.keys())
+    assert fake_api.upload_file.call_count == len(plan.files)
+
+
+def test_same_second_receipt_publishes(tmp_path: Path) -> None:
+    """Pinned explicitly, not just via the shared default: a training receipt
+    timestamped in the exact same second as the checkpoint's mtime, with a correct
+    sha256, must publish -- not abort on a nanosecond-vs-whole-second mismatch
+    between the checkpoint's mtime and every receipt producer's whole-second
+    `recorded` stamp (mocked HfApi; no network)."""
+    checkpoint = make_checkpoint(tmp_path)
+    same_second = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC).replace(microsecond=0)
+    recorded = same_second.strftime("%Y-%m-%dT%H:%M:%SZ")
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress", recorded=recorded)
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress", recorded=recorded)
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress", recorded=recorded)
     plan = mod.build_plan(
         "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, quant_path
     )

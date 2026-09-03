@@ -439,7 +439,12 @@ def assert_receipt_bound_to_checkpoint(
     (b) belt-and-braces for a receipt that predates this field: the receipt's own
         recorded timestamp must not be older than the checkpoint file's mtime -- a
         receipt cannot describe a checkpoint that did not yet exist when it was
-        recorded.
+        recorded. The mtime is floored to whole seconds before this comparison (a
+        one-second grace period), since every receipt producer stamps recorded_at
+        with whole-second resolution (time.strftime("%Y-%m-%dT%H:%M:%SZ")) while the
+        checkpoint file's mtime carries sub-second precision -- without the floor, a
+        receipt genuinely written in the same second as the checkpoint's torch.save
+        would be spuriously rejected.
     """
     recorded_sha = receipt_checkpoint_sha256(receipt, label)
     if recorded_sha != checkpoint_sha256:
@@ -453,8 +458,9 @@ def assert_receipt_bound_to_checkpoint(
     if recorded_ts < checkpoint_mtime:
         raise PublishAbortError(
             f"{label} receipt is timestamped {recorded_ts.isoformat()}, before the "
-            f"checkpoint file's mtime {checkpoint_mtime.isoformat()} -- refusing: "
-            f"this {label} receipt predates the checkpoint it claims to describe "
+            f"checkpoint file's mtime {checkpoint_mtime.isoformat()} (floored to "
+            "whole seconds, a one-second grace period) -- refusing: this "
+            f"{label} receipt predates the checkpoint it claims to describe "
             "(a legacy receipt for a superseded final.pt)"
         )
 
@@ -672,7 +678,14 @@ def build_plan(
 
     checkpoint = checkpoint_path_from_receipt(train_receipt)
     checkpoint_sha256 = verify_checkpoint_sha(checkpoint)
-    checkpoint_mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC)
+    # Floored to whole seconds: every receipt producer stamps recorded_at with
+    # time.strftime("%Y-%m-%dT%H:%M:%SZ"), which has no sub-second resolution, while
+    # the checkpoint file's mtime does -- comparing at nanosecond precision would
+    # spuriously reject a legitimate receipt written in the same second as the
+    # torch.save that produced the checkpoint. See assert_receipt_bound_to_checkpoint.
+    checkpoint_mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC).replace(
+        microsecond=0
+    )
 
     # Region-matching (above) is not enough to say a receipt is *for* this checkpoint --
     # see the module docstring's "RECEIPTS ARE BOUND TO THE CHECKPOINT" section. Every
