@@ -75,6 +75,11 @@ _SCOPED_RELPATHS: tuple[str, ...] = (
     # yet -- added here (not hardcoded above) so it is covered automatically once it does,
     # without this file silently going stale about a scope that changed.
     "src/cogsyndelta/regions/retrieve.py",
+    # regions/memory.py (DEC-02, row W4) is retrieve.py's successor for exactly the
+    # checkpoint-reading code this scope exists to police: it loads a trained checkpoint
+    # for the BEIR full-pool eval, and two more (DEC-24's shared-embedding-table
+    # divergence) -- all three through `load_checkpoint`, never a direct `torch.load`.
+    "src/cogsyndelta/regions/memory.py",
 )
 
 _TORCH_LOAD_RE = re.compile(r"torch\.load\(")

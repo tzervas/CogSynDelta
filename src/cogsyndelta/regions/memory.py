@@ -12,12 +12,15 @@ run over the UNION of both corpora, read by two EVALUATIONS of the same embeddin
   into `pretrain_region` via `graded_shards`, exactly as `compress_config` does.
 
   RETRIEVAL HEAD -- `retrieve`'s objective: FiQA/NaturalQuestions/GooAQ pairs in
-  training. `pretrain_region`'s own `held_out` (a 512-pair diagonal eval) covers this at
-  this module's current scope -- the real full-57,638-passage-pool BEIR gate (the SAME
-  upgrade `regions/retrieve.py` used to apply over the diagonal eval, and for the
-  identical reason: recall@10 out of 512 and recall@10 out of 57,638 are different
-  measurements sharing a name) is layered on top separately, once
-  `cogsyndelta.eval.beir_fiqa` exists.
+  training. `pretrain_region`'s own `held_out` (a 512-pair diagonal eval) covers the
+  in-mixture number; `run_memory_pretrain` below layers `cogsyndelta.eval.beir_fiqa`'s
+  full-57,638-passage-pool BEIR ranking on top -- the SAME upgrade `regions/retrieve.py`
+  used to apply over the diagonal eval, and for the identical reason (recall@10 out of
+  512 and recall@10 out of 57,638 are different measurements sharing a name) -- adding a
+  `retrieval`/`gates` block to this region's receipt the same way
+  `regions/retrieve.py`'s `run_retrieve_pretrain` used to layer its own `retrieval`
+  block over `pretrain_region`'s. `gates` carries the five pre-registered W4 conditions
+  from `cogsyndelta.eval.beir_fiqa.w4_gates` (DEC-09).
 
 WHY FIQA IS THE PRIMARY SOURCE, NOT ALLNLI
 DEC-24 (§6.2): `memory` inherits `retrieve`'s token embedding table, "because it is the
@@ -49,7 +52,14 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import torch
+from tokenizers import Tokenizer
+
+from cogsyndelta.eval import beir_fiqa
+from cogsyndelta.regions._checkpoint import load_checkpoint
 from cogsyndelta.regions.pretrain import PretrainConfig, pretrain_region
+from cogsyndelta.regions.pretrain import _tokenize as tokenize_batch
+from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
 
 MEMORY_ROOT = Path(os.environ.get("CSD_MEMORY_ROOT", "/mnt/fleet-datasets/csd"))
 """Read-only NFS export root. `memory`'s corpus is the UNION of `compress`'s
@@ -79,7 +89,7 @@ P1_GATE = {"stsb_spearman": 0.40, "emb_std": 0.01}
 """The SAME basic sanity floor `regions/compress.py`'s `P1_GATE` uses -- "did the
 consolidation head learn anything at all", independent of the much stricter
 parent-comparison gate (§4.0's W4 row, condition (1): beat compress's OWN measured
-0.7588) that `cogsyndelta.eval.beir_fiqa`'s `gates` block will evaluate separately."""
+0.7588) that `cogsyndelta.eval.beir_fiqa`'s `gates` block evaluates separately."""
 
 
 def _shards(pattern: str) -> list[str]:
@@ -162,9 +172,9 @@ def consolidation_gate_report(receipt: dict[str, Any]) -> dict[str, Any]:
     function's own docstring for why `emb_std` is read from the graded evaluation and why
     a passing gate that does not beat the untrained model is reported as such rather than
     as a bare PASS. The much stricter W4 row gate (beat `compress`'s own 0.7588,
-    §4.0's rank clause, ...) will live in `cogsyndelta.eval.beir_fiqa`'s `gates` block,
-    which also covers the retrieval head; this function covers only the consolidation
-    half, and only the "trained at all" question.
+    §4.0's rank clause, ...) lives in `cogsyndelta.eval.beir_fiqa`'s `gates` block, which
+    also covers the retrieval head; this function covers only the consolidation half, and
+    only the "trained at all" question.
 
     Args:
         receipt: The dict returned by :func:`pretrain_region` for a `memory_config()` run.
@@ -214,18 +224,206 @@ def consolidation_gate_report(receipt: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run memory-region pretraining and print the consolidation gate verdict.
+def embedding_table_divergence(
+    checkpoint_a: str, checkpoint_b: str, device: str | torch.device = "cpu"
+) -> dict[str, Any]:
+    """DEC-24 (§6.2): "the divergence between the two parents' tables is measured and
+    recorded in W4's receipt." Mean cosine similarity and mean L2 distance, row for row,
+    between two regions' token embedding tables over the SAME vocabulary -- every text
+    region in this project shares one GPT-2 BPE tokenizer, so row `i` names the same
+    token in both tables and a row-wise comparison is meaningful without alignment.
 
-    The retrieval head's own gate (the BEIR full-pool eval and §4.0's five pre-registered
-    W4 conditions) is added by `cogsyndelta.eval.beir_fiqa` once that module exists; this
-    entry point covers what `pretrain_region` alone produces today.
+    Loaded through `load_checkpoint` (DEC-40/W0c's one sanctioned `torch.load` entry
+    point), not a direct call.
+
+    Args:
+        checkpoint_a: A `TextEncoder` checkpoint (typically `retrieve`'s).
+        checkpoint_b: Another (typically `compress`'s).
+        device: Where to run the comparison.
+
+    Returns:
+        `{"a", "b", "mean_cosine_similarity", "mean_l2_distance", "n_tokens"}`.
+
+    Raises:
+        ValueError: The two tables' shapes disagree -- they cannot have been trained
+            under the same tokenizer/width and a row-wise comparison would be meaningless.
+    """
+    dev = torch.device(device)
+    state_a = load_checkpoint(checkpoint_a, map_location=dev)
+    state_b = load_checkpoint(checkpoint_b, map_location=dev)
+    table_a = state_a["model"]["embed.weight"]
+    table_b = state_b["model"]["embed.weight"]
+    if tuple(table_a.shape) != tuple(table_b.shape):
+        raise ValueError(
+            f"cannot compare embedding tables of different shape: {checkpoint_a} is "
+            f"{tuple(table_a.shape)}, {checkpoint_b} is {tuple(table_b.shape)}"
+        )
+    a = torch.nn.functional.normalize(table_a.float(), dim=-1)
+    b = torch.nn.functional.normalize(table_b.float(), dim=-1)
+    cosine = (a * b).sum(dim=-1)
+    l2 = (table_a.float() - table_b.float()).norm(dim=-1)
+    return {
+        "a": checkpoint_a,
+        "b": checkpoint_b,
+        "mean_cosine_similarity": cosine.mean().item(),
+        "mean_l2_distance": l2.mean().item(),
+        "n_tokens": table_a.size(0),
+    }
+
+
+def run_memory_pretrain(
+    *,
+    steps: int = 2000,
+    batch_size: int = 256,
+    lr: float = 3e-4,
+    warmup_steps: int = 200,
+    max_len: int = 96,
+    seed: int = 0,
+    device: str = "auto",
+    holdout_pairs: int = 512,
+    eval_every: int = 100,
+    checkpoint_every: int = 500,
+    token_loss_weight: float = TOKEN_LOSS_WEIGHT,
+    decorr_weight: float = DECORR_WEIGHT,
+    encoder: TextEncoderConfig | None = None,
+    tokenizer_path: str = "/mnt/fleet-datasets/tritter/gpt2_tokenizer.json",
+    out_dir: str = "receipts",
+    eval_split: str = "dev",
+    eval_root: Path | None = None,
+    retrieve_checkpoint: str | None = None,
+    compress_checkpoint: str | None = None,
+    skip_lexical: bool = False,
+) -> dict[str, Any]:
+    """Train `memory` (both heads' training corpus, §4.0's terms on) and layer the
+    retrieval head's real gate on top: `cogsyndelta.eval.beir_fiqa`'s full-57,638-passage
+    BEIR ranking, a BM25 reference from the same pool/qrels, and the five pre-registered
+    W4 conditions -- the same two-stage shape `regions/retrieve.py`'s
+    `run_retrieve_pretrain` used to apply to `retrieve` alone, extended to a `gates` block
+    (DEC-09).
+
+    Args:
+        retrieve_checkpoint: DEC-24 -- if given, `memory`'s trunk inherits this
+            checkpoint's token embedding table instead of a random init (forwarded as
+            `PretrainConfig.init_embedding_from`).
+        compress_checkpoint: If ALSO given (together with `retrieve_checkpoint`), the
+            divergence between the two parents' tables is measured
+            (`embedding_table_divergence`) and recorded, even though only `retrieve`'s
+            table is the one actually inherited.
+        eval_root: Dataset root for the BEIR eval (FiQA pool/qrels); defaults to
+            `cogsyndelta.eval.beir_fiqa.DEFAULT_FIQA_ROOT`. Independent of `MEMORY_ROOT`
+            (which resolves TRAINING sources) so a test can point them at different
+            fixture trees.
+        skip_lexical: Skip the BM25 reference (only to save CPU on a rerun, matching
+            `regions/retrieve.py`'s own `--skip-lexical`). When set, `gates` is written
+            with `passed: None` and a note -- gate (c) needs BM25 and cannot be silently
+            treated as passed.
+
+    Returns:
+        The pretrain receipt extended with `retrieval` and (unless `skip_lexical`)
+        `gates` blocks, re-written to `receipt["receipt_path"]`.
+    """
+    overrides: dict[str, Any] = {}
+    if retrieve_checkpoint is not None:
+        overrides["init_embedding_from"] = retrieve_checkpoint
+
+    cfg = memory_config(
+        steps=steps,
+        batch_size=batch_size,
+        lr=lr,
+        warmup_steps=warmup_steps,
+        max_len=max_len,
+        seed=seed,
+        device=device,
+        holdout_pairs=holdout_pairs,
+        eval_every=eval_every,
+        checkpoint_every=checkpoint_every,
+        token_loss_weight=token_loss_weight,
+        decorr_weight=decorr_weight,
+        encoder=encoder or TextEncoderConfig(dim=256, depth=4, n_heads=4, max_len=max_len),
+        tokenizer_path=tokenizer_path,
+        out_dir=out_dir,
+        **overrides,
+    )
+    receipt = pretrain_region(cfg)
+
+    if retrieve_checkpoint is not None and compress_checkpoint is not None:
+        divergence = embedding_table_divergence(
+            retrieve_checkpoint, compress_checkpoint, device=receipt["device"]
+        )
+        receipt["shared_embedding_table"] = {
+            **receipt["shared_embedding_table"],
+            "divergence_from_compress": divergence,
+        }
+
+    checkpoint = Path(receipt.get("checkpoint", ""))
+    if not checkpoint.is_file():
+        raise FileNotFoundError(
+            f"pretrain_region did not leave a final checkpoint at {checkpoint}; without "
+            f"the trained weights the retrieval head's full-pool ranking cannot be measured"
+        )
+    device_t = torch.device(receipt["device"])
+    tok = Tokenizer.from_file(tokenizer_path)
+
+    state = load_checkpoint(checkpoint, map_location=device_t)
+    trained = TextEncoder(TextEncoderConfig(**state["config"]), name="memory").to(device_t)
+    trained.load_state_dict(state["model"])
+
+    # `memory`'s own random-init baseline (gate (4)), at the SAME seed the training run's
+    # own `untrained_baseline` used -- see `pretrain_region`, which seeds identically.
+    torch.manual_seed(seed)
+    untrained = TextEncoder(TextEncoderConfig(**state["config"]), name="memory-untrained").to(
+        device_t
+    )
+
+    def tokenize(texts: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
+        return tokenize_batch(tok, texts, max_len, device_t)
+
+    task = beir_fiqa.build_ranking_task(eval_split, pool="corpus", root=eval_root)
+    full_pool_trained = beir_fiqa.encoder_rank_metrics(trained, tokenize, task)
+    full_pool_untrained = beir_fiqa.encoder_rank_metrics(untrained, tokenize, task)
+    del untrained
+
+    full_pool_bm25: dict[str, float] = {}
+    if not skip_lexical:
+        full_pool_bm25 = beir_fiqa.bm25_metrics(task)
+
+    receipt["retrieval"] = {
+        "eval_split": eval_split,
+        "full_pool": {
+            "task": task.summary(),
+            "trained": full_pool_trained,
+            "untrained": full_pool_untrained,
+            "lexical_bm25": full_pool_bm25,
+        },
+        "licence": "BeIR/fiqa + BeIR/fiqa-qrels, both cc-by-sa-4.0.",
+    }
+    receipt["gates"] = (
+        beir_fiqa.w4_gates(
+            memory_receipt=receipt,
+            full_pool_trained=full_pool_trained,
+            full_pool_bm25=full_pool_bm25,
+            full_pool_untrained=full_pool_untrained,
+        )
+        if full_pool_bm25
+        else {
+            "passed": None,
+            "note": "skip_lexical=True; gate (c) needs a BM25 reference and was not "
+            "computed, so the gates block is not evaluable",
+        }
+    )
+    Path(receipt["receipt_path"]).write_text(json.dumps(receipt, indent=2) + "\n")
+    return receipt
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run memory-region pretraining, the BEIR full-pool eval, and print the five W4
+    gates' verdict alongside the consolidation gate.
 
     Args:
         argv: Command line arguments; defaults to ``sys.argv[1:]``.
 
     Returns:
-        0 when the consolidation gate passes, 1 when it does not.
+        0 when every gate passes, 1 when any does not.
     """
     parser = argparse.ArgumentParser(description="Pretrain the memory region (row W4).")
     parser.add_argument("--steps", type=int, default=2000)
@@ -240,29 +438,45 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--token-loss-weight", type=float, default=TOKEN_LOSS_WEIGHT)
     parser.add_argument("--decorr-weight", type=float, default=DECORR_WEIGHT)
+    parser.add_argument("--eval-split", default="dev", choices=["dev", "test"])
+    parser.add_argument("--retrieve-checkpoint", default=None)
+    parser.add_argument("--compress-checkpoint", default=None)
+    parser.add_argument("--skip-lexical", action="store_true")
     parser.add_argument("--out-dir", default="receipts")
     args = parser.parse_args(argv)
 
-    receipt = pretrain_region(
-        memory_config(
-            steps=args.steps,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            warmup_steps=args.warmup_steps,
-            max_len=args.max_len,
-            device=args.device,
-            eval_every=args.eval_every,
-            holdout_pairs=args.holdout_pairs,
-            checkpoint_every=args.checkpoint_every,
-            seed=args.seed,
-            token_loss_weight=args.token_loss_weight,
-            decorr_weight=args.decorr_weight,
-            out_dir=args.out_dir,
+    receipt = run_memory_pretrain(
+        steps=args.steps,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        warmup_steps=args.warmup_steps,
+        max_len=args.max_len,
+        device=args.device,
+        eval_every=args.eval_every,
+        holdout_pairs=args.holdout_pairs,
+        checkpoint_every=args.checkpoint_every,
+        seed=args.seed,
+        token_loss_weight=args.token_loss_weight,
+        decorr_weight=args.decorr_weight,
+        eval_split=args.eval_split,
+        retrieve_checkpoint=args.retrieve_checkpoint,
+        compress_checkpoint=args.compress_checkpoint,
+        skip_lexical=args.skip_lexical,
+        out_dir=args.out_dir,
+    )
+    consolidation = consolidation_gate_report(receipt)
+    gates = receipt["gates"]
+    print(
+        json.dumps(
+            {
+                "receipt": receipt["receipt_path"],
+                "consolidation_gate": consolidation,
+                "gates": gates,
+            },
+            indent=2,
         )
     )
-    report = consolidation_gate_report(receipt)
-    print(json.dumps({"receipt": receipt["receipt_path"], "consolidation_gate": report}, indent=2))
-    return 0 if report["passed"] else 1
+    return 0 if (consolidation["passed"] and gates.get("passed")) else 1
 
 
 if __name__ == "__main__":
