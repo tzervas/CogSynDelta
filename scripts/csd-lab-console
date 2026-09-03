@@ -490,13 +490,38 @@ def apply_token() -> str:
 
 
 def check_apply_auth(header: str) -> bool:
-    """Bearer token compare. Why: worktree writes without SSH."""
+    """Bearer token compare. Why: worktree writes without SSH.
+
+    Requires the literal, case-sensitive "Bearer " scheme -- RFC 7235
+    registers auth-scheme names case-insensitively, but this console is
+    intentionally stricter: "bearer TOKEN", "BEARER TOKEN", and a bare
+    token with no scheme at all are all refused (401) rather than guessed
+    at. Nothing is stripped from the token except a single trailing CRLF
+    that the header parser can leave on a value (e.g. an obs-fold
+    continuation); any other trailing byte the client actually sent --
+    including plain trailing whitespace -- is compared literally, so
+    "Bearer TOKEN " (real trailing space) never matches "TOKEN".
+
+    Fails closed (False, never raises) on input hmac.compare_digest cannot
+    safely take: it only accepts ASCII-only str (or bytes/bytearray), and
+    a raw Authorization byte >= 0x80 decodes -- via http.client's latin-1
+    header parsing -- to a non-ASCII str that would otherwise raise
+    TypeError here, crashing the request unauthenticated instead of
+    refusing it. check_api_auth() also wraps its call to this function in
+    try/except as a second, redundant fail-closed layer; the isascii()
+    check below is the actual fix, not the belt-and-suspenders one.
+    """
     want = apply_token()
     if not want:
         return False
-    got = header or ""
-    if got.lower().startswith("bearer "):
-        got = got[7:].strip()
+    header = header or ""
+    if header.endswith("\r\n"):
+        header = header[:-2]
+    if not header.startswith("Bearer "):
+        return False
+    got = header[len("Bearer ") :]
+    if not got.isascii():
+        return False
     return hmac.compare_digest(got, want)
 
 
@@ -527,12 +552,23 @@ def check_api_auth(auth_header: str) -> tuple[int, bytes] | None:
     Reuses check_apply_auth()/CSD_APPLY_TOKEN -- the exact bearer mechanism
     POST /api/apply already used before this change -- rather than
     inventing a second token or comparison.
+
+    The check_apply_auth() call is wrapped in try/except: it already fails
+    closed on every input it was written to anticipate (see its
+    docstring), but this is the single choke point every /api caller
+    passes through, so an exception here -- anticipated or not -- must
+    still produce 401, never an uncaught traceback that abandons the
+    connection without a response.
     """
     if not apply_token():
         return 503, json.dumps(
             {"error": "lab console misconfigured: CSD_APPLY_TOKEN is not set"}
         ).encode()
-    if not check_apply_auth(auth_header):
+    try:
+        authorized = check_apply_auth(auth_header)
+    except Exception:
+        authorized = False
+    if not authorized:
         return 401, b'{"error":"unauthorized"}'
     return None
 
