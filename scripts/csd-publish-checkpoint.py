@@ -281,39 +281,68 @@ def _is_relative_to(path: Path, root: Path) -> bool:
         return False
 
 
+def _contained_path(raw_value: str, *, what: str) -> Path:
+    """Resolve a receipt-controlled path string and require it to be contained.
+
+    Shared by `checkpoint_path_from_receipt` and `quantized_path_from_receipt` --
+    both read a path out of a receipt that anyone able to write (or misdirect an
+    operator/agent into pointing `--receipt`/`--quant-receipt` at) controls. Without
+    containment this becomes arbitrary-file upload: whatever the path names gets
+    hashed, uploaded, and its sha256 published in the model card. So: resolve
+    symlinks/`..` first, then require the resolved path to sit under an allow-listed
+    root AND carry an allow-listed suffix, and abort before touching the filesystem
+    again (no hashing, no upload) if either check fails.
+    """
+    raw = Path(raw_value)
+    resolved = raw.resolve()
+
+    if resolved.suffix not in ALLOWED_CHECKPOINT_SUFFIXES:
+        raise PublishAbortError(
+            f"receipt {what} {raw} has suffix {resolved.suffix!r}, not one of "
+            f"{sorted(ALLOWED_CHECKPOINT_SUFFIXES)} -- refusing to treat an arbitrary "
+            f"receipt-named file as a {what}"
+        )
+
+    allowed_roots = [r.resolve() for r in ALLOWED_CHECKPOINT_ROOTS]
+    if not any(_is_relative_to(resolved, root) for root in allowed_roots):
+        raise PublishAbortError(
+            f"receipt {what} {raw} resolves to {resolved}, outside the allow-listed "
+            f"checkpoint roots {[str(r) for r in ALLOWED_CHECKPOINT_ROOTS]} -- refusing "
+            "to upload a file a receipt points at outside those roots"
+        )
+    return resolved
+
+
 def checkpoint_path_from_receipt(receipt: dict[str, Any]) -> Path:
     """The checkpoint a receipt names -- resolved and contained, never trusted verbatim.
 
-    A receipt's 'checkpoint' value is attacker-reachable (anyone who can write a receipt
-    JSON, or misdirect --receipt at one). Without containment this becomes arbitrary-file
-    upload: whatever the path names gets hashed, uploaded, and its sha256 published in the
-    model card. So: resolve symlinks/`..` first, then require the resolved path to sit
-    under an allow-listed root AND carry an allow-listed suffix, and abort before touching
-    the filesystem again (no hashing, no upload) if either check fails.
+    See `_contained_path` for the containment rules this enforces.
     """
     ckpt = receipt.get("checkpoint") or receipt.get("artifacts", {}).get("checkpoint")
     if not ckpt:
         raise PublishAbortError(
             "training receipt has no 'checkpoint' (or artifacts.checkpoint) path"
         )
-    raw = Path(ckpt)
-    resolved = raw.resolve()
+    return _contained_path(ckpt, what="checkpoint")
 
-    if resolved.suffix not in ALLOWED_CHECKPOINT_SUFFIXES:
-        raise PublishAbortError(
-            f"receipt checkpoint {raw} has suffix {resolved.suffix!r}, not one of "
-            f"{sorted(ALLOWED_CHECKPOINT_SUFFIXES)} -- refusing to treat an arbitrary "
-            "receipt-named file as a checkpoint"
-        )
 
-    allowed_roots = [r.resolve() for r in ALLOWED_CHECKPOINT_ROOTS]
-    if not any(_is_relative_to(resolved, root) for root in allowed_roots):
+def quantized_path_from_receipt(receipt: dict[str, Any]) -> Path:
+    """The packed quantized artifact a quant receipt names -- resolved and contained.
+
+    Written by `cogsyndelta.quant.ptq.save_packed_artifact` (see
+    `scripts/csd-quantize.py`) into `artifacts.quantized_path`; read here under the
+    exact same containment rules as `checkpoint_path_from_receipt`, since this value
+    is just as receipt-controlled as the checkpoint's.
+    """
+    val = receipt.get("artifacts", {}).get("quantized_path")
+    if not val:
         raise PublishAbortError(
-            f"receipt checkpoint {raw} resolves to {resolved}, outside the allow-listed "
-            f"checkpoint roots {[str(r) for r in ALLOWED_CHECKPOINT_ROOTS]} -- refusing "
-            "to upload a file a receipt points at outside those roots"
+            "quant receipt has no artifacts.quantized_path -- refusing: a quant "
+            "receipt without a persisted packed artifact names nothing this tool "
+            "can upload alongside the fp32 checkpoint. Regenerate it with "
+            "scripts/csd-quantize.py (which now writes this field)."
         )
-    return resolved
+    return _contained_path(val, what="quantized artifact")
 
 
 def receipt_region(receipt: dict[str, Any], label: str) -> str:
@@ -399,6 +428,56 @@ def receipt_checkpoint_sha256(receipt: dict[str, Any], label: str) -> str:
             "construction, and that is correct, not a defect to route around."
         )
     return str(val)
+
+
+def receipt_quantized_sha256(receipt: dict[str, Any]) -> str:
+    """The quantized artifact's sha256 a quant receipt itself declares -- required,
+    not merely consulted if present.
+
+    Looked up ONLY at `artifacts.quantized_sha256` (the field
+    `cogsyndelta.quant.ptq.save_packed_artifact` writes into the quant receipt) --
+    unlike `receipt_checkpoint_sha256` there is no top-level fallback, because no
+    quant receipt ever wrote this field anywhere else. Absence aborts: a quant
+    receipt with no declared sha256 for its own packed artifact names nothing this
+    tool can verify before upload, and publishing an unverified file next to the
+    fp32 checkpoint under one card would be worse than not publishing it at all.
+    """
+    artifacts = receipt.get("artifacts")
+    if not isinstance(artifacts, dict):
+        artifacts = {}
+    val = artifacts.get("quantized_sha256")
+    if not val:
+        raise PublishAbortError(
+            "quant receipt has no artifacts.quantized_sha256 -- refusing: the "
+            "quantized artifact this receipt names cannot be verified before "
+            "upload. Regenerate the quant receipt with scripts/csd-quantize.py "
+            "(which now writes this field)."
+        )
+    return str(val)
+
+
+def verify_quantized_sha(quantized: Path, receipt: dict[str, Any]) -> str:
+    """Existence-check the quantized artifact and require its real sha256 to equal
+    what the quant receipt itself declares, before any upload.
+
+    Mirrors `verify_checkpoint_sha` + the sha half of
+    `assert_receipt_bound_to_checkpoint`, but for the packed artifact rather than
+    the fp32 checkpoint: computed from the file itself (never trusted from the
+    receipt), and checked against the receipt's own claim rather than merely
+    returned, because unlike the checkpoint there is no separate binding pass that
+    would otherwise catch a mismatch here.
+    """
+    if not quantized.is_file():
+        raise PublishAbortError(f"quantized artifact not found: {quantized}")
+    actual = sha256_of(quantized)
+    declared = receipt_quantized_sha256(receipt)
+    if actual != declared:
+        raise PublishAbortError(
+            f"quant receipt's artifacts.quantized_sha256 {declared!r} does not "
+            f"match the quantized artifact's actual sha256 {actual!r} -- refusing: "
+            f"{quantized} is not the exact bytes this receipt measured"
+        )
+    return actual
 
 
 def receipt_timestamp(receipt: dict[str, Any], label: str) -> datetime:
@@ -510,6 +589,8 @@ def build_card(
     train_receipt: dict[str, Any],
     eval_receipt: dict[str, Any] | None,
     quant_receipt: dict[str, Any] | None,
+    quantized_filename: str | None = None,
+    quantized_sha256: str | None = None,
 ) -> str:
     corpus = train_receipt.get("corpus", {})
     contamination = train_receipt.get("contamination", {})
@@ -581,6 +662,25 @@ def build_card(
         ]
     else:
         parts.append("_No quant receipt supplied -- this checkpoint is fp32._\n")
+    if quant_receipt is not None and quantized_filename is not None:
+        parts += [
+            "## Quantized artifact",
+            "",
+            "A packed, sub-byte-quantized copy of this checkpoint's weights -- NOT the "
+            "primary artifact; `final.pt` above (fp32) remains the required weights for "
+            "this repo. See `cogsyndelta.quant.ptq` for the packing format.",
+            "",
+            f"- **File:** `{quantized_filename}`",
+            f"- **Compression ratio:** {_fmt(quant_receipt.get('compression_ratio'))}x",
+            f"- **Width histogram (bits -> tensor count):** "
+            f"{_fmt(quant_receipt.get('width_histogram'))}",
+            f"- **Stored bytes:** {_fmt(quant_receipt.get('stored_bytes'))}",
+            f"- **Metric drop vs fp32:** {_fmt(quant_receipt.get('drop'))} "
+            f"(tolerance {_fmt(quant_receipt.get('tolerance'))})",
+            f"- **Within budget:** {_fmt(quant_receipt.get('within_budget'))}",
+            f"- **Quantized artifact sha256:** `{quantized_sha256}`",
+            "",
+        ]
     parts += [
         "## Training config",
         "",
@@ -652,6 +752,11 @@ class Plan:
     card: str
     files: dict[str, Path | bytes] = field(default_factory=dict)
     """path_in_repo -> local Path or in-memory bytes (the README)."""
+    quantized_path: Path | None = None
+    quantized_sha256: str | None = None
+    """Set only when a --quant-receipt was supplied, its own artifacts.quantized_sha256
+    verified against the file on disk, and that file added to `files` -- never the
+    primary artifact; `checkpoint_path` above stays the one required weights file."""
 
 
 def build_plan(
@@ -706,6 +811,18 @@ def build_plan(
         )
         bound_receipt_labels.append("quant")
 
+    # The quant receipt binds to the fp32 checkpoint above (region + sha256 + time),
+    # same as every other receipt -- but that says nothing about whether the SEPARATE
+    # quantized artifact it names is the exact bytes it measured. Verify that
+    # independently, by sha256, before the file ever enters the upload plan. Never
+    # promoted to the primary artifact: `checkpoint.name` above stays required and
+    # unconditional regardless of whether this succeeds.
+    quantized_path: Path | None = None
+    quantized_sha256: str | None = None
+    if quant_receipt is not None:
+        quantized_path = quantized_path_from_receipt(quant_receipt)
+        quantized_sha256 = verify_quantized_sha(quantized_path, quant_receipt)
+
     rev = code_revision(train_receipt)
 
     card = build_card(
@@ -718,6 +835,8 @@ def build_plan(
         train_receipt,
         eval_receipt,
         quant_receipt,
+        quantized_filename=quantized_path.name if quantized_path is not None else None,
+        quantized_sha256=quantized_sha256,
     )
 
     files: dict[str, Path | bytes] = {
@@ -734,6 +853,12 @@ def build_plan(
         files[f"receipts/{eval_receipt_path.name}"] = eval_receipt_path
     if quant_receipt is not None:
         files[f"receipts/{quant_receipt_path.name}"] = quant_receipt_path
+    if quantized_path is not None:
+        # Uploaded under its own on-disk name (the format's natural name, as written
+        # by cogsyndelta.quant.ptq.save_packed_artifact) -- never the same path as
+        # the fp32 checkpoint, so a sync_repo content-mismatch on one can never be
+        # masked by a coincidental match on the other.
+        files[quantized_path.name] = quantized_path
 
     return Plan(
         region=region,
@@ -746,6 +871,8 @@ def build_plan(
         code_rev=rev,
         card=card,
         files=files,
+        quantized_path=quantized_path,
+        quantized_sha256=quantized_sha256,
     )
 
 
@@ -758,6 +885,9 @@ def print_plan(plan: Plan, dry_run: bool) -> None:
     print(f"  checkpoint:  {plan.checkpoint_path}")
     bound = ", ".join(plan.bound_receipt_labels)
     print(f"               sha256={plan.checkpoint_sha256} (bound to: {bound})")
+    if plan.quantized_path is not None:
+        print(f"  quantized:   {plan.quantized_path} (not primary; {plan.checkpoint_path.name} is)")
+        print(f"               sha256={plan.quantized_sha256}")
     print(f"  code_rev:    {plan.code_rev}")
     print("  files:")
     for path_in_repo, item in sorted(plan.files.items()):
@@ -787,8 +917,15 @@ def sync_repo(
     files: dict[str, Path | bytes],
     checkpoint_path_in_repo: str,
     checkpoint_sha256: str,
+    precomputed_sha256: dict[str, str] | None = None,
 ) -> dict[str, list[str]]:
-    """Upload only what has changed. Returns {'uploaded': [...], 'skipped': [...]}."""
+    """Upload only what has changed. Returns {'uploaded': [...], 'skipped': [...]}.
+
+    `precomputed_sha256` supplies the already-verified hash for any other LFS-tracked
+    file besides the checkpoint (e.g. the quantized artifact) -- so its content-match
+    check compares against the exact bytes `build_plan` already hashed and verified,
+    the same reasoning `checkpoint_sha256` follows for the checkpoint itself.
+    """
     try:
         remote_list = api.get_paths_info(
             repo_id, list(files.keys()), expand=True, repo_type=repo_type
@@ -796,11 +933,15 @@ def sync_repo(
     except Exception:  # network hiccup, or HF's own error shape -- treat as "unknown", upload
         remote_list = []
     remote = {getattr(r, "path", None): r for r in remote_list}
+    extra_shas = precomputed_sha256 or {}
 
     uploaded: list[str] = []
     skipped: list[str] = []
     for path_in_repo, item in files.items():
-        precomputed = checkpoint_sha256 if path_in_repo == checkpoint_path_in_repo else None
+        if path_in_repo == checkpoint_path_in_repo:
+            precomputed = checkpoint_sha256
+        else:
+            precomputed = extra_shas.get(path_in_repo)
         if _content_matches(item, remote.get(path_in_repo), precomputed):
             skipped.append(path_in_repo)
             continue
@@ -821,6 +962,11 @@ def publish(plan: Plan) -> dict[str, list[str]]:
 
     api = HfApi(token=token)
     ensure_private(api, plan.repo, plan.repo_type)
+    extra_shas = (
+        {plan.quantized_path.name: plan.quantized_sha256}
+        if plan.quantized_path is not None and plan.quantized_sha256 is not None
+        else None
+    )
     result = sync_repo(
         api,
         plan.repo,
@@ -828,6 +974,7 @@ def publish(plan: Plan) -> dict[str, list[str]]:
         plan.files,
         plan.checkpoint_path.name,
         plan.checkpoint_sha256,
+        precomputed_sha256=extra_shas,
     )
     info = api.repo_info(repo_id=plan.repo, repo_type=plan.repo_type)
     print(f"  private={getattr(info, 'private', None)} after publish  ({plan.repo})")
