@@ -72,8 +72,16 @@ REGION_CORPUS_ROOT: dict[str, Path] = {"reason": LOCAL_CORPUS}
 A dict rather than a field on `SourceSpec`: every OTHER region's sources already share
 one root, and `SourceSpec` is a plain 3-tuple used identically for `code`/`compress`/
 `retrieve`'s glob/(cols)/cap -- adding a fourth element there to carry a root only
-`reason` needs would change every existing entry's shape for one region's benefit. This
-map is consulted once, in `run_region`, before any `_shards()` call for that region.
+`reason` needs would change every existing entry's shape for one region's benefit.
+
+Consulted in exactly ONE place: `region_spec()`, which resolves it into `RegionEntry.root`
+below. `run_region` used to read this dict directly, and `csd-quantize.py` /
+`csd-benchmark.py` did not read it at all -- each called `spec["_shards"](g)` with no
+root, so both silently resolved `reason`'s shards against the default `CORPUS` mount
+instead of the `/bulk/csd-corpus` array they actually live on, finding nothing there.
+Routing every consumer through `region_spec()` makes `.root` the one place this can be
+read from, so a future region added to this map is not one `run_region`-only edit away
+from a quantize/benchmark script quietly seeing an empty corpus again.
 """
 
 RESERVED_FOR_COMPOSE: dict[str, str] = {
@@ -98,9 +106,13 @@ source into -- `<region>/<name>` -- so a resolved shard path is caught by
 class ReservedSourceError(RuntimeError):
     """Raised when a region's resolved sources fall under a `compose`-reserved corpus.
 
-    Fails closed: this is checked at shard-resolution time, inside the same loop every
-    region's sources pass through, so it fires for ANY region (not only `code`), for
-    `--dry-run` as well as a real run, and before `pretrain_region` is ever imported or
+    Fails closed: this is checked at shard-resolution time, before any slice/limit and
+    before torch import, at the call site each runner uses to resolve its own sources
+    (`run_region`'s source loop, `run_vl_region`'s train/probe_eval/transfer resolution,
+    and `run_classify_region`'s shard resolution against `LOCAL_CORPUS`) -- so it fires
+    for ANY region trained through any of those three entry points (not only `code`
+    through `run_region`), for `--dry-run` as well as a real run, and before
+    `pretrain_region`/`pretrain_vl_region`/`pretrain_classify_region` is ever imported or
     called. See docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md §5.6: "the gate ... is
     not 'the ledger exists'. It is: a training run seeded with one reserved row REFUSES
     TO START."
@@ -223,10 +235,15 @@ def _shards(pattern: str, root: Path = CORPUS) -> list[str]:
 # The cap exists for balance, not for speed. gooaq alone is 3,012,496 pairs -- 96% of
 # everything available to `retrieve` -- so training uncapped would produce a gooaq model
 # wearing a retrieval region's name. Capped at 400k it is 78% of a ~514k mix, comparable
-# in size to `code` (455k) and `compress` (320k). Held-out eval stays on fiqa dev/test,
-# which is a different domain (financial QA) and therefore measures transfer rather than
-# memorisation. Raise the cap if transfer is the bottleneck; that is a measurement, not a
-# guess.
+# in size to `code` (455k) and `compress` (320k). The holdout is NOT a fiqa dev/test
+# split: `build_splits` shuffles the concatenated three-source pool and takes a uniform
+# sample of that mixture, so at ~79% GooAQ post-cap the expected fiqa content of a
+# 512-pair holdout is only ~5.6 items post-dedup -- this is an in-mixture recall number,
+# not a transfer measurement (see docs/design/CORPUS-CONTRACT.md Part 3, which this
+# comment used to contradict). A real fiqa-only transfer evaluation exists separately in
+# `cogsyndelta/regions/retrieve.py`, which trains on fiqa `train` alone and scores against
+# the full BEIR-style fiqa corpus. Raise the cap if in-mixture balance is the bottleneck;
+# that is a measurement, not a guess.
 SourceSpec = tuple[str, tuple[str, str], int]
 
 GradedSpec = tuple[str, tuple[str, str, str], str]
@@ -341,18 +358,27 @@ REGIONS: dict[str, tuple[list[SourceSpec], str, int, GradedSpec | None]] = {
 
 
 class RegionEntry(NamedTuple):
-    """A `REGIONS[name]` value, typed and named instead of unpacked positionally.
+    """A `REGIONS[name]` value, typed and named, plus the corpus root it resolves against.
 
-    Fields are declared in the SAME order as a `REGIONS` value's tuple elements
-    (`sources, note, default_max_len, graded`), so `RegionEntry(*REGIONS[name])` and
-    plain positional unpacking of a `RegionEntry` both still work -- this is a naming
-    layer over the existing shape, not a new one.
+    The first four fields are declared in the SAME order as a `REGIONS` value's tuple
+    elements (`sources, note, default_max_len, graded`), so `RegionEntry(*REGIONS[name],
+    root=...)` reads as a naming layer over that existing shape, not a new one. `root` is
+    the fifth field, appended rather than interleaved, so `RegionEntry(*REGIONS[name])`
+    -- without a root -- would still raise a clear arity error instead of silently
+    shifting `graded` into `root`'s position.
+
+    `root` is NOT itself part of `REGIONS[name]`'s shape -- it comes from
+    `REGION_CORPUS_ROOT`, resolved once here by :func:`region_spec` -- but it belongs on
+    this type because every consumer that needs `sources` also needs to know which root
+    to resolve them against, and `region_spec()` is the one place that used to answer the
+    first question but not the second.
     """
 
     sources: list[SourceSpec]
     note: str
     default_max_len: int
     graded: GradedSpec | None
+    root: Path
 
 
 def region_spec(name: str) -> RegionEntry:
@@ -377,6 +403,14 @@ def region_spec(name: str) -> RegionEntry:
     the OLD shape and asserts this function rejects it rather than silently misreading
     it.
 
+    Also resolves `REGION_CORPUS_ROOT` into `RegionEntry.root` (`CORPUS` for every region
+    absent from that map), so every consumer agrees on which mount a region's shards live
+    under. Before this, `run_region` read `REGION_CORPUS_ROOT` directly while
+    `csd-quantize.py` and `csd-benchmark.py` called `_shards(glob)` with no root at all --
+    both defaulting to `CORPUS` regardless of the map, so `reason` (the one region in
+    `REGION_CORPUS_ROOT`, mounted at `/bulk/csd-corpus`) resolved zero shards through
+    either script even though training itself found them fine.
+
     Raises:
         KeyError: `name` is not a key in `REGIONS`.
         ValueError: `REGIONS[name]` is not the current 4-tuple
@@ -395,7 +429,7 @@ def region_spec(name: str) -> RegionEntry:
             f"gate -- see GradedSpec's docstring for what silently drops if it is "
             f"missing instead of raising here."
         )
-    return RegionEntry(*entry)
+    return RegionEntry(*entry, root=REGION_CORPUS_ROOT.get(name, CORPUS))
 
 
 # The visual region does not fit the text (left, right) pair shape: its objective is
@@ -408,8 +442,12 @@ VL_REGIONS: dict[str, dict] = {
         "probe_eval": "vl/tiny-imagenet/data/valid-*.parquet",
         "columns": ("image", "label"),
         # cifar100 is a DIFFERENT dataset with different classes, so the probe on it
-        # measures whether the representation transfers rather than memorises -- the same
-        # reason `retrieve` is scored on out-of-domain fiqa.
+        # measures whether the representation transfers rather than memorises. Unlike
+        # `retrieve`'s holdout -- which is a uniform sample of an in-mixture pool, NOT an
+        # out-of-domain fiqa split; see the `SourceSpec` comment above and
+        # docs/design/CORPUS-CONTRACT.md Part 3 -- this probe really does train on one
+        # shard (`train`) and evaluate on an entirely separate one (`transfer`), so it is
+        # actually out-of-domain.
         "transfer": "vl/cifar100/cifar100/test-*.parquet",
         "transfer_columns": ("img", "fine_label"),
         "note": "I-JEPA over 64x64 patches; gated on a linear probe, never on loss",
@@ -529,9 +567,8 @@ def run_region(
     Returns:
         The receipt, or None when the region has no usable sources or `dry` is set.
     """
-    sources, note, default_max_len, graded_spec = region_spec(name)
+    sources, note, default_max_len, graded_spec, corpus_root = region_spec(name)
     resolved_max_len = default_max_len if max_len is None else max_len
-    corpus_root = REGION_CORPUS_ROOT.get(name, CORPUS)
     print(f"\n=== {name} — {note}", flush=True)
     if corpus_root != CORPUS:
         print(f"    corpus root: {corpus_root} (not the shared {CORPUS})", flush=True)
@@ -724,6 +761,16 @@ def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> 
     train = _shards(spec["train"])
     probe_eval = _shards(spec["probe_eval"])
     transfer = _shards(spec["transfer"])
+    # Same fail-closed requirement as `run_region` (see RESERVED_FOR_COMPOSE and
+    # `ReservedSourceError`): a reserved shard must never train ANY region, and this VL
+    # path resolves its own shards independently of `run_region`'s loop, so it needs its
+    # own call, ahead of the MISSING check and dry-run's early return below.
+    for label, glob_pat, got in (
+        ("train", spec["train"], train),
+        ("probe_eval", spec["probe_eval"], probe_eval),
+        ("transfer", spec["transfer"], transfer),
+    ):
+        _refuse_reserved_shards(name, glob_pat, got)
     for label, got in (("train", train), ("probe_eval", probe_eval), ("transfer", transfer)):
         print(f"    {len(got):>2} shard(s)  {label}", flush=True)
         if not got:
@@ -809,6 +856,11 @@ def run_classify_region(
     print(f"    corpus root: {LOCAL_CORPUS} (not the shared {CORPUS})", flush=True)
 
     shards = _shards(spec["shards"], LOCAL_CORPUS)
+    # Same fail-closed requirement as `run_region` (see RESERVED_FOR_COMPOSE and
+    # `ReservedSourceError`) -- doubly so here, since `LOCAL_CORPUS` (/bulk/csd-corpus) is
+    # the exact root `apps` and `code_contests` were fetched under, so a careless future
+    # `CLASSIFY_REGIONS` glob is one wildcard away from resolving straight into them.
+    _refuse_reserved_shards(name, spec["shards"], shards)
     print(
         f"    {len(shards):>2} shard(s)  text={spec['text_column']!r} "
         f"label={spec['label_column']!r} multi_label={spec['multi_label']}  {spec['shards']}",
