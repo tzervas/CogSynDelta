@@ -51,6 +51,44 @@ Full per-arm numbers (both rank definitions, VRAM, timing, checkpoint sha256, co
 fingerprint, `held_out`/`graded_held_out` metrics, encoder config) are in
 `control-summary.json`, `token_only-summary.json`, `both_on-summary.json`.
 
+## Correction: `control-summary.json`'s VRAM/timing were from a RESUMED run
+
+The `control-summary.json` first committed here was written by a second invocation of
+`measure_w4_control_arm.py control` against an `out_dir` that already held the first
+run's `final.pt` (same config fingerprint) — `pretrain_region` resumed from `step
+50/50` rather than starting fresh (see `pretrain_region`'s resume check in
+`src/cogsyndelta/regions/pretrain.py`), so its loop ran effectively nothing further.
+That resumed run's `peak_allocated_mib`/`peak_reserved_mib`/`training_loop_elapsed_s`/
+`mean_step_time_ms`/`wall_elapsed_s` (`292.4`/`322.0`/`3.3`/`66.0`/`18.79`) measured a
+near-empty resumed loop, **not** the from-scratch 50-step run the other two arms'
+summaries are. An adversarial review caught this; `control-summary.json` has been
+replaced with a genuinely from-scratch run against a never-before-used `out_dir`
+(`/akula-data/session-backup-staging/w4-control-arm-2026-09-03/control-fresh/`, which
+`load_resumable` confirmed held nothing — "no valid checkpoint ... starting fresh"):
+
+| | resumed (superseded) | fresh (committed) | `token_only`/`both_on` (fresh, for scale) |
+|---|---:|---:|---:|
+| `peak_allocated_mib` | 292.4 | **4102.7** | 10363.7 / 10459.7 |
+| `peak_reserved_mib` | 322.0 | **4878.0** | 12060.0 / 12060.0 |
+| `training_loop_elapsed_s` | 3.3 | **3.2** | 7.1 / 7.3 |
+| `mean_step_time_ms` | 66.0 | **64.0** | 142.0 / 146.0 |
+| `wall_elapsed_s` | 18.79 | **31.67** | 31.52 / 31.73 |
+
+The fresh run's `peak_allocated_mib` (`4102.7`) now sits where a from-scratch
+`token_loss_weight=0.0, decorr_weight=0.0` run should — well below `token_only`/
+`both_on` (both terms add the MLM head plus its extra forward/backward pass) and in
+the multi-GiB range the smoke run's own docstring VRAM claim describes, not the
+sub-1-GiB range a near-empty resumed loop leaves behind.
+
+**The rank numbers are unaffected — bit-for-bit identical across all three separate
+`control` runs to date** (this fresh one, the original first run, and the resumed
+run): `pooled_pr_rank 1.9995955920659791`, `token_global_pr_rank
+4.037415218462928`, `token_global_over_pooled_ratio 2.0191158824727538` in all
+three (diff: `0`). `seed=0` plus an unchanged corpus fingerprint
+(`6fc0cf23ff8591ff2241278f82c001d2`) make the model's trained state — and everything
+downstream of it — fully deterministic across runs; only VRAM/timing, which depend on
+how much of the loop actually executed, were sensitive to the resume.
+
 ## Gate (e) clause 1 does NOT discriminate at 50 steps, on this harness
 
 **The control arm — both terms off — already clears §4.0's `token_global_pr_rank >= 2.0 *
@@ -137,6 +175,18 @@ the host this ran on; change `OUT_ROOT` in the script for a different host/sessi
 Checkpoints written there (~192MB/arm) are throwaway smoke-run weights and are not part of
 this evidence directory — only the summary JSONs and this README are.
 
+**Resume pitfall (see the correction above):** re-running the same arm against an
+`out_dir` that already holds a `final.pt` from an identical config fingerprint makes
+`pretrain_region` *resume* rather than start fresh — the rank numbers still come out
+bit-identical (the model is deterministic under `seed=0` + an unchanged corpus), but
+`peak_allocated_mib`/`peak_reserved_mib`/`training_loop_elapsed_s`/`mean_step_time_ms`
+will measure whatever's left of an already-finished loop, not a real 50-step run. To
+measure VRAM/timing (not just rank), point `OUT_ROOT` at a directory that has never
+held a checkpoint for this config — e.g. by monkeypatching the module's `OUT_ROOT`
+constant before calling `main()` from a driver script, as this correction's fresh
+`control` run did against
+`/akula-data/session-backup-staging/w4-control-arm-2026-09-03/control-fresh/`.
+
 ## Provenance
 
 - **code_revision** (this worktree's `HEAD` at run time): `5554fcb5efc3e8453fe09e0cf75b862f5c13519b`
@@ -148,13 +198,19 @@ this evidence directory — only the summary JSONs and this README are.
   three arms identical since the corpus/columns/seed are unchanged across arms):
   `6fc0cf23ff8591ff2241278f82c001d2`.
 - **checkpoint sha256** (differs per arm — different weights trained different final
-  checkpoints): `control` `41ab6e3f07edce4f26eb5de515b7e04e20e941adb8031b34719fb71a126055fd`
-  (first run; the resumed re-verification run in `control-summary.json` reports a
-  different final sha256, `1864b359e0cc1cb4241cdc0205539e37163bba5323a893fd4a4c33eef224b797`,
-  from `_checkpoint_payload`'s embedded receipt timestamp differing between the fresh
-  and resumed writes — the trained weights and every measured rank number are identical
-  between the two, confirmed by re-running `control` a second time and getting
-  `token_global_pr_rank` `4.037415218462928` both times), `token_only`
+  checkpoints, and differs again across separate runs of the SAME arm because
+  `_checkpoint_payload` embeds the receipt's write timestamp even when the trained
+  weights and every measured rank number are identical): `control` has three sha256s on
+  record, all from `token_loss_weight=0.0, decorr_weight=0.0` runs producing bit-identical
+  rank numbers — the original first run,
+  `41ab6e3f07edce4f26eb5de515b7e04e20e941adb8031b34719fb71a126055fd`; a second run against
+  the same `out_dir` that (unintentionally) *resumed* from that first run's `final.pt`
+  rather than training fresh, `1864b359e0cc1cb4241cdc0205539e37163bba5323a893fd4a4c33eef224b797`
+  — its VRAM/timing were measurements of that near-empty resumed loop and are superseded,
+  see "Correction" above, but its rank numbers were and remain accurate; and the fresh
+  from-scratch re-run committed in `control-summary.json` now,
+  `68a5841ee06b08d53a10dcc4ee95a66b576ddf09e944bd68454cc9c386d0ce25`, against the never-used
+  `control-fresh/` `out_dir`. `token_only`
   `30ecd612e6f048b430b0775a4db0d1719e2ae87dba31dba9bf20702913d3b5c6`, `both_on`
   `70f298eb09dc6e3f5cea4e54f1f673f82a562a0a3e2c7249e3160233e7c8a7ce`.
 - **measured**: 2026-09-03, `akula-prime`, RTX 3090 Ti (24 GiB), shared with a concurrent
