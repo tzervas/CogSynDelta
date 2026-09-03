@@ -203,8 +203,17 @@ jobs:
           # AND kept as a step artifact, so findings are visible without
           # depending on the upload-artifact step below (which is best-effort
           # — see its comment).
+          #
+          # The runner invokes this script under `bash -e -o pipefail`, and
+          # `set -uo pipefail` above does NOT clear that inherited `-e` — it
+          # only adds `-u`. Without the trailing `|| true`, this call's
+          # expected-non-zero exit (LOW findings, see above) would abort the
+          # step right here under `-e`, and the real gate below would never
+          # run. The `|| true` is scoped to this report-only call; the gate
+          # invocation below stays bare so its exit code is what fails the
+          # job.
           uvx --python 3.12 --from "bandit==${{ env.BANDIT_VERSION }}" bandit \
-            -r src/ -f json -o bandit-report.json
+            -r src/ -f json -o bandit-report.json || true
           echo "== bandit-report.json =="
           cat bandit-report.json
           echo
@@ -227,10 +236,15 @@ jobs:
           # acted on yet, not on anything this change introduced.
           #   - pygments      PYSEC-2026-2987
           #   - setuptools    PYSEC-2026-3447 (x2 advisories)
-          # `|| true` only guards the exit code from failing the step; the
-          # full findings are still printed to the log below (previously they
-          # were swallowed entirely by `|| echo "::notice::..."`, so a reader
-          # had no way to see what was found without re-running the command).
+          # `|| true` guards only the exit code — it never touched pip-audit's
+          # stdout/stderr, so the findings below were already printed to the
+          # log before this change too. What actually changed here: the
+          # previous `|| echo "::notice::..."` is gone. `||` branches on exit
+          # status, not on the command's streams, so that echo never hid
+          # anything either — replacing it with `|| true` only drops the
+          # generic ::notice:: annotation Forgejo rendered alongside the
+          # step; the findings themselves were, and remain, visible by
+          # scrolling this step's log.
           uv tool run pip-audit -r requirements-audit.txt --desc on || true
 
       - name: Upload security reports
