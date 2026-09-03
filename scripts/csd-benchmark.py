@@ -53,8 +53,14 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
     train_receipt = json.loads(receipts[-1].read_text())
 
     spec = _regions_spec()
-    sources = spec["region_spec"](region).sources
-    resolved = [(spec["_shards"](g), tuple(c), cap) for g, c, cap in sources]
+    entry = spec["region_spec"](region)
+    sources = entry.sources
+
+    # `entry.root` -- not the `_shards` default -- because REGION_CORPUS_ROOT (`reason`
+    # lives at /bulk/csd-corpus, not the shared mount `_shards` defaults to) is resolved
+    # by `region_spec` now, and every consumer of `sources` must resolve against the same
+    # root `run_region` trained against or this silently globs zero shards for `reason`.
+    resolved = [(spec["_shards"](g, entry.root), tuple(c), cap) for g, c, cap in sources]
 
     # Select by the shard NAMES the receipt records, not by re-globbing -- same rule as
     # csd-quantize.py's quantize_text_region, and for the same reason: a glob returns

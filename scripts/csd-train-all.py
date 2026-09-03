@@ -72,8 +72,16 @@ REGION_CORPUS_ROOT: dict[str, Path] = {"reason": LOCAL_CORPUS}
 A dict rather than a field on `SourceSpec`: every OTHER region's sources already share
 one root, and `SourceSpec` is a plain 3-tuple used identically for `code`/`compress`/
 `retrieve`'s glob/(cols)/cap -- adding a fourth element there to carry a root only
-`reason` needs would change every existing entry's shape for one region's benefit. This
-map is consulted once, in `run_region`, before any `_shards()` call for that region.
+`reason` needs would change every existing entry's shape for one region's benefit.
+
+Consulted in exactly ONE place: `region_spec()`, which resolves it into `RegionEntry.root`
+below. `run_region` used to read this dict directly, and `csd-quantize.py` /
+`csd-benchmark.py` did not read it at all -- each called `spec["_shards"](g)` with no
+root, so both silently resolved `reason`'s shards against the default `CORPUS` mount
+instead of the `/bulk/csd-corpus` array they actually live on, finding nothing there.
+Routing every consumer through `region_spec()` makes `.root` the one place this can be
+read from, so a future region added to this map is not one `run_region`-only edit away
+from a quantize/benchmark script quietly seeing an empty corpus again.
 """
 
 RESERVED_FOR_COMPOSE: dict[str, str] = {
@@ -350,18 +358,27 @@ REGIONS: dict[str, tuple[list[SourceSpec], str, int, GradedSpec | None]] = {
 
 
 class RegionEntry(NamedTuple):
-    """A `REGIONS[name]` value, typed and named instead of unpacked positionally.
+    """A `REGIONS[name]` value, typed and named, plus the corpus root it resolves against.
 
-    Fields are declared in the SAME order as a `REGIONS` value's tuple elements
-    (`sources, note, default_max_len, graded`), so `RegionEntry(*REGIONS[name])` and
-    plain positional unpacking of a `RegionEntry` both still work -- this is a naming
-    layer over the existing shape, not a new one.
+    The first four fields are declared in the SAME order as a `REGIONS` value's tuple
+    elements (`sources, note, default_max_len, graded`), so `RegionEntry(*REGIONS[name],
+    root=...)` reads as a naming layer over that existing shape, not a new one. `root` is
+    the fifth field, appended rather than interleaved, so `RegionEntry(*REGIONS[name])`
+    -- without a root -- would still raise a clear arity error instead of silently
+    shifting `graded` into `root`'s position.
+
+    `root` is NOT itself part of `REGIONS[name]`'s shape -- it comes from
+    `REGION_CORPUS_ROOT`, resolved once here by :func:`region_spec` -- but it belongs on
+    this type because every consumer that needs `sources` also needs to know which root
+    to resolve them against, and `region_spec()` is the one place that used to answer the
+    first question but not the second.
     """
 
     sources: list[SourceSpec]
     note: str
     default_max_len: int
     graded: GradedSpec | None
+    root: Path
 
 
 def region_spec(name: str) -> RegionEntry:
@@ -386,6 +403,14 @@ def region_spec(name: str) -> RegionEntry:
     the OLD shape and asserts this function rejects it rather than silently misreading
     it.
 
+    Also resolves `REGION_CORPUS_ROOT` into `RegionEntry.root` (`CORPUS` for every region
+    absent from that map), so every consumer agrees on which mount a region's shards live
+    under. Before this, `run_region` read `REGION_CORPUS_ROOT` directly while
+    `csd-quantize.py` and `csd-benchmark.py` called `_shards(glob)` with no root at all --
+    both defaulting to `CORPUS` regardless of the map, so `reason` (the one region in
+    `REGION_CORPUS_ROOT`, mounted at `/bulk/csd-corpus`) resolved zero shards through
+    either script even though training itself found them fine.
+
     Raises:
         KeyError: `name` is not a key in `REGIONS`.
         ValueError: `REGIONS[name]` is not the current 4-tuple
@@ -404,7 +429,7 @@ def region_spec(name: str) -> RegionEntry:
             f"gate -- see GradedSpec's docstring for what silently drops if it is "
             f"missing instead of raising here."
         )
-    return RegionEntry(*entry)
+    return RegionEntry(*entry, root=REGION_CORPUS_ROOT.get(name, CORPUS))
 
 
 # The visual region does not fit the text (left, right) pair shape: its objective is
@@ -538,9 +563,8 @@ def run_region(
     Returns:
         The receipt, or None when the region has no usable sources or `dry` is set.
     """
-    sources, note, default_max_len, graded_spec = region_spec(name)
+    sources, note, default_max_len, graded_spec, corpus_root = region_spec(name)
     resolved_max_len = default_max_len if max_len is None else max_len
-    corpus_root = REGION_CORPUS_ROOT.get(name, CORPUS)
     print(f"\n=== {name} — {note}", flush=True)
     if corpus_root != CORPUS:
         print(f"    corpus root: {corpus_root} (not the shared {CORPUS})", flush=True)

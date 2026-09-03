@@ -115,6 +115,7 @@ def trained_receipt(tmp_path: Path) -> dict:
 
         class _Entry:
             sources: ClassVar = [("pairs.parquet", ("anchor", "positive"), 0)]
+            root = tmp_path
 
         return {"REGIONS": {}, "_shards": _shards, "region_spec": lambda name: _Entry()}
 

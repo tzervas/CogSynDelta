@@ -64,9 +64,14 @@ def quantize_text_region(
 
     receipt = _latest_receipt(state, region)
     spec = _load_regions_spec()
-    sources = spec["region_spec"](region).sources
+    entry = spec["region_spec"](region)
+    sources = entry.sources
 
-    resolved = [(spec["_shards"](g), tuple(c), cap) for g, c, cap in sources]
+    # `entry.root` -- not the `_shards` default -- because REGION_CORPUS_ROOT (`reason`
+    # lives at /bulk/csd-corpus, not the shared mount `_shards` defaults to) is resolved
+    # by `region_spec` now, and every consumer of `sources` must resolve against the same
+    # root `run_region` trained against or this silently globs zero shards for `reason`.
+    resolved = [(spec["_shards"](g, entry.root), tuple(c), cap) for g, c, cap in sources]
 
     # Select by the shard NAMES the receipt records, not by re-globbing. A glob returns
     # whatever is on disk now, and training may have used a --shard-limit subset -- as
