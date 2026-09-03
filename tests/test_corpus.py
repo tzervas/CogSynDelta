@@ -29,6 +29,37 @@ needs_corpus = pytest.mark.skipif(
     reason=f"corpus export not mounted at {corpus_mod.DEFAULT_CORPUS_ROOT}",
 )
 
+# tinystories specifically (not the whole export) was tiered off homelab's hot disk to
+# gpu5080's cold /bulk array: `pretrain/` now holds only an OFFLOADED.json stub in place
+# of the real shard tree. Scoped separately from `needs_corpus` above because the tokenizer
+# lives at the export root and stays reachable even while `pretrain/` is offloaded -- a
+# blanket root-level check would wrongly skip test_tokenizer_round_trips too.
+#
+# `_PRETRAIN_ROOT` is `DEFAULT_CORPUS_ROOT / "pretrain"`, the shared parent of all six
+# corpora in CORPORA (five of which are not tinystories) -- the marker it locates covers
+# that whole subtree, not tinystories specifically.
+#
+# The predicate below checks ONLY `_TINYSTORIES_DIR.is_dir()`, deliberately not the
+# marker: offload() rm -rf's the hot-side tree before writing the stub, so marker-present
+# already implies data-absent at offload time, and restore() (rsync without --delete)
+# recreates the data tree next to the stub it never removes. A marker-in-predicate check
+# would therefore stay permanently skipped after a real restore, silently converting
+# restored coverage into a green-looking skip. The marker is used below only to pick a
+# more informative *reason* string when the directory is in fact absent.
+_PRETRAIN_ROOT = corpus_mod.DEFAULT_CORPUS_ROOT / "pretrain"
+_TINYSTORIES_OFFLOAD_MARKER = _PRETRAIN_ROOT / "OFFLOADED.json"
+_TINYSTORIES_DIR = corpus_mod.DEFAULT_CORPUS_ROOT / corpus_mod.CORPORA["tinystories"][0]
+_HAVE_TINYSTORIES = _TINYSTORIES_DIR.is_dir()
+if not _HAVE_TINYSTORIES and _TINYSTORIES_OFFLOAD_MARKER.is_file():
+    _tinystories_skip_reason = (
+        f"tinystories corpus tiered off: {_TINYSTORIES_OFFLOAD_MARKER} marker present; "
+        "cold copy at gpu5080:/bulk/csd-archive/tritter/pretrain "
+        "(restore via scripts/csd-storage-tier.py --restore tritter/pretrain --apply)"
+    )
+else:
+    _tinystories_skip_reason = f"tinystories corpus not found at {_TINYSTORIES_DIR}"
+needs_tinystories = pytest.mark.skipif(not _HAVE_TINYSTORIES, reason=_tinystories_skip_reason)
+
 
 def test_missing_corpus_root_raises_clearly(tmp_path, monkeypatch) -> None:
     """A missing mount must raise, not yield nothing.
@@ -57,14 +88,14 @@ def test_tokenizer_round_trips() -> None:
     assert tok.decode(tok.encode(text).ids).strip() == text.strip()
 
 
-@needs_corpus
+@needs_tinystories
 def test_shards_are_discovered_and_sorted() -> None:
     shards = corpus_mod.shard_paths("tinystories")
     assert shards, "expected parquet shards"
     assert shards == sorted(shards), "shard order must be stable across hosts"
 
 
-@needs_corpus
+@needs_tinystories
 def test_windows_have_exact_width() -> None:
     tok = corpus_mod.load_tokenizer("gpt2")
     seq_len = 128
@@ -75,7 +106,7 @@ def test_windows_have_exact_width() -> None:
         assert window.dtype == torch.long
 
 
-@needs_corpus
+@needs_tinystories
 def test_batches_are_shifted_by_one() -> None:
     """targets must be inputs shifted one position -- the causal LM contract.
 
@@ -95,7 +126,7 @@ def test_batches_are_shifted_by_one() -> None:
     assert batches >= 1
 
 
-@needs_corpus
+@needs_tinystories
 def test_same_seed_gives_same_windows() -> None:
     """Reproducibility: a checkpoint is only comparable if its data order is."""
     tok = corpus_mod.load_tokenizer("gpt2")
