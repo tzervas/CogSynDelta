@@ -901,3 +901,195 @@ def test_pretrain_region_writes_graded_held_out_when_the_gate_resolves(
 
     assert "graded_held_out" in receipt
     assert "spearman" in receipt["beats_untrained"]
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 6 -- `beats_untrained` was satisfiable by a broken baseline.
+#
+# receipts/retrieve-20260902T203759Z.json recorded `untrained_baseline["recall@1"] ==
+# 0.0` on the real 512-pair FiQA/NQ/GooAQ holdout, so any `held_out["recall@1"] > 0.0`
+# -- including pure noise -- passed `beats_untrained["recall@1"]`. Investigating that
+# receipt (calling `build_splits` + a freshly constructed, untrained `TextEncoder`
+# directly against the real corpus, seed=0, production defaults -- no training) found
+# NO bug in `evaluate`/`recall_at_k`/`build_splits`: the score matrix carried no NaNs,
+# was not tied, and the untrained encoder's held-out embeddings were genuinely
+# near-collapsed (`emb_std` ~0.007, vs ~0.06 for a random unit-norm 256-d direction) --
+# the sincos position embedding (~unit scale) dwarfing the Normal(0, 0.02) token
+# embeddings at init. That collapse concentrates similarity on one arbitrary "attractor"
+# pair per run; whether the attractor happens to sit ON the diagonal (giving 1/N, as a
+# from-scratch CPU repro of the same config measured) or OFF it (giving exactly 0, as
+# the GPU/bf16 production run did) is close to a coin flip across a 512-row diagonal,
+# not a defect in the measurement. So the fix is not a numerical patch to the metric --
+# it is refusing to certify `beats_untrained` against a baseline that low at all.
+#
+# Two real gaps DID turn up alongside that finding, and both are fixed here:
+#   - `evaluate` had no NaN guard. A `topk`/`argsort` over an all-NaN score matrix (a
+#     genuinely diverged encoder, e.g. a bf16 overflow) does not raise; it returns a
+#     plausible-looking float, indistinguishable from a real measurement.
+#   - `beats_untrained` had no floor at all: `final[m] > baseline[m]` alone is
+#     trivially satisfiable by ANY baseline, however broken.
+# ---------------------------------------------------------------------------------------
+
+
+class _ConstantTextEncoder:
+    """Stand-in for `TextEncoder`: ignores its input entirely and emits the SAME nonzero
+    vector for every item, for every call -- the literal "collapsed to one point"
+    encoder `_beats_untrained_gate`'s docstring distinguishes from the real untrained
+    encoder's near-collapse. Implements just enough of `nn.Module`'s surface for
+    `evaluate` to drive it (`.eval()`, `.train()`, `.training`, `__call__`)."""
+
+    def __init__(self, dim: int = 8) -> None:
+        self.dim = dim
+        self.training = True
+
+    def eval(self) -> None:
+        self.training = False
+
+    def train(self) -> None:
+        self.training = True
+
+    def __call__(self, input_ids, attention_mask):
+        import torch
+
+        return torch.full((input_ids.size(0), self.dim), 0.5)
+
+
+class _NaNTextEncoder(_ConstantTextEncoder):
+    """Same shape as `_ConstantTextEncoder`, but emits NaN -- the diverged/overflowed
+    encoder `evaluate`'s NaN guard exists to catch before it reaches `recall_at_k`."""
+
+    def __call__(self, input_ids, attention_mask):
+        import torch
+
+        return torch.full((input_ids.size(0), self.dim), float("nan"))
+
+
+def _tiny_eval_pairs_and_tokenizer(tmp_path: Path, n: int) -> tuple[list[tuple[str, str]], Path]:
+    """`n` distinct (anchor, positive) pairs plus a tokenizer covering their vocabulary --
+    enough for `evaluate()` to run without needing a trained model or real corpus."""
+    pairs = [(f"anchor item number {i}", f"positive item number {i}") for i in range(n)]
+    tok_path = tmp_path / "tokenizer.json"
+    vocab = [t for pair in pairs for t in pair]
+    _build_tiny_tokenizer(tok_path, vocab)
+    return pairs, tok_path
+
+
+def test_evaluate_on_an_encoder_that_collapses_to_one_point_yields_chance_not_zero(
+    tmp_path: Path,
+) -> None:
+    """R6, part 1: the literal "identical scores" case the receipt's 0.0 looked like it
+    might be. `recall_at_k`'s `topk` resolves exact ties to a stable (lowest-index) order,
+    so an encoder that maps EVERY input to the same point scores `recall@1 == 1/N`, never
+    0.0 -- confirming the real receipt's 0.0 was not this failure mode (see the DEFECT 6
+    docstring above)."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from tokenizers import Tokenizer
+
+    from cogsyndelta.regions.pretrain import evaluate
+
+    n = 16
+    pairs, tok_path = _tiny_eval_pairs_and_tokenizer(tmp_path, n)
+    tok = Tokenizer.from_file(str(tok_path))
+
+    result = evaluate(_ConstantTextEncoder(), tok, pairs, max_len=16, device=_cpu_device())
+
+    assert result["recall@1"] == pytest.approx(1.0 / n)
+    assert result["emb_std"] == pytest.approx(0.0, abs=1e-6)  # every embedding IS the same point
+
+
+def test_evaluate_raises_on_nan_scores(tmp_path: Path) -> None:
+    """R6, part 2: a diverged/overflowed encoder must fail the run loudly, not hand back
+    a plausible-looking recall number computed over NaN similarity scores."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from tokenizers import Tokenizer
+
+    from cogsyndelta.regions.pretrain import evaluate
+
+    pairs, tok_path = _tiny_eval_pairs_and_tokenizer(tmp_path, 16)
+    tok = Tokenizer.from_file(str(tok_path))
+
+    with pytest.raises(ValueError, match="NaN"):
+        evaluate(_NaNTextEncoder(), tok, pairs, max_len=16, device=_cpu_device())
+
+
+def _cpu_device():
+    import torch
+
+    return torch.device("cpu")
+
+
+def test_beats_untrained_gate_rejects_a_baseline_below_chance() -> None:
+    """R6, part 3: the exact receipt shape -- `untrained_baseline["recall@1"] == 0.0`
+    over a 512-pair eval -- must fail the sanity gate regardless of how good the trained
+    model's own number is."""
+    pytest.importorskip("torch", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import _beats_untrained_gate
+
+    final = {"recall@1": 0.748046875, "recall@10": 0.94921875}
+    baseline = {"recall@1": 0.0, "recall@10": 0.021484375}  # the real receipt's numbers
+
+    chance, beats = _beats_untrained_gate(final, baseline, eval_pairs=512)
+
+    assert chance["recall@1"] == pytest.approx(1 / 512)
+    assert beats["recall@1"] is False
+    assert beats["recall@10"] is False
+
+
+def test_beats_untrained_gate_accepts_a_sane_baseline_past_the_margin() -> None:
+    """Positive control: a baseline AT chance (as an untrained model legitimately can be,
+    see the DEFECT 6 docstring) does not itself fail the gate -- only a baseline BELOW
+    `chance / 2` does -- and a trained model that clears it by more than the margin
+    passes."""
+    pytest.importorskip("torch", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import _beats_untrained_gate
+
+    final = {"recall@1": 0.75, "recall@10": 0.95}
+    baseline = {"recall@1": 1 / 512, "recall@10": 10 / 512}  # exactly at chance
+
+    chance, beats = _beats_untrained_gate(final, baseline, eval_pairs=512)
+
+    assert beats["recall@1"] is True
+    assert beats["recall@10"] is True
+
+
+def test_beats_untrained_gate_rejects_a_win_too_small_to_be_signal() -> None:
+    """The margin itself: a trained model that clears baseline and chance by less than
+    `_BEATS_UNTRAINED_MARGIN` must not read as `beats_untrained` -- that gap is noise on
+    a 512-pair holdout, not evidence of learning."""
+    pytest.importorskip("torch", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import _beats_untrained_gate
+
+    baseline = {"recall@1": 1 / 512, "recall@10": 10 / 512}
+    final = {"recall@1": baseline["recall@1"] + 0.001, "recall@10": baseline["recall@10"] + 0.001}
+
+    _, beats = _beats_untrained_gate(final, baseline, eval_pairs=512)
+
+    assert beats["recall@1"] is False
+    assert beats["recall@10"] is False
+
+
+def test_pretrain_region_receipt_records_chance_and_untrained_baseline_seed(
+    tmp_path: Path,
+) -> None:
+    """Wired-through control: the gate above is exercised through `pretrain_region`
+    itself, not only as a bare function -- see the DEFECT 5 continuation's reasoning for
+    why that distinction catches mutations the bare-function tests cannot. Also pins the
+    two receipt fields R6 adds: `chance` (the floor the gate computed against) and
+    `untrained_baseline_seed` (config.seed doubles as this already, but every text
+    region sharing seed=0 makes that easy to misread as three independent
+    measurements -- see the module docstring's investigation note -- so it is named
+    explicitly rather than left implicit in `config`)."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import pretrain_region
+
+    cfg = _tiny_pretrain_cfg(tmp_path, graded_shards=[], graded_name="")
+
+    receipt = pretrain_region(cfg)
+
+    assert receipt["untrained_baseline_seed"] == cfg.seed
+    assert receipt["chance"]["recall@1"] == pytest.approx(1 / receipt["held_out"]["n_pairs"])
+    assert set(receipt["beats_untrained"]) == {"recall@1", "recall@10"}

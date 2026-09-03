@@ -318,6 +318,20 @@ def evaluate(
     a = torch.cat(anchors)
     p = torch.cat(positives)
     scores = a @ p.T
+    # A diverged or mis-pooled encoder can emit NaN embeddings (e.g. every mask sum
+    # clamped to the 1e-6 floor, or a bf16 overflow). `recall_at_k`/`mean_reciprocal_rank`
+    # do not detect that -- `topk`/`argsort` place NaN somewhere deterministic and hand
+    # back an ordinary-looking float, so a broken forward pass reads as a plausible
+    # recall number instead of failing loudly. Catch it here, at the one place both
+    # metrics read from.
+    if torch.isnan(scores).any():
+        if was_training:
+            model.train()
+        raise ValueError(
+            f"evaluate(): {int(torch.isnan(scores).sum())} of {scores.numel()} "
+            "similarity scores are NaN -- the encoder emitted NaN embeddings "
+            "(diverged training, or a masked-to-zero pool), not a measurable result"
+        )
     relevant = torch.arange(a.size(0), device=a.device)
     if was_training:
         model.train()
@@ -508,6 +522,80 @@ def _assert_graded_gate_present(cfg: PretrainConfig, receipt: dict[str, Any]) ->
             f"graded_held_out (including a graded source that failed to resolve); do not "
             f"write this receipt."
         )
+
+
+# Minimum absolute recall@k a trained model must clear over max(untrained_baseline,
+# chance) for `beats_untrained` to read True. Without a margin, an untrained encoder
+# sitting exactly at (or fractionally below, see `_beats_untrained_gate`) the chance
+# floor -- which it legitimately can, see that function's docstring -- would let a
+# trained model "win" on noise: one extra held-out hit out of hundreds. One recall
+# point is small next to the ~0.75 a trained retrieve region actually reaches, and large
+# next to the sampling noise a 512-pair holdout carries at the chance floor.
+_BEATS_UNTRAINED_MARGIN = 0.01
+
+
+def _beats_untrained_gate(
+    final: dict[str, float],
+    baseline: dict[str, float],
+    eval_pairs: float,
+) -> tuple[dict[str, float], dict[str, bool]]:
+    """Chance floor and sanity-gated `beats_untrained["recall@1"/"recall@10"]`.
+
+    WHY A SANITY GATE, NOT JUST A COMPARISON
+    `beats_untrained` used to be `final[m] > baseline[m]` alone. That is trivially
+    satisfiable by a BROKEN baseline: retrieve's receipts/retrieve-20260902T203759Z.json
+    recorded `untrained_baseline["recall@1"] == 0.0` on a 512-pair in-batch-diagonal
+    eval, and any `final["recall@1"] > 0.0` -- including noise -- passed.
+
+    That 0.0 is not evidence of a bug in `evaluate`/`recall_at_k` (see the investigation
+    this function's test exercises): an untrained encoder here is a mean-pooled random-
+    init transformer whose sincos position embedding (~unit scale) dwarfs its Normal(0,
+    0.02) token embeddings, so its held-out embeddings sit close together in a small
+    cluster (`emb_std` ~0.007 vs the ~0.06 a random unit-norm 256-d direction would give)
+    with one arbitrary "attractor" pair dominating similarity for most rows. Recall@1 for
+    that pattern lands near the `1/eval_pairs` chance floor, and CAN land exactly on 0 by
+    chance across a 512-row diagonal -- a fully tied or NaN score matrix would NOT produce
+    this (`recall_at_k` resolves ties to `1/N` via `topk`'s stable order, and NaN scores
+    now raise in `evaluate`, see there). So the number is real, and real numbers can
+    legitimately sit AT OR BELOW chance for an untrained model. What they cannot do is
+    certify a trained model against: a baseline that low means the measurement has near-
+    zero headroom above chance, so almost anything "beats" it without having learned
+    anything -- which is exactly the failure this gate exists to refuse.
+
+    `chance` uses `min(k, eval_pairs) / eval_pairs`: recall@1's chance floor is
+    `1/eval_pairs` (as the receipt's own `chance` key is nominally understood), and
+    recall@10's is the corresponding `10/eval_pairs` -- the two are not the same number
+    once `eval_pairs > 10`, and gating recall@10 on recall@1's chance would silently
+    under-gate it.
+
+    `baseline_sane` gates BOTH metrics off `recall@1`'s baseline specifically (not each
+    metric's own), because it is the primary signal this investigation targeted and the
+    one an in-batch diagonal eval is built around; a `recall@1` baseline this broken
+    means the whole eval run is not trustworthy, not just one column of it.
+
+    Args:
+        final: The trained model's `evaluate()` result.
+        baseline: The untrained model's `evaluate()` result, from BEFORE any training.
+        eval_pairs: Size of the held-out set the two were scored over.
+
+    Returns:
+        `(chance, beats)` -- `chance` maps `"recall@1"`/`"recall@10"` to their floors;
+        `beats` maps the same keys to whether the trained model both cleared a sane
+        baseline AND beat `max(baseline, chance) + _BEATS_UNTRAINED_MARGIN`.
+    """
+    chance = {
+        "recall@1": (1.0 / eval_pairs) if eval_pairs else 0.0,
+        "recall@10": (min(10, eval_pairs) / eval_pairs) if eval_pairs else 0.0,
+    }
+    baseline_sane = baseline.get("recall@1", 0.0) >= chance["recall@1"] / 2
+    beats = {
+        metric: bool(
+            baseline_sane
+            and final[metric] > max(baseline[metric], chance[metric]) + _BEATS_UNTRAINED_MARGIN
+        )
+        for metric in ("recall@1", "recall@10")
+    }
+    return chance, beats
 
 
 def build_splits(
@@ -924,6 +1012,7 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     elapsed = prior_elapsed + (time.time() - session_start)
     final = evaluate(model, tok, holdout, cfg.max_len, device)
     graded_final = evaluate_graded(model, tok, graded, cfg.max_len, device) if graded else {}
+    chance, beats = _beats_untrained_gate(final, baseline, final["n_pairs"])
 
     # A run that reports numbers but keeps no weights cannot be re-evaluated. The periodic
     # checkpoints stop before the last step, so without this the finished model -- the only
@@ -1027,9 +1116,17 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
             if graded
             else {}
         ),
+        # The seed the UNTRAINED model was constructed with -- not necessarily
+        # informative on its own (see `_beats_untrained_gate`'s docstring: identical
+        # config + seed=0 makes every text region's untrained model identical weights,
+        # so this cannot be used to explain a difference between regions), but it is
+        # what makes `untrained_baseline` reproducible by anyone re-running this exact
+        # config, and its absence is what let three regions' baselines look like three
+        # independent measurements when they were one.
+        "untrained_baseline_seed": cfg.seed,
+        "chance": chance,
         "beats_untrained": {
-            "recall@1": final["recall@1"] > baseline["recall@1"],
-            "recall@10": final["recall@10"] > baseline["recall@10"],
+            **beats,
             **(
                 {"spearman": graded_final["spearman"] > graded_baseline["spearman"]}
                 if graded
