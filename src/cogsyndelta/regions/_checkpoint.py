@@ -102,7 +102,11 @@ def describe_config_diff(old: dict[str, Any], new: dict[str, Any]) -> str:
 
 
 def load_resumable(
-    ckpt_dir: Path, fingerprint: str, fields: dict[str, Any]
+    ckpt_dir: Path,
+    fingerprint: str,
+    fields: dict[str, Any],
+    *,
+    allow_unfingerprinted: bool = True,
 ) -> dict[str, Any] | None:
     """Load a resumable checkpoint, or return None if there is nothing valid to use.
 
@@ -112,36 +116,67 @@ def load_resumable(
             ``_config_fingerprint``).
         fields: The current config's resume-relevant fields, plain-JSON-able, used only
             to build a readable diff on a mismatch.
+        allow_unfingerprinted: What to do with a checkpoint that predates fingerprinted
+            checkpoints entirely (no `config_fingerprint` key at all). `True` (the
+            default HERE) reproduces this function's original behaviour -- print a
+            notice and start fresh -- which is what `regions/vl_pretrain.py` and
+            `regions/classify_pretrain.py` still get by calling this positionally and
+            not opting in to the stricter mode. `regions/pretrain.py` passes `False` by
+            default (`PretrainConfig.allow_unfingerprinted_resume`): an unfingerprinted
+            checkpoint sitting in a region's checkpoint directory is indistinguishable
+            from one written by code too old to fingerprint anything, and "start fresh,
+            leave it there" is exactly the shape of incident this whole mechanism now
+            guards against -- a checkpoint from an unidentifiable vintage, sitting where
+            a future resume could still find it. Refusing forces an operator to look at
+            the file and either delete it or explicitly accept the fresh start with
+            `allow_unfingerprinted_resume=True` (`--allow-unfingerprinted-resume`).
 
     Returns:
         The loaded checkpoint dict (with `_path` added, naming the file it came from),
         or None if `ckpt_dir` holds nothing usable -- either it does not exist, or the
-        only checkpoint present predates resumable training (no fingerprint recorded).
+        only checkpoint present predates resumable training and `allow_unfingerprinted`
+        is `True`.
 
     Raises:
-        ValueError: A checkpoint exists and is well-formed, but was trained under a
-            DIFFERENT config. Silently starting fresh anyway would leave a stale
-            checkpoint sitting in `ckpt_dir` to confuse the next attempt; silently
-            resuming from it would produce a run that is neither the old config nor the
-            new one. Either way the only honest move is to say what differs and stop.
+        ValueError: A checkpoint exists and is well-formed, but either (a) was trained
+            under a DIFFERENT config -- silently starting fresh would leave a stale
+            checkpoint sitting in `ckpt_dir` to confuse the next attempt, silently
+            resuming would produce a run that is neither the old config nor the new one
+            -- or (b) carries no fingerprint at all and `allow_unfingerprinted` is
+            `False`. Either way the only honest move is to say what differs (or that
+            nothing on the file distinguishes it) and stop.
     """
     path = latest_checkpoint_path(ckpt_dir)
     if path is None:
         return None
     ckpt = torch.load(path, map_location="cpu", weights_only=True)
     if "config_fingerprint" not in ckpt:
-        print(
-            f"    found {path} but it predates resumable training (no config "
-            f"fingerprint recorded) -- starting fresh. Move or delete {ckpt_dir} to "
-            f"silence this.",
-            flush=True,
+        if allow_unfingerprinted:
+            print(
+                f"    found {path} but it predates resumable training (no config "
+                f"fingerprint recorded) -- starting fresh. Move or delete {ckpt_dir} to "
+                f"silence this.",
+                flush=True,
+            )
+            return None
+        raise ValueError(
+            f"refusing to resume from {path}: it has no config_fingerprint recorded at "
+            f"all (predates fingerprinted checkpoints, or fingerprinting was bypassed "
+            f"when it was written), and this call refuses such a checkpoint by default "
+            f"rather than silently starting fresh next to it -- an unfingerprinted "
+            f"checkpoint left in place is exactly what let one training vintage keep "
+            f"sitting beside another with nothing on disk to tell them apart. Current "
+            f"config fingerprint is {fingerprint}. Move or delete {ckpt_dir}, or pass "
+            f"allow_unfingerprinted_resume=True (--allow-unfingerprinted-resume) if you "
+            f"intend to start fresh and leave it."
         )
-        return None
     if ckpt["config_fingerprint"] != fingerprint:
         diff = describe_config_diff(ckpt.get("config_fields", {}), fields)
         raise ValueError(
-            f"refusing to resume from {path}: it was trained under a different "
-            f"config than the one requested now.\n{diff}\n"
+            f"refusing to resume from {path}: it was trained under a different config "
+            f"than the one requested now (checkpoint fingerprint "
+            f"{ckpt['config_fingerprint']}, current config fingerprint {fingerprint}).\n"
+            f"{diff}\n"
             f"Move or delete {ckpt_dir}, or fix the config, before retrying."
         )
     ckpt["_path"] = path

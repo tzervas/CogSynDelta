@@ -176,7 +176,14 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             metrics={k: v for k, v in ((k, _num(v)) for k, v in held.items()) if v is not None},
             baseline={k: v for k, v in ((k, _num(v)) for k, v in base.items()) if v is not None},
             gates=dict(raw.get("beats_untrained") or {}),
-            artifacts={"checkpoint": str(raw.get("checkpoint", ""))},
+            artifacts={
+                "checkpoint": str(raw.get("checkpoint", "")),
+                # Only present on receipts written after R9 (checkpoint fingerprinting);
+                # older receipts leave this "" rather than fabricate a hash nobody
+                # computed. A reader comparing artifacts across receipts should treat an
+                # empty value as "not recorded", not as "the file is empty".
+                "checkpoint_sha256": str(raw.get("checkpoint_sha256", "")),
+            },
             provenance={
                 "parameters": raw.get("parameters"),
                 "config": raw.get("config", {}),

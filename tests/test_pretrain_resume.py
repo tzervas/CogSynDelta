@@ -48,6 +48,7 @@ from cogsyndelta.regions.pretrain import (
     _checkpoint_payload,
     _config_fingerprint,
     _resume_fields,
+    _vintage_fingerprint,
     pretrain_region,
 )
 from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
@@ -241,7 +242,11 @@ def test_resume_matches_uninterrupted_run(tiny_cfg: PretrainConfig, monkeypatch)
         pretrain_region(crashing_cfg)
     monkeypatch.undo()
 
-    ckpt_dir = Path(crashing_cfg.out_dir) / f"{crashing_cfg.region}-checkpoints"
+    ckpt_dir = (
+        Path(crashing_cfg.out_dir)
+        / f"{crashing_cfg.region}-checkpoints"
+        / _vintage_fingerprint(crashing_cfg)[:8]
+    )
     assert (ckpt_dir / "step-000002.pt").is_file(), "expected a checkpoint before the crash"
 
     resumed = pretrain_region(crashing_cfg)
@@ -344,7 +349,7 @@ def test_rotation_keeps_only_the_most_recent_n_periodic_checkpoints(
 ) -> None:
     cfg = replace(tiny_cfg, steps=12, checkpoint_every=2)
     pretrain_region(cfg)
-    ckpt_dir = Path(cfg.out_dir) / f"{cfg.region}-checkpoints"
+    ckpt_dir = Path(cfg.out_dir) / f"{cfg.region}-checkpoints" / _vintage_fingerprint(cfg)[:8]
     periodic = sorted(p.name for p in ckpt_dir.glob("step-*.pt"))
     # _CHECKPOINT_KEEP is 3; steps=12, checkpoint_every=2 writes at 2,4,6,8,10 (11 has no
     # multiple before 12) plus the run finishes with a separate final.pt.
