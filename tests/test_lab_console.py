@@ -322,6 +322,71 @@ def test_http_apply_refuses_protected_guard_paths(
     assert ok["ok"] is True
 
 
+def test_http_apply_protected_check_survives_path_normalization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The protected-path check must run on the RESOLVED write target, not
+    the client-supplied string. A raw-string check is bypassable: PurePath
+    silently collapses "//" and "." segments and a trailing "/", and
+    resolve() follows symlinks, so a spelling that looks unprotected (or a
+    symlink alias) can still land on a protected file's real path."""
+    mod = load_lab(tmp_path, monkeypatch)
+    wt = tmp_path / "p1-08"
+    guard = wt / "src/cogsyndelta/eval/metrics.py"
+    guard.parent.mkdir(parents=True)
+    guard.write_text("original\n", encoding="utf-8")
+    (wt / "tests").mkdir()
+    guard_test = wt / "tests/test_guards_can_fail.py"
+    guard_test.write_text("original\n", encoding="utf-8")
+    alias = wt / "src/cogsyndelta/eval/alias.py"
+    alias.symlink_to(guard)
+    mod.WORKTREES = {"p1-08": wt}
+    mod.PROTECTED_WT = tmp_path / "memory-gate"
+
+    vectors = [
+        "src//cogsyndelta/eval/metrics.py",
+        "src/./cogsyndelta/eval/metrics.py",
+        "src/cogsyndelta//eval//metrics.py",
+        "src/cogsyndelta/eval/metrics.py/",
+        "src/cogsyndelta/eval/./metrics.py",
+        "tests//test_guards_can_fail.py",
+        "src/cogsyndelta/eval/alias.py",  # symlink -> metrics.py
+    ]
+    for rel in vectors:
+        rec = mod.http_apply("p1-08", rel, "canary\n")
+        assert rec["ok"] is False, rel
+        assert "protected" in rec["error"], rel
+
+    assert guard.read_text(encoding="utf-8") == "original\n"
+    assert guard_test.read_text(encoding="utf-8") == "original\n"
+
+
+def test_http_apply_escaped_worktree_via_dotdot_and_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A "../" escape and a symlink pointing outside the worktree must both
+    be refused, and refused before ALLOW_PREFIXES/protected-path checks run
+    on a string that no longer describes where the write would land."""
+    mod = load_lab(tmp_path, monkeypatch)
+    wt = tmp_path / "p1-08"
+    (wt / "src").mkdir(parents=True)
+    outside = tmp_path / "outside.py"
+    outside.write_text("original\n", encoding="utf-8")
+    escape_link = wt / "src" / "escape.py"
+    escape_link.symlink_to(outside)
+    mod.WORKTREES = {"p1-08": wt}
+    mod.PROTECTED_WT = tmp_path / "memory-gate"
+
+    dotdot = mod.http_apply("p1-08", "src/../../outside.py", "canary\n")
+    assert dotdot["ok"] is False
+    assert "escaped worktree" in dotdot["error"]
+
+    symlink_escape = mod.http_apply("p1-08", "src/escape.py", "canary\n")
+    assert symlink_escape["ok"] is False
+    assert "escaped worktree" in symlink_escape["error"]
+    assert outside.read_text(encoding="utf-8") == "original\n"
+
+
 def test_http_apply_refuses_assertless_test_stub(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

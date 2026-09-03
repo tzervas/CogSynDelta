@@ -49,6 +49,23 @@ UPSTREAM_TOKEN = os.environ.get("CSD_UPSTREAM_TOKEN", "").strip()
 # to UPSTREAM. /api/apply is never eligible -- see dispatch_api_post, which
 # handles it locally before this allowlist is even consulted -- and the
 # exclusion is repeated in proxy_eligible() as an independent second guard.
+#
+# FUNCTIONAL IMPACT on a proxying node (CSD_UPSTREAM set, e.g. the homelab
+# instance pointed at akula-prime:9118): the console's own page issues ~19
+# distinct /api/* calls (gpu/lock, git, loop, priority, steer, spawn, chat,
+# forgejo/{whoami,prs,pr-create,status,wait,comment,merge-gate},
+# comfy/{queue-prompt,flux-klein-4b}, plus the 5 below). Only the 5 below are
+# allowlisted, so on a proxying node every other route now 404s through the
+# UI, and POST /api/apply is handled LOCALLY on the proxying node (see
+# dispatch_api_post) rather than relayed to prime -- where WORKTREES paths
+# don't exist, so it returns "unknown worktree" instead of writing anything.
+# Excluding apply from the proxy is intentional (OD-2) and correct; narrowing
+# reads to 5 routes is a defensible default-deny default, but it is a real
+# functional break for any node that was using this console as a UI
+# front-end onto prime, not a transparent no-op. This needs an explicit
+# operator call: widen PROXY_ALLOW to the read-only routes the UI actually
+# needs, or stop pointing CSD_UPSTREAM at a node used as the operator UI.
+# Do not report this as "keeps working" -- it does not, until that call is made.
 PROXY_ALLOW = frozenset(
     {
         "/api/status",
@@ -484,24 +501,37 @@ def check_apply_auth(header: str) -> bool:
 
 
 def http_apply(worktree: str, rel: str, content: str) -> dict:  # noqa: PLR0911
-    """Allowlisted worktree write. Never kang-main-wip."""
+    """Allowlisted worktree write. Never kang-main-wip.
+
+    Path checks run against the RESOLVED target, not the client-supplied
+    string. A raw-string check here is bypassable: PurePath silently
+    collapses "//", "." segments and a trailing "/", and resolve() follows
+    symlinks, so a string that looks unprotected (or looks inside
+    ALLOW_PREFIXES) can resolve to a byte-for-byte protected path. Resolving
+    first and re-deriving `rel` from the resolved target means the string
+    every check below sees is exactly the path that gets written -- and it
+    closes the symlink vector (an alias pointing at a protected file
+    resolves to that file's real path) for free.
+    """
     dest = WORKTREES.get(worktree)
     if dest is None or not dest.is_dir():
         return {"ok": False, "error": f"unknown worktree {worktree}"}
-    if dest.resolve() == PROTECTED_WT.resolve():
+    droot = dest.resolve()
+    if droot == PROTECTED_WT.resolve():
         return {"ok": False, "error": "refusing kang-main-wip"}
-    rel = rel.lstrip("/")
+    raw_rel = rel.lstrip("/")
+    target = (dest / raw_rel).resolve()
+    if droot not in target.parents:
+        return {"ok": False, "error": "escaped worktree"}
+    rel = target.relative_to(droot).as_posix()
     if is_protected_apply_path(rel):
         return {"ok": False, "error": f"protected path: {rel}"}
-    if ".." in Path(rel).parts or not rel.startswith(ALLOW_PREFIXES):
+    if not rel.startswith(ALLOW_PREFIXES):
         return {"ok": False, "error": f"path not allowed: {rel}"}
     if len(content) > 400_000:
         return {"ok": False, "error": "content too large"}
     if "def test_" in content and "assert" not in content and "pytest.raises" not in content:
         return {"ok": False, "error": "test has no assert; refusing pass stubs"}
-    target = (dest / rel).resolve()
-    if dest.resolve() not in target.parents:
-        return {"ok": False, "error": "escaped worktree"}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return {"ok": True, "wrote": str(target)}
