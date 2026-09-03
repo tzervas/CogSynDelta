@@ -155,6 +155,53 @@ def effective_rank(embeddings: torch.Tensor, sample: int = 2048, seed: int = 0) 
     return float(torch.exp(-(p * p.log()).sum()).item())
 
 
+def participation_ratio(embeddings: torch.Tensor, sample: int = 2048, seed: int = 0) -> float:
+    """Participation-ratio effective rank: ``(sum s_i^2)^2 / sum s_i^4`` over the singular
+    values of the column-centered matrix.
+
+    A DIFFERENT quantity from :func:`effective_rank` (Shannon entropy of the LINEAR
+    spectrum) -- the two disagree in sign on this project's own text regions (W1:
+    participation-ratio ratios of 0.66x-1.30x against entropy ratios of 1.16x-1.84x for
+    the same four checkpoints, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md §4.0), so
+    conflating them is the exact ambiguity that section's gate was written to close.
+    "Both ranks are participation ratio, and the receipt says so" is the rule the W4/W7
+    retrain gate states for exactly this reason -- name the definition, do not let a
+    reader infer it from whichever column they see first.
+
+    Byte-for-byte the formula
+    ``docs/design/evidence/w1-token-rank-2026-09-02/measure_w1.py``'s
+    ``pr_effective_rank`` uses, which is the definition the W1/W1d/W4 gates were
+    pre-committed against -- this is that measurement promoted from a one-off evidence
+    script into the library every retrain gate after W1 reads from.
+
+    Args:
+        embeddings: ``[N, D]``. Row 0 of ``N`` is any representation -- pooled vectors,
+            or every valid token position of a batch flattened into one matrix (the
+            "token-global" surface the retrain gate reads).
+        sample: Subsample to this many rows before the SVD, for cost control on a large
+            token-global surface. Matches :func:`effective_rank`'s own default so the two
+            are comparable at the same N.
+        seed: Subsampling seed.
+
+    Returns:
+        A value in ``[1, min(N, D)]``; ``0.0`` for fewer than 2 rows (nothing to rank) or
+        a degenerate (all-zero) matrix.
+    """
+    x = embeddings.detach().float()
+    if x.size(0) < 2:
+        return 0.0
+    if x.size(0) > sample:
+        g = torch.Generator().manual_seed(seed)
+        x = x[torch.randperm(x.size(0), generator=g)[:sample]]
+    x = x - x.mean(dim=0, keepdim=True)
+    sv = torch.linalg.svdvals(x)
+    s2 = sv.double() ** 2
+    denom = (s2**2).sum()
+    if denom <= 0:
+        return 0.0
+    return float((s2.sum() ** 2 / denom).item())
+
+
 @dataclass
 class LatencyProfile:
     """Inference cost, as percentiles rather than a single mean."""

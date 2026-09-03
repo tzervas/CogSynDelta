@@ -38,7 +38,9 @@ from pathlib import Path
 from typing import Any
 
 import torch
+import torch.nn.functional as F
 from tokenizers import Tokenizer
+from torch import nn
 
 from cogsyndelta.corpus import (
     CORPUS_FINGERPRINT_SCHEME,
@@ -54,6 +56,7 @@ from cogsyndelta.eval import (
     screen_pair_contamination,
     spearman_correlation,
 )
+from cogsyndelta.eval.benchmark import effective_rank, participation_ratio
 from cogsyndelta.regions._checkpoint import (
     atomic_save,
     load_resumable,
@@ -157,6 +160,32 @@ class PretrainConfig:
     `run_classify_region` call `load_resumable` positionally and keep its own
     permissive default instead, so this flag has no effect there."""
 
+    token_loss_weight: float = 0.0
+    """`ζ` in docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md §4.0's adopted objective:
+    `L = InfoNCE(pool, pool+) + γ·L_decorr(h) + ζ·L_token(h)`. Zero (the default) is OFF
+    -- every region trained before this field existed keeps training the plain InfoNCE
+    loss it always has, byte-identically (see `pretrain_region`'s training loop, which
+    only adds the auxiliary terms when this or `decorr_weight` is nonzero).
+
+    Nonzero opts a region into `L_token`: masked-token prediction (BERT-style MLM) over
+    the region's own vocabulary, attached at the FINAL block -- W1d measured the
+    penultimate-block alternative and it lost in every region (§4.0, "FALLBACK -- STRUCK
+    IN REVISION 3.2"), so this module implements only the final-block shape. The MLM
+    head and its `[MASK]` embedding are auxiliary parameters trained alongside the
+    encoder and are NOT part of `TextEncoder`'s own state dict -- they are discarded
+    after training, per §4.0's description of the masked-token-prediction shape,
+    exactly as a checkpoint that loads `TextEncoder.state_dict()` today expects to.
+    """
+
+    decorr_weight: float = 0.0
+    """`γ` in the same formula: `L_decorr`, a VICReg/Barlow-Twins-shaped off-diagonal
+    penalty on the token-position feature covariance, driving cross-position redundancy
+    down. Zero (the default) is OFF for the same reason `token_loss_weight` is."""
+
+    token_loss_mask_prob: float = 0.15
+    """Fraction of non-padding positions the MLM head is asked to predict, per side, per
+    step -- BERT's own ratio. Read only when `token_loss_weight > 0`."""
+
 
 def _lr_at(step: int, cfg: PretrainConfig) -> float:
     """Linear warmup then cosine decay.
@@ -177,6 +206,181 @@ def _resolve_device(spec: str) -> torch.device:
     if spec == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(spec)
+
+
+# ---------------------------------------------------------------------------------------
+# §4.0's token-aware retrain objective: L_token (masked-token prediction, attached at the
+# FINAL block per W1d) and L_decorr (a covariance-decorrelation penalty on the same
+# surface). Both are opt-in (PretrainConfig.token_loss_weight/decorr_weight, default 0.0)
+# and both read from TextEncoder.tokens() -- the pre-pool, post-norm token matrix W0 added
+# for exactly this purpose -- rather than from `forward()`'s pooled output, which is the
+# surface InfoNCE alone can never put a gradient on directly (§4.0: "a gradient AT EVERY
+# POSITION, which InfoNCE structurally cannot supply").
+# ---------------------------------------------------------------------------------------
+
+
+def _build_mlm_head(
+    dim: int, vocab_size: int, device: torch.device
+) -> tuple[nn.Linear, nn.Parameter]:
+    """A discardable MLM head plus a learned `[MASK]` replacement vector.
+
+    Neither is part of `TextEncoder`'s own module tree or state dict -- §4.0 describes
+    masked-token prediction as "a BERT-style MLM head ... discarded after training", and
+    every existing checkpoint reader (`csd-quantize.py`, `csd-benchmark.py`,
+    `regions/retrieve.py`) loads `TextEncoder.state_dict()` and nothing else. A `[MASK]`
+    EMBEDDING rather than a reserved vocabulary id: the GPT-2 BPE table this project uses
+    has no spare id set aside for one, and adding a row would change `vocab_size` (and
+    therefore every existing checkpoint's embedding shape) for a feature most regions
+    never turn on.
+
+    Returns:
+        `(mlm_head, mask_embedding)`, both already moved to `device` and initialised
+        Normal(0, 0.02) zero-bias -- the same convention `TextEncoder._init_weights` uses,
+        so the auxiliary head starts in the same regime as the trunk it is attached to.
+    """
+    head = nn.Linear(dim, vocab_size).to(device)
+    nn.init.normal_(head.weight, mean=0.0, std=0.02)
+    nn.init.zeros_(head.bias)
+    mask_embedding = nn.Parameter(torch.zeros(dim, device=device))
+    nn.init.normal_(mask_embedding, mean=0.0, std=0.02)
+    return head, mask_embedding
+
+
+def _mlm_token_loss(
+    model,
+    mlm_head: nn.Linear,
+    mask_embedding: torch.Tensor,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor,
+    mask_prob: float,
+) -> tuple[torch.Tensor, int]:
+    """§4.0's masked-token prediction, attached at the FINAL block.
+
+    Replicates `TextEncoder.tokens()` (embed -> blocks -> norm) with one difference: at a
+    sampled subset of REAL (non-padding) positions, the token embedding is replaced by
+    `mask_embedding` before the blocks run, and the head predicts the ORIGINAL id at
+    those positions from the final-block representation. Reads `model.embed`,
+    `model.pos_embed` and `model.blocks` directly rather than adding a masking parameter
+    to `TextEncoder.tokens()` itself -- the same sanctioned access pattern
+    `docs/design/evidence/w1-token-rank-2026-09-02/measure_w1.py` already uses to capture
+    the identical surface read-only, so every OTHER caller of `tokens()`/`forward()` (every
+    region that never sets `token_loss_weight`) sees no change to `TextEncoder` at all.
+
+    Args:
+        model: A `TextEncoder`.
+        mlm_head: `nn.Linear(dim, vocab_size)`, from :func:`_build_mlm_head`.
+        mask_embedding: `[dim]`, from :func:`_build_mlm_head`.
+        input_ids: `[B, T]`.
+        attention_mask: `[B, T]`, 1 for real tokens.
+        mask_prob: Fraction of real positions to mask, in expectation.
+
+    Returns:
+        `(loss, n_masked)`. `loss` is `0.0` (a zero tensor, no grad) when the sampled mask
+        selects nothing -- possible on a very short batch -- so a caller can add it to the
+        total loss unconditionally without special-casing an empty selection. `n_masked`
+        is reported for the receipt/history, not used in the loss itself.
+    """
+    b, t = input_ids.shape
+    real = attention_mask.bool()
+    draw = torch.rand(b, t, device=input_ids.device)
+    mlm_mask = (draw < mask_prob) & real
+    n_masked = int(mlm_mask.sum().item())
+    if n_masked == 0:
+        return input_ids.new_zeros((), dtype=torch.float32), 0
+
+    h = model.embed(input_ids)
+    h = torch.where(mlm_mask.unsqueeze(-1), mask_embedding.to(h.dtype), h)
+    h = h + model.pos_embed[:, :t]
+    for block in model.blocks:
+        h = block(h, attention_mask)
+    h = model.norm(h)  # [B, T, dim] -- the FINAL block, pre-pool, post-norm
+
+    logits = mlm_head(h[mlm_mask])  # [n_masked, vocab_size]
+    targets = input_ids[mlm_mask]
+    loss = F.cross_entropy(logits.float(), targets)
+    return loss, n_masked
+
+
+def _token_decorrelation_loss(h: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """§4.0's `L_decorr`: a VICReg/Barlow-Twins-shaped off-diagonal penalty on the
+    token-position feature covariance, driving cross-position redundancy down.
+
+    Flattens every REAL (non-padding) token position across the whole batch into one
+    `[N, dim]` matrix -- the same "token-global" surface the W4/W7 rank gate measures
+    (see `cogsyndelta.eval.benchmark.participation_ratio`) -- centers it, and penalizes
+    the squared off-diagonal mass of its `dim x dim` feature covariance, normalised by
+    `dim` so the penalty's scale does not grow with the encoder width.
+
+    Args:
+        h: `[B, T, dim]`, the FINAL block's pre-pool token representations.
+        mask: `[B, T]`, 1 for real positions.
+
+    Returns:
+        A scalar loss, `0.0` (no grad) when fewer than 2 real positions survive.
+    """
+    flat = h[mask.bool()].float()
+    if flat.size(0) < 2:
+        return h.new_zeros(())
+    flat = flat - flat.mean(dim=0, keepdim=True)
+    n = flat.size(0)
+    dim = flat.size(1)
+    cov = (flat.T @ flat) / max(1, n - 1)
+    off_diag_sq = cov.pow(2).sum() - cov.diagonal().pow(2).sum()
+    return off_diag_sq / dim
+
+
+def _final_block_rank_stats(
+    model: TextEncoder,
+    tok: Tokenizer,
+    pairs: list[tuple[str, str]],
+    max_len: int,
+    device: torch.device,
+    batch: int = 64,
+) -> dict[str, float]:
+    """Both rank definitions the W4/W7 gate needs, on the FINAL block's token surface.
+
+    "Both ranks are participation ratio, and the receipt says so" (§4.0) -- the entropy
+    definition is recorded ALONGSIDE it, never in its place, because the two disagreed in
+    sign on every production region at W1 and conflating them is the exact ambiguity that
+    section's gate exists to close.
+
+    Args:
+        model: A `TextEncoder`, in whatever mode (trained or freshly initialised).
+        tok: Tokenizer.
+        pairs: Held-out (anchor, positive) pairs -- both sides pooled into ONE surface,
+            matching how `evaluate()` reads this same holdout.
+        max_len: Token truncation length.
+        device: Where to run.
+        batch: Encoding chunk size.
+
+    Returns:
+        `pooled_pr_rank`, `pooled_entropy_rank`, `token_global_pr_rank`,
+        `token_global_entropy_rank`, and `n_tokens` (the size of the token-global surface
+        the two `token_global_*` figures were computed over).
+    """
+    was_training = model.training
+    model.eval()
+    pooled_chunks: list[torch.Tensor] = []
+    token_chunks: list[torch.Tensor] = []
+    with torch.no_grad():
+        for i in range(0, len(pairs), batch):
+            chunk = pairs[i : i + batch]
+            texts = [a for a, _ in chunk] + [b for _, b in chunk]
+            ids, m = _tokenize(tok, texts, max_len, device)
+            h, tmask = model.tokens(ids, m)
+            pooled_chunks.append(model.pool(h, tmask).float().cpu())
+            token_chunks.append(h[tmask.bool()].float().cpu())
+    if was_training:
+        model.train()
+    pooled = torch.cat(pooled_chunks, dim=0) if pooled_chunks else torch.zeros(0, model.out_dim)
+    token_global = torch.cat(token_chunks, dim=0) if token_chunks else torch.zeros(0, model.cfg.dim)
+    return {
+        "pooled_pr_rank": participation_ratio(pooled),
+        "pooled_entropy_rank": effective_rank(pooled),
+        "token_global_pr_rank": participation_ratio(token_global),
+        "token_global_entropy_rank": effective_rank(token_global),
+        "n_tokens": float(token_global.size(0)),
+    }
 
 
 def _tokenize(tok: Tokenizer, texts: list[str], max_len: int, device: torch.device):
@@ -952,6 +1156,12 @@ def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
         "graded_shards": sorted(cfg.graded_shards),
         "graded_columns": list(cfg.graded_columns),
         "graded_name": cfg.graded_name,
+        # §4.0's token-aware terms change what is being trained (a nonzero weight adds a
+        # per-position gradient InfoNCE alone never supplies), so a resume under a
+        # different weight is a different run, not a continuation of this one.
+        "token_loss_weight": cfg.token_loss_weight,
+        "decorr_weight": cfg.decorr_weight,
+        "token_loss_mask_prob": cfg.token_loss_mask_prob,
         "corpus_fingerprint": _corpus_content_fingerprint(cfg),
         "split_code_fingerprint": _split_code_fingerprint(),
     }
@@ -1060,8 +1270,27 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
 
     encoder_cfg = TextEncoderConfig(**{**asdict(cfg.encoder), "vocab_size": tok.get_vocab_size()})
     model = TextEncoder(encoder_cfg, name=cfg.region).to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     params = sum(p.numel() for p in model.parameters())
+
+    # §4.0's token-aware terms, opt-in. The MLM head and mask embedding are auxiliary --
+    # not part of `model`'s own parameters or state dict (see `_build_mlm_head`) -- so
+    # they join the SAME optimizer (their gradient has to update the trunk they attach to)
+    # without changing what `model.state_dict()` or `params` above describe.
+    token_aware = cfg.token_loss_weight > 0.0 or cfg.decorr_weight > 0.0
+    mlm_head: nn.Linear | None = None
+    mask_embedding: nn.Parameter | None = None
+    opt_params = list(model.parameters())
+    if cfg.token_loss_weight > 0.0:
+        mlm_head, mask_embedding = _build_mlm_head(encoder_cfg.dim, encoder_cfg.vocab_size, device)
+        opt_params += list(mlm_head.parameters()) + [mask_embedding]
+        # KNOWN LIMITATION, scoped deliberately: because the head is not in `model`'s
+        # state dict, a RESUMED token-aware run gets a freshly re-initialised head (its
+        # optimizer momentum still loads from the checkpoint -- see `_checkpoint_payload`
+        # -- against those fresh weights, which is a real but minor inconsistency). §4.0
+        # calls the head discardable and this project has not yet resumed a token-aware
+        # run across a process restart; widening the checkpoint schema to persist it is
+        # deferred until that actually happens.
+    opt = torch.optim.AdamW(opt_params, lr=cfg.lr)
 
     # fingerprint (and the corpus/code content it now covers, see R9) BEFORE ckpt_dir:
     # the directory name carries a short prefix of the narrower VINTAGE fingerprint
@@ -1171,11 +1400,38 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         # the gradients it produces are already fp32 against fp32 master weights, so no
         # `GradScaler` is needed (that is fp16's problem; bf16 has fp32's exponent range).
         with autocast:
-            loss, stats = info_nce(model(a_ids, a_mask), model(p_ids, p_mask))
+            # Split what used to be `model(a_ids, a_mask)` into its two halves
+            # (`tokens()` then `pool()`) -- exactly what `forward()` does internally, so
+            # `loss`/`stats` are bit-identical to before whenever the token-aware terms
+            # are off. Splitting it is what makes `a_h`/`p_h` -- the FINAL block's
+            # pre-pool token surface -- available to `L_token`/`L_decorr` below without a
+            # second forward pass through the trunk.
+            a_h, a_tmask = model.tokens(a_ids, a_mask)
+            p_h, p_tmask = model.tokens(p_ids, p_mask)
+            loss, stats = info_nce(model.pool(a_h, a_tmask), model.pool(p_h, p_tmask))
+            if cfg.token_loss_weight > 0.0:
+                assert mlm_head is not None and mask_embedding is not None
+                token_loss_a, n_masked_a = _mlm_token_loss(
+                    model, mlm_head, mask_embedding, a_ids, a_mask, cfg.token_loss_mask_prob
+                )
+                token_loss_p, n_masked_p = _mlm_token_loss(
+                    model, mlm_head, mask_embedding, p_ids, p_mask, cfg.token_loss_mask_prob
+                )
+                token_loss = 0.5 * (token_loss_a + token_loss_p)
+                loss = loss + cfg.token_loss_weight * token_loss
+                stats["token_loss"] = token_loss.item()
+                stats["token_loss_n_masked"] = n_masked_a + n_masked_p
+            if cfg.decorr_weight > 0.0:
+                decorr_loss = 0.5 * (
+                    _token_decorrelation_loss(a_h, a_tmask)
+                    + _token_decorrelation_loss(p_h, p_tmask)
+                )
+                loss = loss + cfg.decorr_weight * decorr_loss
+                stats["decorr_loss"] = decorr_loss.item()
         opt.zero_grad()
         loss.backward()
         if cfg.grad_clip > 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+            torch.nn.utils.clip_grad_norm_(opt_params, cfg.grad_clip)
         opt.step()
 
         if step % cfg.eval_every == 0 or step == cfg.steps - 1:
@@ -1213,6 +1469,13 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     elapsed = prior_elapsed + (time.time() - session_start)
     final = evaluate(model, tok, holdout, cfg.max_len, device)
     graded_final = evaluate_graded(model, tok, graded, cfg.max_len, device) if graded else {}
+    # §4.0's W4/W7 gate ("token_global_pr_rank >= 2.0 * pooled_pr_rank ... both ranks are
+    # participation ratio, and the receipt says so") is pre-committed on a specific pair
+    # of numbers; recording both rank definitions on every run -- not only a token-aware
+    # one -- is what lets an "off" receipt stand as the comparison arm for an "on" one
+    # trained on the identical corpus/seed, exactly as the flag/weights below let a reader
+    # tell the two apart without re-deriving it from `config`.
+    final_block_rank = _final_block_rank_stats(model, tok, holdout, cfg.max_len, device)
     chance, beats = _beats_untrained_gate(
         final,
         baseline,
@@ -1338,6 +1601,21 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         "chance": chance,
         "beats_untrained": beats,
         "capability_per_param": final["recall@1"] / (params / 1e6) if params else 0.0,
+        # §4.0's token-aware retrain objective. `enabled` is the one flag a reader needs
+        # before trusting either weight: `token_loss_weight`/`decorr_weight` are also
+        # visible in `config`, but named here next to the rank stats the W4/W7 gate reads
+        # them alongside, rather than requiring a second lookup into a differently-shaped
+        # block. `final_block_rank` is recorded on EVERY run (see the call site above) so
+        # an "off" receipt over the same corpus/seed is a valid comparison arm for an
+        # "on" one, not just a placeholder.
+        "token_aware": {
+            "enabled": token_aware,
+            "token_loss_weight": cfg.token_loss_weight,
+            "decorr_weight": cfg.decorr_weight,
+            "token_loss_mask_prob": cfg.token_loss_mask_prob,
+            "token_loss_kind": "masked_token_prediction",
+            "final_block_rank": final_block_rank,
+        },
     }
 
     _assert_graded_gate_present(cfg, receipt)
