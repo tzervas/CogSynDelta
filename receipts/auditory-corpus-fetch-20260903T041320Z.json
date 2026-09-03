@@ -1,0 +1,241 @@
+{
+  "schema": "csd-corpus-fetch-receipt/v1",
+  "regions": ["auditory", "speech_output"],
+  "recorded": "2026-09-03T04:28:12Z",
+  "row": "A0 (audio corpus manifests and fetch)",
+  "host": "gpu5080",
+  "bulk_root": "/bulk/csd-corpus",
+  "budget_bytes": 161061273600,
+  "budget_note": "at most 150 GB, per row A0's spec",
+  "disk": {
+    "before": {
+      "filesystem": "/dev/md127",
+      "size": "5.5T",
+      "used": "743G",
+      "avail": "4.7T",
+      "use_pct": "14%"
+    },
+    "after": {
+      "filesystem": "/dev/md127",
+      "size": "5.5T",
+      "used": "818G",
+      "avail": "4.6T",
+      "use_pct": "15%"
+    },
+    "delta_bytes_approx": 80530636800,
+    "note": "df before/after (75G reported growth, block-rounded); the sum of manifest 'bytes' fields below (the source of truth) is 80,883,955,039 -- both are well under the 150 GB budget_bytes ceiling and neither was ever approached."
+  },
+  "summary": {
+    "catalogue_entries_total": 40,
+    "train_ok_auditory_speech_output": 16,
+    "refuse_blocking_entries": 8,
+    "manifests_written_this_pass": 16,
+    "audio_fetched_true": 4,
+    "audio_fetched_false_manifest_only": 12,
+    "total_audio_bytes_fetched": 80883955039,
+    "total_audio_bytes_fetched_gb": 75.33,
+    "independent_provenance_groups_with_real_audio": ["voxpopuli", "peoples_speech", "freesound", "musan"],
+    "provenance_groups_covered_note": "4 independent groups carry real audio bytes this pass, exceeding row A0's >=3 requirement; a 5th (purpose_recorded, via VCTK) was attempted and intentionally not counted -- see vctk_attempt below."
+  },
+  "balance_report": {
+    "computed_by": "scripts/csd-corpus-expand.py --balance (audio_balance_report(), uncapped natural sizes)",
+    "groups_hours": {
+      "voxpopuli": 401800,
+      "librivox": 113301,
+      "peoples_speech": 30000,
+      "purpose_recorded": 229,
+      "musan": 109,
+      "freesound": 108,
+      "professional_expressive": 40
+    },
+    "total_hours": 545587,
+    "b1_max_single_source_share": 0.736,
+    "b1_threshold": 0.40,
+    "b1_result": "FAILS",
+    "b2_n_eff_inverse_simpson": 1.70,
+    "b2_threshold": 3.0,
+    "b2_result": "FAILS",
+    "note": "Uncapped natural sizes, as CORPUS-CONTRACT.md's own B1/B2 comparisons are always reported -- deliberately not the post-cap number a training sampler would draw. This matches audio-licence-audit.md's own prediction (VoxPopuli's ~400,000 unlabelled hours dominate any uncapped mix once LibriVox is correctly treated as one group). A training-time cap is a separate, future step; this receipt is honest that the guard currently reports FAIL on the raw catalogue, which is the point of a guard that can fail."
+  },
+  "vctk_attempt": {
+    "repo_id": "CSTR-Edinburgh/vctk",
+    "region": "speech_output",
+    "provenance_group": "purpose_recorded",
+    "outcome": "not completed, not counted",
+    "bytes_downloaded_before_abandoned": 9554624512,
+    "reason": "single-stream archive download (https://datashare.ed.ac.uk/.../VCTK-Corpus-0.92.zip) ran at a very slow and intermittently stalling rate for its full ~11GB size; after a long wait with only partial, non-extractable zip bytes on disk, the partial file was DELETED rather than manifested -- a truncated zip is not usable data the way FSD50K's already-complete individual clip files were, so recording partial bytes here would misrepresent what is actually on disk. No manifest was written for this entry; it remains unfetched (is_present() will retry it cleanly on a future run) rather than falsely marked done."
+  },
+  "entries": [
+    {
+      "name": "Fhrozen/FSD50k",
+      "region": "auditory",
+      "provenance_group": "freesound",
+      "fetch_kind": "hf_files_bounded",
+      "audio_fetched": true,
+      "bytes": 1382452164,
+      "rows": 6282,
+      "fetched_utc": "2026-09-03T04:04:54Z",
+      "manifest_sha256": "8585914507204acd3543c4ed07562694f88ce2abe9afc8ee6d8c139195db0e2e",
+      "note": "cut off short of its 6GB budget: the concurrent download loop deadlocked mid-run (all worker threads parked in futex_wait_queue, zero network activity, for hours -- a Python-level lock-contention bug, not a network stall). Finalized from what was ACTUALLY on disk and verified complete (6282 whole clip files) rather than retried, to avoid risking the same deadlock again. Diagnosis and the wall-clock-deadline mitigation are in this branch's fix commits."
+    },
+    {
+      "name": "MLCommons/peoples_speech",
+      "region": "auditory",
+      "config": "clean",
+      "provenance_group": "peoples_speech",
+      "fetch_kind": "hf_files_bounded",
+      "audio_fetched": true,
+      "bytes": 34202963782,
+      "rows": 69,
+      "fetched_utc": "2026-09-03T03:52:15Z",
+      "manifest_sha256": "1c01c1e0e9d5118817c99424761fcccd065fa34091a15290ee6df02587490745"
+    },
+    {
+      "name": "facebook/voxpopuli",
+      "region": "auditory",
+      "config": "en",
+      "provenance_group": "voxpopuli",
+      "fetch_kind": "hf_files_bounded",
+      "audio_fetched": true,
+      "bytes": 34212425008,
+      "rows": 12,
+      "fetched_utc": "2026-09-03T03:43:32Z",
+      "manifest_sha256": "775738b7890f0f36ef24e524a8d2e25748c2917fd60b7cd7dff20fa93ece05ad"
+    },
+    {
+      "name": "musan",
+      "region": "auditory",
+      "provenance_group": "musan",
+      "fetch_kind": "http_archive",
+      "audio_fetched": true,
+      "bytes": 11086114085,
+      "rows": 1,
+      "fetched_utc": "2026-09-03T04:13:20Z",
+      "manifest_sha256": "3dc9ccd11ee1c68b011cc83d7857a3e56de389f8439c816038c50e7df7545df9",
+      "note": "full corpus, exact match to OpenSLR's own reported 11,086,114,085 bytes"
+    },
+    {
+      "name": "edinburghcstr/ami",
+      "region": "auditory",
+      "provenance_group": "purpose_recorded",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T03:52:15Z",
+      "manifest_sha256": "cf203139815921ed8975cfd32b72401c2f02681973fba584b94279c77390ee61",
+      "note": "manifest-only: not in this pass's bounded slice"
+    },
+    {
+      "name": "libri-light",
+      "region": "auditory",
+      "provenance_group": "librivox",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T03:36:41Z",
+      "manifest_sha256": "e84dbb6e59fbcbdc3bb7961985e99d0cc79f0239f88f49dd1a453fe3fee85b87",
+      "note": "manifest-only: no packaged mirror exists"
+    },
+    {
+      "name": "openslr/librispeech_asr",
+      "region": "auditory",
+      "provenance_group": "librivox",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T03:36:41Z",
+      "manifest_sha256": "67a79329f78deeeb10e95f77da714c4168ef919585ab4e14e5024e9400d666fb",
+      "note": "manifest-only: not in this pass's bounded slice"
+    },
+    {
+      "name": "facebook/multilingual_librispeech",
+      "region": "auditory",
+      "provenance_group": "librivox",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T03:36:41Z",
+      "manifest_sha256": "6863e489b7257bb43984597ff3064d3b41f3ed5a96dc08515e4eb225ffb1ee8e",
+      "note": "manifest-only: not in this pass's bounded slice"
+    },
+    {
+      "name": "AISHELL/AISHELL-3",
+      "region": "speech_output",
+      "provenance_group": "purpose_recorded",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T04:28:12Z",
+      "manifest_sha256": "c514a9853e6b5a8f78046003b127e129d90f9a5754c69d8417e98b01fbf85fa5",
+      "note": "manifest-only: not in this pass's bounded slice"
+    },
+    {
+      "name": "css10",
+      "region": "speech_output",
+      "provenance_group": "librivox",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T04:13:20Z",
+      "manifest_sha256": "3f09c97e8888ef1ebb05f7bccacb4392ea510e1c67363855158eb2ec9c1dcf10",
+      "note": "manifest-only: no packaged mirror exists"
+    },
+    {
+      "name": "ylacombe/expresso",
+      "region": "speech_output",
+      "provenance_group": "professional_expressive",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T04:28:12Z",
+      "manifest_sha256": "7fa580307f28059a7af3f12df890deb68fc022f0e8e8b861094ec7c34f0c7320",
+      "note": "manifest-only: not in this pass's bounded slice"
+    },
+    {
+      "name": "MikhailT/hifi-tts",
+      "region": "speech_output",
+      "provenance_group": "librivox",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T04:13:20Z",
+      "manifest_sha256": "44424a5ea7f9b4fb77380c158bdc0405a4650e6077cab0a4e39273330cf4f3cb",
+      "note": "manifest-only: not in this pass's bounded slice"
+    },
+    {
+      "name": "nvidia/hifitts-2",
+      "region": "speech_output",
+      "provenance_group": "librivox",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T04:13:20Z",
+      "manifest_sha256": "6ba6f8aee526a900bc6d1cfc56ff4ec9757a0852e6a53a3394bb6a37a9d6a26a",
+      "note": "manifest-only: not in this pass's bounded slice"
+    },
+    {
+      "name": "mythicinfinity/libritts_r",
+      "region": "speech_output",
+      "provenance_group": "librivox",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T04:13:20Z",
+      "manifest_sha256": "926698f7bb73fd41d66db47e460f95b4a8e6bd0f05f0de80445b4a2d1313de4e",
+      "note": "manifest-only: not in this pass's bounded slice"
+    },
+    {
+      "name": "keithito/lj_speech",
+      "region": "speech_output",
+      "provenance_group": "librivox",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T04:13:20Z",
+      "manifest_sha256": "8a88fba3558f69cd3c7b2c3fca7c37aac7d2c1cbca097a28b04fc91da43458f4",
+      "note": "manifest-only: not in this pass's bounded slice"
+    },
+    {
+      "name": "gigant/m-ailabs_speech_dataset_fr",
+      "region": "speech_output",
+      "provenance_group": "librivox",
+      "audio_fetched": false,
+      "fetched_utc": "2026-09-03T04:13:20Z",
+      "manifest_sha256": "3e245e6a3e900da0e0f5e56bfc1ddb4a87da1415423a4683ce2b18d3a349d566",
+      "note": "manifest-only: not in this pass's bounded slice"
+    }
+  ],
+  "refuse_entries_verified": [
+    "speechcolab/gigaspeech",
+    "ted-lium-3",
+    "amphion/Emilia-Dataset",
+    "kensho/spgispeech",
+    "switchboard-1",
+    "agkphysics/AudioSet",
+    "jp1924/AudioCaps",
+    "cvssp/WavCaps"
+  ],
+  "refuse_entries_note": "Verified live via scripts/csd-corpus-expand.py --regions=auditory,speech_output dry-run and the pytest suite (tests/test_csd_corpus_expand_audio.py): all 8 print as REFUSED and none has a local directory or MANIFEST.json anywhere under /bulk/csd-corpus.",
+  "operator_open_items": [
+    "VCTK (purpose_recorded group) never completed its bounded fetch this pass -- worth a manual retry from a different network path, or a resumable-download implementation, before it is relied on for a 5th provenance group.",
+    "The B1/B2 balance FAILS on the catalogue's natural, uncapped sizes (VoxPopuli dominates) -- a capped training-time sampler is required before `auditory`/`speech_output` are used for real training, per audio-licence-audit.md's own B1 section. Not attempted this pass; row A0's scope was the catalogue, the refusing fetcher, and the first bounded byte fetch."
+  ]
+}
