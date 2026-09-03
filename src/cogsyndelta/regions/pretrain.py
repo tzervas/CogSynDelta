@@ -1339,6 +1339,12 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     device = _resolve_device(cfg.device)
     tok = Tokenizer.from_file(cfg.tokenizer_path)
 
+    from cogsyndelta.util.gpu_budget import PROBE_STEPS, apply_budget_from_env, probe_requested
+
+    apply_budget_from_env()
+    if probe_requested():
+        cfg.steps = min(cfg.steps, PROBE_STEPS)
+
     holdout, train_pairs, split_meta = build_splits(cfg)
     source_counts = split_meta["source_counts"]
     duplicates_removed = split_meta["duplicates_removed"]
@@ -1719,4 +1725,8 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         Path(cfg.out_dir),
         f"{cfg.region}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json",
     )
+
+    from cogsyndelta.util.gpu_budget import report_peak
+
+    report_peak()
     return receipt

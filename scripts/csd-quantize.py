@@ -248,6 +248,9 @@ def quantize_text_region(
 
 def main() -> int:
     from cogsyndelta.regions._receipt import write_receipt
+    from cogsyndelta.util.gpu_budget import apply_budget_from_env, report_peak
+
+    apply_budget_from_env()
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", default=str(DEFAULT_STATE))
@@ -301,6 +304,7 @@ def main() -> int:
             f"{'OK' if r['within_budget'] else 'OVER BUDGET'}",
             flush=True,
         )
+    report_peak()
     return 1 if failures else 0
 
 
