@@ -33,32 +33,34 @@ repo-wide grep would flag all of them for no reason; the lint below is scoped to
 the files this pass touched: `regions/pretrain.py`, `regions/_checkpoint.py` (which
 DEFINES the one legitimate call), `scripts/csd-quantize.py`, `scripts/csd-benchmark.py`,
 and `regions/retrieve.py` if that file exists (it does not, as of this commit).
+
+WHY PART 1 AND 2 IMPORT NEITHER `torch` NOR `cogsyndelta` AT MODULE SCOPE
+`stray_torch_load_calls` is pure `re`/`pathlib` text scanning -- it needs neither. But
+`cogsyndelta.regions._checkpoint` (the module part 3 actually exercises) is a *submodule*
+of the `regions` package, and Python always runs a package's `__init__.py` before one of
+its submodules -- `cogsyndelta.regions.__init__` imports `regions.pretrain`, which
+imports `tokenizers` at module scope, even though `_checkpoint.py` itself needs neither
+`pyarrow` nor `tokenizers`. A previous version of this file called
+`pytest.importorskip(...)` for both at MODULE scope to route around that, which does not
+do what it looks like it does: `importorskip` raises `Skipped` during collection, which
+skips the entire file, not just the tests that need the train group -- so in a dev-group-
+only environment (every CI job in this repo: `.github/workflows/ci.yml`,
+`code-quality.yml`, `scripts/ci_local.sh` all `uv sync --group dev`, never `--group
+train`) parts 1 and 2 never ran either, despite needing nothing torch/tokenizers-related.
+The `ckpt` fixture below does the same two `importorskip` calls, but from INSIDE a
+fixture that only the part-3 tests request -- so only those individual tests skip absent
+the train group, and the lint (part 1) and its self-test (part 2) run everywhere,
+including in CI.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
-
-# MUST precede the cogsyndelta imports below: cogsyndelta.regions.__init__ imports
-# regions.pretrain, which imports tokenizers at module scope, and `_checkpoint` is a
-# submodule of the `regions` package -- so importing IT triggers the package's
-# `__init__.py` first, even though `_checkpoint.py` itself needs neither pyarrow nor
-# tokenizers. Without this, a dev-group-only environment (no train group) fails
-# COLLECTION outright rather than skipping (same reasoning as
-# tests/test_pretrain_resume.py's identical guard).
-pytest.importorskip("pyarrow", reason="train group not installed")
-pytest.importorskip("tokenizers", reason="train group not installed")
-
-import torch
-
-from cogsyndelta.regions._checkpoint import (
-    ChecksumMismatchError,
-    load_checkpoint,
-    sha256_file,
-)
 
 pytestmark = pytest.mark.cpu
 
@@ -106,7 +108,8 @@ def stray_torch_load_calls(path: Path) -> list[int]:
 
 
 # ---------------------------------------------------------------------------------------
-# 1. The lint itself, run against the real shipped source.
+# 1. The lint itself, run against the real shipped source. Needs neither torch nor
+#    cogsyndelta -- always collects and runs, dev group alone included.
 # ---------------------------------------------------------------------------------------
 
 
@@ -124,7 +127,8 @@ def test_no_stray_torch_load_in_scoped_files(relpath: str) -> None:
 
 # ---------------------------------------------------------------------------------------
 # 2. The lint's checker function actually fires -- proven on a scratch copy, never on the
-#    real tree (which is asserted clean above).
+#    real tree (which is asserted clean above). Also needs neither torch nor cogsyndelta:
+#    the scratch copies below are plain text edits, never imported or executed.
 # ---------------------------------------------------------------------------------------
 
 
@@ -173,62 +177,93 @@ def test_lint_fires_on_a_stray_torch_load_added_outside_load_checkpoint_in__chec
 
 
 # ---------------------------------------------------------------------------------------
-# 3. load_checkpoint itself.
+# 3. load_checkpoint itself. Everything below requests the `ckpt` fixture, which is the
+#    ONLY place torch/tokenizers/pyarrow are imported in this file -- see the module
+#    docstring. Absent the train group, only these tests skip.
 # ---------------------------------------------------------------------------------------
 
 
-def _save_tiny_checkpoint(path: Path, *, step: int = 8000) -> dict:
+@pytest.fixture()
+def ckpt() -> SimpleNamespace:
+    """`torch` plus `cogsyndelta.regions._checkpoint`'s public API, imported HERE (inside
+    a fixture, requested only by the tests below) rather than at module scope -- see the
+    module docstring. `pytest.importorskip` from inside a fixture skips only the
+    requesting test, not the whole file.
+    """
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    import torch as torch_mod
+
+    from cogsyndelta.regions._checkpoint import (
+        ChecksumMismatchError,
+        load_checkpoint,
+        sha256_file,
+    )
+
+    return SimpleNamespace(
+        torch=torch_mod,
+        ChecksumMismatchError=ChecksumMismatchError,
+        load_checkpoint=load_checkpoint,
+        sha256_file=sha256_file,
+    )
+
+
+def _save_tiny_checkpoint(torch_mod: Any, path: Path, *, step: int = 8000) -> dict:
     state = {
-        "model": {"weight": torch.randn(4, 4), "bias": torch.zeros(4)},
+        "model": {"weight": torch_mod.randn(4, 4), "bias": torch_mod.zeros(4)},
         "step": step,
     }
-    torch.save(state, path)
+    torch_mod.save(state, path)
     return state
 
 
-def test_load_checkpoint_loads_a_matching_file(tmp_path: Path) -> None:
+def test_load_checkpoint_loads_a_matching_file(ckpt: SimpleNamespace, tmp_path: Path) -> None:
     ckpt_path = tmp_path / "final.pt"
-    state = _save_tiny_checkpoint(ckpt_path)
-    expected = sha256_file(ckpt_path)
+    state = _save_tiny_checkpoint(ckpt.torch, ckpt_path)
+    expected = ckpt.sha256_file(ckpt_path)
 
-    loaded = load_checkpoint(ckpt_path, expected_sha256=expected, map_location="cpu")
+    loaded = ckpt.load_checkpoint(ckpt_path, expected_sha256=expected, map_location="cpu")
 
     assert loaded["step"] == state["step"]
-    assert torch.equal(loaded["model"]["weight"], state["model"]["weight"])
+    assert ckpt.torch.equal(loaded["model"]["weight"], state["model"]["weight"])
 
 
-def test_load_checkpoint_with_no_expected_hash_still_loads(tmp_path: Path) -> None:
+def test_load_checkpoint_with_no_expected_hash_still_loads(
+    ckpt: SimpleNamespace, tmp_path: Path
+) -> None:
     """`expected_sha256=None` (the default) is not a broken check -- it is the shape
     every caller with no prior hash to verify against (`load_resumable`, resuming its own
     training loop) legitimately uses."""
     ckpt_path = tmp_path / "final.pt"
-    _save_tiny_checkpoint(ckpt_path)
+    _save_tiny_checkpoint(ckpt.torch, ckpt_path)
 
-    loaded = load_checkpoint(ckpt_path, map_location="cpu")
+    loaded = ckpt.load_checkpoint(ckpt_path, map_location="cpu")
 
     assert loaded["step"] == 8000
 
 
-def test_load_checkpoint_refuses_a_checkpoint_with_one_byte_flipped(tmp_path: Path) -> None:
+def test_load_checkpoint_refuses_a_checkpoint_with_one_byte_flipped(
+    ckpt: SimpleNamespace, tmp_path: Path
+) -> None:
     """The regression this whole file exists to close: a checkpoint changed on disk
     AFTER its hash was recorded must be refused, even though it is still a perfectly
     ordinary, `weights_only`-safe tensor file that `torch.load` alone would accept
     without complaint."""
     ckpt_path = tmp_path / "final.pt"
-    _save_tiny_checkpoint(ckpt_path)
-    expected = sha256_file(ckpt_path)
+    _save_tiny_checkpoint(ckpt.torch, ckpt_path)
+    expected = ckpt.sha256_file(ckpt_path)
 
     data = bytearray(ckpt_path.read_bytes())
     data[len(data) // 2] ^= 0xFF
     ckpt_path.write_bytes(bytes(data))
 
-    with pytest.raises(ChecksumMismatchError, match="does not match expected"):
-        load_checkpoint(ckpt_path, expected_sha256=expected, map_location="cpu")
+    with pytest.raises(ckpt.ChecksumMismatchError, match="does not match expected"):
+        ckpt.load_checkpoint(ckpt_path, expected_sha256=expected, map_location="cpu")
 
 
-def test_load_checkpoint_refuses_a_missing_file(tmp_path: Path) -> None:
+def test_load_checkpoint_refuses_a_missing_file(ckpt: SimpleNamespace, tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
-        load_checkpoint(tmp_path / "nope.pt", map_location="cpu")
+        ckpt.load_checkpoint(tmp_path / "nope.pt", map_location="cpu")
 
 
 class _MaliciousReduce:
@@ -245,7 +280,7 @@ class _MaliciousReduce:
 
 
 def test_load_checkpoint_checks_the_hash_before_torch_load_ever_opens_the_file(
-    tmp_path: Path,
+    ckpt: SimpleNamespace, tmp_path: Path
 ) -> None:
     """Ordering proof: a MALICIOUS payload, saved under a hash that does NOT match what
     is passed as `expected_sha256`, must be refused by the hash check -- and the
@@ -255,10 +290,10 @@ def test_load_checkpoint_checks_the_hash_before_torch_load_ever_opens_the_file(
     before that error -- a different failure than the one this test pins."""
     sentinel = tmp_path / "sentinel.txt"
     ckpt_path = tmp_path / "final.pt"
-    torch.save({"model": _MaliciousReduce(sentinel)}, ckpt_path)
+    ckpt.torch.save({"model": _MaliciousReduce(sentinel)}, ckpt_path)
 
-    with pytest.raises(ChecksumMismatchError):
-        load_checkpoint(ckpt_path, expected_sha256="0" * 64, map_location="cpu")
+    with pytest.raises(ckpt.ChecksumMismatchError):
+        ckpt.load_checkpoint(ckpt_path, expected_sha256="0" * 64, map_location="cpu")
 
     assert not sentinel.exists(), (
         "the malicious __reduce__ ran even though the hash check should have refused "
@@ -267,7 +302,7 @@ def test_load_checkpoint_checks_the_hash_before_torch_load_ever_opens_the_file(
 
 
 def test_load_checkpoint_still_refuses_a_malicious_payload_with_a_matching_hash(
-    tmp_path: Path,
+    ckpt: SimpleNamespace, tmp_path: Path
 ) -> None:
     """`weights_only=True` (`load_checkpoint`'s default) is defense IN DEPTH, not
     superseded by the hash check: an attacker who controls the file also controls its
@@ -276,10 +311,10 @@ def test_load_checkpoint_still_refuses_a_malicious_payload_with_a_matching_hash(
     as clearing the payload to unpickle. `weights_only=True` still refuses it."""
     sentinel = tmp_path / "sentinel.txt"
     ckpt_path = tmp_path / "final.pt"
-    torch.save({"model": _MaliciousReduce(sentinel)}, ckpt_path)
-    matching_hash = sha256_file(ckpt_path)  # the attacker's own file, honestly hashed
+    ckpt.torch.save({"model": _MaliciousReduce(sentinel)}, ckpt_path)
+    matching_hash = ckpt.sha256_file(ckpt_path)  # the attacker's own file, honestly hashed
 
     with pytest.raises(Exception, match="Weights only load failed"):
-        load_checkpoint(ckpt_path, expected_sha256=matching_hash, map_location="cpu")
+        ckpt.load_checkpoint(ckpt_path, expected_sha256=matching_hash, map_location="cpu")
 
     assert not sentinel.exists(), "the malicious __reduce__ ran despite weights_only=True"
