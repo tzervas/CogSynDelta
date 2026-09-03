@@ -490,87 +490,14 @@ def apply_token() -> str:
 
 
 def check_apply_auth(header: str) -> bool:
-    """Bearer token compare. Why: worktree writes without SSH.
-
-    Requires the literal, case-sensitive "Bearer " scheme -- RFC 7235
-    registers auth-scheme names case-insensitively, but this console is
-    intentionally stricter: "bearer TOKEN", "BEARER TOKEN", and a bare
-    token with no scheme at all are all refused (401) rather than guessed
-    at. Nothing is stripped from the token except a single trailing CRLF
-    that the header parser can leave on a value (e.g. an obs-fold
-    continuation); any other trailing byte the client actually sent --
-    including plain trailing whitespace -- is compared literally, so
-    "Bearer TOKEN " (real trailing space) never matches "TOKEN".
-
-    Fails closed (False, never raises) on input hmac.compare_digest cannot
-    safely take: it only accepts ASCII-only str (or bytes/bytearray), and
-    a raw Authorization byte >= 0x80 decodes -- via http.client's latin-1
-    header parsing -- to a non-ASCII str that would otherwise raise
-    TypeError here, crashing the request unauthenticated instead of
-    refusing it. check_api_auth() also wraps its call to this function in
-    try/except as a second, redundant fail-closed layer; the isascii()
-    check below is the actual fix, not the belt-and-suspenders one.
-    """
+    """Bearer token compare. Why: worktree writes without SSH."""
     want = apply_token()
     if not want:
         return False
-    header = header or ""
-    if header.endswith("\r\n"):
-        header = header[:-2]
-    if not header.startswith("Bearer "):
-        return False
-    got = header[len("Bearer ") :]
-    if not got.isascii():
-        return False
+    got = header or ""
+    if got.lower().startswith("bearer "):
+        got = got[7:].strip()
     return hmac.compare_digest(got, want)
-
-
-def check_api_auth(auth_header: str) -> tuple[int, bytes] | None:
-    """The single auth gate for every /api route -- GET and POST alike.
-
-    dispatch_api_get() and dispatch_api_post() both call this as their FIRST
-    statement, unconditionally, on every path they are given -- before
-    UPSTREAM/proxy_eligible is even consulted, before any known-route
-    match, and before the final "not found" fallback. Nothing downstream
-    (proxy_upstream, handle_lab, or any local handler) runs for an
-    unauthenticated caller, so an unauthenticated caller learns nothing
-    about which /api routes exist: everything under /api behaves
-    identically -- 401, or 503 if the console itself has no token -- until
-    a valid bearer token is presented. There is deliberately no separate
-    per-route auth check anywhere else in this file; a new route added to
-    either dispatch table is gated by construction because it cannot be
-    reached without going through this function first.
-
-    Fail-closed distinctly from "wrong token": an empty/unset
-    CSD_APPLY_TOKEN (and no CSD_APPLY_TOKEN_FILE) means the console itself
-    is misconfigured, not that this particular caller is unauthorized, so
-    it is reported as 503 rather than 401 -- check_apply_auth() already
-    fails closed to False on an empty token, which would otherwise read
-    identically to "your token was wrong" instead of "no token is set
-    anywhere and every caller will be refused."
-
-    Reuses check_apply_auth()/CSD_APPLY_TOKEN -- the exact bearer mechanism
-    POST /api/apply already used before this change -- rather than
-    inventing a second token or comparison.
-
-    The check_apply_auth() call is wrapped in try/except: it already fails
-    closed on every input it was written to anticipate (see its
-    docstring), but this is the single choke point every /api caller
-    passes through, so an exception here -- anticipated or not -- must
-    still produce 401, never an uncaught traceback that abandons the
-    connection without a response.
-    """
-    if not apply_token():
-        return 503, json.dumps(
-            {"error": "lab console misconfigured: CSD_APPLY_TOKEN is not set"}
-        ).encode()
-    try:
-        authorized = check_apply_auth(auth_header)
-    except Exception:
-        authorized = False
-    if not authorized:
-        return 401, b'{"error":"unauthorized"}'
-    return None
 
 
 def http_apply(worktree: str, rel: str, content: str) -> dict:  # noqa: PLR0911
@@ -1084,16 +1011,8 @@ def proxy_upstream(
         return 502, json.dumps({"error": "prime agent down", "detail": str(exc)[:200]}).encode()
 
 
-def dispatch_api_get(apipath: str, query: str, auth_header: str) -> tuple[int, bytes]:  # noqa: PLR0911
-    """Route one GET /api/* request. Pure function so proxy/auth order is testable.
-
-    check_api_auth() is the first statement, unconditionally -- see its
-    docstring. No GET route (proxied, /api/status, /api/sessions, or a
-    handle_lab route) is reachable without it passing first.
-    """
-    denied = check_api_auth(auth_header)
-    if denied is not None:
-        return denied
+def dispatch_api_get(apipath: str, query: str) -> tuple[int, bytes]:  # noqa: PLR0911
+    """Route one GET /api/* request. Pure function so proxy/auth order is testable."""
     if UPSTREAM:
         if not proxy_eligible(apipath):
             return 404, b'{"error":"not found"}'
@@ -1126,26 +1045,16 @@ def dispatch_api_post(  # noqa: PLR0911
 ) -> tuple[int, bytes]:
     """Route one POST /api/* request. Pure function so proxy/auth order is testable.
 
-    check_api_auth() is the first statement, unconditionally -- see its
-    docstring. Every POST route (apply, proxied, or a handle_lab/local
-    route) is gated by that single call before any of the branches below
-    run.
-
-    /api/apply is still handled here before UPSTREAM is even consulted --
-    it never reaches proxy_upstream, regardless of whether this node is
-    proxying. That was the original OD-2 fix (apply auth used to run only
-    in the branch taken when UPSTREAM was unset, so a proxying node relayed
-    the client's raw Authorization header upstream for /api/apply without
-    ever calling check_apply_auth); the auth gate above now makes that
-    ordering true for every route, not only this one, so the per-route
-    check_apply_auth() call that used to live in this branch is gone -- the
-    shared gate already refused an unauthenticated /api/apply caller before
-    this function body executed a single line.
+    /api/apply is handled here, unconditionally, before UPSTREAM is even
+    consulted -- it never reaches proxy_upstream, regardless of whether this
+    node is proxying. That is the OD-2 fix: apply auth used to run only in
+    the branch taken when UPSTREAM was unset, so a proxying node relayed the
+    client's raw Authorization header upstream for /api/apply without ever
+    calling check_apply_auth.
     """
-    denied = check_api_auth(auth_header)
-    if denied is not None:
-        return denied
     if postpath == "/api/apply":
+        if not check_apply_auth(auth_header):
+            return 401, b'{"error":"unauthorized"}'
         try:
             payload = json.loads(raw_in or b"{}")
         except json.JSONDecodeError:
@@ -1217,9 +1126,7 @@ def serve(port: int) -> None:
                 return
             parsed = urlparse(self.path)
             apipath = parsed.path[4:] if parsed.path.startswith("/lab/") else parsed.path
-            code, raw = dispatch_api_get(
-                apipath, parsed.query, self.headers.get("Authorization") or ""
-            )
+            code, raw = dispatch_api_get(apipath, parsed.query)
             self._send(code, raw)
 
         def do_POST(self) -> None:
@@ -1321,32 +1228,6 @@ button,textarea{font:inherit}textarea{width:100%;background:#000;color:#ddd;bord
 </main>
 <script>
 const BASE=location.pathname.indexOf('/lab')===0?'/lab':'';
-// Every /api/* route now requires the same bearer token POST /api/apply
-// always required (check_apply_auth / CSD_APPLY_TOKEN). This page has no
-// server session of its own, so it asks the operator for the token once
-// per browser tab (sessionStorage, not localStorage: cleared when the tab
-// closes) and attaches it to every fetch below via apiFetch(). A stale or
-// wrong token is dropped on a 401 so the NEXT call re-prompts instead of
-// looping silently against a token that will never work.
-function csdToken(){
-  let t=null;
-  try{ t=sessionStorage.getItem('csdApplyToken'); }catch(e){ t=null; }
-  if(t===null){
-    t=window.prompt('CSD lab console token (required for every /api/* call this session)')||'';
-    try{ sessionStorage.setItem('csdApplyToken', t); }catch(e){ /* private mode etc: re-prompt next call */ }
-  }
-  return t;
-}
-function csdForgetToken(){
-  try{ sessionStorage.removeItem('csdApplyToken'); }catch(e){ /* nothing stored to forget */ }
-}
-async function apiFetch(url, opts){
-  opts=Object.assign({}, opts||{});
-  opts.headers=Object.assign({'Authorization':'Bearer '+csdToken()}, opts.headers||{});
-  const r=await fetch(url, opts);
-  if(r.status===401) csdForgetToken();
-  return r;
-}
 function tab(id){
   document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on', p.id===id));
   document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===id));
@@ -1399,20 +1280,20 @@ function render(d){
 }
 async function spawnNow(){
   const alias=document.getElementById('sa').value||'local/code';
-  const r=await apiFetch(BASE+'/api/spawn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alias,why:'lab-spawn'})});
+  const r=await fetch(BASE+'/api/spawn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alias,why:'lab-spawn'})});
   document.getElementById('so').textContent=JSON.stringify(await r.json(),null,2);
   refresh();
 }
 async function refresh(){
-  const r=await apiFetch(BASE+'/api/status'); const d=await r.json();
+  const r=await fetch(BASE+'/api/status'); const d=await r.json();
   render(d);
 }
 async function steer(body){
-  await apiFetch(BASE+'/api/steer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  await fetch(BASE+'/api/steer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   refresh();
 }
 async function loadHist(){
-  const r=await apiFetch(BASE+'/api/sessions'); const d=await r.json();
+  const r=await fetch(BASE+'/api/sessions'); const d=await r.json();
   const rows=d.sessions||[];
   document.getElementById('hlist').innerHTML=rows.map(s=>
     '<p><button onclick="openSess(\\''+esc(s.id)+'\\')">'+esc(s.kind)+' '+esc(s.id)+'</button> '
@@ -1420,13 +1301,13 @@ async function loadHist(){
   ).join('') || '<p class=muted>none yet</p>';
 }
 async function openSess(id){
-  const r=await apiFetch(BASE+'/api/sessions?id='+encodeURIComponent(id));
+  const r=await fetch(BASE+'/api/sessions?id='+encodeURIComponent(id));
   const d=await r.json();
   document.getElementById('hview').textContent=JSON.stringify(d,null,2);
 }
 async function go(){
   const prompt=document.getElementById('p').value;
-  const r=await apiFetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
+  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
   const d=await r.json();
   document.getElementById('c').textContent=d.content||JSON.stringify(d);
 }
