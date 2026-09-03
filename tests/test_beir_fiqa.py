@@ -231,10 +231,16 @@ def test_gate_e_passes_with_a_healthy_rank_ratio_and_no_regression() -> None:
     assert result["passed"] is True
 
 
-def test_gate_e_fails_the_rank_clause_when_the_token_term_is_a_no_op() -> None:
-    """Constructed to fail: token_global_pr_rank barely above pooled -- exactly what a
-    no-op L_token/L_decorr (the failure mode `tests/test_token_aware_objective.py`
-    targets at the training-loop level) would leave behind."""
+def test_gate_e_fails_the_rank_clause_when_the_ratio_is_below_threshold() -> None:
+    """Hand-fed arithmetic test of the clause's own ratio>=2.0 comparison, NOT a model
+    of what a no-op L_token/L_decorr measurably leaves behind: the real W4 control arm
+    (both terms OFF, docs/design/evidence/w4-control-arm-2026-09-03/) measures
+    token_global_pr_rank/pooled_pr_rank = 2.0191x on the real corpus -- ABOVE this
+    clause's threshold, not below it (see `_PR_RANK_CLAUSE_NOTE` in beir_fiqa.py; the
+    clause is known NOT DISCRIMINATING at 50 steps for that reason). This test only
+    checks that `gate_e_retrain_gate` correctly fails a ratio below 2.0 when handed one
+    -- 16.0/15.0 = 1.07 is a value chosen to be below threshold, not a claim about what
+    an untrained or no-op state actually measures."""
     result = beir_fiqa.gate_e_retrain_gate(
         token_global_pr_rank=16.0,
         pooled_pr_rank=15.0,  # ratio 1.07 < 2.0

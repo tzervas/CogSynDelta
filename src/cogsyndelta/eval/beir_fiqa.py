@@ -417,6 +417,20 @@ _RETRAIN_GATE_REGRESSION_MARGIN = 0.01
 """§4.0's W4/W7 gate, clause 2: "the region's own receipt metric does not regress by
 more than 1 point" -- 1 point in a [0, 1] recall/spearman figure is 0.01."""
 
+_PR_RANK_CLAUSE_NOTE = (
+    "Measured NOT DISCRIMINATING at 50 steps on this harness: the W4 control arm "
+    "(token_loss_weight=0.0, decorr_weight=0.0 -- the token-aware terms fully OFF) "
+    "already clears this clause's ratio>=2.0 threshold on its own, at 2.0191x, "
+    "because pooled_pr_rank sits barely above its floor while token_global_pr_rank "
+    "starts measurably higher for reasons unrelated to L_token/L_decorr. A "
+    "`passed: True` here does not by itself distinguish 'the token-aware terms "
+    "worked' from 'the terms were never turned on' at this step count. See "
+    "docs/design/evidence/w4-control-arm-2026-09-03/ for the three-arm evidence and "
+    "full write-up. The threshold is unchanged; whether this clause discriminates "
+    "at production scale (the ratified plan's step count, not this 50-step smoke "
+    "run) is not measured here."
+)
+
 
 def gate_a_beats_both_parents(
     memory_held_out_recall_at_1: float,
@@ -514,6 +528,11 @@ def gate_e_retrain_gate(
     (1) `token_global_pr_rank >= 2.0 * pooled_pr_rank` at the final block -- read
     straight from `pretrain_region`'s own `token_aware.final_block_rank` (commit 1),
     measured the same way (participation ratio) W1 pre-committed as "no retrain needed".
+    Measured NOT DISCRIMINATING at 50 steps on this harness -- the W4 control arm (both
+    token-aware terms OFF) already clears this clause at 2.0191x, see
+    `pr_rank_clause["note"]` below and docs/design/evidence/w4-control-arm-2026-09-03/;
+    the threshold stays unchanged and whether it discriminates at production scale is
+    unmeasured.
     (2) The region's own receipt metric does not regress by more than 1 point against
     either parent's -- `memory` has no PRE-token-aware baseline of its own (it is a new
     merged region, not a retrain of an existing one), so "the region's own receipt
@@ -534,6 +553,7 @@ def gate_e_retrain_gate(
         "ratio": rank_ratio,
         "required_ratio": 2.0,
         "passed": bool(rank_ratio >= 2.0),
+        "note": _PR_RANK_CLAUSE_NOTE,
     }
     recall_regression = max(0.0, compress_recall_at_1 - memory_held_out_recall_at_1)
     recall_regression_vs_retrieve = max(0.0, retrieve_recall_at_1 - memory_held_out_recall_at_1)
