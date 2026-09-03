@@ -607,15 +607,17 @@ Recorded because the earlier ordering in this file had it backwards.
 (`docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md`) was operator-ratified 2026-09-02** — OD-1
 through OD-8 accepted as recommended, OD-9 answered (the audio licence audit is committed at
 `docs/design/AUDIO-CORPUS-AUDIT.md`). **Revision 3.4 (2026-09-03) is the current text**, and it
-adds DEC-52 to DEC-67 plus fourteen rows: **W7p** (placement harness — per-job VRAM budget,
+adds DEC-52 to DEC-67 plus **eleven new rows**: **W7p** (placement harness — per-job VRAM budget,
 target host, `placement{}` in every receipt), **W9i** (token-round-trip probe for the
 latent-space invariant), **P2′f** / **P2′s** (dataset factory, synthetic-data contract),
 **P5′b** / **P5′L** / **P5′m** (1B-per-submodel scale path, layer-sectioned training
 candidate, moral corpus), **M0d** (deployment acceptance on the 5080 + 3090 Ti) and
 **PRE-1/PRE-2/PRE-3** (the three fleet-side security prerequisites that block any autodev GPU
 route — they block no CSD row). **Revision 3.3's E0/E1/E2 and M0 were never mirrored here and are
-added in this pass**, which is this file having been stale rather than the design doc having
-changed. **OD-1 and OD-2 are ANSWERED** (autodev's spec now lives in `tzervas/csd-autodev`,
+BACK-MIRRORED in this pass** — four rows the design doc already carried, which is this file having
+been stale rather than the design doc having changed. **So this file gains fifteen row lines
+(eleven new + four back-mirrored) against the design doc's eleven, and the two numbers are
+different on purpose.** **OD-1 and OD-2 are ANSWERED** (autodev's spec now lives in `tzervas/csd-autodev`,
 branch `docs/autodev-spec`); **OD-16 is new** (two diverged copies of `csd-lab-console`).
 **W2c is DONE** — evidence at `docs/design/evidence/w2c-untrained-baselines-2026-09-03/`; the
 ≈0.40 code floor is retired, and `retrieve`'s τ_lo of 0.0000 is now a **blocking clause on

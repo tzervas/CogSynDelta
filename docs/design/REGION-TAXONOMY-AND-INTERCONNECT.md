@@ -184,7 +184,7 @@ operator's call.
 **(f) GOVERNANCE, AND A CORRECTION TO OD-1's OWN RECOMMENDATION.** **DEC-61**: `main` is
 **PR-only** in every code repo, on principle and for the operator's own commits too; CogSynDelta's
 `main` now enforces it (push whitelist = the operator alone, **8 required `pull_request`
-contexts). **And OD-1's recommendation of a path-scoped Forgejo protection is CONTRADICTED by
+contexts**). **And OD-1's recommendation of a path-scoped Forgejo protection is CONTRADICTED by
 measurement and is corrected in place rather than left standing:** `protected_file_patterns` had
 to be **cleared**, because Forgejo refuses to merge **any** PR touching a protected file — 405
 *"Changed protected files"*, **admins included** — which blocks precisely the reviewed path the
@@ -228,13 +228,21 @@ acceptance criterion, so it becomes one — with a gate that can fail on the car
 tight `[OP: csd-mycelium-downstream-goal.md, fleet-gpu-roles-and-scheduling]`.
 
 **What this revision does NOT do.** It does not reopen W1/W1d, DEC-48's audio deferral, DEC-49's
-participant count, or any licence verdict. It **deletes nothing** except the revision number
-itself; DEC-61's correction to OD-1 and DEC-62's correction to W2c's open question are both written
-as **amendments beside the original text**, so a reader can still see what was recommended and why
-it changed. Like revisions 3.1 and 3.3 and unlike revision 3, it makes the programme **larger**:
-fourteen new rows, three of which (**PRE-1/2/3**) are prerequisites of an adjacent programme rather
-than of this one, and none of which is on the phase-2 critical path except **W7p**, which is
-tooling every remaining GPU row already needed.
+participant count, or any licence verdict. **It deletes one sentence and no more, and the
+deletion is named rather than claimed away:** W2c's gate cell carried *"if the true code-adjacent
+lexical floor is 0.40, condition (1) at `τ_lo = 0.35` rejects essentially every row built from
+`apps`/`code_contests`"* — whose antecedent W2c measured **false** (0.2285 / 0.2344), so it is a
+conditional whose condition is settled; the sentence itself survives verbatim in §5.3, where the
+argument that produced it lives. Everything else is additive. DEC-61's correction to OD-1 and
+DEC-62's correction to W2c's open question are both written as **amendments beside the original
+text**, so a reader can still see what was recommended and why it changed. Like revisions 3.1 and
+3.3 and unlike revision 3, it makes the programme **larger**: **eleven new rows**, three of which
+(**PRE-1/2/3**) are prerequisites of an adjacent programme rather than of this one, and none of
+which is on the phase-2 critical path except **W7p**, which is tooling every remaining GPU row
+already needed. **`program/REMAINING.md` gains fifteen row lines rather than eleven**, because
+revision 3.3's **E0/E1/E2** and **M0** were never mirrored into that file and are **back-mirrored**
+in this pass — four rows this document already had, which is that file having been stale and not
+this revision adding fifteen things.
 
 **Scope:** what each region *is* as a faculty; what white matter is, mechanically; what it
 emits and how a runtime executes it; how it is trained and on what; the experiment that
@@ -359,7 +367,7 @@ gate added or changed below carries the construction that makes it fail.
 | **DEC-50** | **THE INCREMENTAL INTEGRATION PROTOCOL** — a named, three-step procedure for admitting or changing any submodel: (1) train the submodel **alone** under phase-1 discipline against its own untrained baseline; (2) **retrain the interconnect** with it admitted (white matter A→B→C→D, regions frozen), gated on G2 + composed-metric improvement + non-zero attention mass to the new region, **else revert**; (3) **whole-mind unified training** under the monotone-improvement rule. **DEC-26's 2–5% cap is what makes step 2 cheap.** E0/E1/E2 are its first instance `[OP: csd-incremental-integration-protocol.md]` | §4.1, §6.4, §4.1 P5′ |
 | **DEC-51** | **THE DOWNSTREAM BAR IS MYCELIUM, AND IT IS A MEASUREMENT.** CSD's success criterion is not a benchmark but whether it can act as the development engine for the Mycelium functional value-semantic language project. Row **M0**, after W10: a task suite drawn from the Mycelium repo with ground truth from its own tests, CSD vs a comparable open model, on the 5080 and the 3090 Ti with RAG via the 1080 Ti helper, **gate = a pre-registered pass-rate margin**. The **open question is whether CSD does RAG natively as a skill** (`memory` + `episodic_store` end to end) — an arm of the experiment, never an assumption `[OP: csd-mycelium-downstream-goal.md]` | §4.1 M0, §9.14 |
 | **DEC-52** | **THE I/O CONTRACT: ANY-IN / ANY-OUT, WITH A MUST-HAVE BASELINE.** *Rationale: the contract the model is built to satisfy was scattered across three sections and a deferral, so "what must work" and "what is intended eventually" could not be told apart.* Every modality (discrete text tokens, image patches, later audio frames) is encoded to latents, **unified in the shared latent space**, reasoned over there, and emitted in the decided modality — *"any in, any out"*. **The MUST-HAVE BASELINE, and the whole programme is graded against it: discrete-token + visual INPUT, discrete-token OUTPUT.** That is what proves the endeavour is worthwhile; everything beyond it is polish. **Output modality is chosen at the read-out** — from context, **or from an explicit user constraint, which is BINDING** (*"only text"* means only text). Audio in and speech out stay declared seams under DEC-48 `[OP: csd-training-placement-policy.md, csd-multimodal-io-intent.md, csd-latent-space-reasoning-invariant.md]` | §1.3, §2.5, §4.1 W7p |
-| **DEC-53** | **THE LATENT INVARIANT GETS A DETECTOR, NOT ONLY A REFUSAL.** *Rationale: W9's DEC-47 clause refuses a violation someone constructed, which says nothing about the tracts nobody thought to construct one for.* Row **W9i**: a **token-round-trip probe** that instruments **every** tract in an emitted `Schedule` — region output, adapted form, workspace latents, DEC-17 write-back prefix — and reports a **positive detection** of any integer-typed, vocabulary-indexed or decode-then-re-encode payload, with the per-tract dtype and value-range census printed in the receipt. **It can fail in both directions and both are verified:** a constructed round-trip must be **detected** (not merely refused), and a clean run must report **zero** detections across every tract, so a probe that detects nothing because it inspects nothing is caught `[OP: csd-latent-space-reasoning-invariant.md]` | §2.2, §4.1 W9i, §9.14 |
+| **DEC-53** | **THE LATENT INVARIANT GETS A DETECTOR, NOT ONLY A REFUSAL.** *Rationale: W9's DEC-47 clause refuses a violation someone constructed, which says nothing about the tracts nobody thought to construct one for.* Row **W9i**: a **token-round-trip probe** that instruments **every** tract in an emitted `Schedule` — region output, adapted form, workspace latents, DEC-17 write-back prefix — and reports a **positive detection** of any integer-typed, vocabulary-indexed or decode-then-re-encode payload, with the per-tract dtype and value-range census printed in the receipt. **It can fail in both directions and both are verified:** a constructed round-trip must be **detected** (not merely refused), and a clean run must report **zero** detections across every tract, so a probe that detects nothing because it inspects nothing is caught `[OP: csd-latent-space-reasoning-invariant.md]` | §2.2, §4.1 W9i |
 | **DEC-54** | **TRAINING PLACEMENT POLICY: PACK BY VRAM BUDGET ACROSS ALL THREE CARDS.** *Rationale: submodels are several million to a few hundred million parameters and fit every card, so serialising them on one card wastes two thirds of the fleet — but the one region that does not fit taught the lesson expensively.* Concurrent submodel runs are admitted **only when their per-job VRAM budgets fit** the target card (3090 Ti 24 GiB sm_86, 5080 16 GiB sm_120, 1080 Ti 11 GiB sm_61), under **process-level pseudo-isolation** — per-process memory fractions, `expandable_segments`, warp-level sharing. **No MIG on consumer cards; this is pseudo-isolation, not hard isolation, and it is acceptable because the fleet is single-tenant** (operator + agents), which is stated so nobody later reads it as a security boundary. **Launch tooling takes a VRAM budget and a target host**; **every receipt records `host`, `vram_budget_mib` and `concurrency`.** **The measured constraint: `reason` runs ALONE at batch 512 / `max_len` 256 with `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`** — batch 1280 OOMed 640 MiB short of the 22 GiB card. Row **W7p** `[OP: csd-training-placement-policy.md, csd-baseline-receipts-2026-09-03.md]` | §4.1 W7p, §6.7, §4.3 |
 | **DEC-55** | **LAYER-SECTIONED TRAINING IS A CANDIDATE FOR LARGER MODELS — NOT A DECISION.** *Rationale: at 1B+ per region the fleet either contributes three cards or two, and the technique that decides which is one the operator flagged as worth considering while explicitly doubting parts of their own understanding of it — recording it as a candidate keeps both halves.* Training isolated **sections of layers/weights** on different cards, rather than the whole model at once, sits **beside DEC-29** (region-granular pipeline parallel, microbatch ≤ 256 cross-host) and beside the standing ruling that **cross-host DDP is the wrong tool at 1 Gb/s**. Row **P5′L**, deferred: it is **evaluated on measured interconnect cost per section boundary against DEC-29's pipeline cost on the same model**, and adopted only if it wins. Until then, later phases may legitimately be **locked to the 3090 Ti + 5080, or to the 3090 Ti alone** `[OP: csd-training-placement-policy.md]` | §6.7, §4.1 P5′L |
 | **DEC-56** | **THE 1B-PER-SUBMODEL SCALE PATH, AND DATA IS THE LONG POLE.** *Rationale: the operator's post-phase-3 intent has a sequencing constraint and a data requirement that decide whether it is reachable, and neither was written down.* Sequence: toy (~87M) → **mid-size proven** (DEC-52's baseline, W6 green, PTQ on the deployment card) → **~1B parameters per submodel** → **quantise each region** → **train the composed model on the quantised regions** → the 30B direction (OD-6). **The data requirement is stated rather than implied: of the order 10^10 tokens PER REGION** under the usual scaling rules, each licence-verified under DEC-31 and balanced under B1–B5 — which is why DEC-57's factory is the reusable asset and not a side quest. **Per-region PTQ sensitivity at 1B decides the composed bits/param budget: the 3.2675 figure is RE-MEASURED at size, never carried forward.** The path proceeds **region by region under DEC-50**, so it never becomes one untestable jump. Row **P5′b** `[OP: csd-billion-per-submodel-scale-path.md]` | §6.1, §4.1 P5′b, §6.5 |
@@ -2317,7 +2325,7 @@ left as a note.
 | **PRE-2** | **TOKEN-GATE `POST :9108/v1/queue` AND MOVE THE WORKER OFF `kang`** `[DEC-60]`. **VERIFIED:** `_peer_ok()` returns true for **any** `192.168.1.*`, `172.30.*`, `172.32.*` or loopback source — **source-IP prefix only, no token** — and accepts `{kind, subject, extra{}}` into `enqueue_timeshare()`; 15 s later `gpu-timeshare-worker` runs the job **as `kang`** with `git/cabal-forgejo-agent` and `gpu/localai-api-key` **in its environment**, takes attacker-controlled `extra` fields **straight into argv**, and for the specialist kind **posts Forgejo comments under the agent identity** [V, `ansible/files/akula-health-exporter.py:520-596`; `scripts/gpu-timeshare-worker:60-170`; survey `01-threat.md` G17/G18/T4]. **IP-prefix authorisation is the "identity the client can set" anti-pattern, and this is the single most exploitable live path in the fleet.** Two structural changes: **(a)** a **bearer token bound to a producer identity** on `/v1/queue`, with `enqueue_timeshare` enforcing a **default-deny allowlist of `(identity, kind)` pairs**; **(b)** run the worker as **`svc-timeshare`, not `kang`**, with only the tokens that specific `kind` needs, injected per job via `secret exec`. Better still: make `/v1/queue` **loopback-only** and route cross-host handoff through the gateway like everything else. | **Three, all constructed.** (i) **An unauthenticated enqueue from a LAN address is REFUSED** and **nothing is queued** — asserted by reading the queue after the attempt. (ii) **An authenticated producer submitting an UNREGISTERED `kind` is REFUSED**, so a new job type gets no credentials until someone registers it. (iii) **`ps`/`systemctl show` confirms the worker's uid is NOT `kang`** and that its environment carries **only** the tokens its `kind` declares — verified by submitting one `kind` and asserting the other `kind`'s token is absent. **Until (iii) passes, the autodev sandbox's egress restrictions are moot**, because this path reaches the same credentials from the LAN. | — | **todo — P0; BLOCKS every autodev GPU route** | akula-prime, operator-owned |
 | **PRE-3** | **REMOVE `kb_http`'s LOOPBACK FAIL-OPEN** `[DEC-60]`. **VERIFIED:** `_auth_ok()` contains `if self._loopback() and not token: return True` — it **fails OPEN on loopback when the token file is absent or empty**, while non-loopback with no token fails closed [V, `rag/integration/kb_http.py:351-360`; survey `01-threat.md` G15/T6]. Today the token file exists at 0600, so the window is small — **but the whole autodev design leans on the gateway and this store as its enforcement points, and a fail-open branch inside one of them is disproportionate to its size.** If `/akula-data/cabal/kb-http.token` is ever deleted, rotated to empty, or the service starts before the file is placed, **every loopback caller reads all three corpora unauthenticated**. **Delete the bypass; require the token unconditionally; `SystemExit` at startup when it is absent, so the failure is a dead service rather than an open one.** Related and cheap while the file is open: client-controllable audit detail (`X-Akula-Temporary: 1` makes the handler write `detail="temp"` instead of the real detail) is **client-controlled evidence** and should be recorded server-side [V, `kb_http.py:366-372`]. | **Two, both constructed.** (i) **Move the token file aside and restart: the service must EXIT, not serve** — assert the unit is failed and the port is closed, which is the whole difference between fail-closed and fail-open. (ii) **A loopback request with no `Authorization` header is 401** with the token file present — the state the code claims today, asserted rather than assumed. | — | **todo — small and independent; BLOCKS any autodev RAG route** | akula-prime, operator-owned |
 
-**REVISION 3.4's FOURTEEN NEW ROWS, AND WHERE THEY SIT IN THE ORDER.** The table above is ordered
+**REVISION 3.4's ELEVEN NEW ROWS, AND WHERE THEY SIT IN THE ORDER.** The table above is ordered
 by dependency, not by row id, and revision 3.4's additions do not all belong in one place — so
 this note says explicitly where each one sits rather than leaving a reader to infer it from the
 `blocked_by` column:
@@ -2930,6 +2938,18 @@ if the true lexical floor for code-adjacent material is 0.40, condition (1) at `
 rejects essentially every row built from `apps`/`code_contests` — the reserve's main source —
 and the reserve cannot be built from them at all. **W2c measures it and re-derives `τ_lo`
 per bin, and W2b is blocked on that result.**
+
+> **AMENDED IN REVISION 3.4 — W2c HAS RUN AND THIS PARAGRAPH IS THE PRE-MEASUREMENT ARGUMENT,
+> KEPT DELIBERATELY** `[DEC-62]`. The paragraph above is left in its original tense because it is
+> the reasoning that made the measurement worth spending, and a document that silently rewrites
+> its own premises loses the record of why it looked. **What it asks is now answered:** the
+> ≈0.40 floor is **retired as unsupported**, the 0.40 branch **did not fire**, and
+> `apps`/`code_contests` therefore survive as the reserve's main source. The measured numbers,
+> the seeds, and the trace of where 0.40 came from live at
+> `docs/design/evidence/w2c-untrained-baselines-2026-09-03/` and are **cited, not restated here**,
+> so there stays one copy of each number. **What is still open is the other half — `retrieve`'s
+> chance-level `τ_lo` — and it is W2b's blocking clause, not this section's.** Read **DEC-62**
+> before treating any sentence above as a live question.
 
 Three properties worth stating:
 
@@ -4112,7 +4132,7 @@ it makes the live items harder to find. Each item below has a recommendation.
 | **OD-9** the audio licence audit | **ANSWERED and it stays answered.** The audit was done and is committed at `docs/design/AUDIO-CORPUS-AUDIT.md`; DEC-48 then deferred the rows it produced, which changes *when* the work is spent and not *whether the question is open*. **Its entry below is kept as a record of what the answer was and is not an open ask**; its six descendants, OD-10 to OD-15, are the live residue and they are deferred with the audio rows. |
 | **DEC-32's build trigger** for `episodic_store` | **REMOVED by DEC-49**, and it is listed here because it was a decision this section would otherwise still be waiting on. Revision 2 made the store's build conditional on *"`salience` is trained AND a measured failure mode requires cross-request context"* — an operator decision in the shape of a technical precondition. **The operator decided it directly instead** `[OP: csd-episodic-store-required.md]`, so the trigger is gone and rows E0/E1/E2 replace it. **`salience` is NOT a prerequisite of the store**, and that is a real consequence of the ruling rather than an oversight: the store's write policy at v1 is the workspace's own write-back path, not a learned salience score. A **learned** write policy is a phase-3 candidate alongside gap (d)'s consolidation question, not a phase-2 blocker. |
 | **OD-1** autodev write scope contains the guards | **ANSWERED, and its recommendation is HALF-CORRECTED.** The operator answered the scope question by identity and privilege rather than path lists — `svc-autodev`, own vault, minimum-scope Forgejo user, no root, no sudo, gateway-only egress (**DEC-60**) `[OP: autodev-service-identity-and-sandbox.md]`. **Its "path-scoped Forgejo protection" half is CONTRADICTED BY MEASUREMENT and replaced by DEC-61:** `protected_file_patterns` had to be cleared, because Forgejo refuses to merge **any** PR touching a protected file (405, admins included), which blocks the reviewed path the control existed to protect. **Guard integrity now rests on required checks — `tests/test_guards_can_fail.py` included — plus review.** Its entry below is kept as the record of what was recommended and why it changed; the `http_apply`-does-not-replicate-`apply_proposal` half is folded into **PRE-1** |
-| **OD-2** lab-console proxy forwards the apply token | **ANSWERED and SUPERSEDED BY A WORSE MEASURED FACT.** The operator's answer is the default-deny gateway that mints short-lived downstream tokens and never relays client credentials (**DEC-60**). The measured defect is not credential forwarding but that **`dispatch_api_get()` authenticates nobody at all** — so the fix is larger than OD-2 scoped and becomes row **PRE-1**. Its entry below is kept as the record of what was found first |
+| **OD-2** lab-console proxy forwards the apply token | **ANSWERED and SUPERSEDED BY A WORSE MEASURED FACT.** The operator's answer is the default-deny gateway that mints short-lived downstream tokens and never relays client credentials (**DEC-60**). The measured defect is not credential forwarding but that **`dispatch_api_get()` authenticates nobody at all** — so the fix is larger than OD-2 scoped and becomes row **PRE-1**. **The forwarding OD-2 reported is also itself fixed in the tree** (`proxy_upstream()` never reads the caller's header), which the threat pass records as **G23**. Its entry below is kept as the record of what was found first **and now carries a `SUPERSEDED` marker at its own location**, because a disposition recorded only here is one a reader of that paragraph never sees |
 
 ---
 
@@ -4393,11 +4413,26 @@ actually rests on now:
 
 **OD-2 — The lab-console upstream proxy forwards the apply token before authorising.**
 `[T4b recorded]`
-**VERIFIED**, `scripts/csd-lab-console:995-1001`: when `UPSTREAM` is set, a POST to any `/api/*`
-path is proxied upstream **with the client `Authorization` header copied verbatim**, *before* the
-local `check_apply_auth` at line 1003 runs [V]. **[I]** The local node therefore performs no
-authorisation of its own on that path and acts as a credential-forwarding proxy; the apply bearer
-reaches whatever `UPSTREAM` names. *Recommendation:* proxy an **explicit default-deny path
+
+> **SUPERSEDED IN REVISION 3.4 — DO NOT READ THE PARAGRAPH BELOW AS THE CURRENT STATE OF THE
+> CODE** `[DEC-60]`, see **PRE-1**. The body is kept as the record of what was found first, and
+> it is marked **here, at its own location**, because the settled-items table saying so several
+> hundred lines away is not a marker a reader of this paragraph ever sees. **Two things in it are
+> now false against the tree it cites.** (1) The forwarding it describes **has been fixed**:
+> `proxy_upstream()` builds an empty header dict and attaches only a server-minted
+> `Authorization: Bearer {UPSTREAM_TOKEN}` — it never reads the caller's header — and
+> `dispatch_api_post()` handles `/api/apply` locally before `UPSTREAM` is consulted, which its
+> own docstring names *"the OD-2 fix"* [V, `scripts/csd-lab-console:981-1010, 1043-1053`].
+> (2) **The cited line numbers have moved** and now point at code doing the opposite of what the
+> paragraph says. What replaced this finding is **worse and is row PRE-1**: the gateway
+> authenticates **nobody** on most routes, so there was never a caller credential to forward.
+
+**VERIFIED AS OF THE ORIGINAL PASS, AND NO LONGER TRUE OF THE TREE** — `scripts/csd-lab-console:995-1001`
+as those lines then stood: when `UPSTREAM` was set, a POST to any `/api/*` path was proxied
+upstream **with the client `Authorization` header copied verbatim**, *before* the local
+`check_apply_auth` at line 1003 ran [V, at the time of the finding]. **[I]** The local node
+therefore performed no authorisation of its own on that path and acted as a credential-forwarding
+proxy; the apply bearer reached whatever `UPSTREAM` named. *Recommendation:* proxy an **explicit default-deny path
 allowlist that excludes `/api/apply`**, and **strip inbound credentials** rather than forwarding
 them, minting a downstream-scoped token instead. *Why it is the operator's:* it changes how the
 operator's own multi-host console works.
@@ -4600,7 +4635,7 @@ that it should be able to run and orchestrate"* `[OP: autodev-work-lives-in-csd-
 | what | where |
 |---|---|
 | the spec | `docs/AUTODEV-IDENTITY-AND-SANDBOX.md`, branch `docs/autodev-spec`, repo `tzervas/csd-autodev` (Forgejo `git.vectorweight.com`) |
-| its threat pass | beside it on the same branch (findings G14–G18, T4, T6 are the ones CSD depends on) |
+| its threat pass | beside it on the same branch (findings G14–G18, **G23**, T4, T6 are the ones CSD depends on — G23 is the one that CORRECTS OD-2 rather than extending it) |
 | its skeptic pass | beside it on the same branch (findings S1, S2 are the ones CSD depends on) |
 | why it is not here | the harness is meant to run several models; coupling it to one model's repo makes both harder to reason about and pollutes CSD's licence and provenance story |
 
@@ -4613,9 +4648,11 @@ the whole argument for making them gated rows rather than a paragraph:
    gateway *forwards* the client credential before authorising. The measured defect is that
    **`dispatch_api_get()` never looks at a credential at all**, and `dispatch_api_post()`
    authenticates **only `/api/apply`** — while `proxy_upstream()` attaches `UPSTREAM_TOKEN` to
-   every proxied route [V, `scripts/csd-lab-console:1012-1080`]. **The good property OD-2 credited
-   the gateway with — that it never relays the caller's `Authorization` — is true, and it is true
-   because there is no caller identity to relay.** Today the blast radius is bounded only by
+   every proxied route [V, `scripts/csd-lab-console:1012-1080`]. **The good property is the threat
+   pass's, not OD-2's:** finding **G23** credits the gateway with never relaying the caller's
+   `Authorization` upstream — OD-2 asserted the opposite, and G23 is the finding that is right.
+   **G23 is true, and it is true because there is no caller identity to relay**, which is why a
+   true property was worth re-reading rather than banking. Today the blast radius is bounded only by
    `PROXY_ALLOW` naming five read-only routes; the autodev design adds Forgejo and RAG **writes**
    to the same dispatcher, at which point *"read as written, the design hands every host on the LAN
    autodev's write capability with no credential at all."* **Authenticate on EVERY route before any
