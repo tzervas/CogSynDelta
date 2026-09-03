@@ -45,6 +45,32 @@ and carry an allow-listed suffix (`.pt`, `.safetensors`) before anything is hash
 closing off "point a receipt at any file readable by this process and get it uploaded,
 with its sha256 published in the model card."
 
+RECEIPTS ARE BOUND TO THE CHECKPOINT, NOT MERELY THE REGION
+Region-matching alone (the check above) does not mean a receipt is *for* the
+checkpoint being published -- every region's checkpoint lives at one mutable
+`<region>-checkpoints/final.pt` path, so a later training run silently invalidates
+every earlier eval/quant receipt that named the same path, while that stale receipt
+still passes the region cross-check untouched. `assert_receipt_bound_to_checkpoint()`
+closes that gap for every receipt this script is given (training, eval, quant): the
+receipt's own `artifacts.checkpoint_sha256` (or top-level `checkpoint_sha256`, for a
+receipt shape with no `artifacts` wrapper -- today's quant receipts) must equal the
+sha256 this script just computed of the checkpoint file. Absent or mismatched, it
+aborts before any upload, naming which receipt failed. Belt-and-braces for a receipt
+written before that field existed: the receipt's own recorded timestamp (`recorded` /
+`recorded_utc` / `started_utc`, whichever key that receipt shape uses) must not be
+older than the checkpoint file's mtime -- a receipt cannot describe a checkpoint that
+did not yet exist when it was recorded.
+
+Consequence: none of the 16 real receipts under `/akula-data/csd/receipts` carry
+`checkpoint_sha256` today, so every one of them is unpublishable by construction until
+the training/eval/quant tools that produce them start writing that field. That is
+correct, not a bug to route around -- those receipts were measured against a `final.pt`
+that a later training run went on to overwrite at that same mutable path, so a card
+built from them would mix the *current* held-out score with an eval/quant score
+measured on different, superseded weights, under one published sha256. That is exactly
+what the review that prompted this fix found (held_out 0.707 on current weights next to
+eval 0.492 / quant 0.496 on older weights, all under one "the checkpoint" heading).
+
 IDEMPOTENCY
 Every file this script would upload is hashed first and compared against what the
 repo already has (`HfApi.get_paths_info(..., expand=True)`): an LFS-tracked file
@@ -64,6 +90,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -306,19 +333,111 @@ def assert_region_matches(receipt: dict[str, Any], region: str, label: str) -> N
         )
 
 
-def verify_checkpoint_sha(checkpoint: Path, receipt: dict[str, Any]) -> str:
-    """Compute the checkpoint's sha256; verify it against the receipt's recorded value if any."""
+def verify_checkpoint_sha(checkpoint: Path) -> str:
+    """Existence-check the checkpoint file and return its computed sha256.
+
+    This is the ground truth every receipt's own declared checkpoint_sha256 is
+    checked against by `assert_receipt_bound_to_checkpoint()` below -- it is computed
+    from the file itself, never taken from (or reconciled with) any single receipt,
+    so that a training receipt cannot certify its own binding.
+    """
     if not checkpoint.is_file():
         raise PublishAbortError(f"checkpoint not found: {checkpoint}")
-    computed = sha256_of(checkpoint)
-    recorded = receipt.get("artifacts", {}).get("checkpoint_sha256")
-    if recorded and recorded != computed:
+    return sha256_of(checkpoint)
+
+
+# Key precedence for "when was this receipt recorded", by receipt shape observed on
+# disk: training receipts use 'recorded', quant receipts 'recorded_utc', eval receipts
+# (schema model-pipeline-receipt/v1) 'started_utc'. Tried in this order; the first key
+# present wins.
+_RECEIPT_TIMESTAMP_KEYS: tuple[str, ...] = ("recorded", "recorded_utc", "started_utc", "timestamp")
+
+
+def receipt_checkpoint_sha256(receipt: dict[str, Any], label: str) -> str:
+    """The checkpoint sha256 a receipt itself declares -- required, not merely
+    consulted if present.
+
+    Looked up at `artifacts.checkpoint_sha256` (the shape the fingerprint branch
+    writes into training receipts, and the natural extension for any receipt schema
+    that already nests `artifacts.checkpoint`, e.g. eval) or, for a receipt shape with
+    no `artifacts` wrapper at all (today's quant receipts), a top-level
+    `checkpoint_sha256`. Absence aborts: none of the 16 real receipts on disk carry
+    either field today, and that is the exact gap this function exists to close --
+    see the module docstring's "RECEIPTS ARE BOUND TO THE CHECKPOINT" section.
+    """
+    artifacts = receipt.get("artifacts")
+    if not isinstance(artifacts, dict):
+        artifacts = {}
+    val = artifacts.get("checkpoint_sha256") or receipt.get("checkpoint_sha256")
+    if not val:
         raise PublishAbortError(
-            f"checkpoint sha256 mismatch for {checkpoint}: "
-            f"receipt records {recorded}, computed {computed} -- refusing to publish "
-            "a checkpoint that does not match the receipt naming it"
+            f"{label} receipt has no artifacts.checkpoint_sha256 (or top-level "
+            "checkpoint_sha256) -- refusing: every receipt (training, eval, quant) "
+            "must name the sha256 of the exact checkpoint it measured before it can "
+            "be published alongside that checkpoint. A receipt written before this "
+            "field existed may describe weights since overwritten at the same "
+            "mutable <region>-checkpoints/final.pt path -- it is unpublishable by "
+            "construction, and that is correct, not a defect to route around."
         )
-    return computed
+    return str(val)
+
+
+def receipt_timestamp(receipt: dict[str, Any], label: str) -> datetime:
+    """When a receipt says it was recorded -- required, not merely consulted if
+    present. See `_RECEIPT_TIMESTAMP_KEYS` for the key precedence."""
+    for key in _RECEIPT_TIMESTAMP_KEYS:
+        raw = receipt.get(key)
+        if not raw:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError as e:
+            raise PublishAbortError(
+                f"{label} receipt's {key!r} value {raw!r} is not a parseable "
+                "ISO-8601 timestamp -- refusing: cannot verify it postdates the "
+                "checkpoint it claims to describe"
+            ) from e
+        return ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)
+    raise PublishAbortError(
+        f"{label} receipt has none of {_RECEIPT_TIMESTAMP_KEYS} -- refusing: cannot "
+        "verify it was recorded after the checkpoint file it claims to describe"
+    )
+
+
+def assert_receipt_bound_to_checkpoint(
+    receipt: dict[str, Any],
+    checkpoint_sha256: str,
+    checkpoint_mtime: datetime,
+    label: str,
+) -> None:
+    """Bind a receipt to the exact checkpoint bytes being published, not merely to
+    the mutable path both happen to name (region-matching alone does not do this --
+    see the module docstring). Two independent, fail-closed checks; either aborts
+    before any upload, naming the receipt that failed:
+
+    (a) the receipt's own declared checkpoint_sha256 must equal the sha256 this tool
+        just computed of the checkpoint file -- absence or mismatch aborts.
+    (b) belt-and-braces for a receipt that predates this field: the receipt's own
+        recorded timestamp must not be older than the checkpoint file's mtime -- a
+        receipt cannot describe a checkpoint that did not yet exist when it was
+        recorded.
+    """
+    recorded_sha = receipt_checkpoint_sha256(receipt, label)
+    if recorded_sha != checkpoint_sha256:
+        raise PublishAbortError(
+            f"{label} receipt's checkpoint_sha256 {recorded_sha!r} does not match "
+            f"the checkpoint's actual sha256 {checkpoint_sha256!r} -- refusing: this "
+            f"{label} receipt was measured on different weights than the checkpoint "
+            "being published now"
+        )
+    recorded_ts = receipt_timestamp(receipt, label)
+    if recorded_ts < checkpoint_mtime:
+        raise PublishAbortError(
+            f"{label} receipt is timestamped {recorded_ts.isoformat()}, before the "
+            f"checkpoint file's mtime {checkpoint_mtime.isoformat()} -- refusing: "
+            f"this {label} receipt predates the checkpoint it claims to describe "
+            "(a legacy receipt for a superseded final.pt)"
+        )
 
 
 def code_revision(receipt: dict[str, Any], repo_dir: Path = REPO_ROOT) -> str:
@@ -452,12 +571,31 @@ def build_card(
         f"- **Code revision:** `{rev}`",
         f"- **Region:** `{region}`",
         "",
+        _receipt_binding_note(eval_receipt is not None, quant_receipt is not None),
+        "",
         "Published by `scripts/csd-publish-checkpoint.py`. Repo is private; the operator's "
         "publishing authorisation covers private repos only -- see that script's module "
         "docstring before ever adding a `--public` flag here.",
         "",
     ]
     return "\n".join(parts)
+
+
+def _receipt_binding_note(has_eval: bool, has_quant: bool) -> str:
+    receipts = ["training", *(["eval"] if has_eval else []), *(["quant"] if has_quant else [])]
+    named = ", ".join(receipts)
+    return (
+        f"**Receipt binding.** Every receipt above ({named}) was verified, before "
+        "publish, to declare *this exact checkpoint's* sha256 in "
+        "`artifacts.checkpoint_sha256` (or a top-level `checkpoint_sha256`) and to be "
+        "timestamped no earlier than the checkpoint file itself. A receipt that names "
+        "a different checkpoint's measurements -- e.g. one recorded against an "
+        "earlier `final.pt` before a later training run overwrote that same mutable "
+        "path -- aborts the publish rather than being merged into this card under "
+        "the current weights' sha256. If you expected a metric here and it is "
+        "missing, the receipt that would have supplied it predates this checkpoint "
+        "and needs to be regenerated against it."
+    )
 
 
 # ----------------------------------------------------------------------------- token
@@ -484,7 +622,7 @@ class Plan:
     tier: str
     checkpoint_path: Path
     checkpoint_sha256: str
-    checkpoint_sha256_was_recorded: bool
+    bound_receipt_labels: tuple[str, ...]
     code_rev: str
     card: str
     files: dict[str, Path | bytes] = field(default_factory=dict)
@@ -514,8 +652,28 @@ def build_plan(
         assert_region_matches(quant_receipt, region, "quant")
 
     checkpoint = checkpoint_path_from_receipt(train_receipt)
-    checkpoint_sha256 = verify_checkpoint_sha(checkpoint, train_receipt)
-    was_recorded = bool(train_receipt.get("artifacts", {}).get("checkpoint_sha256"))
+    checkpoint_sha256 = verify_checkpoint_sha(checkpoint)
+    checkpoint_mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC)
+
+    # Region-matching (above) is not enough to say a receipt is *for* this checkpoint --
+    # see the module docstring's "RECEIPTS ARE BOUND TO THE CHECKPOINT" section. Every
+    # receipt actually supplied must additionally bind to these exact bytes, by sha256
+    # and by time, or the publish aborts before any upload.
+    bound_receipt_labels = ["training"]
+    assert_receipt_bound_to_checkpoint(
+        train_receipt, checkpoint_sha256, checkpoint_mtime, "training"
+    )
+    if eval_receipt is not None:
+        assert_receipt_bound_to_checkpoint(
+            eval_receipt, checkpoint_sha256, checkpoint_mtime, "eval"
+        )
+        bound_receipt_labels.append("eval")
+    if quant_receipt is not None:
+        assert_receipt_bound_to_checkpoint(
+            quant_receipt, checkpoint_sha256, checkpoint_mtime, "quant"
+        )
+        bound_receipt_labels.append("quant")
+
     rev = code_revision(train_receipt)
 
     card = build_card(
@@ -547,7 +705,7 @@ def build_plan(
         tier=tier,
         checkpoint_path=checkpoint,
         checkpoint_sha256=checkpoint_sha256,
-        checkpoint_sha256_was_recorded=was_recorded,
+        bound_receipt_labels=tuple(bound_receipt_labels),
         code_rev=rev,
         card=card,
         files=files,
@@ -561,8 +719,8 @@ def print_plan(plan: Plan, dry_run: bool) -> None:
     print(f"  repo:        {plan.repo} ({plan.repo_type}, private)")
     print(f"  licence:     {plan.tier}")
     print(f"  checkpoint:  {plan.checkpoint_path}")
-    recorded = "recorded in receipt" if plan.checkpoint_sha256_was_recorded else "computed here"
-    print(f"               sha256={plan.checkpoint_sha256} ({recorded})")
+    bound = ", ".join(plan.bound_receipt_labels)
+    print(f"               sha256={plan.checkpoint_sha256} (bound to: {bound})")
     print(f"  code_rev:    {plan.code_rev}")
     print("  files:")
     for path_in_repo, item in sorted(plan.files.items()):

@@ -14,6 +14,7 @@ import importlib.machinery
 import importlib.util
 import json
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -79,17 +80,30 @@ def make_checkpoint(
     return p
 
 
+def _default_recorded(checkpoint: Path) -> str:
+    """A timestamp comfortably after the checkpoint file's own mtime, so a fixture
+    that doesn't care about the older-than-checkpoint check gets a receipt that
+    passes it by default. Fixtures that DO care pass `recorded=` explicitly."""
+    ts = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC) + timedelta(minutes=5)
+    return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def make_training_receipt(
     tmp_path: Path,
     checkpoint: Path,
     region: str = "compress",
-    checkpoint_sha256: str | None = None,
+    checkpoint_sha256: str | None = "USE_REAL",
     name: str = "compress-20260902T211539Z.json",
+    recorded: str | None = None,
 ) -> Path:
+    """`checkpoint_sha256`: the sentinel "USE_REAL" (default) records the checkpoint's
+    actual sha256, matching what a real, correctly-bound receipt looks like post-fix.
+    Pass an explicit (wrong) value to test mismatch, or None to test absence."""
+    sha = mod.sha256_of(checkpoint) if checkpoint_sha256 == "USE_REAL" else checkpoint_sha256
     receipt: dict[str, Any] = {
         "schema": "csd-pretrain-receipt/v1",
         "region": region,
-        "recorded": "2026-09-02T21:15:39Z",
+        "recorded": recorded or _default_recorded(checkpoint),
         "corpus": {
             "fingerprint": "5de8a340c37137554824578a0040604d",
             "train_pairs": 277269,
@@ -108,17 +122,25 @@ def make_training_receipt(
         "untrained_baseline": {"n_pairs": 512, "recall@1": 0.037, "recall@10": 0.068},
         "beats_untrained": {"recall@1": True, "recall@10": True},
     }
-    if checkpoint_sha256 is not None:
-        receipt["artifacts"] = {"checkpoint_sha256": checkpoint_sha256}
+    if sha is not None:
+        receipt["artifacts"] = {"checkpoint_sha256": sha}
     path = tmp_path / name
     path.write_text(json.dumps(receipt))
     return path
 
 
-def make_eval_receipt(tmp_path: Path, checkpoint: Path, region: str = "compress") -> Path:
-    receipt = {
+def make_eval_receipt(
+    tmp_path: Path,
+    checkpoint: Path,
+    region: str = "compress",
+    checkpoint_sha256: str | None = "USE_REAL",
+    recorded: str | None = None,
+) -> Path:
+    sha = mod.sha256_of(checkpoint) if checkpoint_sha256 == "USE_REAL" else checkpoint_sha256
+    receipt: dict[str, Any] = {
         "producer": {"project": "cogsyndelta", "component": region},
         "stage": "eval",
+        "started_utc": recorded or _default_recorded(checkpoint),
         "metrics": {
             "rank.recall@1": 0.49,
             "repr.anisotropy": 0.1306,
@@ -128,15 +150,25 @@ def make_eval_receipt(tmp_path: Path, checkpoint: Path, region: str = "compress"
         "artifacts": {"checkpoint": str(checkpoint)},
         "schema": "model-pipeline-receipt/v1",
     }
+    if sha is not None:
+        receipt["artifacts"]["checkpoint_sha256"] = sha
     path = tmp_path / f"cogsyndelta-{region}-eval-20260902T183739Z.json"
     path.write_text(json.dumps(receipt))
     return path
 
 
-def make_quant_receipt(tmp_path: Path, checkpoint: Path, region: str = "compress") -> Path:
-    receipt = {
+def make_quant_receipt(
+    tmp_path: Path,
+    checkpoint: Path,
+    region: str = "compress",
+    checkpoint_sha256: str | None = "USE_REAL",
+    recorded: str | None = None,
+) -> Path:
+    sha = mod.sha256_of(checkpoint) if checkpoint_sha256 == "USE_REAL" else checkpoint_sha256
+    receipt: dict[str, Any] = {
         "region": region,
         "checkpoint": str(checkpoint),
+        "recorded_utc": recorded or _default_recorded(checkpoint),
         "corpus_fingerprint": "5de8a340c37137554824578a0040604d",
         "tolerance": 0.01,
         "fp32_metric_recomputed": 0.496,
@@ -147,6 +179,8 @@ def make_quant_receipt(tmp_path: Path, checkpoint: Path, region: str = "compress
         "stored_bytes": 6519016,
         "compression_ratio": 9.83,
     }
+    if sha is not None:
+        receipt["checkpoint_sha256"] = sha
     path = tmp_path / f"{region}-quant-20260902T181604Z.json"
     path.write_text(json.dumps(receipt))
     return path
@@ -238,36 +272,168 @@ def test_unknown_tier_aborts_full_plan_before_any_file_read(tmp_path: Path) -> N
 # --------------------------------------------------------------- sha256 (req 3, 5)
 
 
-def test_sha_mismatch_aborts(tmp_path: Path) -> None:
+def test_sha_computed_from_file(tmp_path: Path) -> None:
     checkpoint = make_checkpoint(tmp_path)
-    receipt_path = make_training_receipt(tmp_path, checkpoint, checkpoint_sha256="0" * 64)
-    receipt = json.loads(receipt_path.read_text())
-    with pytest.raises(mod.PublishAbortError, match="sha256 mismatch"):
-        mod.verify_checkpoint_sha(checkpoint, receipt)
-
-
-def test_sha_computed_and_recorded_when_absent(tmp_path: Path) -> None:
-    checkpoint = make_checkpoint(tmp_path)
-    receipt_path = make_training_receipt(tmp_path, checkpoint)  # no checkpoint_sha256
-    receipt = json.loads(receipt_path.read_text())
-    got = mod.verify_checkpoint_sha(checkpoint, receipt)
+    got = mod.verify_checkpoint_sha(checkpoint)
     assert got == mod.sha256_of(checkpoint)
     assert len(got) == 64
 
 
-def test_sha_match_passes_through(tmp_path: Path) -> None:
-    checkpoint = make_checkpoint(tmp_path)
-    real_sha = mod.sha256_of(checkpoint)
-    receipt_path = make_training_receipt(tmp_path, checkpoint, checkpoint_sha256=real_sha)
-    receipt = json.loads(receipt_path.read_text())
-    assert mod.verify_checkpoint_sha(checkpoint, receipt) == real_sha
-
-
 def test_missing_checkpoint_aborts(tmp_path: Path) -> None:
     missing = tmp_path / "nope.pt"
-    receipt = {"checkpoint": str(missing)}
     with pytest.raises(mod.PublishAbortError, match="not found"):
-        mod.verify_checkpoint_sha(missing, receipt)
+        mod.verify_checkpoint_sha(missing)
+
+
+# --------------------------------------------- receipt-to-checkpoint binding (this fix)
+#
+# The review this fix responds to: eval and quant receipts were region-checked but
+# never bound to the checkpoint actually being published -- every receipt named the
+# same mutable <region>-checkpoints/final.pt, and a later training run silently
+# invalidated earlier eval/quant receipts without either check noticing. These tests
+# pin both halves of the fix: (a) every receipt's own declared checkpoint_sha256 must
+# equal the checkpoint's real sha256, absence or mismatch aborts; (b) a receipt
+# timestamped before the checkpoint's mtime aborts too, belt-and-braces for a legacy
+# receipt that (by malicious luck or a hand-edit) carried a matching sha256.
+
+
+def test_binding_sha_mismatch_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC)
+    receipt_path = make_training_receipt(tmp_path, checkpoint, checkpoint_sha256="0" * 64)
+    receipt = json.loads(receipt_path.read_text())
+    with pytest.raises(mod.PublishAbortError, match="does not match"):
+        mod.assert_receipt_bound_to_checkpoint(
+            receipt, mod.sha256_of(checkpoint), mtime, "training"
+        )
+
+
+def test_binding_sha_absent_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC)
+    receipt_path = make_training_receipt(tmp_path, checkpoint, checkpoint_sha256=None)
+    receipt = json.loads(receipt_path.read_text())
+    with pytest.raises(mod.PublishAbortError, match=r"no artifacts\.checkpoint_sha256"):
+        mod.assert_receipt_bound_to_checkpoint(
+            receipt, mod.sha256_of(checkpoint), mtime, "training"
+        )
+
+
+def test_binding_older_than_checkpoint_aborts(tmp_path: Path) -> None:
+    # sha256 matches (belt-and-braces case: a legacy receipt whose sha happens to be
+    # right) but its recorded timestamp predates the checkpoint file's mtime.
+    checkpoint = make_checkpoint(tmp_path)
+    mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC)
+    stale = (mtime - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    receipt_path = make_training_receipt(tmp_path, checkpoint, recorded=stale)
+    receipt = json.loads(receipt_path.read_text())
+    with pytest.raises(mod.PublishAbortError, match="predates the checkpoint"):
+        mod.assert_receipt_bound_to_checkpoint(
+            receipt, mod.sha256_of(checkpoint), mtime, "training"
+        )
+
+
+def test_binding_timestamp_absent_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC)
+    receipt_path = make_training_receipt(tmp_path, checkpoint)
+    receipt = json.loads(receipt_path.read_text())
+    del receipt["recorded"]
+    with pytest.raises(mod.PublishAbortError, match="none of"):
+        mod.assert_receipt_bound_to_checkpoint(
+            receipt, mod.sha256_of(checkpoint), mtime, "training"
+        )
+
+
+def test_binding_matches_passes(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    mtime = datetime.fromtimestamp(checkpoint.stat().st_mtime, tz=UTC)
+    receipt_path = make_training_receipt(tmp_path, checkpoint)  # default: real sha, later timestamp
+    receipt = json.loads(receipt_path.read_text())
+    mod.assert_receipt_bound_to_checkpoint(
+        receipt, mod.sha256_of(checkpoint), mtime, "training"
+    )  # no raise
+
+
+def test_binding_eval_receipt_top_level_or_nested_sha_both_work(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    real_sha = mod.sha256_of(checkpoint)
+    assert (
+        mod.receipt_checkpoint_sha256({"artifacts": {"checkpoint_sha256": real_sha}}, "x")
+        == real_sha
+    )
+    assert mod.receipt_checkpoint_sha256({"checkpoint_sha256": real_sha}, "x") == real_sha
+
+
+def test_build_plan_aborts_when_eval_receipt_unbound(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress", checkpoint_sha256=None)
+    with pytest.raises(mod.PublishAbortError, match="eval receipt has no"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, None
+        )
+
+
+def test_build_plan_aborts_when_quant_receipt_unbound(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress", checkpoint_sha256=None)
+    with pytest.raises(mod.PublishAbortError, match="quant receipt has no"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_consistent_synthetic_trio_publishes(tmp_path: Path) -> None:
+    """The positive case: training, eval and quant receipts that all correctly name
+    this exact checkpoint's sha256 and are all timestamped after it -- the publish
+    must proceed (mocked HfApi; no network)."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, quant_path
+    )
+    assert plan.bound_receipt_labels == ("training", "eval", "quant")
+
+    fake_api = MagicMock()
+    fake_api.repo_info.return_value = SimpleNamespace(private=True)
+    fake_api.get_paths_info.return_value = []
+    with (
+        patch("huggingface_hub.HfApi", return_value=fake_api),
+        patch.dict("os.environ", {"HF_TOKEN": "tok"}),
+    ):
+        result = mod.publish(plan)
+    assert set(result["uploaded"]) == set(plan.files.keys())
+    assert fake_api.upload_file.call_count == len(plan.files)
+
+
+def test_dry_run_against_real_compress_receipts_aborts_sha_absent() -> None:
+    """The dry-run this fix's spec calls for: the real receipts under
+    /akula-data/csd/receipts carry no checkpoint_sha256 anywhere, so this must ABORT
+    with the sha-absent message -- pasted into the task report -- not silently
+    publish a card mixing current and superseded-weights metrics."""
+    receipts_dir = Path("/akula-data/csd/receipts")
+    if not receipts_dir.is_dir():
+        pytest.skip("real receipts fixture directory not present on this host")
+    rc = mod.main(
+        [
+            "--region",
+            "compress",
+            "--receipt",
+            str(receipts_dir / "compress-20260902T211539Z.json"),
+            "--eval-receipt",
+            str(receipts_dir / "cogsyndelta-compress-eval-20260902T183739Z.json"),
+            "--quant-receipt",
+            str(receipts_dir / "compress-quant-20260902T181604Z.json"),
+            "--repo",
+            "tzervas/cogsyndelta-region-compress",
+            "--dry-run",
+        ]
+    )
+    assert rc == 2
 
 
 # ------------------------------------------------------- checkpoint containment (review fix)
