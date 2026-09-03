@@ -191,3 +191,217 @@ def test_comfy_paths_not_captured_by_lab_wrap(
     assert mod.handle_lab("GET", "/api/comfy/list-workflows", {}) is None
     assert mod.handle_lab("POST", "/api/comfy/queue-prompt", {"prompt": {}}) is None
     assert mod.handle_lab("GET", "/api/status", {}) is None
+
+
+# --- OD-2: default-deny proxy, never relays client credentials ---------------
+
+
+def test_apply_refused_before_any_upstream_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """/api/apply must never reach the proxy, whether or not it is auth'd.
+
+    This is the exact OD-2 bug: previously a proxying node forwarded a POST
+    to /api/apply upstream, client Authorization header verbatim, before
+    check_apply_auth ever ran. Prove refusal happens with zero upstream calls.
+    """
+    mod = load_lab(tmp_path, monkeypatch)
+    mod.UPSTREAM = "http://prime.internal:9118"
+
+    def boom(*_a: object, **_k: object) -> tuple[int, bytes]:
+        raise AssertionError("must not call upstream for /api/apply")
+
+    monkeypatch.setattr(mod, "proxy_upstream", boom)
+
+    # No apply token configured at all -> check_apply_auth fails closed.
+    code, raw = mod.dispatch_api_post("/api/apply", "Bearer whatever", b'{"path": "src/x.py"}')
+    assert code == 401
+    assert json.loads(raw) == {"error": "unauthorized"}
+
+    # Configure a real token; a wrong bearer must still be refused locally.
+    monkeypatch.setenv("CSD_APPLY_TOKEN", "s3cr3t")
+    code, raw = mod.dispatch_api_post("/api/apply", "Bearer nope", b'{"path": "src/x.py"}')
+    assert code == 401
+
+    # And /api/apply is excluded from the allowlist as an independent guard.
+    assert mod.proxy_eligible("/api/apply") is False
+
+
+def test_proxy_default_deny_and_no_credential_relay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-allowlisted route is denied; an allowlisted one mints its own token."""
+    mod = load_lab(tmp_path, monkeypatch)
+    mod.UPSTREAM = "http://prime.internal:9118"
+
+    # Non-allowlisted GET and POST routes never reach the network: assert
+    # this with monkeypatch's own context manager so the block is undone
+    # before the allowlisted-route checks below need the real function.
+    with monkeypatch.context() as denied:
+
+        def boom(*_a: object, **_k: object) -> tuple[int, bytes]:
+            raise AssertionError("must not proxy a non-allowlisted route")
+
+        denied.setattr(mod, "proxy_upstream", boom)
+        code, _raw = mod.dispatch_api_get("/api/git", "")
+        assert code == 404
+        code, _raw = mod.dispatch_api_post("/api/git", "", b"{}")
+        assert code == 404
+        code, _raw = mod.dispatch_api_post("/api/forgejo/pr-create", "", b"{}")
+        assert code == 404
+
+    captured: dict[str, object] = {}
+
+    class FakeResp:
+        status = 200
+
+        def read(self) -> bytes:
+            return b"{}"
+
+        def __enter__(self) -> FakeResp:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+    def fake_urlopen(req: object, timeout: int = 45) -> FakeResp:
+        captured["headers"] = dict(req.headers)  # type: ignore[attr-defined]
+        return FakeResp()
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", fake_urlopen)
+    fake_token = "downstream-scoped-token"  # noqa: S105 -- test fixture, not a real secret
+    monkeypatch.setenv("CSD_UPSTREAM_TOKEN", fake_token)
+    mod.UPSTREAM_TOKEN = fake_token
+
+    # An allowlisted route proxies -- with a server-minted token, never the
+    # caller's Authorization header (dispatch_api_get never even accepts one).
+    code, _raw = mod.dispatch_api_get("/api/status", "")
+    assert code == 200
+    assert captured["headers"].get("Authorization") == f"Bearer {fake_token}"
+
+    # No upstream token configured -> no Authorization header at all, and
+    # crucially never one lifted from a client request (proxy_upstream takes
+    # no header argument -- it structurally cannot relay a client credential).
+    captured.clear()
+    mod.UPSTREAM_TOKEN = ""
+    code, _raw = mod.dispatch_api_get("/api/status", "")
+    assert code == 200
+    assert "Authorization" not in captured["headers"]
+
+
+# --- OD-1: server-side protected paths and no-assert refusal in http_apply --
+
+
+def test_http_apply_refuses_protected_guard_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = load_lab(tmp_path, monkeypatch)
+    wt = tmp_path / "p1-08"
+    (wt / "src").mkdir(parents=True)
+    mod.WORKTREES = {"p1-08": wt}
+    mod.PROTECTED_WT = tmp_path / "memory-gate"
+
+    for rel in (
+        "src/cogsyndelta/eval/metrics.py",
+        "src/cogsyndelta/regions/pretrain.py",
+        "src/cogsyndelta/regions/_checkpoint.py",
+        "scripts/csd-train-all.py",
+        "tests/test_guards_can_fail.py",
+        "tests/test_reserved_corpus_guard.py",
+        "tests/test_checkpoint_load_security.py",
+        ".github/workflows/ci.yml",
+        ".githooks/pre-push",
+    ):
+        rec = mod.http_apply("p1-08", rel, "poisoned")
+        assert rec["ok"] is False, rel
+        assert "protected" in rec["error"], rel
+        assert not (wt / rel).exists(), rel
+
+    # A neighbouring, non-guarded src/ file is untouched by the guard.
+    ok = mod.http_apply("p1-08", "src/cogsyndelta/regions/whatever.py", "x = 1\n")
+    assert ok["ok"] is True
+
+
+def test_http_apply_protected_check_survives_path_normalization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The protected-path check must run on the RESOLVED write target, not
+    the client-supplied string. A raw-string check is bypassable: PurePath
+    silently collapses "//" and "." segments and a trailing "/", and
+    resolve() follows symlinks, so a spelling that looks unprotected (or a
+    symlink alias) can still land on a protected file's real path."""
+    mod = load_lab(tmp_path, monkeypatch)
+    wt = tmp_path / "p1-08"
+    guard = wt / "src/cogsyndelta/eval/metrics.py"
+    guard.parent.mkdir(parents=True)
+    guard.write_text("original\n", encoding="utf-8")
+    (wt / "tests").mkdir()
+    guard_test = wt / "tests/test_guards_can_fail.py"
+    guard_test.write_text("original\n", encoding="utf-8")
+    alias = wt / "src/cogsyndelta/eval/alias.py"
+    alias.symlink_to(guard)
+    mod.WORKTREES = {"p1-08": wt}
+    mod.PROTECTED_WT = tmp_path / "memory-gate"
+
+    vectors = [
+        "src//cogsyndelta/eval/metrics.py",
+        "src/./cogsyndelta/eval/metrics.py",
+        "src/cogsyndelta//eval//metrics.py",
+        "src/cogsyndelta/eval/metrics.py/",
+        "src/cogsyndelta/eval/./metrics.py",
+        "tests//test_guards_can_fail.py",
+        "src/cogsyndelta/eval/alias.py",  # symlink -> metrics.py
+    ]
+    for rel in vectors:
+        rec = mod.http_apply("p1-08", rel, "canary\n")
+        assert rec["ok"] is False, rel
+        assert "protected" in rec["error"], rel
+
+    assert guard.read_text(encoding="utf-8") == "original\n"
+    assert guard_test.read_text(encoding="utf-8") == "original\n"
+
+
+def test_http_apply_escaped_worktree_via_dotdot_and_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A "../" escape and a symlink pointing outside the worktree must both
+    be refused, and refused before ALLOW_PREFIXES/protected-path checks run
+    on a string that no longer describes where the write would land."""
+    mod = load_lab(tmp_path, monkeypatch)
+    wt = tmp_path / "p1-08"
+    (wt / "src").mkdir(parents=True)
+    outside = tmp_path / "outside.py"
+    outside.write_text("original\n", encoding="utf-8")
+    escape_link = wt / "src" / "escape.py"
+    escape_link.symlink_to(outside)
+    mod.WORKTREES = {"p1-08": wt}
+    mod.PROTECTED_WT = tmp_path / "memory-gate"
+
+    dotdot = mod.http_apply("p1-08", "src/../../outside.py", "canary\n")
+    assert dotdot["ok"] is False
+    assert "escaped worktree" in dotdot["error"]
+
+    symlink_escape = mod.http_apply("p1-08", "src/escape.py", "canary\n")
+    assert symlink_escape["ok"] is False
+    assert "escaped worktree" in symlink_escape["error"]
+    assert outside.read_text(encoding="utf-8") == "original\n"
+
+
+def test_http_apply_refuses_assertless_test_stub(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = load_lab(tmp_path, monkeypatch)
+    wt = tmp_path / "p1-08"
+    (wt / "tests").mkdir(parents=True)
+    mod.WORKTREES = {"p1-08": wt}
+    mod.PROTECTED_WT = tmp_path / "memory-gate"
+
+    stub = "def test_always_passes():\n    pass\n"
+    rec = mod.http_apply("p1-08", "tests/test_stub.py", stub)
+    assert rec["ok"] is False
+    assert "no assert" in rec["error"]
+    assert not (wt / "tests/test_stub.py").exists()
+
+    real = "def test_real():\n    assert 1 == 1\n"
+    ok = mod.http_apply("p1-08", "tests/test_stub.py", real)
+    assert ok["ok"] is True
