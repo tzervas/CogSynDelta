@@ -42,6 +42,7 @@ def _regions_spec() -> dict:
 def benchmark_region(region: str, state: Path) -> Receipt | None:
     from tokenizers import Tokenizer
 
+    from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
     from cogsyndelta.regions.pretrain import PretrainConfig, _tokenize, build_splits
     from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
 
@@ -54,19 +55,48 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
     spec = _regions_spec()
     sources = spec["region_spec"](region).sources
     resolved = [(spec["_shards"](g), tuple(c), cap) for g, c, cap in sources]
-    wanted = train_receipt.get("corpus", {}).get("shards", [])
-    by_name = {Path(p).name: p for p in resolved[0][0]}
-    primary = [by_name[n] for n in wanted if n in by_name] or resolved[0][0]
 
+    # Select by the shard NAMES the receipt records, not by re-globbing -- same rule as
+    # csd-quantize.py's quantize_text_region, and for the same reason: a glob returns
+    # whatever is on disk now, training may have used a --shard-limit subset, and
+    # `or resolved[0][0]` here used to silently fall back to re-globbing the WHOLE corpus
+    # the moment a single receipt-recorded name failed to match (a stale receipt, a
+    # partial corpus refresh, ...). That produced a fresh holdout from a different corpus
+    # than training used, then compared it against the receipt's untrained-baseline gate
+    # as if it were the same split. REFUSE instead: a name mismatch means the comparison
+    # below would be void, not that a bigger corpus is an acceptable substitute.
+    wanted = train_receipt.get("corpus", {}).get("shards", [])
+    if wanted:
+        by_name = {Path(p).name: p for p in resolved[0][0]}
+        missing = [n for n in wanted if n not in by_name]
+        if missing:
+            raise RuntimeError(
+                f"{region}: shards recorded in the receipt are no longer on disk: {missing}"
+            )
+        primary = [by_name[n] for n in wanted]
+    else:
+        primary = resolved[0][0]
+
+    # The fingerprint is the contract, same as csd-quantize.py: if the corpus is not the
+    # one training used, the untrained-baseline comparison this receipt's `gates` block
+    # performs below is void, so stop rather than report. Rebuilt from the glob, not from
+    # the receipt's own `extra_sources` -- see fingerprint_corpus's caller in
+    # csd-quantize.py for why that would be a tautology.
     cfg_d = train_receipt["config"]
+    extra_sources = [{"shards": s, "columns": list(c), "limit": cap} for s, c, cap in resolved[1:]]
+    fingerprint = fingerprint_corpus(
+        primary,
+        columns=list(cfg_d["pair_columns"]),
+        extra_sources=extra_sources,
+    )
+    verify_corpus_fingerprint(train_receipt.get("corpus", {}), fingerprint, region)
+
     enc = TextEncoderConfig(**cfg_d["encoder"])
     cfg = PretrainConfig(
         region=region,
         pair_columns=tuple(cfg_d["pair_columns"]),
         shards=primary,
-        extra_sources=[
-            {"shards": s, "columns": list(c), "limit": cap} for s, c, cap in resolved[1:]
-        ],
+        extra_sources=extra_sources,
         steps=cfg_d["steps"],
         batch_size=cfg_d["batch_size"],
         max_len=cfg_d["max_len"],
