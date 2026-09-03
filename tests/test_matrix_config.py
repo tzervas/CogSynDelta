@@ -280,3 +280,68 @@ def test_the_budget_axes_why_guard_fires_when_the_defaults_claim_is_removed() ->
         if _narrows_budget_axes(merged) and not merged.get("budget_axes_why")
     ]
     assert sorted(offenders) == ["code", "compress", "reason", "retrieve"]
+
+
+# ------------------------------------------- C1: requires must name a stage in the pipeline
+
+
+def _effective_pipeline(stage_list: list[str], stages: dict[str, Any]) -> list[str]:
+    """Mirror of `model_matrix.config.effective_pipeline`: drop `enabled: false`."""
+    return [s for s in stage_list if stages.get(s, {}).get("enabled", True)]
+
+
+def _requires_violations(raw: dict[str, Any]) -> list[str]:
+    """Mirror of `model_matrix.config.validate_requires`, returning what it would raise
+    on instead of raising -- so a test can assert both the empty and the broken case."""
+    stages = raw["stages"]
+    problems: list[str] = []
+    for pipeline_name, stage_list in raw["pipeline"].items():
+        runtime = _effective_pipeline(stage_list, stages)
+        for stage_name in runtime:
+            for required in stages[stage_name].get("requires", []):
+                if required not in runtime:
+                    problems.append(
+                        f"stage {stage_name!r} in pipeline {pipeline_name!r} requires "
+                        f"{required!r}, which is not an enabled stage in that pipeline"
+                    )
+    return problems
+
+
+def test_no_pipeline_declares_a_stage_whose_requires_it_cannot_satisfy() -> None:
+    """C1. This is the error that made `model-matrix validate` and `plan` exit 1 on the
+    shipped file, so nothing downstream of the loader was ever exercised."""
+    assert _requires_violations(_raw()) == []
+
+
+def test_every_stage_a_pipeline_runs_has_a_command_template_in_every_region() -> None:
+    """M3's half of C1: a pipeline may not name a stage no region can run. `finetune`
+    has no command template anywhere (A4 is unimplemented), which is the second reason
+    the finetune pipeline could not run even if its `requires` had resolved."""
+    raw = _raw()
+    for pipeline_name, stage_list in raw["pipeline"].items():
+        for stage_name in _effective_pipeline(stage_list, raw["stages"]):
+            if not raw["stages"][stage_name].get("gpu", False):
+                continue  # collect/publish/verify are harness-internal, no command here
+            for region, merged in _merged_regions(raw).items():
+                assert stage_name in merged.get("commands", {}), (
+                    f"pipeline {pipeline_name!r} runs stage {stage_name!r} but region "
+                    f"{region!r} has no command template for it"
+                )
+
+
+def test_the_requires_guard_fires_on_the_finetune_pipeline_as_shipped() -> None:
+    """MUTATION. Re-declare the pipeline exactly as the reviewer found it and assert
+    both guards report it -- the `requires` violation AND the missing command."""
+    raw = copy.deepcopy(_raw())
+    raw["pipeline"]["finetune"] = [
+        "finetune",
+        "test",
+        "quantize",
+        "test-quant",
+        "collect",
+        "publish",
+        "verify",
+    ]
+    problems = _requires_violations(raw)
+    assert any("pipeline 'finetune' requires 'train'" in p for p in problems), problems
+    assert "finetune" not in _merged_regions(raw)["memory"]["commands"]

@@ -78,6 +78,14 @@ stages:
     receipt: "receipts/{region}-2*.json"
     gate: "$.beats_untrained.*"
     complete_on_gate_fail: true
+  # DECLARED BUT UNREFERENCED, deliberately (C1/M3). No `pipeline:` below names this
+  # stage and no region declares a `finetune:` command template, because the CSD-side
+  # adapter it needs does not exist yet: DESIGN.v2 §6.4's A4
+  # (`--init-from-checkpoint` on the training entry point, plus the
+  # `finetune: {parent_variant, parent_sha256, parent_metric_on_child_split, ...}`
+  # receipt block §6.3 requires). The stage definition stays so the receipt/gate
+  # contract A4 must satisfy is written down where the harness will read it; the
+  # PIPELINE that would run it is added in the same change that adds the command.
   finetune:
     kind: train
     gpu: true
@@ -128,7 +136,20 @@ stages:
 
 pipeline:
   base: [train, test, quantize, test-quant, collect, publish, verify]
-  finetune: [finetune, test, quantize, test-quant, collect, publish, verify]
+  # `finetune: [finetune, test, quantize, ...]` is NOT declared yet (C1). It made the
+  # whole config unloadable: `stages.test.requires: [train]` is global, the finetune
+  # pipeline contains `finetune` rather than `train`, and `validate_requires` is
+  # fail-closed --
+  #   INVALID: stage 'test' in pipeline 'finetune' requires 'train', which is not an
+  #   enabled stage in that pipeline
+  # -- so `model-matrix validate` and `plan` both exited 1 and no wave was ever printed.
+  # The harness rule is right; the pipeline was declared before the stage it needs could
+  # run (see the `finetune` stage's own comment: A4 is unimplemented, M3 -- there is no
+  # finetune command template either). Relaxing `test.requires` to accommodate it would
+  # weaken the guard that keeps `test` bound to a training stage in the BASE pipeline,
+  # which is the one this matrix actually runs. When A4 lands, this pipeline comes back
+  # with an eval stage of its own (`test-ft`, `requires: [finetune]`, `bound_to:
+  # finetune`) rather than by loosening `test`.
 
 identifier:
   pattern: "{region}-{axes}-{sha7}-{date}"
