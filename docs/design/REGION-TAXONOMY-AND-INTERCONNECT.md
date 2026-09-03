@@ -1,0 +1,4446 @@
+# Region Taxonomy and the White-Matter Interconnect
+
+**Status:** design draft, **REVISION 3.2**, for operator ratification. Nothing here is applied.
+No config, script, checkpoint or program file is modified by this document, and the JSON diff
+in §1.4 is shown so it can be reviewed, not so it can be run.
+
+**What revision 2 changes.** Revision 1 was attacked by two independent passes — a skeptic pass
+(35 findings, six critical) and a threat-model pass (4 findings plus a named security-theatre
+list). Every finding is resolved here: **accepted and applied in place, cited at the changed
+spot as `[A-n fixed]` / `[T-n fixed]`, or refuted with a re-read `file:line` in §11.** Since
+revision 1, **W1 has been measured on the real production checkpoints, and its pre-committed
+rule fired against the design's central bet** (§4.0). The consequences of that result — a
+mandatory token-aware retrain before any interconnect training, a re-derived row order, and a
+re-derived phase-2 cost — are the largest single change in this revision. §10 is the
+finding-by-finding disposition index; §11 holds the refutations.
+
+**What revision 3 changes.** Revision 2 was attacked by a second skeptic pass (`attack-skeptic-2.md`,
+findings N1–N10), which confirmed 31 of 35 skeptic and 6 of 7 threat findings closed and found ten
+new defects, one critical. Revision 3 is a **targeted** pass: nothing is restructured, and every
+change is cited in place as `[Nn fixed]`. The ten:
+**N1** the aqua_rat recovery now burns the **union** of both possible draws, because the sampling
+algorithm changed under it (`c42203c`) and W2a's three checks passed under either hypothesis —
+**DEC-42**, with a fourth, failable precondition (§5.1, §4.1 W2a).
+**N2** every one of the six ablation pairs now has a declared item shape and a printed sealed-item
+count (§5.4).
+**N3** §4.0 prints **both** effective-rank definitions, they disagree, and W1's verdict was therefore
+**provisional pending W1d**, whose deciding rule depends on no rank definition (§4.0, DEC-35) —
+**W1d has since run and CONFIRMED it** (revision 3.2).
+**N4** the fifth, non-production W1 measurement is in the table (§4.0).
+**N5** the composite renderer becomes **W3r**, a prerequisite of both W7v and W3, breaking a
+dependency inversion (§4.1).
+**N6** a `corpus: REDUNDANT` branch for the G0d void condition (§2.7.3).
+**N7** B0, B0d, B0u, B2t and B3 are budgeted in GPU-hours, and B2t is counted as what it is — a
+second white-matter run (§4.3, §2.7.7).
+**N8** the **binding** B1 max-share is printed beside B1 in both accountings (§5.1).
+**N9** `memory × reasoning` and the general bin get declared, W7v-independent constructions (§5.5).
+**N10** DEC-40 gets a row (**W0c**) and a named owner, and the W1 evidence is copied into the repo
+at `docs/design/evidence/w1-token-rank-2026-09-02/` and cited from there (§4.0, §4.1, §10.2).
+
+**What revision 3.1 changes.** A targeted pass over five sections, driven by one operator input
+and one completed audit. Nothing is restructured and no earlier verdict is reopened. The
+operator's stated model intent made the **`auditory` faculty and a speech-output head
+REQUIRED**, not placeholders `[OP: csd-multimodal-io-intent.md]` — **superseded as a schedule by
+DEC-48 in revision 3.2, which defers both to a production phase while keeping the seam declared**: **DEC-43** and **DEC-44** record
+that, with the interface, the objective family and what it changes in the interconnect's runtime
+contract (§1.3, §1.4, §2.5). The audio licence audit **OD-9 asked for is done**, committed at
+`docs/design/AUDIO-CORPUS-AUDIT.md`, and it yields four new programme rows with gates
+(**A0–A3**, §4.1 — **deferred and re-scoped to A0m/A0f/A1/A2/A3 in revision 3.2**), an audio
+line in the phase-2 bill (§4.3 — **withdrawn in revision 3.2**), the per-region audio licence tiers
+under the strictest-input rule (**DEC-45**, §5.7), the LibriVox-as-one-provenance-group correction
+(**DEC-46**, §5.7), and six new operator asks (§8, **OD-10 to OD-15**). **OD-9 itself is
+ANSWERED** and leaves the list. One property of this revision is worth stating because it is the
+reverse of the last one: revision 3 closed findings, revision 3.1 opens requirements — the
+programme got larger, not safer, and the bill in §4.3 says by how much.
+
+**What revision 3.2 changes.** Three inputs, no restructure, every change cited in place.
+**(1) W1d HAS RUN** — 2026-09-02, read-only on akula-prime, 116.5 s, against the same production
+checkpoints. **W1's verdict is CONFIRMED and stops being provisional:** clean for `code`,
+`compress` and `vl_latent`, **CONFIRMED-BUT-NOISY** for `retrieve`; **no region is OVERTURNED**;
+the token-aware retrains (W4, then W7a, W7v) are **LICENSED**; and the **penultimate-block
+fallback is dead** — `L_token` attaches at the FINAL block (§4.0, DEC-35, §9.1). **(2) An
+operator ruling defers audio to a production phase** — *"we can wait to add audio as a future
+feature once it proves out without audio"* `[OP: csd-multimodal-io-intent.md]` — so `auditory`
+and `speech_output` become **DECLARED SEAMS** with their interface, objective family and runtime
+output block **kept as declared**, rows A0–A3 move to §4.1's *Production phase: audio* subsection
+behind a blocking gate, and **v1 stays at FOUR participants and SIX ablation pairs**
+(**DEC-48**, amending DEC-43 and DEC-44). **(3) The latent-space reasoning invariant is recorded
+as DEC-47** and given a gate in W9: no inter-region path may carry discrete token ids, and the
+constructed violation must be refused. Revision 3.1 was attacked by a third skeptic pass
+(`attack-skeptic-31.md`, S1–S21); its disposition is §10.4 and its fixes are cited as
+`[S31-n fixed]`. **S1 and S2 are resolved BY the deferral rather than by a recount**, and §11 R4
+says so explicitly rather than restating either finding for `R = 5`.
+
+**Scope:** what each region *is* as a faculty; what white matter is, mechanically; what it
+emits and how a runtime executes it; how it is trained and on what; the experiment that
+distinguishes integration from dispatch; the replacement for P4/P5/P6; the reserved corpus
+that phase 2 needs; the scale path to 30B-class on one 16 GiB card; the precise list of
+sections in five other design docs that this invalidates; and — new in revision 2 — the
+disposition of every finding from the two adversarial passes (§10) with the refutations
+evidenced (§11).
+
+**What it supersedes on ratification:** `docs/program/CSD-BRAIN-REGIONS.md` (which does not
+exist in the tree and is cited as authoritative by six tracked files), P4 and P5 in
+`program/REMAINING.md` and `program/csd-program.json`, and the `CognitiveRegion.activate`
+contract in `src/cogsyndelta/contracts/region.py`.
+
+---
+
+## Legend, and how to read the evidence tags
+
+| tag | meaning |
+|---|---|
+| **[V]** | Verified by me in this session by reading the named file. |
+| **[V\*]** | Verified in a file by a surveying agent with a `file:line` citation **and** independently reproduced by at least two of the three architecture proposals or by a judge who re-checked it. Treated as fact; not re-read by me. |
+| **[I]** | Inferred — reasoning over [V] or [V\*] facts. Argued where it is load-bearing. |
+
+Nothing in this document is asserted from a document that a measurement contradicts. Where a
+number is disputed between sources, both are given and the conservative one is adopted.
+
+**Provenance of this document.** It is assembled from a grounding survey brief, three
+independent architecture proposals (biology-first, ml-first, systems-first) and three
+independent judge reviews (operator-fidelity, trainability-and-measurement, scale-and-systems).
+The spine is `proposal-ml-first.md`, which won the judge tally. Every graft from the other two
+is attributed inline. Every fatal flaw a judge named is either dropped or explicitly refuted;
+§9.13 lists them.
+
+Revision 2 adds two further inputs: the **skeptic pass** (`scratchpad/design/attack-skeptic.md`,
+findings A1–A35) and the **threat pass** (`scratchpad/design/attack-threat.md`, findings T1–T4b
+plus the theatre list). Revision 3 adds a third: the **second skeptic pass**
+(`scratchpad/design/attack-skeptic-2.md`, findings N1–N10), run against revision 2. Both attack files are held unchanged as the record of what was argued;
+this document is the record of what was *done about it*. It also carries eight operator inputs
+recorded verbatim in the session's memory files, cited inline as **[OP: file-name]**.
+
+**One measurement discipline applies throughout and is new in this revision.** A guard, a
+baseline or a gate is not accepted because its reasoning is sound. It is accepted when someone
+has made it fail on purpose. Four guards in this programme were structurally incapable of
+firing; the fix each time was to construct the case that should trip it. Revision 1 diagnosed
+that pattern in four places and then reproduced it in three of its own (A1, A6, A11). Every
+gate added or changed below carries the construction that makes it fail.
+
+---
+
+## Decision index
+
+| # | decision | section |
+|---|---|---|
+| **DEC-01** | `code` → `language_code`: language faculty, code specialisation | §1 |
+| **DEC-02** | `compress` + `retrieve` → `memory`: one hippocampal faculty, one trunk, two heads. **Licence cost: `memory` inherits `retrieve`'s NC term** (DEC-31) | §1 |
+| **DEC-03** | `vl_latent` → `visual`: visual cortex, emits patch tokens; **deployed half is the EMA target encoder** (DEC-34) and its resolution is rebuilt in W7v | §1 |
+| **DEC-04** | `reason` → `reasoning`: keep, with the honest limit recorded and a phase-3 objective change | §1 |
+| **DEC-05** | `classify_banking77` → probe, not a region | §1 |
+| **DEC-06** | `classify_go_emotions` → probe of a new declared `affect` faculty | §1 |
+| **DEC-07** | `residual_mlp` → retired; the residual path is a primitive of every block | §1 |
+| **DEC-08** | `stream_vae` → retired as a region, promoted to a **tract codec** primitive | §1 |
+| **DEC-09** | untracked `regions/retrieve.py` → **split**: adopt its BEIR eval, retire its FiQA-only training regime | §1 |
+| **DEC-10** | `episodic_store` → the AI-specific region. **SUPERSEDED BY DEC-32 in revision 2:** its contract is written now, it is a `placeholder` at v1, and it is not a phase-2 participant | §1.3 |
+| **DEC-11** | `docs/program/CSD-BRAIN-REGIONS.md` → retired, its four unique decisions re-homed | §1.5 |
+| **DEC-12** | `core/` (1,320 lines) → **harvested and marked superseded in the module docstring; not imported, not deleted** | §1.6 |
+| **DEC-13** | Operator decision **D1** answered: **(c)**, with the division of labour fixed by *when* each half runs | §2.1 |
+| **DEC-14** | The region contract becomes `tokens(inputs, context_tokens) → (h, mask)`; `activate(stream)→[B,D]` dies | §2.2 |
+| **DEC-15** | Two budget currencies, two simplexes: `ctx_r` (pre-computation, region-internal) and `b_r` (post-computation, workspace KV) | §2.2, §2.4 |
+| **DEC-16** | White matter = bounded Perceiver workspace; connection strength `a_r` is read off the cross-attention, never predicted | §2.3 |
+| **DEC-17** | **Write-back**: admitted regions at iteration ≥1 receive the workspace latents as a conditioning prefix. This is what earns the DAG's edges | §2.4 |
+| **DEC-18** | Topology is derived twice — by admission depth and by cycles in the effective connectivity — and the two derivations must agree | §2.4 |
+| **DEC-19** | Training is four phases: A dense → B distil → C sparse → **D task-loss scheduler**, with collapse structurally bounded | §2.6 |
+| **DEC-20** | Frontal cortex is built now, inside white matter, **with its own objective `L_unify` and its own ablation** | §3.1 |
+| **DEC-21** | Thalamic gating is built now as **afferent bandwidth** gating; a *content* gate is a declared seam, not built | §3.2 |
+| **DEC-22** | The reserve is **constructed**, not fetched; NSRS admission with a trivial-baseline condition | §5 |
+| **DEC-23** | `codeparrot/apps` and `deepmind/code_contests` are marked `compose` in the ledger **now** | §5.2 |
+| **DEC-24** | One shared token embedding across text faculties, mandatory from the first region trained after ratification | §6.2 |
+| **DEC-25** | int8 KV is the v1 scale assumption, not the contingency | §6.3 |
+| **DEC-26** | Interconnect parameter share capped at **2–5%** of total, decided now while `D` and `L_ic` are free | §6.4 |
+| **DEC-27** | PTQ gates on **schedule divergence** `D_sched`, not only on the metric | §6.5 |
+| **DEC-28** | Paging: a declared seam with a derived trigger, request/stage granularity, not built at v1 | §6.6 |
+| **DEC-29** | Phase 3 uses **region-granular pipeline parallel**, microbatch ≤ 256 cross-host | §6.7 |
+| **DEC-30** | The receipt reports **two verdicts** — integration, and scheduling — never one number | §2.7.6 |
+| **DEC-31** | **Release licence: the strictest input sets the term.** The composed mind is **NC**; `memory` inherits `retrieve`'s NC term from GooAQ. Per-region tiers matter only for standalone shipping | §1.2, §5.7 |
+| **DEC-32** | `episodic_store` is **demoted to `placeholder` at v1**. Its capacity, eviction, partition and write-admission contract is written now and is its build trigger. v1 has **4 active participants → 6 ablation pairs** | §1.3, §2.7.7, §9.9 |
+| **DEC-33** | **Memory-gate overlays** are the dynamic-paging seam's first client: tiered residency, fingerprint-bound attach, loud disconnect, strictest-input licence. A first-class manifest artifact type | §6.6, §7.3 |
+| **DEC-34** | **`visual`'s deployed half is the EMA `target_encoder`**, not the context encoder. Verified: `IJEPA.encode` is `target_encoder.embed` and every visual number in the tree is that network | §1.2, §2.3 |
+| **DEC-35** | **W1 is measured and its rule fired: the central bet is dead as trained.** A token-aware retrain (W4, then W7) is **mandatory before W5**, with the objective and gate specified. **Amended in revision 3: the verdict is PROVISIONAL PENDING W1d**, because it is definition-dependent — participation ratio kills the bet, entropy-effective rank does not `[N3 fixed]`. **RESOLVED in revision 3.2: W1d has run and CONFIRMS W1** (clean for `code`, `compress`, `vl_latent`; **CONFIRMED-BUT-NOISY** for `retrieve`), **no region OVERTURNED**, the retrains are **LICENSED**, and the **penultimate-block fallback is dead — `L_token` attaches at the FINAL block** | §4.0, §4.1 |
+| **DEC-36** | **Admission never sets a baseline.** NSRS thresholds are calibrated on a split that is not graded; B1/B2 are recomputed on the graded split by a separate forward pass; τ is stated in chance-normalised units per bin | §5.3, §2.7.1 |
+| **DEC-37** | **G3′ is the synergy conjunction**, not the mean interaction: `Δ_A > 0` **and** `Δ_B > 0` **and** `I > 0`, per pair. The redundancy quadrant is reported as `REDUNDANT` and is a **FAIL**. **Amended in revision 3:** all six ablation pairs carry a declared item shape and a printed sealed-item count, and a redundant *corpus* is separated from a broken *statistic* `[N2 fixed] [N6 fixed]` | §2.7.3, §5.4 |
+| **DEC-38** | **Reservation is at source-row fingerprint granularity**, not composite-hash granularity; train/eval splits and bootstraps are by source row | §5.6, §5.4 |
+| **DEC-39** | **Keyed split assignment.** `split = HMAC(k_split, source_row_fingerprint) mod N`, `k_split` held outside every path an agent can write. No key ⇒ the loader refuses to build a split | §5.6 |
+| **DEC-40** | **One `load_checkpoint()`** in `src/`, `weights_only=True` hardcoded, manifest SHA-256 verified before the file is opened, enforced by a CI lint rule. **Revision 3 gives it a row (W0c) and a named owner** `[N10c fixed]` | §9.9, §4.1 |
+| **DEC-41** | **The v1 read-out is a ranking head** over a declared candidate set; abstention is an explicit **NULL candidate**, not a new head. B1/B2/G2 are defined in that metric | §2.6, §2.7.1 |
+| **DEC-42** | **The aqua_rat recovery burns the UNION of both possible draws** — the reservoir draw at `seed = 0` **and** the first 4,982 rows in shard order — because the sampling algorithm changed at `c42203c` and no surviving receipt records `cap_sampling`. Cost: at most 4,982 further rows of the 92,485 the recovery marked clean. A ledger that contains only one draw **fails** W2a `[N1 fixed]` | §5.1, §4.1 |
+| **DEC-43** | **`auditory` is a DECLARED SEAM, deferred to a production phase — AMENDED BY DEC-48.** Revision 3.1 made it required-in-phase-1; the operator's later ruling the same day defers it. What stays declared, so nothing is redesigned later: the interface (patch tokens over spectrogram frames, byte-identical to `visual`'s), the objective family (masked latent prediction) and the completed corpus audit. What moves: rows **A0–A3**, now **deferred**, `blocked_by` *the composed mind passes W6 without audio; operator go* `[OP: csd-multimodal-io-intent.md]` | §1.3, §1.4, §4.1 *Production phase: audio* |
+| **DEC-44** | **`speech_output` is a DECLARED SEAM on the language centre, deferred — AMENDED BY DEC-48.** One generative trunk emitting **text tokens and a discrete speech-token stream** stays the declared shape, and the **`Schedule`'s output-modality field and the §2.5 output block are KEPT AS DECLARED NOW**, precisely so the runtime contract does not change when audio is picked up. It is a **head, not a region and not a participant**: `emits: null`, `parent: language_code`, and `language_code` carries `heads: [text, speech]` `[S31-12 fixed]`. **Image output stays a declared seam** | §1.3, §2.5, §4.1 A2 |
+| **DEC-45** | **The audio licence tiers, under DEC-31's strictest-input rule — now groundwork for a deferred phase.** Both clean tiers are **CC BY 4.0**, not *"MIT / CC BY"*: CC BY is the strictest input in each mix, MIT is unreachable, and a slash is two verdicts rather than one `[S31-6 fixed]`. **HiFiTTS-2 is excluded and the exclusion is declared** `[S31-20 fixed]`. The NC options still cost **nothing at the composed tier**, because the composed model is already CC BY-NC-SA via `memory`. **ND (TED-LIUM) is outside the NC-tolerant policy** (OD-10); Common Voice is a **consent-hygiene** class, not a licence class (OD-11) | §5.7, §8 |
+| **DEC-46** | **LibriVox is ONE provenance group** for B1/B2, not ten datasets. Ten of the sixteen audited speech corpora draw on the same volunteer public-domain-audiobook pool, so a mix picked per dataset name is a monoculture wearing ten names. The cap is applied to the **group**, before any source is sized. **Amended in revision 3.2:** the balance conclusion is **`[I]` and cap-dependent, not a finding** — `N_eff ≥ 3` holds only at a per-group cap of order a few hundred hours and fails at 1,000 h `[S31-2 fixed]`; B1/B2 are share statistics and are computed **in hours**, over **both** mixes, against **both** the 0.50 hard line and the 0.40 operating cap `[S31-5 fixed] [S31-14 fixed] [S31-15 fixed]`; and the group count is *seven provenance groups, of which five carry no NC term* `[S31-13 fixed]` | §5.7, §4.1 A0 |
+| **DEC-47** | **THE LATENT-SPACE REASONING INVARIANT.** Encoders convert each modality (text tokens, image patches, later audio frames) into **latents**; from that point on **nothing is re-serialised to discrete tokens until the read-out**. Reasoning happens in the white-matter workspace latents, and **the scheduler's iteration depth IS the latent-reasoning loop** (its future form is the deferred recurrent-depth direction, §6.9). Regions exchange **latents only** — write-back conditioning prefixes are latents, and no region emits text to another region. **Output modality is chosen at the frontal read-out** (DEC-44, §2.5): emission is a decoder choice, not a property of the reasoning. *"Discrete latent concepts"* is a hypothesis about **representation**, not a licence for a token bottleneck — quantised concept codes are a candidate **tract codec** in the retired `stream_vae` slot (DEC-08), and continuous latents stay the default until measured. **Gate (W9): a runtime assertion that no inter-region path carries discrete token ids, with the constructed violation refused** `[OP: csd-latent-space-reasoning-invariant.md]` | §2.2, §2.4, §2.5, §4.1 W9, §6.9 |
+| **DEC-48** | **AUDIO IS A PRODUCTION-PHASE FEATURE. Supersedes DEC-43 and DEC-44 as *required in phase 1*.** Operator ruling, later the same day: *"we can wait to add audio as a future feature once it proves out without audio. that will be more of a production phase implementation"* `[OP: csd-multimodal-io-intent.md]`. `auditory` and `speech_output` become **declared seams** — interface, objective family and runtime output block kept — and rows **A0–A3** are **deferred**, `blocked_by` *the composed mind passes W6 without audio; operator go*. **v1 therefore has FOUR participants and SIX ablation pairs, unchanged.** The audio licence audit and the A0 catalogue work stay as **completed groundwork** | §1.3, §4.1, §4.3, §5.7 |
+
+**The index is in numeric order** `[S31-17 fixed]`. Revision 3.1 appended DEC-43 to DEC-46 *before*
+the DEC-42 row revision 3 had added, so the table read DEC-41, 43, 44, 45, 46, 42. It is the
+document's lookup table and a lookup table out of order is a small defect that costs a reader the
+one thing the table exists to give them.
+
+---
+
+# 1. Decision summary
+
+## 1.1 The test applied
+
+The operator's test, applied literally: **what faculty does this provide?** — never *what
+dataset does it train on*. A label space is not a faculty. A training objective is not a
+faculty. A mechanism available to every region is not a faculty; it is a primitive.
+
+One systems test is added, because the operator's framing implies it: **a region is a unit of
+independent training, independent quantisation, and independent residency.** If two things must
+always be resident together and always train together, they are one region with two heads.
+
+## 1.2 The ten verdicts
+
+Legend: **KEEP** · **MERGE** · **PROBE** (checkpoint retained as a fixed instrument, not a
+region, not deployed) · **RETIRE** · **PRIMITIVE** (survives as a mechanism available to any
+region) · **BUILD** (new).
+
+| # | current name | verdict | faculty | evidence / note |
+|---|---|---|---|---|
+| 1 | `code` | **KEEP, RENAME → `language_code`** | language, code specialisation | Strongest receipt in the tree: r@1 **0.9766** vs untrained 0.2285 [V\*]. Recorded as `faculty: "language"` + `specialisation: "code"` so the verdict is machine-readable without asserting a language trunk into existence. |
+| 2 | `retrieve` | **MERGE → `memory`** | hippocampus | Contributes the *retrieval* operation. r@1 0.7480 on a 512-pair diagonal, against an untrained baseline of **exactly 0.0000** — a number that should have raised an eyebrow and did not [V\*]. **W2c re-measures that baseline before 0.7480 is used as a threshold** `[A13 fixed]`. **Licence: `retrieve` carries GooAQ's NC term** (77.8% of its corpus), so `memory` is **NC**, and so is anything composed from it (DEC-31) `[OP: csd-release-licence-decision]`. |
+| 3 | `compress` | **MERGE → `memory`** | hippocampus | Contributes the *consolidation* operation. r@1 0.7070 [V\*]. Consolidation and retrieval are two operations of one faculty. Licence: whatever CC BY-SA requires if the SA pairs are used — subsumed by `memory`'s NC term. |
+| 4 | `vl_latent` | **KEEP, RENAME → `visual`** | visual cortex | Correct as-is per the operator. probe top1 0.0606 vs 0.0335, transfer 0.2625 vs 0.1535 [V\*]. **Those numbers are the EMA target encoder, so the target encoder is the deployed half** (DEC-34) `[A3 fixed]`. Its corpus is unreleasable and its input resolution cannot see a composite (DEC-34, W7v) `[A4 fixed]`. |
+| 5 | `reason` | **KEEP, RENAME → `reasoning`** | reasoning / logic | r@1 0.0801 vs 0.0039, **receipt deleted, prose only** [V\*]. Its receipt must be regenerated before it is frozen (§4, W1b). |
+| 6 | `classify_banking77` | **PROBE** | none | 77 banking intents is a label space. Retained frozen as a fast fine-grained-intent readout used as a *damage detector* when objectives change. |
+| 7 | `classify_go_emotions` | **PROBE of a new `affect` faculty** | affect (declared, not built) | Affect is a real faculty; a 28-label BCE head over Reddit comments is a probe of it. Also fails balance rule B5 on both counts — 32.76% max label share, 184.7:1 max:min [V]. |
+| 8 | `residual_mlp` | **RETIRE** | none | Its own docstring: *"Paired with LatentVAE so softmax routing is a real choice, not a stub"* [V\*]. It exists to give a router two things to choose between. Its declared corpus is `"synthetic"` and its trigger is the fallback path [V]. The residual path survives as `x + f(x)` inside every block. |
+| 9 | `stream_vae` | **RETIRE as region → PRIMITIVE: tract codec** | none | A bottleneck codec, declared corpus `"synthetic"` [V]. Promoted: per-tract bandwidth can be spent as *fewer tokens* (`b_r`) or *lower rank per token* (a codec on the tract). It becomes `interconnect.primitives[]`. |
+| 10 | untracked `regions/retrieve.py` | **SPLIT** | — | Not a region. Its BEIR-style eval against the real 57,638-passage FiQA pool with a BM25 reference **becomes `memory`'s gate**; its FiQA-only training regime (14,131 pairs, single source) is **retired** — single-source training is what produced every existing B1 failure. Closes operator decision **D6**. |
+| +1 | — | **DECLARE: `episodic_store`** (revision 1 said BUILD) | AI-specific | A non-parametric, writable key/value store over workspace latents. **DEC-32 demotes it to `placeholder` at v1** — no write policy without `salience`, empty at iteration 0, no receipt, no gate, and the only cross-request writable object in the design. Its capacity, eviction and partition contract is written now and is its build trigger. **Consequence: R = 4 participants, 6 ablation pairs, not 5 and 10** `[A17 fixed]`. See §1.3. |
+
+**Why #10 splits rather than winning outright.** Its own docstring argues, correctly, that
+*"recall@10 out of 512 and recall@10 out of 57,638 are different measurements that happen to
+share a name"* and that FiQA judges ~2.6 passages relevant per question, so the diagonal scores
+a *different correct answer* as wrong [V\*]. That argument is sound and the eval is strictly
+better. But its training regime is worse on balance rule B2, and — decisively for this document
+— **the 512-pair diagonal is saturated** (`code` 0.9766, `retrieve` 0.7480). A saturated
+instrument has no headroom for an interconnect to occupy, so it cannot measure composition [I].
+
+## 1.3 New and placeholder faculties
+
+| faculty | verdict | interface / dependency |
+|---|---|---|
+| **white matter** | **BUILD NOW** | §2. It is the centre of gravity, and it is late *by dependency*, not by priority. Its dependencies now exist. |
+| **frontal cortex** | **BUILD NOW**, inside white matter, with its own objective | §3.1. |
+| **thalamus** | **BUILD NOW** as afferent-bandwidth gating; content gating is a declared seam | §3.2. |
+| **`episodic_store`** (AI-specific) | **DEC-32 — PLACEHOLDER at v1; contract written now, build trigger stated. This supersedes DEC-10** | Revision 1 shipped it as `status: built` with no write policy, no signal, no receipt and no gate — *the exact defect DEC-07 and DEC-08 retire `residual_mlp` and `stream_vae` for* `[A17 fixed]`. Its write rule depended on `salience`, which is itself a placeholder; at iteration 0 the store is empty; and a single-item eval forward pass has nothing to read. It is also the **only writable, cross-request object in the architecture**, and revision 1's §9.9 attack table did not mention it `[A28 fixed] [T2 fixed]`. **What is decided now, so that building it is a specification and not a design exercise:** (1) parametric cost is two 512×512 projections = **524,288** params; the store itself is data. (2) **Capacity is bounded and eviction is FIFO-by-default**, both declared in the manifest — `token_budget.max` bounds what is *read*, never what is *stored*. (3) **Partition key is derived server-side from the authenticated principal**, never from the request and never from the `Schedule`; the `Schedule` may request *budget* and may never name a *namespace*. Unauthenticated or unknown principal ⇒ empty partition ⇒ the mind degrades to the no-store configuration, which is exactly phase A — a known-good, already-benchmarked state, which is what makes failing closed acceptable here. (4) **Build trigger:** when `salience` is trained *and* a measured failure mode requires cross-request context. Why it is AI-specific: the hippocampus does pattern separation over a *parametric* trace because biology cannot keep the tensor; an AI can just keep the tensor. **Consequence when built: the store IS the overarching context that the sliding windows slide over** (§6.8). At v1 that requirement is met by the per-region `ctx_r` windows and the workspace latents alone, and §6.8 says so. |
+| **`salience`** (AI-specific / limbic) | **DECLARE the interface; do not train in v1** | The scheduler needs a PRIORITY term; biology supplies priority from valuation; the tree already holds a valuation-adjacent checkpoint (`classify_go_emotions`). `salience.value(emission, control_state) → [B,1]`. Its consumer is the priority ordering in §2.4. This is the one place the brain analogy pays a *mechanical* dividend rather than a naming one. |
+| **language (trunk)** | **PLACEHOLDER, interface declared** | Created when a *second* specialisation exists, so "trunk + adapters" is a measurable claim rather than a rename. Its generative half is `model/causal_lm.py` (283 lines, exists) [V\*] and needs foundation corpora, which are curriculum **step 4** by three independent declarations [V]. |
+| **numeric / math** | **PLACEHOLDER, interface declared** | Blocked on corpus, not design: gsm8k and aqua_rat are both spent (§5.1). `reasoning`'s current corpus straddles this faculty; splitting today starves both halves. Natural source is the reserve's executable items, whose test cases carry exact numeric ground truth. Emits tokens over **values, not BPE pieces** — the clearest cheap divergence from the brain. |
+| **auditory** | **DECLARED SEAM — DEC-48 defers it to a PRODUCTION PHASE. This supersedes revision 3.1's "REQUIRED, BUILD IN PHASE 1"** | **The governing ruling is the later of two the operator gave on 2026-09-02, and it is quoted first because it is the one that decides the row** `[OP: csd-multimodal-io-intent.md]`: *"we can wait to add audio as a future feature once it proves out without audio. that will be more of a production phase implementation"*, with *"gotta walk before we run"*. **So: everything in this cell stays written and nothing is scheduled.** `auditory` is neither a phase-1 nor a phase-2 row, it is **not a participant**, `R` stays **4**, and §5.4's six ablation pairs are unchanged `[S31-1 fixed]`. Rows **A0–A3** live in §4.1's *Production phase: audio* subsection, `blocked_by` **the composed mind passing W6 without audio plus an explicit operator go**. Keeping the interface, the objective family and the audit declared is the entire point of a seam: **nothing has to be redesigned when it is picked up**, and the earlier ruling below is retained because it is why the seam is specified to this depth rather than merely named. The completed audit and the A0 catalogue work are **groundwork already banked**, not sunk cost. **The earlier ruling, retained:** the operator's intent is a ruling, not an inference, and it is quoted in full because it settles two rows of this table at once `[OP: csd-multimodal-io-intent.md]`: *"the intent for this model is for me to interact via voice and/or text input and text/speech output, and for it to take as input, audio, visual, discrete text/token and output multimodal as well."* **Interface, unchanged from revision 3 and now load-bearing rather than decorative:** byte-identical to `visual`'s — `tokens(inputs, context_tokens) → (h, mask)` over **patch tokens on spectrogram frames** (log-mel frames tiled the way `visual` tiles an image), so the adapter, both budget currencies (`ctx_r`, `b_r`), the tract codec and the whole §2.2 contract apply unchanged, and the workspace being modality-general becomes a **measured** claim rather than an asserted one. **Objective family:** masked-latent prediction over spectrogram patches — the JEPA family `visual` already uses, so the harness, the untrained-baseline discipline and the region-specific-seed rule carry over intact. A supervised ASR head is explicitly **not** the v1 objective: the faculty being built is hearing, not transcription, and an ASR objective would make the region a label space, which is what DEC-05 retires regions for. **Corpus was the blocker and the audit removed it, which is why the seam is credible:** the audit OD-9 asked for is **done** and committed at `docs/design/AUDIO-CORPUS-AUDIT.md` — **seven provenance groups, of which five carry no NC term** `[S31-13 fixed]` — and the recommended v1 mix touches **no BLOCKING source**. **Rows: A0** (corpus manifests + fetch) and **A1** (pretrain), both **deferred**, §4.1. **A bounded first audio fetch may already exist on `gpu5080:/bulk`;** it is **re-acquirable scratch**, not an artefact anything depends on, and nothing in this document treats it as evidence. **The `s_r` consequence revision 3.1 recorded here is now moot:** the region set frozen before admission is the four-region set, because `auditory` is not scheduled before W6. |
+| **`speech_output`** (a head on the language centre, not a faculty, and **not a participant**) | **DECLARED SEAM — DEC-48 defers it with `auditory`. This supersedes revision 3.1's "REQUIRED"** | **Deferred by the same later ruling** `[OP: csd-multimodal-io-intent.md]` — *"more of a production phase implementation"*. **What is kept as declared, and this is the load-bearing half:** the `Schedule`'s **output-modality field and §2.5's whole `output` block stay in the runtime contract now**, so the contract does not change when the head is built; the frontal read-out is specified as multi-head from the start. **It adds no participant and no ablation pair** — it is a head on a trunk, so `R` is untouched by it in either direction `[S31-19 fixed]`. **Row A2 is deferred** to §4.1's *Production phase: audio*. **The earlier ruling, retained:** output is *"text/speech"* `[OP: csd-multimodal-io-intent.md]`. **Interface:** the generative half — `model/causal_lm.py`, 283 lines, already exists [V\*] — emits **two streams from one trunk**: BPE text tokens, and a **discrete speech-token stream that a synthesiser consumes** (neural-audio-codec code indices). **The synthesiser is a separate, swappable component and is explicitly NOT a region**, for the same reason a tokenizer is not one. **Why a head and not a faculty:** the systems test in §1.1 — two things that must always be resident together and always train together are one region with two heads. That is exactly the shape DEC-02 gives `memory`, and applying the same test twice is what makes it a test. **Objective family:** next-token cross-entropy on both streams plus a text↔speech alignment term; **the gate is intelligibility measured against a fixed reference ASR, not loss** (§4.1 A2), because a loss curve on a token stream nobody has listened to is the audio analogue of the saturated 512-pair diagonal. **Licence:** the clean tier is **CC BY 4.0** — not "MIT / CC BY", because CC BY is the strictest input in the mix and MIT is unreachable `[S31-6 fixed]`; Expresso buys expressive style at an NC term that costs nothing at the composed tier (DEC-45). **Row: A2, deferred.** **Image output is a DECLARED SEAM, not built** — *"output multimodal as well"* is stated intent, the seam is the read-out's output-modality field in §2.5, and the validator refuses `image` until a faculty exists that produces it. Declaring the seam is free; building a head with no faculty behind it is the `residual_mlp` defect. |
+| **affect** | **PLACEHOLDER, unusual shape**: `emits: "global"` | A `[B,8]` gain vector broadcast onto every tract — a multiplicative modulation of `a_r`, **not** a participant in the attention. It is the one faculty that acts *on* the interconnect rather than *through* it. |
+
+**Explicitly NOT proposed:** a motor cortex. Tool invocation is an output format of the frontal
+read-out, not a faculty — and this is now an **operator ruling, not an inference**: a motor
+centre is *"wholly unnecessary until likely post the Rust reimplementation"*, and a proposal
+that includes one for tool-use or action emission is to be struck with the deferral noted
+`[OP: csd-regions-are-brain-faculties]`. This document already excluded it; the ruling is cited
+so the exclusion is not re-litigated. **Also explicitly not a region:** the schedule trace. A
+serialisation of a graph the interconnect already computed is a log; declaring a log a region in
+the AI-specific slot is the exact category error the operator's test exists to prevent [I].
+
+## 1.4 The JSON diff for `config/mind/csd-regions.json` — REVIEW ONLY, DO NOT APPLY
+
+Current file: `stream_dim: 512`, `top_k: 1`, `aux_coef: 1.0`, nine entries in `regions[]`, of
+which the only two with `live: true` are the two nobody trained [V].
+
+```diff
+--- a/config/mind/csd-regions.json
++++ b/config/mind/csd-regions.json
+@@
+-  "stream_dim": 512,
+-  "top_k": 1,
+-  "aux_coef": 1.0,
+-  "notes": "Region catalogue from docs/program/CSD-BRAIN-REGIONS.md. `live` reflects what is
+-            IMPLEMENTED, not what is intended; ... Curriculum order is mandatory: per-region
+-            pretrain -> router -> assembled mind -> foundation. ...",
++  "schema": "csd-mind/v2",
++  "workspace_dim": 512,
++  "latents": 64,
++  "workspace_iters": 4,
++  "notes": "Region catalogue from docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md.
++            CSD-BRAIN-REGIONS.md is RETIRED (see that document, DEC-11).
++            `status` replaces `live`: built | probe | placeholder | primitive | retired.
++            There is no top_k and no aux_coef: routing is not a discrete selection, it is the
++            cross-attention mass a region's tokens receive. Curriculum order is mandatory:
++            (1) per-region pretrain -> (2) interconnect training -> (3) whole-mind dynamic
++            training -> (4) foundation. Foundation corpora are step 4, not step 1.",
++  "interconnect": {
++    "kind": "perceiver_workspace",
++    "workspace_dim": 512, "latents": 64, "depth": 4, "heads": 8,
++    "budget_total_read_tokens": 256,
++    "budget_total_kv_bytes": 3221225472,
++    "floor_eta": 0.15,
++    "primitives": [
++      {"name": "tract_codec", "was": "stream_vae", "kind": "latent_vae", "latent_dim": 64,
++       "status": "placeholder",
++       "build_trigger": "Sum_r b_r saturates B_read on >20% of eval items, AND a measured
++                         gate shows lower rank per token beating fewer tokens at equal bytes.",
++       "role": "Rate limiter on a tract. Bandwidth may be spent as fewer tokens (b_r) or as
++                lower rank per token (this codec). Available on any pathway; not a region.
++                PLACEHOLDER: it inherits stream_vae's defect -- declared corpus synthetic, no
++                receipt, no training path -- and a primitive with no consumer is the `live:
++                true` defect in a new costume, so it does not ship as live. [A33 fixed]"}
++    ]
++  },
++  "probes": [
++    {"name": "classify_banking77", "probes": "language_code", "frozen": true,
++     "role": "PROBE, not a region. Fine-grained intent readout (77 banking intents), used as a
++              fixed instrument to detect damage when an objective changes. A label space is not
++              a faculty."},
++    {"name": "classify_go_emotions", "probes": "affect", "frozen": true,
++     "role": "PROBE of the affect faculty. macro-AP 0.3642, chance 0.0466. Fails balance rule
++              B5 on both counts (32.76% max label share, 184.7:1); retained as an instrument,
++              never as a capability claim."}
++  ],
+   "regions": [
+-    { "name": "residual_mlp", "kind": "residual_mlp", "live": true, ... },
+-    { "name": "stream_vae",   "kind": "latent_vae",   "live": true, ... },
+-    { "name": "code",         "kind": "contrastive_encoder", ... },
+-    { "name": "retrieve",     "kind": "contrastive_encoder", ... },
+-    { "name": "compress",     "kind": "latent_vae", ... },
+-    { "name": "vl_latent",    "kind": "jepa_predictor", ... },
+-    { "name": "reason",       "kind": "contrastive_encoder", ... },
+-    { "name": "classify_banking77",   "kind": "classifier_head", ... },
+-    { "name": "classify_go_emotions", "kind": "classifier_head", ... }
++    {
++      "name": "language_code",
++      "faculty": "language", "specialisation": "code",
++      "kind": "contrastive_encoder", "modality": "text",
++      "token_dim": 256, "pooled_dim": 256, "emits": "tokens", "accepts_condition": true,
++      "adapter": {"in_dim": 256, "out_dim": 512},
++      "token_budget": {"min": 1, "default": 64, "max": 96},
++      "kv_bytes_per_token": 4096,
++      "heads": ["text", "speech"],
++      "role": "LANGUAGE faculty, code specialisation. The `speech` head is DECLARED, NOT BUILT
++               (DEC-44, deferred by DEC-48); it is a head on this trunk and never a separate
++               region entry, so no participant count can pick it up. Places a natural-language intent and the
++               program that satisfies it at the same point in the shared space. It is a domain
++               adapter on the language centre, not a peer of it: when a second specialisation
++               exists the trunk is shared and this becomes an adapter family. Explicitly NOT
++               next-token over all of GitHub.",
++      "status": "built"
++    },
++    {
++      "name": "memory",
++      "faculty": "hippocampus",
++      "kind": "contrastive_encoder", "modality": "text",
++      "token_dim": 256, "pooled_dim": 256, "emits": "tokens", "accepts_condition": true,
++      "adapter": {"in_dim": 256, "out_dim": 512},
++      "token_budget": {"min": 1, "default": 64, "max": 96},
++      "kv_bytes_per_token": 4096,
++      "heads": ["retrieve", "consolidate"],
++      "role": "HIPPOCAMPAL MEMORY faculty. One trunk, three operations: ENCODE (text to a
++               trace), CONSOLIDATE (equivalent meanings converge under a shortened code -- the
++               former `compress`), RETRIEVE (a cue ranks traces -- the former `retrieve`).
++               Consolidation and retrieval are two operations of one faculty, not two regions.
++               Gated on the real 57,638-passage FiQA pool with BM25 reported alongside, never
++               on a 512-pair in-mixture diagonal.",
++      "status": "built"
++    },
++    {
++      "name": "reasoning",
++      "faculty": "reasoning",
++      "kind": "contrastive_encoder", "modality": "text",
++      "token_dim": 256, "pooled_dim": 256, "emits": "tokens", "accepts_condition": true,
++      "adapter": {"in_dim": 256, "out_dim": 512},
++      "token_budget": {"min": 1, "default": 128, "max": 256},
++      "kv_bytes_per_token": 4096,
++      "role": "REASONING / LOGIC faculty. Relates a problem to the STRUCTURE of its derivation.
++               HONEST LIMIT, unchanged: it recognises derivations, it does not produce them.
++               Phase 2 keeps this shape. Phase 3 replaces the objective with latent-step
++               prediction so the region contributes COMPUTATION to the workspace rather than a
++               lookup. Its receipt was deleted and must be regenerated before it is frozen.",
++      "status": "built"
++    },
++    {
++      "name": "visual",
++      "faculty": "visual_cortex",
++      "kind": "jepa_predictor", "modality": "image",
++      "token_dim": 384, "pooled_dim": 384, "emits": "tokens", "accepts_condition": true,
++      "adapter": {"in_dim": 384, "out_dim": 512},
++      "image_size": 64, "patch_size": 8, "n_patches": 64,
++      "token_budget": {"min": 1, "default": 64, "max": 64},
++      "kv_bytes_per_token": 9216,
++      "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": true},
++      "deployed_half": "target_encoder",
++      "role": "VISUAL CORTEX faculty. Latent visual reasoning: predicts representations of
++               unseen regions of a scene from visible ones, never pixels. Emits its patch-token
++               sequence into white matter directly; it is the reference implementation of the
++               token contract because its output was already a sequence.
++               DEPLOYED HALF IS THE EMA TARGET ENCODER (10,712,448 params) -- DEC-34.
++               `visual.tokens(x) = target_encoder.forward(x) -> [B, n_patches, 384]`;
++               `visual.pool(h) = h.mean(1)`, which is exactly `IJEPA.encode`.
++               image_size / patch_size / n_patches are REBUILT BY W7v; every field in this
++               block that mentions them is provisional until that row lands.
++               W3r FIXES THE TARGET THESE FIELDS ARE REBUILT TO: image_size 128, patch_size 8,
++               n_patches 256 -- the composite frame geometry, single source of truth at
++               `src/cogsyndelta/vl/composite.py` (`FRAME_SIZE`, `PATCH_SIZE`, `N_PATCHES`),
++               checked in with a byte-identical 128x128 fixture at
++               `tests/fixtures/composite_4panel.png` (spec at
++               `tests/fixtures/composite_4panel.spec.json`). W7v imports these constants rather than
++               re-deriving them; this block's own 64/64 values stay provisional until W7v lands.
++               Corpus is UNRELEASABLE as trained.",
++      "status": "built"
++    },
++    {
++      "name": "episodic_store",
++      "faculty": "ai_specific_episodic",
++      "kind": "nonparametric_store", "modality": "latent",
++      "token_dim": 512, "pooled_dim": 512, "emits": "tokens", "accepts_condition": false,
++      "token_budget": {"min": 0, "default": 32, "max": 256},
++      "capacity_entries": 65536, "eviction": "fifo",
++      "partition_key": "server_derived_principal",
++      "build_trigger": "salience trained AND a measured failure mode requires cross-request
++                        context. Until then it is not a participant and R = 4.",
++      "role": "AI-SPECIFIC. A writable key/value store over workspace latents, read by the
++               workspace as one more participant with its own budget. When built it IS the
++               overarching context that per-region sliding windows slide over. Parametric cost
++               is two 512x512 projections; the store is data. PLACEHOLDER AT v1 (DEC-32): no
++               write policy without `salience`, empty at iteration 0, no receipt, no gate --
++               and it is the only writable cross-request object in the design, so its capacity,
++               eviction and per-principal partition are declared here BEFORE it can be built.
++               The Schedule may request BUDGET; it may never name a NAMESPACE.",
++      "status": "placeholder"
++    },
++    {
++      "name": "affect",
++      "faculty": "affect", "emits": "global",
++      "role": "AFFECT faculty (limbic). Emits a LOW-DIMENSIONAL GLOBAL state that modulates
++               every tract -- a gain/valence signal, not a participant in the attention.
++               Architecturally distinct from every other region and that is the point.
++               Probe: classify_go_emotions.",
++      "status": "placeholder"
++    },
++    {
++      "name": "salience",
++      "faculty": "ai_specific_valuation", "emits": "global",
++      "role": "SALIENCE / VALUATION. Assigns a scalar priority weight to a region's emission
++               given the control state. Its consumer is the scheduler's PRIORITY term.
++               Declared interface only; not trained in v1. Probe: go_emotions macro-AP.",
++      "status": "placeholder"
++    },
++    {
++      "name": "language",
++      "faculty": "language", "emits": "tokens",
++      "role": "LANGUAGE TRUNK (placeholder). Created when a SECOND specialisation exists, so
++               that 'trunk + adapters' is a measurable claim rather than a rename. Generative
++               half is model/causal_lm.py. Dependency: foundation corpora, curriculum step 4.",
++      "status": "placeholder"
++    },
++    {
++      "name": "numeric", "faculty": "numeric", "emits": "tokens",
++      "role": "NUMERIC / MATH centre (placeholder, interface declared). Emits tokens over
++               VALUES, not BPE pieces -- the architecture has exact arithmetic and the brain
++               does not. Deferred: reasoning's corpus straddles this faculty and splitting
++               today starves both halves.",
++      "status": "placeholder"
++    },
++    {
++      "name": "auditory", "faculty": "auditory_cortex", "emits": "tokens",
++      "phase": "production",
++      "blocked_by": "composed mind passes W6 without audio; explicit operator go",
++      "role": "AUDITORY CORTEX (DECLARED SEAM, DEC-43 as amended by DEC-48). Patch tokens over
++               spectrogram frames -- architecturally identical to visual, so the adapter is
++               shared, not new. The corpus is catalogued as of
++               docs/design/AUDIO-CORPUS-AUDIT.md; rows A0m/A0f (manifests, fetch) and A1
++               build it WHEN THE PRODUCTION PHASE OPENS. Not a v1 participant: R = 4.",
++      "status": "planned"
++    },
++    {
++      "name": "speech_output", "faculty": "language", "emits": null,
++      "parent": "language_code",
++      "phase": "production",
++      "blocked_by": "composed mind passes W6 without audio; explicit operator go",
++      "role": "SPEECH-OUTPUT HEAD on the language centre (DECLARED SEAM, DEC-44 as amended by
++               DEC-48). Second head on the generative trunk: BPE text tokens plus a discrete
++               speech-token stream a synthesiser consumes. The synthesiser is NOT a region.
++               `emits: null` and `parent` are load-bearing: a head is not a participant, so no
++               consumer counting active regions can turn it into a fifth one (S31-12). Row A2,
++               deferred.",
++      "status": "planned"
++    }
+   ]
+ }
+```
+
+Three properties of this diff worth stating explicitly:
+
+- **`top_k` and `aux_coef` are deleted, not retuned.** They are the parameters of a discrete
+  dispatcher. There is no discrete selection in this architecture to tune.
+- **`live` becomes `status`.** The current flag means "has an implementation of its `kind` in
+  `poc/route.py`", which is why the only two `live: true` entries are the two nobody trained
+  [V]. `status` says what a thing *is*.
+- **A head is a field, never a sibling entry** `[S31-12 fixed]`. Revision 3.1 registered
+  `speech_output` as its own entry in `regions[]` with `emits: "tokens"`, which is the
+  operational definition of a **participant** in §2.2 — so any consumer computing
+  `R = len([r for r in regions if r is active])` would have picked up a fifth region for a thing
+  DEC-44 itself calls *"a head on the language centre, not a faculty"*. `memory` is the
+  precedent and it is a **single** entry with a `heads` list. Fixed the same way: `language_code`
+  carries `"heads": ["text", "speech"]`, and the `speech_output` row survives only for programme
+  tracking, with `emits: null` and `parent: "language_code"` so it cannot be counted.
+- **`status` gains exactly one value in revision 3.1: `planned`** (DEC-43, DEC-44). The
+  vocabulary `built | probe | placeholder | primitive | retired` had no word for *required,
+  specified, programme row open, not yet trained* — and `placeholder` is the wrong word for a
+  thing the operator has ruled mandatory. Using it anyway is how a requirement quietly reads as
+  an option, which is the failure this whole taxonomy exercise exists to retire. **The
+  difference is checkable, which is the only reason the word is worth adding: a `planned` entry
+  has a programme row with a gate that can fail; a `placeholder` has neither.** `auditory` and
+  `speech_output` are `planned`; `episodic_store`, `salience`, `language`, `numeric` and
+  `affect` stay `placeholder`. **Revision 3.2 adds one field rather than a second word:**
+  `phase: "production"` on the two deferred entries, with `blocked_by` beside it. `planned` still
+  means *required, specified, gate written*; `phase` says **when**, and the pair is what keeps
+  DEC-48's deferral from quietly reading as a demotion back to `placeholder` (DEC-48).
+- **No `connects_to` field.** Connectivity is learned; writing it down would imply a
+  hand-authored topology that does not exist — the same reasoning `region_spec.py` already
+  applies to `router_trigger` [V\*].
+- **`native_dim` is split into `token_dim` and `pooled_dim`** `[A32 fixed]`. One field cannot
+  be both: `TextEncoder.forward` applies `self.proj` **after** pooling
+  (`regions/text_encoder.py:125`, `return self.proj(pooled)` [V]), and `self.proj` is
+  `nn.Identity` only while `cfg.out_dim` is unset (`:74-76` [V]) — which `data/stream.py:251`
+  already sets in one path. So `tokens()` returns the **pre-`proj`** representation at
+  `cfg.dim` (`token_dim`, what the adapter consumes) while `pool()` emits at `out_dim`
+  (`pooled_dim`, what every existing receipt is about). They are equal in every current
+  checkpoint and will not stay equal.
+- **Two entries move to `placeholder`:** `episodic_store` (DEC-32) and `tract_codec` (A33).
+  Both were `built`/live with no objective, no receipt and no gate. Shipping a thing as built
+  because its interface is written is the defect this whole taxonomy exercise exists to
+  retire, and revision 1 committed it twice.
+
+## 1.5 DEC-11 — retire `CSD-BRAIN-REGIONS.md`, re-home its four unique decisions
+
+The file is not in the working tree and not at HEAD, and six tracked files cite it as
+authoritative [V\*]. It frames regions as *"MoE-adjacent experts"* with a `SoftmaxRouter`
+*"gate, not a region"* — which this document supersedes. Retire it and fix the six dangling
+citations:
+
+| what it uniquely decided | new home |
+|---|---|
+| the routing surface `activate(stream) → [B,D]` | **superseded** by §2.2; `contracts/region.py` is rewritten |
+| the mandatory curriculum R0→R3 | **superseded** by the four phases in §4 |
+| *"`route` is not a region and has no pretrain corpus"* | **REVERSED.** The interconnect has training data and it is §5 |
+| SciFact / NFCorpus eval-only under NC/ToS | move to `docs/design/CORPUS-CONTRACT.md`; already enforced in `scripts/csd-fetch-retrieve-pairs.py` [V\*] |
+
+Also carried forward unchanged, because it is still correct: lab placement (region pretrain on
+the 3090 at `.98`; the 5080 at `.251` is the deployment target; **no train / PoC CUDA on
+Pascal** at `.243`) and the publication gate (no Hub publish until an `hf/autodev` fine-grained
+token exists).
+
+## 1.6 DEC-12 — the dormant `core/` stack: harvest, mark superseded, do not delete
+
+1,320 tested lines exist and are imported by no training path: `mHCInterconnect`,
+`ContextualAttentionRouter(embed_dim=512, num_heads=8)`, `PathwayOptimizer`,
+`ContextPropagationEngine(max_hops=3)`, `CongestionController(total_bandwidth=10000)`, and a
+`BrainRegionType` enum naming eight of the nine intended faculties [V\*].
+
+**The decisive technical fact, found independently by all three proposals:**
+`ContextualAttentionRouter.compute_importance` and `allocate_bandwidth` return
+`tensor.item()`, and `forward` returns `dict[tuple[str,str], float]` [V\*]. **It is not
+differentiable as written.** There is no gradient path from any loss to its parameters. It can
+be run; it cannot be trained.
+
+That is decisive about *revival* and not about *deletion*. Deleting it also destroys the only
+record of where `stream_dim: 512` came from. **Verdict: harvest the four ideas, mark the
+modules superseded in their own docstrings with a pointer to this document, stop importing
+them, and leave the code and its tests in place.** No operator sign-off is needed for that,
+which is the point — a deletion would need one and buys nothing.
+
+| idea | from | where it lands |
+|---|---|---|
+| attention over section states = who talks to whom | `ContextualAttentionRouter.forward` | §2.3's `a_r`, as a **tensor on the graph** rather than a dict of floats |
+| per-pathway bandwidth allocation | `allocate_bandwidth`, `mHCPathway.bandwidth` | `b_r`, the same idea made integer and differentiable |
+| bandwidth under contention / priority queue | `CongestionController` | the floored simplex and largest-remainder integerisation in §2.4; the hard caps in §9.9 |
+| multi-hop propagation | `ContextPropagationEngine(max_hops=3)` | `n_iter` workspace iterations plus the admission matrix |
+| the faculty vocabulary | `BrainRegionType` | the closed `faculty` enum in §1.4 |
+
+---
+
+# 2. White matter — the interconnect module specification
+
+## 2.1 DEC-13 — operator decision D1 answered: **(c)**, with the division fixed by timing
+
+The three options were (a) cross-region attention with emergent routing, (b) fixed interconnect
+plus a thalamic gate, (c) both [V\*]. The answer is **(c)**, but the usual reading of (c) —
+"build (a), then bolt (b) on if it helps" — is wrong, because it leaves unstated which job each
+half does. The division follows from one observation, and it is not a preference:
+
+> **Attention can only weight things that have already been computed.** Every scheduler
+> behaviour that exists in order to *avoid computing something* — which regions to activate,
+> how much context each gets, how many iterations to run — must be decided **before** the
+> attention that would otherwise reveal the answer. Attention cannot make those decisions, not
+> because it is a poor mechanism but because it runs too late. [I]
+
+| job | mechanism | why this half |
+|---|---|---|
+| transport, integration, **connection strength**, attention split | **cross-region attention** | The attention weights *are* the connection strengths. Nothing else is added, so routing is emergent because there is nothing else there. |
+| **activation set, context budget, read budget, iteration depth** | **thalamic controller** | Pre-computation decisions. The thalamus relays and modulates what reaches cortex — it gates afferent bandwidth, it does not pick a winner. That is exactly this job and exactly the operator's characterisation. |
+| nothing | **(b)'s *fixed* interconnect** | Rejected. A fixed high-bandwidth interconnect is `R²` constant-strength matrices that learn nothing about context. Strictly dominated by attention at equal parameters. |
+
+And the property that makes (c) safe rather than fragile: **the controller never invents its own
+objective at the moment it is introduced.** It is bootstrapped from the attention mass the dense
+model already produced, and only then trained by the task loss (§2.6, phases B→D).
+
+**The scheduler stays inside white matter.** One proposal moved it to frontal cortex on the
+timing argument above. The timing argument is correct and it proves the scheduler needs a
+*pre-region input*; it does not prove it must be a *different faculty*. The operator was
+emphatic that white matter **is** the interconnect **and** the routing model. Keeping the
+controller thalamic and inside the interconnect satisfies both the timing constraint and the
+framing, so the relocation buys nothing and costs fidelity [I].
+
+## 2.2 DEC-14 / DEC-15 — the representation contract
+
+`CognitiveRegion.activate(stream) → [B,D]` is satisfied by **zero trained regions** [V\*]. The
+trained surface is `text → representation` — an encoder *into* the state, not an operator *on*
+it. Those are different jobs with different type signatures and nothing bridges them. The
+`stream→stream` contract does not survive.
+
+```python
+@runtime_checkable
+class Faculty(Protocol):
+    name: str
+    faculty: str
+    token_dim: int                  # what tokens() emits, PRE-proj: 256 text, 384 visual
+    pooled_dim: int                 # what pool() emits, POST-proj; every receipt is about this
+    kv_bytes_per_token: int         # c_r -- THE REGION DECLARES ITS OWN COST
+    accepts_condition: bool
+
+    def tokens(self, inputs, *, context_tokens: int,
+               condition: Tensor | None = None) -> tuple[Tensor, Tensor]:
+        """Region-native representation BEFORE pooling AND BEFORE `proj`, computed over AT
+        MOST `context_tokens` input positions -- the region never encodes more than its budget.
+        `condition` is the workspace latent state, projected to token_dim and prepended
+        as a conditioning prefix (write-back, DEC-17); None at iteration 0.
+        returns (h [B, T_r, token_dim], mask [B, T_r]) with T_r <= context_tokens."""
+
+    def pool(self, h: Tensor, mask: Tensor) -> Tensor:
+        """[B, T_r, token_dim] -> [B, pooled_dim]: masked mean, THEN `proj`. The region's
+        standalone answer, kept so every existing receipt stays reproducible and comparable.
+        For `visual`, `pool` is `h.mean(1)` and is exactly `IJEPA.encode` (DEC-34)."""
+```
+
+**GLOSS, stated once here and governing every later use of the word** `[DEC-47]`. *"Token
+surface"* and `tokens()` mean **position latents — per-position hidden vectors, not discrete
+ids.** The method name is the W0 API and is **not renamed**: renaming a shipped method to repair
+a reading is worse than glossing it. But nothing in this document ever means *discrete tokens*
+when it says a region's *tokens*; `pool()` is a latent too. **The only discrete ids anywhere in
+the system are at the input tokenizer and at the frontal read-out**, and DEC-47 makes that a
+checked property rather than a habit.
+
+> ### DEC-47 — the latent-space reasoning invariant `[OP: csd-latent-space-reasoning-invariant.md]`
+>
+> Operator, 2026-09-02, verbatim:
+>
+> > *"the intent of CSD is to do its reasoning and thinking in latent space as opposed to
+> > discrete token space. rather than just ingesting and sitting on and working on discrete
+> > tokens, the goal is for CSD to essentially convert to discrete latent concepts and reasoning
+> > and be able to output whatever format is appropriate/fitting"*
+>
+> Five clauses, each checkable against a row of this document:
+>
+> 1. **Encoders convert each modality to latents.** Text tokens, image patches and (at the
+>    deferred audio seam) spectrogram frames all enter through a region's `tokens()` and become
+>    position latents. **From that point on nothing is re-serialised to discrete tokens until the
+>    read-out.**
+> 2. **Reasoning happens in the workspace latents**, and **the scheduler's iteration depth IS the
+>    latent-reasoning loop.** `max_iters`/`halt_at` (§2.4, §2.5) is not a plumbing parameter: it
+>    is how many times the mind thinks before it speaks. Its future form is the deferred
+>    recurrent-depth direction — looping the forward pass in latent space to refine a prediction
+>    — recorded in §6.9 beside the ternary track, deliberately **not** built at v1.
+> 3. **Regions exchange latents only.** No region emits text to another region; DEC-17's
+>    write-back conditioning prefix is a **projected workspace latent**, and §2.2's `condition`
+>    argument is typed as a tensor at `token_dim`, never as ids. This is the clause with a gate:
+>    **W9 asserts that no inter-region path carries discrete token ids, and the constructed
+>    violation must be refused** (§4.1 W9).
+> 4. **Output modality is chosen at the frontal read-out**, not upstream of it: emission is a
+>    decoder choice, not a property of the reasoning. That is why §2.5's `output.modalities` and
+>    DEC-44's multi-head read-out **stay in the runtime contract even though audio is deferred**
+>    (DEC-48) — the seam is the thing that keeps clause 4 true later without a redesign. Text and
+>    speech are two decoders over **one** latent state, and `numeric`'s emission over *values,
+>    not BPE pieces* (§1.3) is the same clause read in a third direction.
+> 5. **"Discrete latent concepts" is a hypothesis about REPRESENTATION, not a licence for a token
+>    bottleneck.** Quantised concept codes (VQ-style codebooks) are a **candidate tract codec** —
+>    the slot DEC-08 retired `stream_vae` into — and they connect to the ternary track (§6.9).
+>    They are to be **tested as a codec**, with **continuous latents as the default until
+>    measured**. Reading the operator's phrase as a mandate for discrete inter-region messages
+>    would invert the invariant it appears inside.
+>
+> **What it costs to state now:** nothing. **What it buys:** the swarm experiment (P5′s) has a
+> comparison worth running — latent exchange against a token-exchange baseline — and W9 has a
+> failable assertion instead of a convention.
+
+**The precise claim, corrected** `[A30 fixed]`. Revision 1 said *"this retrains nothing… that
+property is what makes the whole programme affordable"* and was contradicted by four rows of its
+own plan. The true and still-useful claim is narrower:
+
+> **The token surface retrains nothing.** `TextEncoder.forward` already computes `h` at
+> `[B,T,256]` and mean-pools it away one line later; `ViTEncoder.forward` already returns
+> `[B, 64, 384]` [V\*]. Splitting the method at the pooling line yields both methods with
+> byte-identical behaviour, and **every existing checkpoint loads unchanged**.
+
+What phase 2 *does* retrain is now large, and it is budgeted in §4.3 rather than implied: W1b
+(regenerate `reason`), W4 (`memory` merge, which is also the first token-aware retrain), W7a/b
+(the remaining token-aware retrains, **mandatory** since W1's result — §4.0) and W7v (`visual`,
+resolution + token-aware, absorbing OD-4's corpus replacement). Affordability is now an argued
+budget of measured wall-clocks, not a property.
+
+**Why pre-pool tokens and not the pooled vector.** A pooled vector is already a decision — the
+region's committed, integrated answer. Cross-attention over seven such vectors has exactly one
+degree of freedom: how much of each answer to keep. That is a weighted sum of independent
+decisions, i.e. dispatch **by construction**, not by convention: region A's computation cannot
+have been influenced by region B, because A finished before the mixing began. No amount of
+training makes that architecture integrate [I]. The fix is free and already computed.
+
+**DEC-15 — two budget currencies, because the operator named two levers and they are not the
+same quantity.**
+
+| currency | symbol | what it bounds | when it is consumed | constraint |
+|---|---|---|---|---|
+| **region context** | `ctx_r` | region-internal activations and KV, the `O(T_r²)` term — **the term that dominates at scale** | **before** the region runs; it is an argument to `tokens()` | `Σ_r c_r · ctx_r ≤ B_kv` by simplex construction |
+| **read tokens** | `b_r` | workspace KV = `Σ_r b_r × D_w × 2 × depth × 2 bytes` | **after** the region runs; a straight-through top-k over the emitted `h_r` | `Σ_r b_r ≤ B_read` by simplex construction |
+
+Both are emitted by the controller *before* any region runs; only one is *consumed* before. This
+resolves a real contradiction in the source proposal, where a pre-computation controller's only
+consumer was a post-computation `TopK`, so selective activation bought workspace KV and nothing
+else — a lever on the cheap term [I, and the fix is grafted from the systems-first proposal's
+two-simplex construction].
+
+**Widths.** `D_w = 512` for the workspace; **regions keep their native widths and adapt in**
+via `nn.Linear(token_dim, 512)` — **591,872 params for the four v1 participants** [I]; 986,624
+was revision 1's figure for a seven-region list that does not exist `[A24 fixed]`. 512 because the catalogue
+already declares it and the entire dormant `core/` stack defaults to it, so choosing it makes
+the catalogue honest for free. `MindSpec`'s single-`stream_dim` check is replaced: it enforces a
+uniformity that has never been true and would reject the real trained regions (256 and 384)
+against the declared catalogue (512) [V\*]. The four-incompatible-widths problem dissolves; it
+was only a problem because one global width was assumed.
+
+**Visual latents enter the same way everything else does** — a `[B, 64, 384]` patch-token stream
+through a `384→512` adapter. It is the only region whose output surface was already correct,
+which is why it is wired **first** (§4, W0).
+
+## 2.3 DEC-16 — the module
+
+```
+                        ┌───────────── thalamic controller ─────────────┐
+  raw input ───────────►│ cheap summary → 2 blocks @256 → ctx, b, A, halt│
+                        └──────┬────────────────────────────┬───────────┘
+        ┌──── regions (frozen in phase 2) ────┐             │ admission A[i,r]
+        │ language_code.tokens(ctx_r, z_{i-1})│             │
+        │ memory.tokens(...)      [B,T,256] ──┤             ▼
+        │ reasoning.tokens(...)   [B,T,256] ──┼─ TopK_{b_r} ─► adapters ─► K/V bank
+        │ visual.tokens(...)      [B,64,384] ─┤                        [B, Σ b_r, 512]
+        │ episodic_store.read()   [B,b_s,512]─┘                              │
+        └────────────────▲────────────────────┘                              │
+                         │ conditioning prefix (write-back, DEC-17)          ▼
+   latents z ∈ [B,64,512] ──► ×n_iter [ cross-attn(z ← KV) → self-attn(z) → MLP ] ──► frontal
+                                          │
+                                          └── per-region attention mass a_r ──► supervises §2.6-B
+```
+
+**`visual.tokens(...)` above is the shape TODAY** (`image_size 64` ⇒ `[B,64,384]`), unchanged
+until W7v retrains. **W3r fixes the composite frame this shape rebuilds to once W7v lands:**
+`image_size 128, patch_size 8` ⇒ **`[B,256,384]`** — single source of truth
+`src/cogsyndelta/vl/composite.py` (`FRAME_SIZE`, `PATCH_SIZE`, `N_PATCHES`), a checked-in
+128×128 fixture at `tests/fixtures/composite_4panel.png`, and §1.4's `visual` block. The diagram
+is not redrawn here (that is W7v's edit, against a shape it has actually built), but the number
+it will carry is now fixed and tracked rather than open.
+
+**Inputs.** Per active region: `(h_r [B,T_r,d_r], mask_r)` and its budgets.
+**Outputs.** The workspace state `z [B,64,512]`, the frontal read-out `[B,512]`, the
+connectivity tensor `a [B, n_iter, R]`, and the emitted `Schedule`.
+
+Exact tensor path per iteration `i`:
+
+```
+cond_r   = reshape(Linear_r(pool(z_{i-1})), [n_cond, d_r])        # write-back, i >= 1
+h_r      = region_r.tokens(inputs, context_tokens=ctx_r, condition=cond_r)
+KV_i     = concat_r  Adapter_r( TopK_{b_r}(h_r) ) + type_emb[r] + sincos(pos)
+z        = z + CrossAttn(q=LN(z), kv=LN(KV_i))
+z        = z + SelfAttn(LN(z))
+z        = z + MLP(LN(z))
+a[:,i,r] = Σ_{l=1..64} Σ_{t ∈ keys(r)} CrossAttnWeights[:, l, t]   # <- CONNECTION STRENGTH
+```
+
+`a_r` is **read off the softmax**, never predicted by a head with its own loss. That is the
+operator's *"attention weights ARE the connection strengths"* implemented literally, and it is
+what makes routing emergent rather than a dispatch decision made outside the representation.
+
+### Parameters at toy scale — tagged per row `[A35 fixed]`, recomputed for the v1 participant list `[A24 fixed]`
+
+The v1 participant list is **four** regions — `language_code`, `memory`, `reasoning` (text, 256)
+and `visual` (384) — because `episodic_store` is a placeholder (DEC-32). Revision 1's table
+billed **six** text adapters against three text participants and then carried the sum forward as
+`[V*]` "measured"; the surplus was `3 × (256×512 + 512) = 394,752` params, propagating into the
+total, the composed-mind table, the 347 MB figure, the 35.4 MB figure and §6.4's cap arithmetic.
+
+| component | params | tag | share |
+|---|---|---|---|
+| workspace blocks, ×4 @ `D_w=512`, 8 heads, **mlp_ratio 4** | 16,803,840 | [V\*] | 62.5% |
+| frontal read-out (attention-pool + MLP) | 3,150,848 | [V\*] | 11.7% |
+| thalamic controller (2 blocks @256 + heads) | ≈1,588,007 | **[I]** — measured at 3 heads; this design has 4, so ±0.1M | 5.9% |
+| conditioning prefixes (write-back: 3×256 + 1×384 token_dim, `n_cond=8`) | 4,727,808 | [V\*] | 17.6% |
+| region adapters (**3** × 256→512, 1 × 384→512) | **591,872** | [I] — arithmetic over the v1 list | 2.2% |
+| ~~`episodic_store` read/write projections~~ | ~~524,288~~ | not in v1 (DEC-32) | — |
+| latent bank `64 × 512` + final norm + type embeddings | 37,376 | [V\*] | 0.1% |
+| **WHITE MATTER v1 TOTAL** | **26,899,751** | **[I]** — a sum over an `[I]` row is `[I]`, not `[V*]` | |
+
+**Re-instantiate at the design's actual configuration (4 controller heads, this participant
+list) before this total is carried anywhere.** That is W0's second deliverable and it costs
+seconds; until it is done, `26,899,751` is a projection, not a measurement.
+
+Calibration: a text region is 16,021,248 params of which **12,865,792 (80.30%) is the token
+embedding table** and only **3,155,456 (19.70%) is compute** [V\*]. **White matter is 8.5× a
+region's compute parameters.** It is the centre of gravity in arithmetic, not only in framing.
+
+**Composed mind v1, deployable** (one half of `visual` dropped, probes excluded, no store):
+
+| | params | tag |
+|---|---|---|
+| `language_code` | 16,021,248 | [V\*] |
+| `memory` (merged trunk + 2 heads) | 16,152,320 | [V\*] |
+| `reasoning` | 16,021,248 | [V\*] |
+| `visual` (**EMA target encoder only**, DEC-34) | 10,712,448 | [V\*] |
+| **white matter** | 26,899,751 | [I] |
+| **TOTAL** | **85,807,015** — 343 MB fp32 · **35.0 MB at the measured 3.27 effective bits/param** | [I] |
+
+Three facts this table encodes and the programme's headline "~87M" does not:
+
+1. **10,712,448 of `vl_latent`'s 22,905,216 params do not ship** [V\*] — and revision 1 named
+   the wrong half. `IJEPA.encode` is `return self.target_encoder.embed(images)`
+   (`model/vl_jepa.py:387` [V]), and `_features` — which feeds the only linear probe and
+   transfer numbers `visual` has — calls `model.encode` (`regions/vl_pretrain.py:202` [V]). So
+   **every measured number about `visual` describes the target encoder** `[A3 fixed]`.
+   **DEC-34: the target encoder is the deployed half.** The choice costs nothing and makes four
+   receipts true; the alternative (ship the context encoder and gate it) costs a probe run and
+   would deploy the half that is *out of distribution on whole images*, since it trained at
+   `context_keep = 0.4` with unkept patches **dropped, not masked** (`vl_jepa.py:191-199` [V]:
+   *"Masked patches are DROPPED rather than replaced with a mask token"*), so it has never seen
+   a full 64-patch sequence. **W1's `vl_latent` measurement was verified bit-exact against
+   `IJEPA.encode()`**, so the one experiment already run is also about the target encoder —
+   a third reason to name it the deployed half rather than invalidate the measurement.
+   *The parameter arithmetic is unaffected*: `self.target_encoder = copy.deepcopy(self.encoder)`
+   (`vl_jepa.py:316` [V]), so both halves are 10,712,448 params (see §11 R3).
+2. The `memory` merge saves **15,890,176** params by sharing one embedding table between two
+   former regions [V\*].
+3. **`memory` is NC.** It inherits `retrieve`'s GooAQ term, and by DEC-31 the composed mind
+   therefore is too `[OP: csd-release-licence-decision]`.
+
+### The 30B sketch
+
+| | v1 | 30B-class | grows? |
+|---|---|---|---|
+| faculties built | 5 + store | 16–20 incl. specialisations | yes — phase 3 is where region *types* appear |
+| params per region | 16.0M (12.9M of it embedding) | ~1.5B | yes |
+| token embedding table | one per text region | **ONE, shared** (DEC-24) | no |
+| workspace `D_w` / latents `L` / depth | 512 / 64 / 4 | 4096 / 256 / 4 | yes |
+| **interconnect params** (at `mlp_ratio 4`, stated in both columns `[A26 fixed]`) | 26.9M (**31.4% of the mind** — see DEC-26) | **1,073,741,824 = 3.6% of 30B** at `D=4096, L_ic=4`; `L_ic=8` = 2.15B = **7.2%, ABOVE the 5% ceiling** | yes, sublinearly |
+| `B_read` (Σ read tokens) | 256 | 4,096 | yes |
+| `B_kv` (Σ region context bytes) | — | **3.29 GiB** (§6.3) | fixed by the card |
+| **the interface** (`tokens()` — position latents, `[DEC-47]` — adapters, `Schedule`) | | **identical** | **no** |
+| **the runtime** (DAG executor, validator) | | **identical** | **no** |
+
+Revision 1 printed **805,453,824 = 2.7%** for the 30B column. That figure is `12·D²` per block,
+i.e. **`mlp_ratio 2`**, while §2.3's v1 blocks are `16·D²` per block, i.e. **`mlp_ratio 4`**
+(`16,803,840 / 4 = 4,200,960 ≈ 16·512²`) — a silent architecture change between the two columns
+of a table whose whole purpose is to argue an invariant. At the ratio the design actually
+specifies, `L_ic = 4` is 3.6% and `L_ic = 8` is 7.2%, so **DEC-26's "5.4% is the ceiling" claim
+flips sign** and is restated in §6.4.
+
+### Workspace compute — the derivation, printed `[A27 fixed]`
+
+Revision 1 asserted **620.8 MMAC/item** tagged `[V*]` "measured". It does not reconcile. At
+`D_w = 512`, `L = 64` latents, `Σb = 256` KV tokens, `mlp_ratio 4`, per block:
+
+```
+self-attention q,k,v,o projections   4 · D² · L            =  67,108,864
+self-attention scores (QKᵀ and AV)   2 · L² · D            =   4,194,304
+MLP (two matmuls, ratio 4)           2 · D · 4D · L        = 134,217,728
+cross-attention q,o on the latents   2 · D² · L            =  33,554,432
+cross-attention k,v on the KV bank   2 · D² · Σb           = 134,217,728
+cross-attention scores               2 · L · Σb · D        =  16,777,216
+                                     ------------------------------------
+per block                                                  = 390,070,272   (390.1 MMAC)
+× 4 blocks                                                 = 1,560,281,088 (1.56 GMAC/item)
+```
+
+**1.56 GMAC/item [I], ~2.5× the figure revision 1 carried.** If 620.8 came from a profiler,
+the receipt must say which modules were counted; until then the derived number governs, and the
+2.10 MB/item workspace KV → 268 MB/item projection must be re-derived beside it.
+
+**The stated asymptotic was also wrong.** `O(L · Σb_r · D_w)` is the attention-**score** term
+only. It omits `O(L · D_w² · (1 + mlp_ratio))` and `O(Σb · D_w²)`, which at `D_w = 4096`
+dominate by an order of magnitude and are precisely the terms that decide whether the centre of
+gravity stays affordable. Restated:
+
+> **workspace compute is `O(L·D_w²·(1+mlp_ratio) + Σb·D_w² + L·Σb·D_w)`, and no term in it
+> grows with region size.**
+
+The *conclusion* revision 1 drew is correct and survives; the expression it drew it from did
+not support it.
+
+## 2.4 The five scheduler behaviours, write-back, and topology
+
+| behaviour (operator's list) | mechanism | learned by |
+|---|---|---|
+| **which regions to activate** | `ctx_r > 0` | controller; hard floor `ctx_r ≥ ctx_min` for every declared region (§9.9) |
+| **intensity and priority** | intensity = `a_r`, emergent per iteration. Priority = the order budgets are honoured under contention: `b = largest_remainder(B_read · β)`, `β = η/R + (1−η)·softmax(s)`, `η = 0.15` | `a_r` by the task loss; `s` by §2.6 |
+| **attention split across regions** | the cross-attention softmax itself. Nothing else. | task loss |
+| **per-region context budget** | `ctx_r` (pre-computation, region-internal) and `b_r` (post-computation, workspace) — two simplexes | controller, straight-through on the integerisation |
+| **execution topology** | admission matrix `A ∈ {0,1}^{n_iter × R}` + ACT halting, plus write-back | task loss through the admission mask |
+
+**The floored simplex is the load-bearing anti-starvation trick, and it is a bound by
+construction rather than by check.** A softmax cannot sum to more than 1, so no input —
+adversarial or otherwise — can drive the allocation past the card; the floor `η/R` of the
+budget is what stops it starving a region. **The floor is written as the expression and never as
+a constant** `[S31-16 fixed]`: at `η = 0.15` it evaluates to **3.75%** for the v1 `R = 4`, and
+the `3%` revision 3.1 hard-coded is `0.15/5`, i.e. the value for a five-participant mind that
+DEC-32 had already ruled out and DEC-48 has now ruled out again. Every receipt prints the
+evaluated floor **beside its own `R`**, so a count change can never make a constant accidentally
+correct. Grafted from the systems-first proposal, where the
+bound is derived: at `B_kv = 3.0 GiB` and `c_r = 192 KB/token` the floor is **≥ 409 tokens** for
+any active region [V\*].
+
+### DEC-17 — write-back, and why the DAG's edges are otherwise unearned
+
+In a pure Perceiver workspace, regions are only ever keys and values: the latents read from the
+regions and the regions never read the latents. Region A's *computation* therefore cannot be
+influenced by region B — only the latents' aggregation of them can be. A DAG derivation that
+says *"region r′ reads latents that already absorbed r"* is, in that architecture, an assertion
+with no mechanism behind it [I]. This is a real hole in the source proposal and it is fixed
+here rather than inherited.
+
+**Mechanism.** At iteration `i ≥ 1`, an admitted region with `accepts_condition: true` receives
+`cond_r = reshape(Linear_r(pool(z_{i-1})), [n_cond, d_r])`, `n_cond = 8`, prepended to its own
+input embeddings. `Linear_r` belongs to the **interconnect**, not to the region, so the region
+checkpoint stays frozen and phase 2 still retrains nothing. Cost: 1,050,624 params per text
+region, 1,575,936 for the visual region, 4,727,808 total.
+
+**The risk, stated because it is real.** Prepending eight learned vectors to a frozen encoder
+trained with InfoNCE at `max_len 96` is prefix tuning on an out-of-distribution input, and it
+spends 8% of that region's length budget. **Gate (W5b):** enabling write-back must not drop the
+conditioned region's own-bin score by more than 1 point, and must improve the composed metric.
+**Fallback, pre-committed:** if it fails, write-back is disabled for that region and the receipt
+records that phase-2 integration is *workspace-internal only*, with inter-region conditioning
+deferred to phase 3 when regions unfreeze. Either result is a pass; not running it is the fail.
+
+### DEC-18 — topology derived twice, and the two derivations must agree
+
+```
+depth(r)    = min{ i : A[i, r] = 1 }
+nodes       = { r : ctx_r > 0 }
+async       = { r : depth(r) = 0 and A[:, r] ≡ 1 }         # never waits; nothing waits on it
+lockstep(i) = { r : depth(r) = i ≥ 1 and accepts_condition } # exchange through z_{i-1} → z_i
+sequential  = a path of strictly increasing depth
+```
+
+Write-back is what makes **lockstep** expressible at all: two regions admitted at the same
+iteration `i ≥ 1` both read `z_{i-1}` and both write into `z_i`, so they are mutually dependent
+*within* the step — which is the definition of parallel-in-lockstep, and it is distinguishable
+from parallel-**independent** (regions at depth 0, which read no latents). Without write-back,
+equal depth means independence, and "lockstep" would be a mislabel — a hole a judge correctly
+identified in the source proposal.
+
+**Cross-check, grafted from systems-first.** Define the effective region→region influence
+through the latent bottleneck:
+
+```
+Ĉ[i,j] = Σ_t  ⟨ a[:, t, i] ,  w[:, t+1, j] ⟩ / Z
+```
+
+where `a[l,t,i]` is the mass latent `l` gave region `i`'s keys at iteration `t` (write) and
+`w[l,t+1,j]` is the weight with which latent `l` contributed to region `j`'s conditioning prefix
+at `t+1` (read). Threshold `Ĉ` and topologically sort: **DAG levels are stages, cycles are
+lockstep groups, isolated nodes are async.** `Ĉ` is *measured*, not predicted — no separate
+head, no relaxation over topologies. **Gate (W9):** the two derivations must agree on ≥95% of
+eval items; a disagreement is a bug in one of them and is reported, not averaged.
+
+**`Ĉ` under W5b's pre-committed fallback `[A20 fixed]`.** Conditioning prefixes exist only if
+write-back is enabled, and W5b pre-commits that on failure write-back is disabled and *"either
+result is a pass"*. In that branch `w` is undefined, so `Ĉ` is undefined — and revision 1 left
+W9's agreement gate, falsifier S4 and the emitted `Schedule.edges` standing on a quantity that
+does not exist, which is the exact hole DEC-17 was written to close, reopened by its own
+fallback. Two things are stated now, and the second is the one that must be honoured:
+
+1. **The no-write-back variant.** Replace the prefix-read term with influence through the latent
+   bottleneck across iterations: `w′[l, t+1, j] = ∂ (mass latent l gives region j's keys at
+   t+1) / ∂ (region i's contribution to z_t)`, estimated by the same forward passes with
+   region `i`'s keys masked at `t` (the I2′ severance, §2.7.5, already computes exactly this).
+   It is weaker — it measures influence on *attention*, not on *computation* — and the receipt
+   must say so.
+2. **If the variant is not built, the gate is void and the emission is trimmed, not
+   asserted.** Under the fallback, W9's ≥95% agreement gate does not run, S4 has nothing to
+   print, the emitted `Schedule` carries **no `edges` and no `lockstep_groups`**, and the
+   receipt records `topology: not demonstrated`. That is DEC-30's two-verdict discipline
+   applied where revision 1 omitted it. An emitted edge with no mechanism behind it is the
+   assertion DEC-17 exists to prevent, and it is not made cheaper by being in a JSON field.
+
+## 2.5 What it emits, and the runtime contract
+
+```jsonc
+Schedule {
+  "step_budget": { "kv_bytes": 3221225472, "read_tokens": 256, "max_iters": 4, "wall_ms": 250 },
+  "nodes": [
+    { "region": "visual",        "active": true,  "depth": 0, "intensity": 1.31, "priority": 0,
+      "context_tokens": 64, "read_tokens": 96, "precision": "int3", "resident": true,
+      "codec": "none", "condition": false },
+    { "region": "memory",        "active": true,  "depth": 0, "intensity": 0.72, "priority": 1,
+      "context_tokens": 96, "read_tokens": 64, "precision": "int3", "resident": true,
+      "codec": "vae64", "condition": false },
+    { "region": "language_code", "active": true,  "depth": 1, "intensity": 0.94, "priority": 1,
+      "context_tokens": 96, "read_tokens": 64, "precision": "int3", "resident": true,
+      "codec": "none", "condition": true },
+    { "region": "reasoning",     "active": false, "depth": null, "intensity": 0.0, "priority": 3,
+      "context_tokens": 0,  "read_tokens": 0,  "precision": "int3", "resident": false }
+  ],
+  "edges": [ {"src":"visual","dst":"language_code","weight":0.41},
+             {"src":"memory","dst":"language_code","weight":0.22} ],
+  "stages": [ ["visual","memory"], ["language_code"] ],
+  "lockstep_groups": [],
+  "halt_at": 2,
+  "output": { "modalities": ["text", "speech"], "stream": true,
+              "first_token_ms": 300, "speech_frame_ms": 40 },
+  "trace_id": "SERVER-MINTED; never accepted from the emission [T2 fixed]"
+}
+```
+
+**`trace_id` is minted server-side and is not part of what the model emits** `[T2 fixed]`. It is
+attacker-influenced free text destined for logs, Jaeger spans and receipts; receipts are the
+programme's only evidence layer, and a log field an untrusted party controls is a log-injection
+primitive. The validator rejects a `Schedule` that carries one.
+
+**The read-out emits to more than one modality, and the `Schedule` must say which — DEC-44,
+KEPT AS DECLARED even though the speech head is deferred** `[OP: csd-multimodal-io-intent.md]`.
+**This whole `output` block stays in the runtime contract under DEC-48.** Deferring the head and
+deferring the contract are different acts: the second is what forces a redesign later, and it is
+the one thing the deferral is explicitly not allowed to do. At v1 the validator accepts `text`
+and refuses `speech` for the same mechanical reason it will refuse it after the head exists but
+is evicted — **no resident head, no modality** — so the deferred state is a *value* of the rule
+rather than an exception to it. It is also clause 4 of DEC-47: modality is chosen at the read-out,
+so the contract that names modalities belongs here and not upstream. Revision 3's contract had exactly one output shape (a ranking
+over a declared candidate set, DEC-41) and one implicit modality. The operator's intent is
+*"text/speech output... output multimodal as well"*, so the frontal read-out is a **multi-head**
+read-out and every emission names its target. `output.modalities` is a **closed vocabulary the
+validator bounds**, exactly as it bounds `kv_bytes` and `read_tokens`: at v1 the only accepted
+values are `text` and `speech`; a `Schedule` naming any other modality is **rejected**; and a
+`Schedule` naming `speech` while no `speech_output` head is resident is **rejected, not silently
+degraded**. The reason is §9.9's B1 boundary, not tidiness — an unbounded modality field is a
+second attacker-controlled dispatch key reached from untrusted input, which is the same object
+`trace_id` was removed for. **`image` is the declared seam:** it is a value the validator will
+accept the day a faculty exists to produce it, and refuses until then.
+
+**Streaming output and a per-turn latency budget become runtime requirements the scheduler
+respects, not aspirations.** Interaction is conversational — voice and text turns — so
+`step_budget` gains two numbers the runtime enforces and the receipt records. `first_token_ms`
+bounds time to the first emitted token of either stream, which is what makes the difference
+between a turn and a wait. `speech_frame_ms` is the synthesiser's frame period, and it is the
+harder of the two: it is a **deadline per workspace iteration**, not a budget for the turn, so a
+schedule whose iteration cost exceeds it stalls the audio no matter how good the total latency
+looks. `wall_ms` already bounds the whole turn; these two bound its *shape*. **Gate (W9,
+extended):** the 10,000-input fuzz already asserts zero budget-violating graphs; it now also
+asserts **zero graphs naming an unavailable modality**, verified by constructing one — a
+`Schedule` requesting `speech` with the head evicted must be refused. A streaming run reports
+**measured** `first_token_ms` and the fraction of iterations that missed `speech_frame_ms`, on
+the deployment card. **What this deliberately does not do:** it does not make latency an
+optimisation target for phase 2. It makes it a *recorded* quantity with a declared bound, so that
+a phase-3 scheduler has something to be measured against instead of a preference — and so the
+swarm and paging experiments (P5′s, P5′o) measure it rather than rediscover it.
+
+**Runtime, ~120 lines.** Validate → for `i in range(max_iters)`: gather `{r : A[i,r]=1}`,
+compute `cond_r` from `z_{i-1}` for conditioned regions, run those regions' `tokens()`
+(position latents, not discrete ids — `[DEC-47]`)
+**concurrently on separate streams** (they are independent within a stage, which is what the
+architecture means), apply `TopK_{b_r}`, adapt, concatenate, run one workspace block, evaluate
+halting, break. Cache each region's `h_r` when its `(ctx_r, cond_r)` is unchanged so a region
+admitted twice is executed once — **the cache is per-request, bounded at `R × n_iter` entries,
+and is destroyed at the end of the request.** It is keyed by attacker-influenced input, so an
+unbounded or cross-request cache would be a second writable object with the same defects as
+`episodic_store` (DEC-32) `[A28 fixed]`.
+
+**The `Schedule` is untrusted data.** It is derived from attacker-influenced input, so the
+runtime validates it before executing it and the model is never trusted to bound its own
+resource requests. Bounds and enforcement points are in §9.9. **Gate (W9):** a 10,000-input
+adversarial fuzz emits **zero** graphs violating `Σ c_r·ctx_r ≤ B_kv` or `Σ b_r ≤ B_read`, and
+the validator rejects every case in §9.9 — verified by *constructing* those cases, in the
+`tests/test_guards_can_fail.py` pattern [V\*].
+
+## 2.6 DEC-19 — the training objective and where the signal comes from
+
+**The compose phase IS training the interconnect.** P5 currently has no training step at all
+[V\*]; this section is that step.
+
+The tree has already *measured* the failure mode this design must avoid: a linear gate on real
+corpus embeddings **collapsed outright to 1.0 / 0.0** on `tinystories` [V\*], and the Switch aux
+term exists precisely because top-k softmax sends every token to the currently-better region.
+Load-balancing losses treat the symptom. The cause is that **a gate trained by the task loss is
+trained by a signal that is only defined for the branch it chose — the counterfactual is never
+observed** [I]. So the recipe removes the cause rather than penalising the symptom.
+
+**Phase A — dense. There is no gate on admission.** All regions on at `ctx_max`, `b_max`,
+`A ≡ 1`, fixed `n_iter`. Only white matter, the adapters and the conditioning prefixes train;
+regions are frozen. Record `a_r` for every held-out item.
+
+**Collapse is *unrewarded*, not *unrepresentable* — and the difference is measurable**
+`[A15 fixed]`. Revision 1 claimed there is *"no mechanism that could turn a region off"* and
+then, three sections later, anticipated exactly that mechanism: §9.8 asks whether
+`a_reasoning` goes *"near zero on reasoning-bin items"*. **The mechanism is the cross-attention
+softmax itself** — the very tensor phase B distils. A region at `a_r ≈ 0` also receives
+negligible gradient through its adapter and its conditioning prefix, so it never becomes
+useful; phase B then regresses the controller onto a teacher that has already collapsed, and
+phase B's *"full counterfactual"* justification is void precisely for the region that most
+needs it. Every region **running** is not the same as every region **being observed**.
+
+> **Phase-A pass condition (new):** `min_r mean(a_r)` over held-out items **≥ `η/R`**,
+> evaluated at the receipt's own `R` — **3.75% at v1's `R = 4`**, not the 3% revision 3.1 wrote,
+> which was `R = 5`'s value and therefore **0.75 pp too lenient** `[S31-16 fixed]` —
+> the same floor the simplex uses elsewhere, with the per-region, per-iteration `a_r` histogram
+> printed in the receipt. **If a region is below the floor, phase B may not distil against that
+> teacher.** Named remedies, in order, each gated on the same floor: per-region attention
+> temperature; adapter re-init; an attention-entropy floor. If none recovers the region, the
+> receipt records `collapsed_in_phase_A: [<region>]` and phase B proceeds *without* that
+> region's `a_r` as a target, which is a finding about the region (§9.8), not a free pass.
+
+```
+L_A = L_task( rank_head(frontal(z_N)), y )             # on reserve items (§5); see DEC-41
+    + δ · L_unify                                      # DEC-20, the frontal faculty's own term
+```
+
+### DEC-41 — what `L_task` actually is at v1 `[A19 fixed] [A21 fixed]`
+
+Revision 1 wrote `L_A = L_task(frontal(z_N), y)` and never said what `L_task`'s output space is.
+`frontal(z_N)` is `[B, 512]`; §5.5's items are generative in shape (*"find the panel whose text
+describes X, and return the code in the panel to its right"*); and no generative head exists at
+v1 — `model/causal_lm.py` is curriculum step 4 (P6′), *"step 4, never step 1"*. A symbol with no
+output space is not a specification, and phase A cannot be built from it.
+
+> **The v1 output interface is a ranking head over a declared candidate set.**
+> `rank_head: [B,512] → [B,512]`, scored against `k` encoded candidates by cosine, trained with
+> softmax cross-entropy over the candidate set. `k = 32` per item: 1 gold, 30 hard distractors
+> drawn from the same bin, **and 1 explicit `NULL` candidate**. The candidate-set construction
+> is part of each reserve item's manifest, is frozen with the item, and is identical across
+> every baseline in §2.7.1 — B1, B2, B2t, B3, B0 and B0u are all scored on the same candidate
+> sets, or the comparison is not paired.
+
+Three consequences, stated because they are load-bearing and unwelcome:
+
+- **The composed mind at v1 is another bi-encoder.** B2 (an oracle convex combination of
+  ranking scores) is therefore a genuinely strong null, and G2's comparison against the regions'
+  own recall@1 becomes commensurable rather than approximate. That is a cost of v1's shape, and
+  naming it is what stops the phase-2 result being read as more than it is.
+- **The `NULL` candidate is the abstention output** the general / out-of-scope bin needs
+  `[A21 fixed]`. No confidence head, no rejection target, no new parameters — the correct answer
+  on a general-bin item is the `NULL` candidate, and it is scored by the identical metric.
+  **Gate:** `NULL` recall on the general bin **> 0.50**, and `NULL` false-positive rate on every
+  other bin **< 0.05**, both reported per bin. Without this the general bin has a label and no
+  measurable output, which is how revision 1 left it.
+- **Phase 3 replaces the head, not the loss.** When the language trunk's generative half exists
+  (P6′), `rank_head` becomes one read-out among several and `L_task` becomes a sum. The
+  interconnect does not change.
+
+`L_unify`: the unified state must be **linearly sufficient** for each contributing region's own
+answer as well as for the joint one — a small frozen linear probe from `frontal(z_N)` to each
+region's native target, summed. It is what stops the workspace becoming a bottleneck that keeps
+only the joint answer, and it is why unification is a trained faculty rather than a pooling
+operation. Grafted from biology-first; it closes the judge's objection that the frontal read-out
+otherwise has parameters but no objective and no falsifier of its own.
+
+**Phase B — bootstrap the controller by distillation.** Freeze the workspace. Train the
+controller to predict the *measured* `a[:,i,r]` and the realised budget utilisation from the
+cheap input summary:
+
+```
+L_B = Σ_i Σ_r KL( softmax(a[:,i,r]/τ) ‖ softmax(ŝ[:,i,r]/τ) )  +  β·| Σ_r b̂_r − B_read |
+```
+
+This is ordinary supervised regression onto an **observed** quantity with a full counterfactual
+— `a_r` is defined for every region on every item because in phase A every region ran. That is
+why it cannot collapse, and it is why **no Switch aux term, no Gumbel noise and no RL appear
+anywhere in this design.** Each removed relaxation is a removed way for phase 2 to fail
+silently. **Gate:** Spearman `ρ(ŝ, a) > 0.6` on held-out.
+
+**Phase C — sparse, with the dense model as teacher.** The controller emits `(ctx, b, A, halt)`;
+the workspace runs only what is admitted; fine-tune end-to-end with a distillation term against
+phase A's dense read-out plus the task loss. ε-exploration on the budgets (`p = 0.1`, perturb
+one region) so the controller keeps seeing off-policy regions.
+**Gate — FLOPs only.** Pass iff sparse is within **2% relative** of dense on the phase-A metric
+at **≤ 50%** of region-token FLOPs. *If it buys accuracy at this phase, that is a bug report
+against phase A*, not a win: it would mean the workspace was distracted by a region it should
+have downweighted through attention, which is a learned-connectivity failure.
+
+**Phase D — the scheduler is trained by the task loss.** *This phase is added here and is not in
+the source proposal.* Two judges independently called the distilled controller a fatal flaw:
+distillation is imitation, capped by the dense teacher, and *"it can never learn that a region
+the dense model ignored is useful"* — which is a substantial retreat from a **learned scheduler,
+closer to learned program synthesis**. The refutation is not to abandon distillation but to make
+it an *initialisation*:
+
+```
+L_D = L_task + δ·L_unify + λ_flops · relu( FLOPs/FLOPs_target − 1 )
+      # controller unfrozen; workspace and prefixes trainable; regions still frozen
+```
+
+Collapse is bounded structurally rather than by an aux term: the floored simplex guarantees
+`η/R` of each budget to every *active* region, the `ctx_r ≥ ctx_min` floor keeps every declared
+region observable, and phase D **starts from a non-degenerate schedule** — which is exactly what
+the distillation bought. **Gate:** phase D must beat phase C on the composed metric, at equal or
+lower FLOPs, **or it is reverted to phase C and the receipt says the scheduler is imitative.**
+Two verdicts, never one (DEC-30).
+
+**Overfit gate, grafted from biology-first and absent from the spine:** train/held-out gap on
+the compose eval must be **< 5 points**. **26,899,751** interconnect parameters (§2.3, recomputed
+for the v1 participant list) against a ~51k-item reserve is exactly where a silent memorisation
+result comes from [I]. `[N10d fixed]` — this site and §9.6 carried the superseded 27.8M through
+revision 2 while the appendix carried the correction; both prose sites now match §2.3.
+
+**What is *not* in the objective, and why.** A hinge that rewards every region for being
+individually necessary (`Σ_r max(0, m − (L^{-r} − L))`) was proposed and is **dropped**: the
+gate that measures integration counts regions whose ablation flips an item, so such a loss is
+gradient descent on the metric. A model trained to make every region's ablation costly will make
+every region's ablation costly; that tells you the optimiser worked, not that information
+crossed. This is the programme's own recurring defect — *a guard correct in reasoning and wrong
+in scope* — reintroduced at the level of the objective [V\* judge finding, and I concur].
+
+## 2.7 The integration-vs-dispatch experiment
+
+The current P5 gate — *"composed beats best single region on a mixed set"* — is described by
+`CORPUS-CONTRACT.md` as **nearly unfalsifiable** [V\*], and it is: on a bin-balanced set the
+single-region baseline is bad off its own bin, so the composed model only has to route.
+
+### 2.7.0 The experiment's own failure mode, and the rule that fixes it `[A1 fixed]`
+
+**Revision 1 let the filter that built the data set both baselines it is graded against, and
+said so as a convenience.** §5.3 admitted a row iff `max_r s_r < τ_lo` and
+`oracle_late_fusion(s) ≥ τ_hi`; §2.7.1 then *defined* `B1 = per item max_r s_r` and
+`B2 = oracle late fusion`; and §5.3 closed by noting this makes B1/B2 *"precomputed rather than
+a separate experiment"*. Condition (1) **is** the statement `B1 < 0.35`, enforced per row.
+Condition (2) **is** the statement `B2 ≥ 0.70`, enforced per row. So:
+
+- **G1 (composed > B1) could not fail** — the data-construction step pinned the bar below 0.35,
+  and revision 1 stated the intent outright (*"calibrated so the admitted set's B1 baseline sits
+  at 0.3–0.4 — enough headroom for the interconnect to occupy"*). That is the definition of a
+  test whose set is filtered until the baseline is beatable.
+- **G3 (composed > B2) could barely pass** — admission guarantees B2 is right on essentially
+  every admitted item, and **the discordant pairs where B2 is wrong are exactly what admission
+  removed**. McNemar over discordant pairs then has almost nothing to work with.
+- The two failures are **opposite in sign**, so they do not cancel and would not look wrong: the
+  programme would report *"G1 passed comfortably, G3 failed"* and read it as *the mind routes
+  but does not integrate*, when it is a property of the filter.
+
+> **DEC-36 — admission never sets a baseline.** Three rules, all enforced in the W2b receipt:
+>
+> 1. **Calibrate on a split that is never graded.** Draw `τ_lo`/`τ_hi` from a **calibration
+>    subset** (10% of candidates, disjoint at source-row granularity from everything graded),
+>    freeze them, then admit the graded set with frozen thresholds. **Report what fraction of
+>    the graded set *would* have been rejected** — that number is the honest measure of how much
+>    the filter is doing, and it belongs in the receipt beside the result.
+> 2. **B1, B2, B2t, B3, B0, B0u are recomputed on the graded split, on the composed task metric
+>    (DEC-41's ranking head), by a separate forward pass.** The admission `s_r` are *never*
+>    reused as a baseline. The saving revision 1 claimed is the exact thing that destroyed the
+>    test.
+> 3. **τ is stated in chance-normalised units per bin:** `(s − chance)/(1 − chance)`, with each
+>    bin's chance level recorded in the manifest. Bin chance levels span two orders of magnitude
+>    — 1/512 on the in-mixture diagonal, 1/200 on the tiny-imagenet probe, 0.0130 for
+>    banking77, 0.0466 for go_emotions [V\*] — so a single raw `0.35` means a different
+>    difficulty in every bin, and the per-bin scores G2 compares are not otherwise on a common
+>    scale.
+>
+> **Verify it by making it fail — and it needs one field before it is constructible**
+> `[N10a fixed]`. Revision 2 wrote *"recompute B1 from admission `s_r` instead of from the graded
+> forward pass, and assert the receipt writer refuses to emit."* **A receipt writer cannot tell
+> two floats apart by provenance.** So: **every recorded score carries `source: admission |
+> graded`**, set at the point it is computed and never editable afterwards, and the receipt writer
+> refuses to emit any baseline whose contributing scores carry `source: admission`. *Then* the
+> test is: take a graded item, feed the writer a B1 assembled from `source: admission` scores, and
+> assert it refuses. Every other verify-by-failing test in this document is constructible as
+> written; this one was not, and the missing piece was one field.
+
+### 2.7.1 Baselines, nested, all on the same paired items and the same candidate sets
+
+Every baseline is scored on DEC-41's ranking metric over the item's frozen candidate set, on
+the graded split, by its own forward pass (DEC-36).
+
+| # | baseline | what it is | what beating it proves |
+|---|---|---|---|
+| **B0** | **untrained workspace, TRAINED READ-OUT** | random-init white matter, **frozen**, with `rank_head` trained on top — a random-features control. Same frozen regions, same budgets. `[A11 fixed]` | **THE UNTRAINED BASELINE.** Nothing learned *in the interconnect*. Revision 1's B0 had a random-init read-out too, so it scored at chance, so `Δ_A ≈ Δ_B ≈ Δ_AB ≈ 0` and the void condition `I₀ ≈ 0` held **by arithmetic, not by evidence** — the only guard against "the statistic is measuring the data, not the model" was a guard no dataset could trip. A trained read-out gives B0 non-trivial performance and makes `I₀` a number that *can* come out positive. |
+| **B0d** | **known-dispatch positive control** | a top-1 router over pooled region outputs — same data, same steps, an architecture that is dispatch **by construction** `[A11 fixed]` | **The control that makes G3′ falsifiable at all.** Its `I` must be ≈ 0 under the same statistic. **If the dispatch control shows `I > 0`, the statistic is broken and that is the finding**, reported instead of a result. |
+| **B0u** | **uniform connectivity, TRAINED** | cross-attention weights **frozen uniform from initialisation** (or cross-attention replaced by mean pooling over the KV bank), then trained — same params, same steps, same data `[A12 fixed]` | isolates *learned* connectivity from *having* connectivity. Revision 1 overwrote a trained attention distribution **at inference**, which is a train/test mismatch: every downstream layer was fitted against the learned distribution, so B0u would lose whether or not the learned connectivity carried information, and the win would mean nothing. B3 is already built with the right discipline one row down; B0u must match it. |
+| **B1** | **oracle single region** | per item, `max_r score_r` **recomputed on the graded split**, chosen knowing the answer | stronger than any learned router can be. Beating it proves the mind is not equivalent to routing. |
+| **B2** | **oracle late fusion** | best score over any per-item convex combination of the regions' **independent** outputs, weights chosen knowing the answer, **recomputed on the graded split** | every region ran alone; only scores were merged. **The ceiling on everything achievable without interaction.** |
+| **B2t** | **trained matched-capacity late fusion** | a model of the same parameter count and training budget that can see **only the regions' pooled outputs** — no token surface, no cross-region attention `[A2 fixed]`. **It is by definition a second full white-matter-scale training run, and §4.3 budgets it as one** `[N7 fixed]` | B2 is an *oracle over frozen scores*; B2t is *"a model this size that cannot let anything cross between regions"*. **It is the honest null for the whole programme**, and it is the one an outside reader will ask for. |
+| **B3** | **frontal-only control** | the identical workspace + frontal trained with all regions gated off, same params, same steps, same data | closes *"a big frontal module answered alone"*. Grafted from biology-first (I3). |
+
+Oracle *routing* is a ceiling on picking one region. Oracle *late fusion* is a ceiling on
+everything achievable without interaction. Using the weaker one is how a good mixer passes a
+test it should fail [I].
+
+### 2.7.2 The gate ladder
+
+| gate | statement | test |
+|---|---|---|
+| **G1** routing works | composed > **B1** on the cross-faculty bin | McNemar on discordant pairs, `p < 0.01`, **Holm-corrected across the family** (§2.7.8) |
+| **G2** no composition tax | composed ≥ each faculty's own single-bin score − 1 point | paired, per bin, in DEC-41's metric |
+| **G3** integration | composed > **B2** **and** composed > **B2t** | McNemar, `p < 0.01`, Holm-corrected |
+| **G3′** **THE PASS/FAIL** | the **synergy conjunction** below | see 2.7.3 |
+| **G0** the mind is load-bearing | composed > **B3** and composed > **B0u** | paired |
+| **G0d** the statistic is sound | **B0d**'s `I` CI **contains** 0, and **B0**'s `I₀` CI contains 0 | if either fails, **the experiment is void and is reported as void** — *unless* the `corpus: REDUNDANT` branch below fires, which is a different finding with a different remedy `[N6 fixed]` |
+
+### 2.7.3 G3′ — the interaction term, with the void condition
+
+Beating a baseline is indirect. The direct question is whether region A's contribution was
+*computed conditional on* region B.
+
+```
+Δ_A  = perf(full) − perf(A ablated)
+Δ_B  = perf(full) − perf(B ablated)
+Δ_AB = perf(full) − perf(both ablated)
+I(A,B) = Δ_AB − Δ_A − Δ_B
+```
+
+**Dispatch predicts `I ≈ 0`** — removing two independent contributions costs the sum of removing
+each, additively, by construction. **Integration predicts `I > 0`** — superadditivity means A's
+usefulness *depended on* B being present.
+
+**Revision 1 stopped there, and that dichotomy omits the case this architecture is most likely
+to be in** `[A2 fixed]`. Let A and B each be *independently sufficient* for an item — maximal
+**redundancy**, the exact opposite of integration. Then:
+
+```
+Δ_A  = perf(full) − perf(¬A)     ≈ 0       (B still answers)
+Δ_B  = perf(full) − perf(¬B)     ≈ 0       (A still answers)
+Δ_AB = perf(full) − perf(¬A,¬B)  = large
+I    = Δ_AB − Δ_A − Δ_B          ≫ 0       PASSES, MAXIMALLY
+```
+
+Redundancy produces the **largest possible** superadditive interaction under any thresholded
+metric, because each single ablation costs nothing while the joint ablation costs everything.
+**The pass/fail of the programme passed maximally on the configuration containing no
+integration at all.** Content-swap does not close it: under redundancy A alone still answers, so
+`Δ_A^swap ≈ 0` and `I^swap ≫ 0` too. Content-swap closes *presence-as-tag*, a different
+degenerate solution, and it closes that one well.
+
+And this is the likely regime, not a corner case: all participating text regions are GPT-2-BPE
+encoders of the same width trained on overlapping English, and the tree's own measurement of the
+shared stream is mean pairwise cosine **0.89** at entropy-effective rank **8.7 of 128** [V\*].
+Highly overlapping representations are the textbook redundancy regime.
+
+> ### DEC-37 — G3′ is the synergy conjunction, per pair
+>
+> **PASS for a pair `(A,B)` iff all three hold, each with its own 95% block-bootstrap CI
+> excluding 0 (block by source row, §5.4):**
+>
+> ```
+> Δ_A > 0        A is individually load-bearing
+> Δ_B > 0        B is individually load-bearing
+> I    > 0       and their contributions are superadditive
+> ```
+>
+> True synergy requires both regions to be individually load-bearing **and** superadditive.
+> Redundancy fails the first two clauses by definition.
+>
+> **The redundancy quadrant is named and is a FAIL.** `Δ_A ≈ 0, Δ_B ≈ 0, Δ_AB` large is reported
+> in the receipt as `interaction: REDUNDANT` for that pair. It is **never folded into a mean
+> `I`**, because a mean over quadrants is exactly how the failure hides.
+>
+> **G3′ (pass/fail):** on the cross-faculty bin, **≥ 4 of the 6 pairs** (R = 4 participants,
+> DEC-32) satisfy the conjunction, **under BOTH zero-ablation and content-swap**, with per-pair
+> CIs reported and Holm correction across the family (§2.7.8). The null rate of "≥4 of 6 under
+> a coin flip" is **0.344** and is printed beside the result `[A14 fixed]` — revision 1's
+> "≥6 of 10 positive" had a null rate of **0.377** (`386/1024`) and read as a second,
+> independent requirement while adding almost no evidence to the mean-`I` CI it was conjoined
+> with.
+>
+> **Void conditions (both must hold, or the experiment is reported void):** **B0**'s `I₀` CI
+> contains 0 *with a trained read-out* (`[A11 fixed]`), and **B0d**, the known-dispatch
+> control, also shows `I` ≈ 0. B0's and B0d's absolute scores are printed next to `I₀` so a
+> floor effect is **visible rather than inferred**.
+
+> ### The G0d void has two causes with the same observable, and they need separating `[N6 fixed]`
+>
+> A11's fix — a trained read-out on B0, and B0d as a trained top-1 router — is right and stands.
+> It created a hole. **DEC-37's own redundancy arithmetic applies to both controls.** On an item
+> where two regions are each independently sufficient, ablating either costs a top-1 router
+> nothing (it falls back) and ablating both costs everything: `Δ_A ≈ Δ_B ≈ 0`, `Δ_AB` large,
+> `I ≫ 0` — **for the control that is dispatch by construction**. The same structure gives B0's
+> random-features composition `I₀ > 0`. So a **redundant corpus** does not produce the
+> `REDUNDANT` verdict DEC-37 built for it; it voids the whole experiment through G0d. Two
+> findings, one observable, opposite implications for what to do next.
+>
+> **PRECEDENCE, pre-committed.** When G0d fails:
+>
+> 1. If B0d shows `I > 0` **and** the trained mind's pairs also land in the `REDUNDANT` quadrant
+>    (`Δ_A ≈ 0`, `Δ_B ≈ 0`, `Δ_AB` large), the receipt reports **`corpus: REDUNDANT`** — an
+>    **admission-filter failure against §5.3 condition (2)**, not `statistic: broken`.
+> 2. If B0d shows `I > 0` **and** the trained mind's pairs do **not** show that structure, the
+>    receipt reports **`statistic: broken`** and the experiment is void as written.
+> 3. **`Δ_A`, `Δ_B` and `Δ_AB` are printed for B0d and B0, not only their `I`**, so a reader can
+>    tell which branch fired without re-running anything. Without those three numbers the two
+>    causes are indistinguishable on the page, which is how the wrong remedy gets chosen.
+>
+> **Remedy path for branch 1, so the void is not a dead end.** Re-admit against a **stricter
+> condition (2)**: require that **no single region and no pair short of the full participant set**
+> reaches `τ_hi`, not merely that `max_r s_r < τ_lo`. Report how many items survive. If fewer than
+> 512 per cross-faculty pair survive, the finding is that **the corpus cannot support the claim**,
+> reported as such — which is a real result about the reserve, not a failed run.
+
+Note one direction of conservatism that survives: performance is bounded below by chance, which
+caps `Δ_AB` and biases `I` negative.
+
+### 2.7.4 The two controls that close the two degenerate solutions
+
+| degenerate solution | how it passes a naive test | the control |
+|---|---|---|
+| **presence-as-tag** — the workspace reads region B's *presence* ("vision is on, so this is a screenshot task") as a domain label and answers from A | every ablation-based statistic goes positive; this is dispatch wearing a disguise and it is the *likeliest* way a composed model fakes integration | **content-swap:** replace B's tokens with **B's tokens from a different held-out item**. Presence, budget, sequence length and KV shape identical; content destroyed. **Require the DEC-37 conjunction under BOTH zero-ablation and content-swap.** |
+| **budget-as-tag** — from phase C the controller emits `(ctx, b, A, halt)` *from the input*, so the **schedule** is itself a learned encoding of the input's domain, and the workspace reads "this is a screenshot task" off the budget vector with nothing crossing `[A18 fixed]` | content-swap does not perturb the schedule, so it passes cleanly — presence-as-tag returns one level up, wearing the scheduler | **two content-swap arms, both run and both reported:** (i) schedule **re-emitted** from the swapped input, (ii) schedule **frozen** from the original. The **gap between them is the measure of how much the schedule leaks domain identity**, and it is worth reporting in its own right. G3′ is graded on the arm with the frozen schedule, which is the conservative one. |
+| **redundancy** — A and B each independently sufficient; nothing crossed, and the interaction term is *maximal* `[A2 fixed]` | `I ≫ 0` under every ablation style including content-swap | **DEC-37's conjunction** (`Δ_A > 0` and `Δ_B > 0` and `I > 0`), the named `REDUNDANT` quadrant as a FAIL, and **B2t**, the trained matched-capacity late-fusion null |
+| **bigger-model** — the interconnect answers from its own 26.9M params and the write-back prefixes, with nothing crossing between regions | beats oracle routing without interaction | **B2** as the oracle ceiling, **B2t** as the trained null, **B3** the frontal-only control, **B0u** trained-uniform connectivity |
+
+### 2.7.5 The causal test, fixed
+
+A per-tract causal ablation was proposed in biology-first as the test its author *"would not
+ship without"*, specified as zeroing an additive prior `A[i,j]` on the attention logits. Two
+judges independently showed that this **does not sever the tract** — the `q·k` term is untouched,
+and under an L1 sparsity penalty the ablation can be a null operation on a healthy model, so it
+can report "not load-bearing" for a mind that is integrating perfectly. **It is grafted in fixed
+form:**
+
+> **I2′ — ordered-pair severance.** For the ordered pair `(i → j)` an item type requires, mask
+> the workspace's cross-attention to region `i`'s keys **to −inf** at every iteration
+> `< depth(j)`, and zero region `i`'s contribution to `j`'s conditioning prefix. Everything else
+> — weights, schedule, budgets — is unchanged.
+> **PASS iff** `Δ(cross-faculty items) − Δ(single-faculty items) > 0`, bootstrap 95% CI
+> excluding 0.
+
+This ties a win to a *specific* tract rather than to size, costs no retraining, and — unlike the
+original — actually removes the path it names.
+
+### 2.7.6 DEC-30 — the scheduler is a separate verdict
+
+A composed model can pass every gate above with a scheduler that does nothing. So, separately,
+and reported whatever they say:
+
+| falsifier | statement | threshold |
+|---|---|---|
+| **S1** the schedule varies | `Var_x[active_r]` per region across inputs | must exceed the variance induced by dropout noise alone |
+| **S2** the budget varies | `Var_x[ctx_r]`, `Var_x[b_r]` | not constant; per-region histogram reported |
+| **S3** topology is used | entropy of the stage assignment over the eval set | `> 0.1 · log(n_iter)`; collapse to one stage means topology was not learned |
+| **S4** the anatomy is readable | the `R×R` `Ĉ` matrix, and its sparsity | printed in the receipt; **void under W5b's no-write-back fallback unless the §2.4 variant is built**, and the receipt then says `topology: not demonstrated` `[A20 fixed]` |
+| **S5** the schedule is not backdoored | per region, the change in admission probability under **single rare-token insertion** on held-out items `[T1 fixed]` | pre-committed threshold; a region whose admission moves beyond it on a rare token is a **FINDING**, not a metric. **This is the only gate that can fire when poisoned rows sit in both splits**, which is the case DEC-39's keyed split cannot cover (§5.6) |
+
+**S1–S3 and S5 are falsifiers, not pass/fail-the-programme gates.** If the mind wins on G1–G3′
+with a constant schedule, the *architecture* is vindicated and the *scheduler claim* is not,
+**and the receipt must say so rather than reporting one number.** This is the single most
+important measurement-hygiene graft in the document, and it is the only defence against the
+failure where a dense always-on interconnect passes every quality gate while scheduling nothing.
+
+**The receipt carries three verdicts, not two** `[T1 fixed]`: `integration:`, `scheduling:` and
+`trigger_sensitivity:`. DEC-30's habit of refusing to collapse verdicts into one number is
+exactly the right home for S5, because S5 is a gate and gates get waived — pre-committing its
+threshold makes waiving it a visible decision rather than a silent one.
+
+### 2.7.7 Cost, and what R = 4 changes
+
+`episodic_store` is a placeholder at v1 (DEC-32) and audio is deferred to a production phase
+(DEC-48), so **R = 4 active participants → 6 pairs**, not 5 → 10. **Both exclusions are rulings,
+not schedule accidents**, which is what makes the count safe to build a pass/fail on
+`[S31-1 fixed]`. This matters beyond arithmetic: revision 1's *"≥6 of 10 positive"* was computed over
+10 pairs of which **four involved `episodic_store`**, a store that is empty at iteration 0 and
+has no write policy without `salience`. Those four pairs were structurally `I ≈ 0`, so the
+stated criterion silently meant *"all 6 real pairs positive"* — a far harsher bar than the one
+written, arrived at by accident `[A17 fixed]`.
+
+```
+6 pairs × 3 ablation styles (zero, swap-frozen-schedule, swap-reemitted-schedule)
+        × 2,560 sealed eval items × 4 model variants (trained, B0, B0d, B0u)
+        = 184,320 forward passes of a frozen ~86M model
+```
+
+At batch 512 that is 360 steps — minutes on the 3090 Ti [V\*].
+
+**But that counts forward passes only, and the claim built on it was overstated** `[N7 fixed]`.
+Revision 2 read this block as *"the decisive experiment is the cheap one, deliberately: the thing
+most likely to be skipped should be the thing that costs least."* The **measurement** is cheap.
+The **controls it is measured against are not**: B0's read-out, B0d, B0u and B2t are four trained
+artefacts revision 1 did not require, and B2t is a full white-matter-scale training run by
+definition (§2.7.1). B2t and B3 do not appear in the arithmetic above at all. §4.3 now budgets all
+five at **≈ 3.1 white-matter-run-equivalents, ≈ 3–6 GPU-hours** `[I]`, which is the same order as
+the entire region-retrain bill.
+
+**Restated, honestly:** *the decisive measurement is cheap and its controls are the expensive
+part, so the thing most likely to be skipped is a baseline, not the gate.* The mitigation is that
+each baseline is named in §4.3 with an estimate and an owner-visible cost, so dropping one is a
+visible decision rather than a silent saving.
+
+### 2.7.8 One eval, many decisions — the split and the correction `[A14 fixed]`
+
+Revision 1 read the same 5,120-item eval in W5, W5b, W6, W7, W8-C, W8-D, W9, W10 and P5′ — **at
+least nine accept/revert or threshold decisions** — and ran ten paired bootstrap tests on it,
+with no dev/test split and no multiplicity correction anywhere. W5b (enable/disable write-back),
+W8-D (keep phase D or revert to C) and W7 (retrain or not) are model-selection decisions made on
+the same items that produce the headline numbers, so the reported effect sizes are optimistically
+biased by an amount nobody could estimate afterward.
+
+1. **Split the compose eval in half at source-row granularity (§5.4).** A **dev half (2,560)**
+   for *every* accept/revert and every threshold decision; a **sealed half (2,560)** opened
+   **exactly once, for W6**. The receipt records the timestamp at which the seal was broken and
+   the git revision of the code that broke it. A second read of the sealed half is a new
+   experiment with a new seal, and it is reported as such.
+2. **Correct for multiplicity** across the interaction tests and the gate family: **Holm** for
+   the family-wise claim (G1/G2/G3/G3′), **Benjamini–Hochberg** if the claim is the weaker
+   *"most pairs interact"*. **Report per-pair CIs, never only the mean.**
+3. **Print every criterion's null rate beside it.** ≥4 of 6 under a coin flip is 0.344; the
+   ratifying reader should not have to compute that.
+4. **Size against the number of decisions.** 5,120 was derived (§5.4) for a *single* per-bin
+   report at ±4.33 pp, not for nine sequential decisions plus six interaction tests. At 2,560
+   per half the per-bin half-width is ±6.1 pp; the sealed half is therefore adequate for the
+   **cross-faculty bin** (1,024 items after the split, ±3.1 pp on the paired comparison that
+   G1/G3 actually run) and **not** adequate for a per-bin breakdown, which is reported from the
+   dev half and labelled as such.
+
+---
+
+# 3. Frontal cortex and thalamic gating
+
+## 3.1 DEC-20 — frontal cortex: built now, inside white matter, with its own objective
+
+The operator's requirement is that unification is *"a faculty in its own right, not a `sum()`"*
+[V\*]. It is built now, as a named submodule of white matter: an attention-pooled read-out over
+the workspace latents plus its MLP, **3,150,848 params** [V\*].
+
+**Why not a separate peer region.** A separate unification region would need an input surface,
+and its input surface would be the workspace — so it would be a read-out head on the workspace.
+There is also a systems reason: it must attend over every participant, so it can never be paged
+out, so it belongs in the resident set with white matter. **Declaring it a peer region would let
+the scheduler deactivate the component that produces the answer** [V\* systems-first].
+
+**Why it is nonetheless a faculty, and not a definitional dodge.** A judge correctly called the
+"it would be a read-out head anyway" argument a dodge rather than an argument. The answer is to
+give it the three things a faculty has:
+
+1. **its own parameters** — 3,150,848, plus the `L=64 × 512` latent bank;
+2. **its own objective** — `L_unify` (§2.6), which requires the unified state to be linearly
+   sufficient for *each contributing region's own answer* as well as the joint one. Nothing else
+   in the mind is trained against that;
+3. **its own failure mode and its own ablation** — **B3**, the frontal-only control (§2.7.1),
+   which is the only test that can show the frontal module has quietly become the model.
+
+## 3.2 DEC-21 — thalamic gating: built now, and what exactly is thalamus-shaped
+
+**What is built now:** gain control on *afferent bandwidth*. The controller decides how much of
+each region reaches cortex — `ctx_r`, `b_r`, admission `A`, halting. In the brain, the thalamic
+reticular nucleus applies gain control on a relay; it does not choose destinations. That is
+exactly this job, and it is exactly the operator's characterisation of where discrete gating in
+the brain lives.
+
+**What it costs relative to plain learned connectivity:** ≈1,588,007 params (5.7% of white
+matter) and one extra training phase. Its pass condition at phase C is FLOPs-only, so a
+controller that fails simply reverts to dense at no accuracy cost.
+
+**What is a declared seam and is NOT built:**
+
+| seam | what it would be | trigger to build it |
+|---|---|---|
+| **content gating** | a thalamic gate that modulates *what information* passes, not just how much — a per-tract multiplicative mask on the KV bank | build only if S1–S4 show the bandwidth gate is being used *and* a measured failure mode requires content suppression. Not before. |
+| **`affect` global gain** | the `[B,8]` valence vector multiplying `a_r` on every tract | build when the `affect` faculty is trained (it is a placeholder today) |
+| **`salience` priority** | a learned scalar priority per emission, replacing the current `rank(s)` order | build when `salience` is trained; the consumer already exists |
+
+Stating these as seams rather than building them is the operator's own discipline: *design the
+seam, build when the constraint is measured*.
+
+---
+
+# 4. Replacement for P4 / P5 / P6
+
+P4 as written — *"softmax gate + Switch aux load balance, `top_k=1`"* — builds option (a)'s
+**alternative**, not a step toward it [V\*]. It is **deleted**, not amended. P5 — *"Composed
+mind"*, with **no `method`, no `gate` and no `measures` key at all** — is **deleted**; its gate
+was a result, not a task.
+
+Hosts, as measured: **akula-prime `.98`** RTX 3090 Ti 24 GiB — region pretraining and phase-A
+white matter (needs every region resident); **gpu5080 `.251`** RTX 5080 16 GiB — **the
+deployment target**, so every sparsity, schedule and footprint measurement happens here;
+**gpu1080ti `.243`** Pascal — RAG only, **no train / PoC CUDA**, so it gets BM25, corpus
+construction and the CPU-side admission filter; **homelab `.170`** — NFS, metrics. 1 Gb/s
+between the training hosts [V\*].
+
+## 4.0 W1 FIRED AGAINST THE CENTRAL BET, AND W1d HAS NOW CONFIRMED IT. THE VERDICT IS SETTLED.
+
+**Measured 2026-09-02 on the real production checkpoints on akula-prime, read-only.** The
+pre-pool capture was verified **bit-exact (max abs 0.00e+00)** against `TextEncoder.forward()`
+and `IJEPA.encode()` on an 8-item check per region, so the statistic is about the deployed
+forward pass and not about a re-implementation of it. **W1d has since run and confirmed it**
+(below): the verdict recorded in this section is **no longer provisional**, no region was
+overturned, the retrains are licensed, and the penultimate-block fallback is dead.
+
+**A gloss that applies to every sentence below** `[DEC-47]`: `tokens()` here means **position
+latents — per-position hidden vectors, not discrete ids**. The whole of W1 and W1d is a question
+about *latents*, never about a token vocabulary.
+
+**Evidence, in the repo** `[N10b fixed]`. Revision 2 cited `scratchpad/exp-w1/…`, which is a
+session directory a ratifier reading from the tree cannot open. The run's own outputs are now
+committed alongside this document:
+
+```
+docs/design/evidence/w1-token-rank-2026-09-02/results.json     the run's output, byte for byte
+docs/design/evidence/w1-token-rank-2026-09-02/measure_w1.py    the script that produced it
+docs/design/evidence/w1-token-rank-2026-09-02/README.md        what was measured, on which
+                                                               checkpoints by sha256, the exact
+                                                               command, and BOTH rank definitions
+```
+
+Checkpoints are identified by sha256 in `results.json` and restated in that README. Summary also
+recorded at `memory/csd-w1-token-rank-result.md` `[OP: csd-w1-token-rank-result]`. **[V]**
+
+**BOTH effective-rank definitions are reported, because they disagree** `[N3 fixed]`. Revision 2
+printed participation ratio only. `results.json` carries entropy-effective rank for every surface
+as well, and **it reverses the sign for all four production regions**:
+
+| region | PR pooled | PR token | **PR ratio** | H pooled | H token | **H ratio** | per-item PR | production |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `code` | 42.6 | 28.1 | **0.66×** | 115.0 | 138.9 | **1.21×** | 4.4 | yes |
+| `compress` | 45.3 | 35.6 | **0.78×** | 126.9 | 147.5 | **1.16×** | 8.5 | yes |
+| `retrieve` | 40.7 | 40.7 | **1.00×** | 117.7 | 142.9 | **1.21×** | 5.1 | yes |
+| `vl_latent` | 18.1 | 23.5 | **1.30×** | 129.8 | 239.1 | **1.84×** | 8.3 | yes |
+| `compress_repo_local` | 7.1 | 14.2 | **2.00×** | 55.2 | 92.4 | **1.67×** | 4.2 | **no** `[N4 fixed]` |
+
+- **`*_pr_rank` — participation ratio.** `(Σ s_i²)² / Σ s_i⁴` over the singular values of the
+  column-centred matrix (`measure_w1.py:197-211`). **This is the definition W1's rule was
+  pre-committed against, in revision 1, before the measurement.** It weights the *spread* of the
+  spectrum: a few dominant directions pull it down hard.
+- **`*_entropy_rank` — entropy-effective rank.** `exp(H)` of the entropy of the linearly
+  normalised singular-value spectrum (`measure_w1.py:214-222`), i.e.
+  `cogsyndelta.eval.benchmark.effective_rank` — **the definition behind this document's own
+  "8.7 of 128" prior** (§2.7.3). It weights the *tail*: many small directions raise it.
+
+**The verdict is definition-dependent, and that is stated plainly rather than argued away.**
+Under participation ratio three of four production regions fall **below** 1.0 and all four sit
+inside the pre-committed ≤1.5× dead band: **bet dead**. Under entropy-effective rank all four
+exceed 1.0 and `vl_latent` at 1.84× is **outside** the dead band entirely: **bet not dead**. The
+same artefact supports both readings. Participation ratio is the statistic the rule was written
+against and the one reported as the verdict; the design's reason for preferring it is that the
+workspace cross-attends over *directions*, and PR measures how many directions carry the variance
+while entropy rank is raised by tail mass a softmax will not find. **That was an argument, not a
+measurement, and it is exactly what W1d was for.** W1d has now run, its rule named no rank
+definition, and it **CONFIRMED** the verdict for every region — so the disagreement between the
+two columns above is now a recorded curiosity rather than an open decision.
+
+**The fifth row is not production and is reported anyway** `[N4 fixed]`. `compress_repo_local` is
+the same architecture as production `compress` at a different checkpoint — **step 2,000 against
+8,000, `max_len` 256 against 96** — so it is **undertrained and non-production**, and it is not
+admissible as evidence for or against the retrain. It is printed because production `compress`
+measures 0.78× and this checkpoint measures 2.00×, four thousandths under the pre-committed
+"≥2× ⇒ no retrain" bar: **a 2.5× spread between two checkpoints of one region, on the statistic
+that licenses retraining every region.** That spread is the single best available sizing of the
+risk W1d exists to close, and hiding it while concluding "all four production regions land inside
+the dead band" would be true and misleading at once.
+
+**The per-item flag** (`< 8` directions) also fires, for `code` (4.4) and `retrieve` (5.1): a
+96-position sequence carrying four usable directions is not a sequence the workspace can attend
+over. It is a participation-ratio quantity too, and inherits the same caveat.
+
+**Three collateral results, recorded because they are load-bearing elsewhere:**
+
+- **Cross-region pooled CKA max 0.336** (`code`↔`compress` 0.205, `code`↔`retrieve` 0.206,
+  `compress`↔`retrieve` 0.336). The regions are genuinely distinct, so W1c's anisotropy concern
+  and §9.1's *"one shared subspace"* fear are not what killed the bet. **This is also the first
+  direct evidence about A2's redundancy regime and it cuts the *reassuring* way**: distinct
+  pooled representations make pure redundancy less likely than the 0.89-cosine stream figure
+  suggested — but CKA of representations is not sufficiency for a task, so DEC-37's conjunction
+  stands as written.
+- **Training worked.** Pooled mean pairwise cosine falls from 0.84–0.98 untrained to 0.02–0.36
+  trained. The verdict is about token-vs-pooled, not about whether the regions learned.
+- **A baseline caveat that invalidates one untrained comparison.** The three text regions share
+  `seed = 0` and identical `TextEncoderConfig`, so their "untrained" models are **literally the
+  same weights**; untrained cross-region CKA is `1.0` **by construction** and must never be
+  cited as a baseline. **Standing rule from this point: vary the untrained seed per region in
+  every future baseline** `[OP: csd-w1-token-rank-result]`. W2c is where that starts.
+
+**The mechanism is the one this document predicted** (§4.2, §9.1): mean pooling gives
+`∂pooled/∂h_t = m_t/Σm`, identical for every unmasked position, so InfoNCE supplies no
+positionally differentiated gradient and shapes only the *mean* of the token sequence. The
+pre-pool tokens end up near-copies of that mean. The prediction was right; the bet it was
+attached to was wrong.
+
+### W1d HAS RUN, AND IT CONFIRMS W1. The verdict stops being provisional.
+
+**Measured 2026-09-02 on akula-prime, read-only, 116.5 s total wall clock**, against the **same
+production checkpoints** (sha256 identical to W1's README) with the forward capture again verified
+**bit-exact, max abs 0.00e+00**, this time including the mid-loop penultimate hook. The evidence is
+committed beside this document and beside W1's:
+
+```
+docs/design/evidence/w1d-readout-probe-2026-09-02/
+  results.json      sha256 c88c2c08566a2e1a8ac038813dbb64ecdffadfa7217598e02273cdbd782b6c13
+  measure_w1d.py    sha256 711fbcc77c18c940fe6bef3c4d7e219580c46b8512a90ad98e5ac01294bccbc4
+  run.log           sha256 f222992ccad5f5c192df2ce1859f33e6249e3badcc68f677ead4f3d93ee6f8f0
+  SHA256SUMS        the three lines above, as written by the run
+```
+
+Summary also recorded at `memory/csd-w1d-readout-probe-result.md`
+`[OP: csd-w1d-readout-probe-result.md]`. **[V]**
+
+**The rule, restated before the numbers, because it was pre-committed in revision 2 and names no
+rank definition.** Arm **(a)** is a matched read-out over the region's own **final-block position
+latents**; arm **(b)** is the identical read-out over `pool()` **broadcast to the same `T`**, so
+the arms differ *only* in whether the sequence carries information; arm **(c)** is the same
+read-out over **penultimate-block** activations. Arm (a) beating arm (b) by **≥ 2 points
+OVERTURNS** W1; **within 2 points CONFIRMS** it. **Verify-by-failing:** arm (a) against arm (a) at
+a different seed must report CONFIRMED.
+
+| region | metric | arm (a) latents | arm (b) pool-broadcast | Δ(a−b) | **verdict** | seed self-check |
+|---|---|---:|---:|---:|---|---|
+| `code` | recall@1 | 96.68 | 96.68 | **+0.00** | **CONFIRMED** | **pass** (+0.20) |
+| `compress` | recall@1 | 62.70 | 64.45 | **−1.76** | **CONFIRMED** | **pass** (−0.98) |
+| `retrieve` | recall@1 | 61.33 | 67.38 | **−6.05** | **CONFIRMED, instrument NOISY** | **FAIL** (−2.54) |
+| `vl_latent` | top1 | 5.47 | 8.40 | **−2.93** | **CONFIRMED** | **pass** (−1.17) |
+
+**No region is OVERTURNED.** In **three of four the sequence-blind arm BEAT the token arm** —
+which is stronger than *"no difference"* and is exactly what the mean-pool-gradient mechanism
+predicts: if InfoNCE shaped only the mean, a read-out handed the mean at every position has lost
+nothing and has an easier optimisation problem. `code`, `compress` and `vl_latent` are **clean
+CONFIRMED**, each passing its own seed self-check.
+
+**`retrieve` is CONFIRMED-BUT-NOISY, and it is flagged rather than counted as clean** `[V]`. Its
+verify-by-failing arm — the same arm (a) at a different seed — moved **2.54 pp**, which
+**exceeds the 2-pp threshold the decision rule is written against**. An instrument that moves
+further under a seed change than the effect it is asked to resolve has not confirmed anything
+cleanly, whatever direction the point estimate points. The −6.05 pp gap is far outside that
+spread and points the same way as the other three, which is why the verdict is *confirmed* rather
+than *void*; the flag is what stops the row being cited later as if it were clean. `results.json`
+records the same judgment in its own words: *"GATE DID NOT SELF-CONFIRM — seed-to-seed spread ≥
+2pp, instrument too noisy for a 2pp threshold."*
+
+> **THE PENULTIMATE-BLOCK FALLBACK IS DEAD. `L_token` attaches at the FINAL block.**
+> Arm (c) was **worse or within noise in every region** — `code` 95.51 (−1.17), `compress` 58.79
+> (**−3.91**), `retrieve` 58.98 (**−2.34**), `vl_latent` 6.84 (+1.37 against an arm (a) of 5.47
+> that arm (b) already beat at 8.40) — and its **rank is far lower everywhere** (table below).
+> There is no evidence for it in any region and direct evidence against it in two. **Revision
+> 3.1's option (2) fallback is struck**: a W4/W7 region that fails its gate goes to §9.14's pivot,
+> not to the penultimate block. This is the question old-W7 carried, answered for the cost of a
+> probe rather than a white-matter run, and answered *no*.
+
+**Both rank definitions, on the probe's own input activations, as the row required**
+`[N3 fixed]`:
+
+| region | PR final | PR penult | PR pooled | H final | H penult | H pooled | n latents |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `code` | 28.09 | **7.37** | 42.63 | 138.87 | 101.47 | 114.98 | 26,757 |
+| `compress` | 35.57 | **13.91** | 45.33 | 147.49 | 102.85 | 126.86 | 9,636 |
+| `retrieve` | 40.65 | **19.56** | 40.71 | 142.86 | 98.39 | 117.72 | 5,114 |
+| `vl_latent` | 25.42 | **20.95** | 23.21 | 242.55 | 234.98 | 136.46 | 32,768 |
+
+- **PR = participation ratio**, `(Σ s_i²)² / Σ s_i⁴` over the singular values of the
+  column-centred matrix — `measure_w1d.py:246-261`, where the formula is **reproduced rather than
+  imported**, precisely so W1d never depends on a session-scratchpad script.
+- **H = entropy-effective rank**, `exp(H)` of the entropy of the linearly normalised
+  singular-value spectrum — `cogsyndelta.eval.benchmark.effective_rank`
+  (`src/cogsyndelta/eval/benchmark.py:138-155`), evaluated over the **whole** surface rather than
+  its 2,048-row default sample.
+
+**Text-region rank numbers reproduce W1's README bit-identically**, which is the check that the
+two runs are measuring the same object. The two definitions still disagree in the same direction
+they did in W1 — and that no longer decides anything, because W1d's rule reads **task
+performance**, not rank. What the rank table *does* decide is the penultimate question: PR falls
+by a factor of 2–4 at the penultimate block for all three text regions.
+
+**Instrument caveats, carried forward rather than buried, because they bound what this result may
+be asked to support:**
+
+- **An untrained cross-attention read-out is ≈ uniform attention**, and uniform attention over a
+  sequence is a **linear function of `pool()`**. So the untrained baselines start high by
+  construction, and the two arms start closer together than a naive reading of "trained probe"
+  suggests. The comparison is still valid — both arms inherit it identically — but the *absolute*
+  numbers are not a measure of how much the sequence carries.
+- **600 steps of read-out training slightly REDUCED recall for `code` and `compress`** against
+  their untrained read-outs. **The instrument is coarse.** It is a decision procedure for whether
+  the sequence carries **more than its mean**, not a precision measurement of how much.
+- **`retrieve`'s seed spread (2.54 pp) exceeds the 2-pp rule.** Carried as a flag on every later
+  citation of that row.
+- **`vl_latent`'s sample is seeded and class-stratified, and it had to be.** tiny-imagenet's
+  parquets are **class-grouped** — 500 contiguous rows per class in train, 50 in valid, ascending
+  by label — so **the first 512 valid rows span 11 of 200 classes and the first 4,096 train rows
+  span 9**. **A file-order prefix is never a valid sample of that dataset**, and that is a
+  standing rule from this point, the same shape as `retrieve`'s `load_pairs` prefix bug that B4
+  exists to catch. The consequence is stated rather than smoothed: `vl_latent`'s rank numbers are
+  **not** bit-identical to W1's README, because W1 took a prefix there and W1d did not.
+
+**Consequence — the token-aware retrains are LICENSED, and the order is fixed:** **W4** (the
+`memory` merge, designed as the first token-aware retrain), then **W7a** (`language_code`,
+`reasoning`), then **W7v** (`visual`, with the 128-px rebuild). The retrain objective must shape
+token-level structure **at the final block**, which is now an evidenced choice rather than a
+default. The gate keeps its shape and states its definition: **token-global participation-ratio
+rank ≥ 2× pooled participation-ratio rank** — the W1 statistic, measured by the W1 harness on the
+same 512 held-out items — **AND no receipt regression > 1 point.**
+
+> ### DEC-35 — the consequences, pre-committed and now owed
+>
+> **AMENDED IN REVISION 3.2, because W1d has run.** Clauses 1 and 3 are resolved by measurement
+> and clause 4's fallback is struck; the amendments are written into the clauses rather than
+> appended, and the superseded wording is named where it mattered.
+>
+> 1. **W1 is closed as a measurement, and its verdict is now SETTLED, not provisional.** It is
+>    not re-run and it is not a `todo`. **W1d CONFIRMS it** — clean for `code`, `compress` and
+>    `vl_latent`, **CONFIRMED-BUT-NOISY** for `retrieve`, **no region OVERTURNED**. Revision 3's
+>    *"PROVISIONAL PENDING W1d"* is discharged, by the step it was pending on, in the direction
+>    the design did not want.
+> 2. **A token-aware retrain is MANDATORY BEFORE W5 and is now LICENSED** — W4 first, then W7a
+>    and W7v. Wiring the interconnect to frozen position latents as they are today would be
+>    training a workspace to cross-attend over `T` near-copies of a mean. The requirement was
+>    never softened by the entropy-rank disagreement, and W1d has now removed the disagreement's
+>    standing to soften it: the confirmation was run, and it confirmed. **The retrain objective
+>    attaches `L_token` at the FINAL block** — W1d measured the penultimate alternative and found
+>    it worse or noise everywhere.
+> 3. **W1d WAS THE DECIDING STEP, it was run BEFORE the retrain was spent, and it decided**
+>    `[A9 fixed] [N3 fixed]`. Its pre-committed rule depended on **no rank definition at all** —
+>    a task-performance difference between two arms differing only in whether the sequence
+>    carries information — which is the property that let it adjudicate a disagreement the rank
+>    statistics could not. It cost **116.5 seconds**, not the estimated hour, and it could have
+>    stopped the most expensive item in phase 2. It did not: three of four regions had the
+>    **sequence-blind arm win**. *"If W1d is skipped, the retrain is not licensed"* is now moot in
+>    the only way a pre-commitment should ever become moot — **the step was run**.
+> 4. **W7 is no longer "re-run W5"** `[A8 fixed]`. Revision 1's rule required W7 before W5 while
+>    defining W7 as a re-run of W5, and W7's remedy clause needed *G3's margin*, which is
+>    measured in W6, after W5. It was unexecutable as written. W7 is now a region-training row
+>    with its own objective and its own gate (below), and the penultimate-block question it used
+>    to carry is answered inside W1d for the cost of a probe instead of a white-matter run —
+>    **answered NO**, so the fallback that question fed is struck (below).
+> 5. **The phase-2 cost estimate is re-derived** in §4.3. "Phase 2 retrains nothing" is dead
+>    `[A30 fixed]`; the affordability argument is now a budget. **Revision 3.2 removes the audio
+>    line from that budget** (DEC-48) and replaces W1d's estimate with its measured 116.5 s.
+> 6. **The two W1d caveats travel with every citation of this result** (above): an untrained
+>    cross-attention read-out collapses to a linear function of `pool()`, so the instrument is
+>    coarse and its untrained baselines are high; and `retrieve`'s seed spread exceeds the
+>    decision threshold, so its confirmation is flagged, never cited as clean.
+
+### The retrain objective, specified `[A8 fixed]`
+
+A gate cannot be pre-committed against an objective that is not written down. Three options; the
+first is adopted, the second is the fallback within the same row, the third is the §9.14 pivot.
+
+**(1) ADOPTED — InfoNCE + bandwidth-limited decorrelation + a per-token term.**
+
+```
+L = InfoNCE( pool(h), pool(h⁺) )                      # unchanged: the receipt stays comparable
+  + γ · L_decorr(h)                                   # off-diagonal penalty on the token-position
+                                                      #   covariance (VICReg/Barlow-Twins shape):
+                                                      #   drive cross-position redundancy down
+  + ζ · L_token(h)                                    # a gradient AT EVERY POSITION, which
+                                                      #   InfoNCE structurally cannot supply
+```
+
+`L_token` attaches at the **FINAL block** — decided by W1d, not left open (above). It is one of
+two shapes, and the choice is recorded in the receipt:
+
+- **(a) masked-token prediction** — a BERT-style MLM head over the region's own vocabulary,
+  discarded after training. Supplies a positionally differentiated gradient *by construction*,
+  which is precisely the property mean-pooled InfoNCE lacks.
+- **(b) late interaction / per-token contrastive (ColBERT-style MaxSim)** — the contrastive
+  score becomes `Σ_q max_d ⟨h_q, h_d⟩` rather than `⟨pool, pool⟩`, so **InfoNCE itself** becomes
+  positionally differentiated and no auxiliary head is needed. Cheaper at train time, more
+  expensive at eval time, and it changes what `pool()` means for the receipt — which is why the
+  gate below requires the pooled receipt metric to survive.
+
+**(2) FALLBACK — STRUCK IN REVISION 3.2, on W1d's evidence.** Revision 3.1 held a fallback of
+*"apply the same objective at the penultimate block rather than the final block"*, to be chosen on
+W1d's probe. **W1d measured it and it lost in every region** — worse in `compress` (−3.91) and
+`retrieve` (−2.34), worse in `code` (−1.17), and in `vl_latent` its +1.37 sits under an arm (b)
+that beat both — with participation-ratio rank **2–4× lower** at that block for every text region.
+There is no evidence for the fallback and direct evidence against it, so it is **deleted rather
+than kept as a comfort**: a region that fails the gate goes to option (3).
+
+**(3) PIVOT, if the row fails outright:** train regions and the interconnect **together from the
+start** — the operator's phase 3 before phase 2. §9.14 already names this as the pivot; W1's
+result makes it materially more likely, and its cost (region receipts stop being comparable,
+region-per-host training is lost) is why it is not the first move.
+
+> **W4/W7 GATE, pre-committed, both clauses required per region:**
+>
+> 1. **`token_global_pr_rank ≥ 2.0 × pooled_pr_rank`**, measured by the **identical W1 harness**
+>    on the **identical 512 held-out items** with the same seed — i.e. the region clears the
+>    threshold W1 pre-committed as "no retrain needed", measured the same way it failed.
+> 2. **The region's own receipt metric does not regress by more than 1 point**, and the
+>    `banking77` damage-detector probe does not regress by more than 2 points.
+>
+> **Both ranks are participation ratio, and the receipt says so** — the definition is named in
+> the gate rather than inherited from whichever column a reader looks at first, which is the
+> ambiguity N3 found and W1d's own table (above) prints out of.
+>
+> A region that clears (1) and fails (2) has traded its faculty for a token surface and is
+> reverted. A region that clears (2) and fails (1) **goes straight to option (3), the pivot** —
+> option (2) was the penultimate-block fallback and W1d killed it.
+> **Verify the gate can fail:** run it against the *pre-retrain* checkpoint and assert it
+> reports FAIL — the harness that says 0.66× today must still say FAIL when handed 0.66×.
+
+---
+
+## 4.1 The rows
+
+**One column is new, and it is the one revision 1 did not have.** `blocked_by` was absent from
+W0–W10 entirely — only P5′ and P6′ carried a dependency — in a document whose central organising
+claim is that the interconnect is late *by dependency* `[A7 fixed]`. The `s_r` invalidation rule
+below is the constraint that column exists to express, and it is stated as a rule rather than
+left as a note.
+
+> **`s_r` INVALIDATION RULE.** Any change to any region's weights invalidates **every** recorded
+> `s_r`, **every** admission decision derived from them, and (per DEC-36) every baseline
+> recomputed against them. Therefore: **the region set is frozen before admission runs.** W4,
+> W7a and W7v all precede W2b. If a region changes afterwards, admission re-runs and the receipt
+> records which items entered and which left. **Revision 3.1 added two regions and two more ways
+> to trip this rule; DEC-48 removes both.** `auditory` and `speech_output` are **deferred to a
+> production phase**, so the region set frozen before admission is the **four-region** set, `R`
+> stays **4**, and §5.4's six ablation pairs are unchanged. That is now a **ruling**, not a
+> scheduling race that had to be won before W2b `[S31-1 fixed]`. **`speech_output` never bore on
+> this rule for the reason revision 3.1 gave anyway** `[S31-19 fixed]`: it is a head, it adds no
+> participant and no ablation pair, and the only way it could have forced itself before W2b was
+> by changing `language_code`'s **weights** — which, under the frozen-trunk reading its own row
+> now adopts, it does not.
+
+> **NAMING NOTE, because two namespaces share a prefix.** The audio rows added in revision 3.1
+> are **A0m, A0f, A1, A2, A3** (revision 3.1 wrote A0–A3; 3.2 splits A0 per S3/S7). The first
+> skeptic pass's findings are **A1–A35**, and the third pass's are **S1–S21**. They are different things: a
+> bare `A1` inside a `[... fixed]` tag or in §10.1/§11 is always a **skeptic finding**; an audio
+> row is always written **row A1** in prose, and appears bare only in this table's `id` column
+> and in `blocked_by`. The collision is unfortunate and is called out rather than renamed,
+> because the row ids are already in the ratification brief and the audit document. **In
+> revision 3.2 the audio rows leave this table entirely** — they are deferred, and they live in
+> *Production phase: audio* below it.
+
+| id | task | gate | blocked_by | status | host |
+|----|------|------|-----------|--------|------|
+| **W0** | **Token surface — read "position latents": per-position hidden vectors, not discrete ids `[DEC-47]`. The method name `tokens()` is the API and is NOT renamed.** Split `TextEncoder.forward` at the pooling line; add `tokens()`/`pool()` to `TextEncoder` and `ViTEncoder`; split `native_dim` into `token_dim`/`pooled_dim` (A32); wire `visual`'s `[B,64,384]` first; **and re-instantiate §2.3's parameter table at the design's actual configuration** (4 controller heads, v1 participant list) so the total stops being `[I]`. Retrains nothing. | **Four properties that can actually fail** `[A10 fixed]`, because the `1e-5` equivalence test cannot: `pool()` will contain the *same* masked-mean expression `forward` contains (`src/cogsyndelta/regions/text_encoder.py:117-124` — **`regions/`, not `model/`**, and the quoted comments match verbatim at those lines [V] `[N10e fixed]`), so it compares an expression to itself through the same weights and a pre-existing pooling bug is present identically on both sides. **(i) Pad-invariance:** perturbing embeddings at masked positions must not change `pool()` — the exact bug class the code comment records having been found once (*"Averaging over padding pulls every short text toward the same vector"*). **(ii) Independent reference:** `pool()` equals a separately written numpy masked mean to 1e-6 — two independently-written implementations agreeing is evidence; one agreeing with itself is not. **(iii) Row-permutation, BOTH clauses** `[N10f fixed]`: permuting the **unmasked** positions of `h` **and `mask` together** leaves `pool(h, mask)` unchanged, **and must change `tokens()`**. Revision 2 wrote *"permuting the rows of `h`"* without permuting `mask`, which changes the masked mean — so the property was false as written and the test would have failed on correct code. The second clause is the half A10 asked for and revision 2 dropped: it is what confirms `tokens()` is not already the constant the central bet feared, and after §4.0 it is the cheaper of the two checks that bear on that question. **(iv) Batch-composition invariance:** the same item padded to 6 and to 66 positions pools identically (the regression measured at cosine 0.958). **Keep `‖pool(tokens(x)) − encode(x)‖∞ < 1e-5` on 512 items as a refactor smoke test, and stop claiming it audits the receipts.** | — | todo | any / CPU |
+| **W0c** | **DEC-40 — one `load_checkpoint()`, and the lint rule that keeps it the only one** `[N10c fixed]`. Revision 2 wrote DEC-40 and then routed it to "OD-7", which is the disposition of the untracked working files — a different item. It had no row, no owner and no gate, which is how the durable half of a security fix becomes a paragraph. This is that row. One `load_checkpoint()` in `src/`, the **only** `torch.load` in the repository, `weights_only=True` **hardcoded** (not a default, not a parameter, no override), manifest SHA-256 verified **before the file is opened**, every script importing it. **Owner: the operator, by hand — explicitly NOT autodev**, because DEC-40 is a control on the loader and OD-1 records that autodev's write scope plus merge authority can weaken a guard and its test in one change. No GPU, no dependencies. | **Three, all constructed to fire** `[N10c fixed]`: (i) a **CI lint rule** (ruff or a grep in `code-quality.yml`) fails the build on any `torch.load` outside that module — **verified by adding one in a scratch branch and watching CI go red**, because without that demonstration this is a policy and not a control; (ii) a **hash-mismatch refusal**, given the same negative-test treatment `tests/test_checkpoint_load_security.py` already gives the pickle refusal — flip one byte of a checkpoint, assert `load_checkpoint` raises **and** that nothing was unpickled; (iii) `grep -rn "torch.load" src/ scripts/` returns exactly one hit. | — | todo — **no dependencies, do early** | any / CPU |
+| **W3r** | **Composite frame geometry + minimal renderer + checked-in fixture** `[N5 fixed]`. Revision 2 had W7v's round-trip gate consuming a rendered composite, the renderer as W3's primary deliverable, and W3 `blocked_by: W7v`. **This row is the W3-independent prerequisite both of them need.** It fixes the frame geometry once — `image_size 128`, `patch_size 8` ⇒ `n_patches 256` — records it as the number W7v re-shapes the encoder to and W3 renders against, ships a **minimal deterministic layout engine**, and checks **one hand-built 128×128 four-panel composite into the test fixtures** together with the layout description it was built from. CPU only, no GPU, no dependencies. | The fixture exists and is tracked; the renderer **reproduces it byte-identically** from its layout description (a deterministic layout engine that cannot reproduce its own output is not a ground-truth source); the geometry triple is recorded and propagated to §1.4, §2.3 and §6.1. **Verify by making it fail:** perturb one panel's position in the layout description by one pixel and assert the byte-comparison fails. **Until this row lands, "composite rendering" is NOT in the CPU-parallel column of §4.2** — a four-panel composite at an unfixed geometry is not work, it is a guess. | — | **done — fixture, renderer and both gate tests land at `src/cogsyndelta/vl/composite.py` / `tests/fixtures/composite_4panel.{png,spec.json}`; geometry triple propagated to §1.4, §2.3, §6.1 (this commit)** | 1080 Ti / CPU |
+| **W1** | **CONSEQUENCE-3, CHEAP HALF.** Per-region participation-ratio effective rank of `pool()` vs `tokens()` (position latents, `[DEC-47]`); mean pairwise cosine; the `R×R` linear-CKA matrix. | **DONE 2026-09-02. Verdict: BET DEAD for all four production regions — and since 2026-09-02 that verdict is CONFIRMED BY W1d and no longer provisional** (participation-ratio ratios 0.66×, 0.78×, 1.00×, 1.30× against a ≤1.5× dead band); per-item flag fires for `code` and `retrieve`. **Entropy-effective rank on the same surfaces reverses the sign for all four (1.21×, 1.16×, 1.21×, 1.84×)** — a disagreement W1d adjudicated by measuring task performance instead of rank. Both columns and the non-production fifth row are in §4.0; evidence at `docs/design/evidence/w1-token-rank-2026-09-02/`. | — | **done, verdict CONFIRMED** | 3090 `.98` |
+| **W1d** | **CONFIRMATION of W1, run before the retrain was spent** `[A9 fixed]`. **Matched read-out probe:** the same small cross-attention read-out trained three times with identical params/steps/items — arm (a) over the final block's position latents, arm (b) over `pool()` **broadcast to the same `T`**, arm (c) over **penultimate-block** activations — plus within-item vs between-item variance and **both rank definitions on the probe's own activations**. | **DONE 2026-09-02, 116.5 s, read-only on the production checkpoints. W1 is CONFIRMED and no region is OVERTURNED.** `code` +0.00, `compress` −1.76, `vl_latent` −2.93 — all **CONFIRMED**, each passing its own seed self-check; `retrieve` −6.05 **CONFIRMED but the instrument is NOISY**, its seed self-check spreading **2.54 pp > the 2-pp rule**, so it is flagged and never cited as clean. **The sequence-blind arm BEAT the token arm in three of four regions.** **The penultimate fallback is DEAD** (arm (c) worse or noise everywhere; participation-ratio rank 2–4× lower for every text region) — **`L_token` attaches at the FINAL block**. **The token-aware retrains are LICENSED.** Caveats carried: an untrained cross-attention read-out ≈ uniform attention ≈ a linear function of `pool()`, and 600 steps of read-out training slightly **reduced** recall for `code`/`compress`. Evidence at `docs/design/evidence/w1d-readout-probe-2026-09-02/` with sha256s in §4.0. | W0 | **done — retrains licensed** | 3090 `.98` |
+| **W1b** | **Regenerate `reason`'s receipt** before it is frozen and before W7a retrains it. Its receipt was deleted; the r@1 0.0801 figure is prose only. | Receipt exists under `/akula-data/csd/receipts/`, reproduces r@1 ≥ 0.0801 **against an untrained baseline instantiated at a region-specific seed, not seed 0** (§4.0). It **must** carry `corpus.cap_sampling` **and** the drawn `pair_fingerprint`s (W2a), so this loss can never recur. **A frozen region with no receipt cannot be a baseline for anything and cannot be shown not to have regressed.** | — | todo | 3090 `.98` |
+| **W2a** | **Ledger + recovery. Minutes, no GPU, no dependencies — do it first** `[A34 fixed]`. (i) **Verify** the `compose` allocation for `codeparrot/apps` + `deepmind/code_contests` landed — it has (§5.2, and §11 R1). (ii) **Recover the aqua_rat draw, as the UNION of both possible draws** (DEC-42) `[A5 fixed] [N1 fixed]`: compute **draw R** = `load_pairs(["reason/aqua_rat-raw/train.parquet"], ("question","rationale"), 4982, seed=0)` under today's reservoir code, **and draw P** = the **first 4,982 pairs `_iter_pairs` yields in shard order** — what the same call returned before `c42203c` rewrote the cap from prefix-truncation to reservoir sampling. Write `fingerprints(R) ∪ fingerprints(P)` to the ledger as `reason`-burned, record the source file's corpus fingerprint, and **mark the remainder clean**. | **Four checks, all of which must pass** `[N1 fixed]`: (i) the recomputed `fingerprint_corpus` of the parquet on disk today matches; (ii) two consecutive computations of **each** draw return identical fingerprints; (iii) the run genuinely used `seed = 0`; **(iv) THE FOURTH, AND IT IS THE ONE THAT CAN FAIL:** establish which code revision the `reason` run used — checkpoint/receipt mtime against `c42203c`'s commit time (2026-09-02 19:32:52 -0400), or a trainer revision recorded in the checkpoint — **and if it cannot be established, RECORD THAT IT COULD NOT.** Either way the ledger takes the union. **The gate that makes this failable:** W2a asserts `count(ledger ∩ draw R) = 4,982` **and** `count(ledger ∩ draw P) = 4,982` and **refuses to emit a ledger that omits either draw** — a fingerprint set carrying only one draw is a FAIL, not a partial pass. **If any of the four fails, the write-off stands and §5.1 reverts** — this is a test, not an assumption. Then re-derive §5.1 and §9.2. | — | todo — **do first** | 1080 Ti / CPU |
+| **W2c** | **Measure the two untrained baselines the thresholds rest on** `[A23 fixed] [A13 fixed]`. (i) Instantiate `TextEncoder(vocab 50257, dim 256, depth 4, heads 4)` **at a region-specific seed**, run the `code` in-mixture eval, and settle whether the lexical floor is **0.2285** (the surviving receipt) or **≈0.40** (prose in four files, no artefact). (ii) Re-instantiate `retrieve`'s random encoder and establish a real untrained baseline for the 0.7480 figure, whose recorded baseline is **exactly 0.0000**. | Both numbers exist in receipts. **τ_lo is re-derived from the measured value, per bin, in chance-normalised units** (DEC-36). Whichever documents disagree are corrected. **This blocks W2b:** if the true code-adjacent lexical floor is 0.40, NSRS condition (1) at `τ_lo = 0.35` rejects essentially every row built from `apps`/`code_contests` — the reserve's main source — and the reserve cannot be built from them at all. | W0 | todo | 3090 `.98` |
+| **W4** | **Merge `compress` + `retrieve` → `memory`, DESIGNED AS THE FIRST TOKEN-AWARE RETRAIN** so one run serves two rows `[A13 fixed]`. Shared trunk, two heads, joint loss **plus §4.0's `L_decorr` + `L_token` terms**. It is the natural first instance: the merge is a retrain that has to happen anyway, its two parents give it two independent regression checks, and a failure here is diagnosable as *merge* or *objective* by ablating one term. **It is also where DEC-24's shared embedding table first becomes achievable** (§6.2) `[A31 fixed]`. | **All five, pre-registered:** (1) `memory` matches or beats **both** parents on **both** parents' own gates (0.7070 and 0.7070-comparable, and 0.7480 **re-baselined by W2c**); (2) **`recall@10 > 0.20` and `MRR > 0.10`** on the FiQA BEIR eval against the full 57,638-passage pool — the numbers `retrieve.py:384` already states, which revision 1 adopted the eval for and then dropped; (3) **`memory` > BM25** on the same pool and qrels, from the same code path — not "BM25 reported alongside", *beaten*, because *"reporting a win for a loss"* is exactly what that file was written to prevent; (4) **`memory` > its own random-init baseline** on that pool; (5) **§4.0's retrain gate**, both clauses. Saves 15,890,176 params. | W1d, W2c, W1b | todo | 3090 `.98` |
+| **W7a** | **Token-aware retrain of `language_code` and `reasoning`.** Same objective as W4, same harness, one region at a time. | **§4.0's retrain gate, per region, both clauses.** Plus: `language_code`'s r@1 0.9766 must not regress > 1 point, and `reasoning`'s regenerated 0.0801 (W1b) must not regress > 1 point. A region that clears the rank clause and fails the receipt clause is **reverted**, and the receipt says which. | W1d, W1b, W4 | todo | 3090 `.98` |
+| **W7v** | **`visual`: token-aware retrain AND resolution rebuild** `[A4 fixed]`. `visual` **physically cannot ingest a composite image today**: `JEPAConfig(image_size=64, patch_size=8)` and `ViTEncoder` registers a **fixed** sincos `pos_embed` of size `cfg.n_patches = 64` (`model/vl_jepa.py:52-53, 182, 199` [V]), so `h = self.patch_embed(x) + self.pos_embed` is a **shape error** on a larger image, not a slower forward. Meanwhile §5.4's `visual × language_code` and `visual × memory` are **2 of 4 cross-faculty pairs = 1,024 of 2,048 eval items**, and §5.4 itself concedes they are *"unconstructible against 64×64 single-object tiles"*. Revision 1 scheduled no row to build the prerequisite. **This row does it, folded into the retrain that W1's result made mandatory anyway, so the marginal cost is the resolution change and not a separate run.** Re-shape to composite resolution (`image_size 128`, `patch_size 8` ⇒ `n_patches 256`, `pos_embed` regenerated or 2-D interpolated), continue-train, and — if OD-4 is decided that way — swap the corpus in the same run. | New `n_patches`, `kv_bytes_per_token` and `token_budget.max` recorded and propagated to §1.4, §2.3 and §6.1. Probe top1 and cifar100 transfer **do not regress by more than 1 point** against 0.0606 / 0.2625 **measured on the target encoder** (DEC-34), with the untrained baseline re-instantiated at a region-specific seed. **§4.0's retrain gate**, both clauses. **A composite frame renders, encodes and round-trips** — the negative test is that the 64×64 checkpoint **raises** on the same input. **The frame is W3r's checked-in 128×128 fixture, NOT a W3 deliverable** `[N5 fixed]`: revision 2's gate consumed the composite renderer, which is W3's primary deliverable, while W3 was `blocked_by: W7v` — a dependency inversion in which neither row could start. W3r breaks it. | W1d, W3r | todo | 3090 `.98` |
+| **W2b** | **Reserve construction + NSRS admission + the guard** (replaces P2.5d). §5. **Only the BM25 condition (3), the licence audit, dedupe and rendering are CPU-parallel; `s_r` is inference through every frozen region including `memory`, so this row is GPU-blocked** `[A7 fixed]`. | `data/reserve/` + manifest exists; **thresholds frozen from a disjoint calibration split** and the would-have-been-rejected fraction of the graded set reported (DEC-36); every admitted row records `s_r` for all `r` and satisfies the NSRS filter **including the written condition-(2) exemption for the general bin** `[A21 fixed]`; **`RESERVED.jsonl` holds the union of SOURCE-ROW `pair_fingerprint`s, not composite hashes** (DEC-38); the ledger records `compose` for apps + code_contests; apps↔code_contests dedupe at cos ≥ 0.90 run and its 1,784 removals recorded; **keyed split assignment live** (DEC-39). **AND two refusals, both constructed:** (a) a training run seeded with one **directly reserved** row REFUSES TO START; (b) **a training run seeded with a row that a reserved COMPOSITE was built from REFUSES TO START** — the derived case, which is the path that actually leaks `[A6 fixed]`. | W2a, W2c, W4, W7a, W7v | todo — **BLOCKS P2.3** | 1080 Ti / CPU **+ 3090 for `s_r`** |
+| **W3** | **Construct cross-faculty items.** §5.5: executable joins (**sandboxed**, §5.5a), rendered composites, shuffled mismatches. | ≥ 512 admitted items per cross-bin pair for eval **and** ≥ 5,120 per pair for train; every item passes W2b's filter **including the trivial-baseline condition**; **train/eval split at source-row granularity, split key recorded** (DEC-38); provenance chain recorded with **no generating model**, or the model named with revision and licence; **B1/B2 run on the reserve's own generators** and either diversified or waived with a dated waiver naming what the reserve therefore cannot measure `[A16 fixed]`; **the reserve's aqua_rat source-row share is printed against B1's 0.50 hard line and 0.40 operating cap** (§5.1) `[N8 fixed]`. | W2b, W7v, W3r | todo | 1080 Ti / CPU |
+| **W1c** | **Anisotropy pre-flight.** Effective rank of the concatenated adapted union on 4,096 real mixed items, **on the retrained regions**. | **The statistic is named, because revision 2's threshold named none** `[N3 fixed]`: the number is **entropy-effective rank** (`cogsyndelta.eval.benchmark.effective_rank`), which is the definition behind the "8.7 of 128" prior this row compares against, and **`< 32 of 512` is in those units**. Participation ratio is recorded beside it, and the two are never compared across definitions — W1's pooled **PR**-ranks of 18–45 and its pooled **entropy** ranks of 115–130 (§4.0) are different quantities and revision 2 printed them as comparable. Comparable priors, restated in the right units: 8.7 of 128 on the pooled surface [V\*]; cross-region CKA ≤ 0.336 (§4.0). **If < 32 of 512 in entropy-effective rank, whitening goes into the adapters before W5.** | W4, W7a, W7v | todo | 5080 `.251` |
+| **W5** | **White matter v1, PHASE A (dense).** Workspace + adapters + frontal + `L_unify` + `rank_head` (DEC-41); all regions on; regions frozen **at their retrained checkpoints**; train on W2b/W3. | **G1** composed > B1, McNemar `p<0.01` Holm-corrected. **G2** no faculty's own-bin score drops > 1 point. **G0** composed > **B3** and > trained-**B0u**. **B0** (trained read-out) and **B0d** (dispatch control) recorded in the same receipt. **Phase-A collapse floor:** `min_r mean(a_r) ≥ η/R = 3%` with the per-region `a_r` histogram printed `[A15 fixed]`. **Overfit gate:** train/held-out gap < 5 points. **Every decision on the DEV half only** (§2.7.8). | W3, W1c | todo | 3090 `.98` |
+| **W5b** | **Write-back (conditioning prefixes).** DEC-17. | Conditioned regions' own-bin scores drop ≤ 1 point **and** the composed metric improves, **on the dev half**. **Pre-committed fallback:** on failure, disable write-back, record that phase-2 integration is workspace-internal only, **and apply §2.4's no-write-back consequences — either build the `Ĉ` variant or emit no `edges`, no `lockstep_groups`, and `topology: not demonstrated`** `[A20 fixed]`. Either result is a pass; not running it is the fail. | W5 | todo | 3090 `.98` |
+| **W6** | **THE INTEGRATION TEST. This row opens the sealed half, once.** §2.7. | **G3** composed > **B2** (oracle late fusion) **and** > **B2t** (trained matched-capacity late fusion), McNemar `p<0.01` Holm-corrected. **G3′** the **DEC-37 synergy conjunction** — `Δ_A > 0` and `Δ_B > 0` and `I > 0` per pair, block-bootstrap CI by source row excluding 0 — on **≥4 of 6 pairs**, under **zero-ablation AND both content-swap arms**; any pair in the `REDUNDANT` quadrant is reported as a FAIL for that pair, never averaged away. **G0d** `I₀` (B0, trained read-out) and B0d's `I` both contain 0, **or the experiment is void and is reported void**. **I2′** ordered-pair severance CI excludes 0. **THIS GATE IS THE PROGRAMME'S PASS/FAIL.** Seal-break timestamp and code revision recorded. **The pair count is six and stays six** — DEC-48 defers audio, so no fifth participant reaches this row and the criterion is not restated `[S31-1 fixed]`. **DEC-47's inter-region assertion (W9 (iii)) is enabled for this run** and its result is printed in the receipt: an integration verdict obtained while some path re-tokenised would be a verdict about a different architecture. | W5b | todo | 3090 `.98` |
+| **W8** | **Thalamic controller.** Phase B (distil), phase C (sparse), **phase D (task-loss)**. | **B:** `ρ(ŝ,a) > 0.6` held-out, **and no region was below the phase-A collapse floor**, or its `a_r` is excluded from the distillation targets and the receipt says so. **C:** sparse within 2% relative of dense at ≤50% of region-token FLOPs — *FLOPs only; buying accuracy here is a bug report against phase A*. **D:** beats C on the composed metric at equal-or-lower FLOPs, **or is reverted and the receipt says the scheduler is imitative**. `ctx_r ≥ ctx_min` floor verified by **constructing** an adversarial input that tries to starve a region. All accept/revert on the **dev half**. Train on the 3090; **measure on the 5080**. | W6 | todo | 3090 → 5080 `.251` |
+| **W8s** | **Scheduler falsifiers S1–S5** and the **three-verdict receipt** (DEC-30 + T1). | All five reported whatever they say. The receipt carries `integration:`, `scheduling:` **and `trigger_sensitivity:`** as separate verdicts. **S5's rare-token threshold is pre-committed before the run.** | W8 | todo | 5080 `.251` |
+| **W9** | **`Schedule` emission + DAG runtime + validator.** | **Two separate gates, because revision 1's two clauses contradicted each other** `[A29 fixed]` — a run that reproduces the dense path to 1e-4 has not skipped 30% of its iterations. **(i) Runtime correctness:** the DAG executor reproduces the **eager execution of the SAME `Schedule`** to 1e-4 — an implementation-equivalence test that can fail on a real bug. **(ii) Sparsity:** mean iterations down ≥30% **vs dense** at ≤1% score loss — a different comparison against a different reference. Plus: the two topology derivations agree on ≥95% of items **(void, and declared void, under W5b's fallback)**; 10,000-input adversarial fuzz emits **zero** budget-violating graphs; the validator **rejects a `Schedule` carrying a client-supplied `trace_id`**. **(iii) THE LATENT-SPACE INVARIANT, DEC-47:** a runtime assertion that **no inter-region path carries discrete token ids** — every tensor crossing a tract (a region's emitted `h_r`, its adapted form, the workspace latents, and DEC-17's write-back conditioning prefix) is a **float tensor at a declared `*_dim`**, and any integer-typed or vocabulary-indexed payload on such a path **raises**. **Verify it can fail, and this is the clause that makes the invariant a control instead of a convention:** construct the violation — hand the runtime a conditioning prefix built from token **ids** instead of latents, and a region wrapper that returns `argmax` indices from `tokens()` — and assert **both are refused**, in the `tests/test_guards_can_fail.py` pattern. A path nobody has watched refuse a token id is a design intention, not an invariant. | W8s | todo | 5080 `.251` |
+| **W10** | **Composed footprint + PTQ** (was P10.3). | Measured params/bytes at fp32 and after PTQ **on the deployment card**. Per region `D_sched ≤ 0.02` nats **and** composed metric drop ≤ 0.01. Predicted: **85,807,015 params, 343 MB fp32, 35.0 MB at 3.27 bits/param** — restated for the v1 participant list `[A24 fixed]` and to be replaced by W0's re-instantiation. | W9 | todo | 5080 `.251` |
+| **P5′** | **PHASE 3 — whole-mind dynamic training.** Unfreeze. Joint objective over region corpora **and** the reserve, interleaved. Region growth, depth/width growth. | **G2** still holds per bin after unfreezing **AND** G3/G3′ still hold. Each new region beats its own untrained baseline **and** improves the composed metric **and** shows non-zero `Ĉ` to it. Growth increments are reverted if the composed metric does not improve monotonically. **Cross-host activation traffic ≤ 15% of step time** (DEC-29). **DEC-24 binds from here** `[A31 fixed]`. | W10 | blocked | 3090 + 5080, pipeline |
+| **P5′q** | **QUANTISE-BEFORE-WHOLE-MIND, matched, at toy scale** `[OP: csd-quantize-before-whole-mind-training]`. Run the alternative ordering — per-region pretrain → **quantise (and/or fine-tune) the regions** → train the interconnect and run whole-mind dynamic training with regions held quantised — **against the canonical path** (pretrain → interconnect → whole-mind → fine-tune → quantise), matched on data, steps and seeds. The canonical path stays the default at toy size; this row is the experiment, not a substitution. **Design consequence if it wins:** the interconnect must **train against quantised region activations**, so its train-time inputs match deployment — which ties it to **DEC-27** (per-region PTQ sensitivity must be measured *before* regions are frozen, and `D_sched` becomes a training-time quantity as well as a release gate) and to **DEC-29** (it is the ordering that decides whether phase 3 fits at all on 24 GiB and 16 GiB). | **Report all four, per arm:** (1) **peak VRAM during phase 3** — the number the whole experiment exists to move; (2) composed metric vs the canonical run; (3) per-region drop from quantising *before* vs *after*; (4) **capability per parameter and capability per VRAM-GB**, not loss. Each arm gated on its own untrained baseline. **A win is only a win if it survives DEC-27's `D_sched ≤ 0.02` nats per region** — quantising earlier changes region output distributions earlier, so it shifts the schedule earlier too. | W10 | deferred to phase 3 | 3090 + 5080 |
+| **P5′o** | **Memory-gate overlays** — the dynamic-paging seam's first client (DEC-33, §6.6) `[OP: csd-memory-gate-overlays]`. | **An overlay applied and then disconnected reproduces the base model's receipt metrics EXACTLY, and the disconnect is logged.** Plus: an overlay **refuses to attach** to a base checkpoint fingerprint it was not trained against (verified by constructing the mismatch); tiered-residency policy reports hit rate, page-in latency and VRAM held. | W10 | deferred | 5080 `.251` |
+| **P5′s** | **Toy swarm vs comparable models** `[OP: csd-toy-swarm-experiment]`. An N-agent CSD swarm against (a) comparably sized conventional models at the same swarm size and (b) different swarm sizes, across all three GPUs (3090 Ti sm_86 24 GiB, 5080 sm_120 16 GiB, 1080 Ti sm_61 11 GiB). **It consumes two things this document produces: W9's `Schedule` emission and the per-region context/read budgets** — the harness reads those budgets rather than guessing them. | **Hard precondition: phase 3 is green.** Pre-quantisation is acceptable; anything before phase 3 measures a swarm of isolated regions behind a switchboard, which is the wrong thing. **Per-instance KV and activation budgets are computed UP FRONT and the swarm size derived from them, so a run never OOMs mid-experiment.** Capability per parameter and per VRAM-GB, with an untrained-baseline swarm and receipts per run, through the gpu-timeshare scheduler. | P5′ | deferred | all three GPUs |
+| **P6′** | **Foundation / language trunk.** Unchanged in ordering — step 4, never step 1. Re-scoped: the causal LM is the **language faculty's generative head**, trained as a region under phase-1 discipline, not "foundation training of the whole model". | New prerequisite: **the general bin has a licence verdict** (FineWeb / C4 / Pile have none today [V\*]). **Deferred candidate corpus, recorded so it is not rediscovered:** official language documentation (Python/Rust docs already staged under `official-docs` in the tiered corpus, plus the RAG collections and the vault) — likely as a docs↔API retrieval bin or generative-head material rather than more contrastive pairs; it would require enrichment, structure extraction, version tagging, dedup against the code corpora and a per-doc-set licence verdict under the strictest-input rule. Revisit **only** when this row starts `[OP: csd-official-docs-corpus-idea]`. | W6 | blocked | 3090 + 5080 |
+
+### Production phase: audio — DEFERRED rows, kept specified `[DEC-48]`
+
+**Operator ruling, 2026-09-02, later the same day than the intent that created these rows and
+superseding it as a schedule** `[OP: csd-multimodal-io-intent.md]`:
+
+> *"we can wait to add audio as a future feature once it proves out without audio. that will be
+> more of a production phase implementation"*
+
+with *"gotta walk before we run"*. So the four audio rows leave the phase-1/phase-2 table above
+and live here, **status `deferred`**, every one of them `blocked_by` **the composed mind passing
+W6 without audio, plus an explicit operator go**. Two things this subsection is careful about,
+because a deferred row rots in two different ways:
+
+- **The seam stays declared.** `auditory`'s interface, `speech_output`'s two-stream shape, the
+  objective families, DEC-45's tiers and §2.5's `output` block are all **kept in the design**
+  (DEC-43, DEC-44 as amended). Deferring the work is cheap; deferring the *contract* is what
+  forces a redesign, and it is not done here.
+- **A deferred row still needs a gate that can fail when it is picked up.** Every gate below is
+  written to be constructible on the day someone runs the row, and the revision-3.1 skeptic
+  findings against these gates are **fixed here rather than parked**, because a gate nobody can
+  fire is exactly as broken whether it fires next month or next year `[S31-3 fixed]
+  [S31-4 fixed] [S31-5 fixed] [S31-7 fixed] [S31-8 fixed] [S31-9 fixed] [S31-18 fixed]
+  [S31-21 fixed]`.
+
+**Groundwork already banked, and it is not re-done when the phase opens:** the audio licence
+audit (`docs/design/AUDIO-CORPUS-AUDIT.md`), the A0 source catalogue, DEC-45's tiers and DEC-46's
+provenance-group correction. **A bounded first audio fetch may already exist on
+`gpu5080:/bulk`.** It is **re-acquirable scratch** — nothing in this document depends on it, no
+receipt cites it, and it may be deleted without loss.
+
+| id | task | gate | blocked_by | status | host |
+|----|------|------|-----------|--------|------|
+| **A0m** | **Audio corpus MANIFESTS** (DEC-43, DEC-46; `docs/design/AUDIO-CORPUS-AUDIT.md`). The manifest half of revision 3.1's A0, split out because it genuinely has no dependencies while the fetch half does `[S31-7 fixed]`. Per-source row: upstream URL, mirror id, **`mirror_tag` and `licence_upstream` as separate fields**, **`licence_upstream_source`** (the URL actually fetched **plus its fetch date**), **`grant_scope` ∈ {whole_corpus, metadata_only, code_only, unstated}**, the upstream text quoted verbatim, train verdict, redistribute verdict, NC/SA/ND/attribution flags, size **in hours**, provenance group, provenance red flags. **Scope covers BOTH mixes** — the `auditory` mix and the `speech_output` mix (bucket C) `[S31-8 fixed]`. | **Gate (i), rewritten because revision 3.1's version fired on the wrong rows** `[S31-3 fixed]`. It read *"a row where `mirror_tag` and `licence_upstream` hold the same string because only the mirror was read is a FAIL"* — string equality, which **FAILs every correctly audited row where the two genuinely agree** (LibriSpeech, MLS, AMI, MUSAN, VCTK, Hi-Fi TTS, LibriTTS-R, AISHELL-3, Expresso — the audit *celebrates* that agreement for LJSpeech) and **passes AudioSet**, the one row it was written for, because there the two strings also agree and the defect is the grant's *scope*. **The gate keys on the PROVENANCE OF THE READ, not on the value read:** a row **FAILS** when `licence_upstream_source` is absent, when its **host equals the mirror host**, or when its **fetch date is missing** — and separately when `grant_scope` is unset. `metadata_only` is what catches AudioSet; `code_only` is what catches CSS10 and Libri-Light. **Verify it can fail:** construct a row whose `licence_upstream_source` points at the mirror and assert **FAIL**; construct a correctly audited agreeing row and assert **PASS**. | — (**no dependencies at all**; runnable the day the phase opens) | **deferred** | 1080 Ti / CPU |
+| **A0f** | **Audio corpus FETCH** under the audit's recommended v1 mix, with LibriVox capped as ONE provenance group. Wire the fetcher to A0m's manifest, fetch **the clean tier of both mixes**, and compute the balance numbers **on provenance groups, not dataset names**, **in hours** `[S31-14 fixed]`. | **Four, and (ii)–(iv) are constructed to fire.** **(ii)** the fetcher **refuses every source the audit marks BLOCKING**, verified by *constructing* the case: put `agkphysics/AudioSet` in a scratch manifest and assert the fetcher raises and writes **nothing**. **(iii)** **B1 and B2 are computed with LibriVox as ONE group, in HOURS, for BOTH mixes, and printed beside the same statistics computed per dataset name** — the per-name numbers are expected to look fine, and that is the point. **This clause is a PASS/FAIL, not a print** `[S31-2 fixed] [S31-5 fixed] [S31-15 fixed]`: the grouped max share is reported **against both thresholds** — **> 0.50 FAILS the row** (the hard line) and **> 0.40 is a recorded WARNING** (the operating cap), the shape §5.1 already uses for aqua_rat — and a **grouped `N_eff` below 3 FAILS**. The chosen per-group cap `C` is printed with them, because B1/B2 are functions of `C` and a receipt that omits it has reported an opinion. **(iv)** the LibriVox group's **per-speaker hour histogram** is produced and B5's max share printed. **(v)** every fetched source's licence tier is recorded so DEC-45's table can be **recomputed** rather than trusted. **Verify it can fail:** the constructed BLOCKING row, and a scratch mix built per dataset name that the grouped statistic must FAIL while the per-name statistic passes. | **A0m, OD-13, OD-15** (the fetch half is what those two rulings bind; OD-10/11/12/14 concern sources outside the recommended mix and do **not** block it `[S31-7 fixed]`) | **deferred** | 1080 Ti / CPU |
+| **A1** | **`auditory` region pretrain** (DEC-43). Spectrogram-frame patch tokens, masked-latent prediction, the same JEPA harness `visual` uses, over A0f's capped mix. Emits at the shared `tokens()` interface — **position latents, `[DEC-47]`** — so W0 is a prerequisite and the adapter is the one `visual` already has. | **Five, all pre-registered:** (1) **beats its own untrained baseline, instantiated at a region-specific seed and not seed 0** (§4.0); (2) **the contamination channels are present in the receipt** — `corpus.cap_sampling`, the drawn `pair_fingerprint`s and the source-row fingerprints; (3) **anisotropy recorded** — **entropy-effective** rank of `tokens()` on 4,096 real mixed items in W1c's units, printed beside participation ratio, the two never compared across definitions `[N3 fixed]`; (4) the eval split is declared **in the code** as `in-mixture` or `held-out-domain` **before the first receipt**; (5) the licence tier of the mix actually consumed is printed. **Verify the gate can fail:** run the eval against the untrained checkpoint and assert **FAIL**. | A0f, W0, **operator go** | **deferred** | 3090 `.98` |
+| **A2** | **`speech_output` head** (DEC-44). A second head on the generative trunk: BPE text tokens plus a discrete speech-token stream a synthesiser consumes. Trained on **bucket C** of the audit — which is why A0m/A0f's scope covers bucket C `[S31-8 fixed]`. **THE TRUNK IS FROZEN AND THE HEAD IS AN ADAPTER** `[S31-4 fixed]`: revision 3.1 left the trunk's status unstated while asking for a disconnect test that reproduces the text head's receipts *exactly*, and the two readings could not both hold — a trainable trunk makes "exactly" fail on the fourth decimal by construction, a frozen trunk makes it trivially true. The frozen reading is **adopted**, because it is the one that preserves reversibility for OD-15 and matches DEC-33's overlay discipline, which is only correct for a genuinely detachable thing. | **Five.** (i) **intelligibility** — **WER of a fixed, named, frozen reference ASR** over synthesised output on a **held-out** set beats the untrained head's WER by a margin pre-committed before the run; the ASR's model id, revision and licence are recorded and **the same ASR is used for every later comparison**. (ii) **the disconnect test, now well-posed:** with the speech head detached, the text head reproduces its own receipt metrics **bit-exactly on the logits** — which is achievable *because* the trunk is frozen — and the disconnect is logged. (iii) **the licence tier is printed** (OD-15). (iv) the untrained-head baseline is at a region-specific seed. (v) **balance:** the **grouped B1 of the consumed TTS mix is printed and a share > 0.50 FAILs the row** `[S31-5 fixed]` — four of six clean-tier `speech_output` sources (LJSpeech, CSS10, M-AILABS, Hi-Fi TTS) are **one LibriVox group**, leaving VCTK, AISHELL-3 and (NC) Expresso as the only levers, which makes OD-15 a **balance** question and not only a licence one. **Verify it can fail, in two directions** `[S31-18 fixed]`: feed the reference ASR the **untrained** head's output and assert FAIL — *and*, because that construction only proves the comparison is wired, feed the frozen ASR **silence or white noise** and assert **WER ≈ 1.0**. A stub that returns the reference transcript regardless of input passes the first check and then reports a spectacular improvement; this programme has already paid once for a saturated instrument. **A2 does NOT precede W2b** — with the trunk frozen it changes no region's weights, so the `s_r` invalidation rule does not reach it. | A0f, W0, **operator go** | **deferred** | 3090 `.98` |
+| **A3** | **The two audio cross-faculty item shapes for the reserve** (§5.4, §5.5). *`auditory × language_code`*: an A0 transcript-carrying source row yields (spectrogram frames, the transcript span, a **distractor span drawn from a different source row of the same provenance group**), and the item asks which text span the audio realises — built by **pairing existing aligned data**, §5.5(a)'s cleanest tier. *`auditory × visual`*: W3r's checked-in 128×128 composite rendered from a cleared text row, paired with audio of that same row read by a clean-tier speaker, plus a shuffled-mismatch negative. Both obey DEC-38's fingerprint granularity and DEC-39's keyed split. **When this row is picked up it re-opens §5.4's pair arithmetic, and the re-opening is pre-specified rather than left to the day:** adding `auditory` makes the participant set five and the all-pairs set **ten**, of which `auditory × memory` and `auditory × reasoning` have no shape here. **Pre-committed resolution, so nobody re-slices a criterion after a seal:** `auditory` enters as a **non-pair participant** unless A3 also declares shapes for those two, the pair set is held at **6 + 2 = 8**, and G3′'s criterion is restated **in the same breath** as **≥ 5 of 8** with its null rate `P(Bin(8,0.5) ≥ 5) = 0.363` printed beside it `[S31-1 fixed]`. | **Gate.** Items are **constructed** on CPU as soon as A0f lands and **admitted** — NSRS `s_r` for every region *including* `auditory` — only after A1. ≥ 512 admitted items per new pair for eval and ≥ 5,120 per pair for train; **the sealed-item allocation across pairs is recomputed and printed, and the recomputed table must print the cross-faculty sealed TOTAL alongside the per-pair figures so the two are visibly reconciled** `[S31-21 fixed]` — revision 3's per-pair column sums to 1,280 against a 2,560-item sealed half because shapes overlap pairs, and A3 inherits that ambiguity unless it prints both. Every item's provenance chain names its audio source and licence tier. **Verify it can fail, and the refusal now has a key to fire on** `[S31-9 fixed]`: revision 3.1 asked W2b to *"refuse the pair rather than score it against a random encoder"* and named **no field the filter could key on** — a randomly initialised encoder emits outputs and `s_r` is perfectly well defined, just low, so the construction produced a **number** and the gate could not fire. **W2b refuses any region whose `status` is not `built` AND whose receipt path is absent or whose checkpoint hash does not match the resident weights** — which gives §1.4's `planned` a second, mechanical job and gives the `s_r` invalidation rule the enforcement point it otherwise lacks. Construct it: attempt admission with `auditory` at `status: planned` and assert **refusal**, then with a receipt whose hash is flipped and assert **refusal** again. | A0f, A1, W2b, W3r, **operator go** | **deferred** | 1080 Ti / CPU **+ 3090 for `s_r`** |
+
+**What this subsection deliberately does not do.** It does not schedule audio, does not budget
+GPU-hours for it in §4.3, and does not carry `auditory` into any participant count, pair count,
+collapse floor or licence table for v1. **v1 has four participants and six ablation pairs.**
+
+
+## 4.2 Consequence-3: what was predicted, what was measured, and what it cost
+
+*"A region trained in isolation optimises to solve its task ALONE… cheap to test early,
+expensive to discover late"* [V\*]. All seven existing regions were trained in isolation with
+contrastive / BCE / JEPA objectives [V\*]. **The mechanism of the harm, stated precisely in
+revision 1:**
+
+> Mean pooling gives `∂pooled/∂h_t = m_t / Σm`, **identical for every unmasked position**. So
+> InfoNCE supplies **no positionally differentiated gradient**: the loss shapes only the *mean*
+> of the token sequence. Whatever structure the pre-pool sequence has is a byproduct of the
+> bidirectional blocks and the lexical statistics, never something the objective asked for. [I]
+
+**That prediction is now measured and it is correct** (§4.0). The pre-committed rule fired, and
+it fired against the design. Three things follow that are worth stating plainly, because a
+programme that only records its wins is not measuring anything:
+
+1. **The cheap test paid for itself exactly as argued.** W1 cost hours and cancelled nothing —
+   it *bought* a mandatory retrain before a white-matter run was spent on a token surface that
+   carries four usable directions. Discovered after W5, the same fact would have invalidated
+   W5, W5b, W6 and every number in them.
+2. **The statistic was biased toward the answer the design wanted, and still said no**
+   `[A9 fixed]`. A9 argued that participation-ratio rank of the token cloud is essentially
+   always ≥ that of the pooled cloud — the pooled vectors lie in the span of the token vectors
+   and there are `N` of them rather than `N·T` — so *"token rank materially higher"* is close to
+   a tautology and *"the bet is dead"* was close to unreachable. **The measurement refutes the
+   premise for trained encoders** (three of four ratios came out **below** 1.0; see §11 R2) and
+   reaches the branch A9 called unreachable. The correct response is not to declare A9 wrong and
+   move on: it is to keep A9's *fix* as the confirmation step (W1d) precisely because the
+   decision it now licenses — a mandatory retrain of every production region — is the most
+   expensive thing in phase 2.
+3. **The FLAG thresholds now trigger something.** Revision 1 asked W1 to *"FLAG any region with
+   token-level effective rank < 8 or pairwise CKA > 0.90"* and attached no consequence, so the
+   flags were decoration. The `< 8` flag fired for `code` (4.4) and `retrieve` (5.1) and is
+   wired: a flagged region's retrain in W4/W7 must clear the per-item rank threshold as well as
+   the global one, or it goes to the penultimate-block fallback.
+
+**What is genuinely CPU-parallel, corrected** `[A7 fixed]`. Revision 1 claimed *"the corpus work
+(W2, W3) runs on CPU hosts in parallel with W0/W1/W1b — it is not serialised behind any GPU
+experiment"*, and presented it as the plan's scheduling advantage over the rival proposals. It
+is false as specified: W2's gate requires `s_r` for every region on every candidate row, which
+is inference through every frozen region — including `visual`, a ViT, and including `memory`,
+which **does not exist until W4**. The split is now honest:
+
+| genuinely CPU-only, genuinely parallel | GPU-blocked, and blocked by the region set |
+|---|---|
+| W2a (ledger + aqua_rat recovery) · **W0c** (DEC-40's loader + lint) · **W3r** (frame geometry, minimal renderer, fixture) · BM25 condition (3) · licence audit · apps↔code_contests dedupe · **composite rendering, but only AFTER W3r fixes the geometry** `[N5 fixed]` · the executable-join harness (in its sandbox). **The audio rows are no longer on this list** — DEC-48 defers them; A0m keeps its "no dependencies" property for the day the phase opens | W2b's `s_r` computation · W2c's untrained baselines · every admission decision · every baseline derived from them |
+
+One correction to that left column since revision 2: **composite rendering was listed as
+CPU-parallel beside W7v, and it cannot be** — the renderer cannot choose a frame geometry until
+somebody fixes `image_size` and `n_patches`, and rendering four-panel composites at 64×64
+produces exactly the thing §5.5(b) calls *"not legible to any encoder"*. W3r fixes the geometry
+first, on CPU, with no dependencies, so the parallelism claim becomes true instead of nearly
+true `[N5 fixed]`.
+
+## 4.3 The phase-2 retrain budget, since there is one now `[A30 fixed]`
+
+Revision 1's affordability argument was *"phase 2 retrains nothing… that property is what makes
+the whole programme affordable"*. W1's result ends that. The replacement is a budget, built from
+the measured wall-clocks in the surviving receipts (text regions **426.7 s / 595.1 s / 1,087.2 s**
+at batch 256, 8,000 steps; `vl_latent` **496.7 s** at 64×64 over 100k images) [V\*].
+
+| row | runs | basis | estimate |
+|---|---|---|---|
+| W1b regenerate `reason` | 1 | text region at `max_len 256`, 12,455 rows | ~600 s [I] |
+| W1d matched read-out probe | 3 arms | small read-out over cached frozen activations | **116.5 s MEASURED** [V] (est. was ~1 h) |
+| W2c untrained baselines | 2 | eval-only, no training | minutes |
+| W4 `memory` merge + token-aware | 1 (+1 revert-and-retry allowance) | merged trunk, two heads, three loss terms | ~1,500 s [I] |
+| W7a `language_code`, `reasoning` | 2 (+2 allowance) | text regions, three loss terms | ~2,000 s [I] |
+| W7v `visual` resolution + token-aware | 1 (+1 allowance) | **4× patch count at 128×128**; attention is `O(N²)` in patches, so 497 s does not scale linearly | ~1–2 h [I] |
+| **phase-2 region retrain total** | | | **≈ 3–5 GPU-hours on the 3090 Ti [I]** |
+
+**The baselines are training runs too, and revision 2 did not budget four of them** `[N7 fixed]`.
+§2.7.1 lists seven baselines. **B0's read-out, B0d, B0u and B2t are trained artefacts revision 1
+did not require**, and §2.7.7's cost model counted forward passes over four model variants,
+omitting B2t and B3 entirely. They are enumerated here in the same units as everything else.
+
+Let **`T_A`** be one W5 phase-A dense white-matter run. It is not yet measured — no white-matter
+run has been done — so it is estimated and then **replaced by the measured number in W5's
+receipt**: 8,000 steps at batch 256 over the 51,200-item reserve, with `R` frozen region forwards
+plus the workspace per step, i.e. **3–5× a text-region step** whose measured wall-clocks are
+426.7 s / 595.1 s / 1,087.2 s [V\*] ⇒ **`T_A` ≈ 1–2 GPU-hours** [I].
+
+| baseline | what it trains | runs | cost in `T_A` | estimate |
+|---|---|---|---:|---|
+| **B0** | `rank_head` only, over a **frozen** random-init workspace; no workspace backward | 1 | **≈ 0.15** | ~10–20 min [I] |
+| **B0d** | a top-1 router over pooled region outputs; no workspace at all | 1 | **≈ 0.2** | ~15–25 min [I] |
+| **B0u** | full training with cross-attention **frozen uniform from initialisation** — same params, same steps, same data as the trained mind (A12) | 1 | **≈ 1.0** | 1–2 h [I] |
+| **B2t** | **a second full white-matter-scale training run.** "Same parameter count and training budget" is the definition of the baseline; there is no cheaper way to have it | 1 | **1.0, by definition** | 1–2 h [I] |
+| **B3** | frontal-only, all regions gated off — fewer KV rows, same schedule | 1 | **≈ 0.8** | ~1–1.5 h [I] |
+| **baseline total** | | 5 | **≈ 3.15 `T_A`** | **≈ 3–6 GPU-hours [I]** |
+
+So the integration experiment costs **the trained run plus roughly three more of it**. Two
+consequences, both stated rather than absorbed:
+
+1. **The baseline bill is the same order as the entire region-retrain bill** (3–5 GPU-hours), and
+   it was invisible in revision 2. Phase 2's honest total is **≈ 6–11 GPU-hours of 3090 Ti time**
+   before the white-matter runs the plan always had.
+2. **B2t is the one that will be tempted away**, because it is a full run whose only purpose is
+   to lose. It is also the baseline an outside reader will ask for first. **Pre-commitment: if
+   B2t is not run, G3 is reported as `not tested against a trained null` and the receipt says so
+   — the gate is not quietly re-scoped to B2 alone.**
+
+**The audio bill revision 3.1 added is REMOVED FROM PHASE 2, because DEC-48 defers the rows.**
+Revision 3.1 costed A0–A3 at **≈ 3–6 GPU-hours** (A0 zero, A1 ~2–4, A2 ~1–2, A3 zero beyond
+W2b's `s_r` pass) and moved phase 2's honest total from ≈ 6–11 to ≈ 9–17 GPU-hours. **That
+estimate is withdrawn from the phase-2 bill and travels with the deferred rows** to the
+production phase, where it will be re-derived rather than inherited — it was the
+weakest-founded table in this section, with **no audio receipt anywhere in this tree** behind it,
+and an estimate that is not spent for a year is not an estimate. **Phase 2's honest total returns
+to ≈ 6–11 GPU-hours of 3090 Ti time**: ≈ 3–5 of region retrains plus ≈ 3–6 of baseline training
+runs. When the production phase opens, **A1 must record its measured wall-clock** so the audio
+table is replaced by a number rather than repeated as an estimate — the same discipline `T_A` is
+under.
+
+**One property of the deferral worth stating, because it is the cost side.** A0's work was the
+longest-lead item in the programme and it cost **zero GPU-hours**; deferring it defers wall-clock
+and human attention, not compute. The audit is already done, so what the deferral actually spends
+is the option value of having had the corpus ready — and the ruling accepts that explicitly:
+*"gotta walk before we run."*
+
+**Gate on the estimate itself, so it can fail:** W5 records its measured phase-A wall-clock. **If
+`T_A` exceeds 3 GPU-hours, the baseline set is re-scoped before B2t is launched** and the
+re-scoping is recorded, rather than discovered by a run that does not finish.
+
+Against that, the white-matter runs (W5 phase A, W5b, W8 phases B/C/D) are the larger cost and
+were always in the plan. **The programme is still affordable; it is no longer affordable *for
+free*, and the argument is now a number a reader can check rather than a property.** The honest
+summary: W1 converted an unstated risk into a stated, bounded, three-to-five-GPU-hour bill, paid
+before anything expensive depends on it.
+
+
+# 5. P2.5d — the reserved corpus
+
+## 5.1 The corpus crisis was largely self-inflicted, and W2a recovers it `[A5 fixed]`
+
+**244,761 rows** — verified by summing the source table: aqua_rat 97,467 + fashion_mnist 60,000
++ go_emotions 43,410 + code_contests 13,328 + banking77 13,083 + apps 10,000 + gsm8k 7,473 =
+244,761 [V\*, recomputed independently by all three proposals].
+
+**≈56,320 rows / 23.0%** — verified as a *derivation*, not an assertion: `(7 bins × 512) +
+(3 pairs × 512) = 5,120` eval, `×10` train `= 51,200`, total `56,320`; `56,320 / 244,761 =
+23.0%` [V\*]. The 512 comes from the 95% binomial half-width `1.96·√(0.25/n) = ±4.33 pp` at
+`n = 512`, matching the project's existing `holdout_pairs` convention [V\*].
+
+### The aqua_rat write-off was wrong, and the sampling code refutes it
+
+Revision 1 wrote off **all 97,467 aqua_rat rows** on the grounds that *"4,982 rows were drawn by
+reservoir sampling, but the `reason` receipt that recorded `corpus.cap_sampling` was deleted, so
+the drawn ids are unrecoverable and no aqua_rat row can be proven clean… a hard, unfixable
+contamination boundary costing 92,485 otherwise-usable rows."* That single write-off produced
+the document's headline corpus crisis, the *"2.38× shortfall"*, risk §9.2, and the necessity of
+the rendered-composite generator.
+
+**One clause of that premise is corrected before anything is built on it** `[N1 fixed]`. *"the
+`reason` receipt that recorded `corpus.cap_sampling`"* should read *"the receipt that **would
+have** recorded `corpus.cap_sampling`"*. **No surviving receipt carries that field at all** — all
+nine receipts under `/akula-data/csd/receipts/` were enumerated key by key and `cap_sampling` is
+present in none of them [V\*], including ones written after the commit that introduced it.
+`config/seed = 0` **is** present in all nine, which is what supports precondition (iii) for the
+surviving regions. The correction matters because it changes a reader's estimate of how
+recoverable this is: the field was never written, so W1b's requirement that the regenerated
+receipt carry it is **new instrumentation, not a regeneration** — and that is precisely why this
+loss cannot recur once W1b lands.
+
+**The draw is deterministic and reproducible from config alone. Re-read this session [V]:**
+
+```
+src/cogsyndelta/regions/pretrain.py:231
+    return reservoir_sample(stream, limit, sampling_rng(seed, shards, columns))
+
+src/cogsyndelta/regions/pretrain.py:210-213   (load_pairs docstring)
+    "Reservoir sampling gives every row an equal chance regardless of position, and the
+     generator is derived from `seed` (see sampling_rng) so TWO RUNS OF THE SAME CONFIG
+     STILL GET THE SAME ROWS -- receipts carry corpus fingerprints and would mean nothing
+     otherwise."
+
+src/cogsyndelta/corpus.py:159-181             (sampling_rng)
+    "Deriving the seed from the run seed plus the source's identity makes each source's
+     sample independent while keeping the whole thing reproducible from `cfg.seed` alone.
+     shards: ... only BASENAMES are used, so moving a corpus between mounts does not
+     change which rows it yields."
+
+src/cogsyndelta/corpus.py:189-221             reservoir_sample = Algorithm R over a
+                                              deterministic stream; its only randomness is
+                                              the `rng` it is handed.
+src/cogsyndelta/regions/pretrain.py:177-193   _iter_pairs yields "in shard order".
+scripts/csd-train-all.py:325
+    ("reason/aqua_rat-raw/train.parquet", ("question", "rationale"), 4982)
+```
+
+Every input to the draw is pinned and survives: the seed, the shard **basename**, the column
+names and the cap. **The receipt did not hold the draw; it merely recorded what the code
+recomputes.** And revision 1's own plan already performed the recovery without noticing: W1b
+regenerates `reason`'s receipt by re-running the identical pipeline, which by the determinism
+above draws the same 4,982 rows. §5 and §4.1 contradicted each other.
+
+### The recovery has a FOURTH precondition, it is unstated in revision 2, and W2a could not test it `[N1 fixed]`
+
+Everything above establishes that **today's code** draws the same 4,982 rows every time. It does
+not establish that **the code the `reason` run used** was today's code. **It was not necessarily,
+and the change is exactly "sample vs prefix".**
+
+```
+git show c42203c --stat                                                          [V]
+  c42203c  2026-09-02 19:32:52 -0400
+  "fix(corpus): make a cap sample the source instead of taking its prefix"
+  body: "DELIBERATE CORRECTNESS CHANGE -- IT CHANGES WHICH ROWS TRAIN, SO IT CHANGES RESULTS.
+         Receipts written before this commit are NOT comparable with receipts written after it
+         for any region whose cap actually binds ... `load_pairs` returned the moment `limit`
+         pairs had been collected, iterating shards in sorted order ... Every 'balance cap' in
+         this system meant 'take a prefix'."
+
+src/cogsyndelta/regions/pretrain.py:199-207   (load_pairs docstring)              [V]
+  "This used to `return` the moment `limit` pairs had been collected, which made every such
+   decision 'take the first N rows in file order' instead ... `build_splits` shuffles AFTER
+   the cap, so no downstream step could repair it."
+
+src/cogsyndelta/regions/pretrain.py:576-582                                       [V]
+  # "a cap whose method is unrecorded is not a cap" ... A RECEIPT THAT RECORDS ONLY THE
+  # REALISED ROW COUNT CANNOT TELL A SAMPLE FROM A PREFIX, AND THOSE ARE DIFFERENT CORPORA.
+  "cap_sampling": {"method": "reservoir (Algorithm R), ...", "seed": cfg.seed}
+```
+
+**Revision 2's three checks all pass under either hypothesis** [I]. Suppose the `reason` run
+predates `c42203c`. Then the rows it actually consumed are the **first 4,982 in shard order**,
+not the reservoir draw at seed 0. W2a re-runs today's `load_pairs`, gets a **different** 4,982
+rows, and: check (i) passes, because the parquet on disk is unchanged; check (ii) passes, because
+today's code is deterministic; check (iii) passes, because the run did use `seed = 0`. The ledger
+then records 4,982 fingerprints as `reason`-burned **and marks as clean the 4,982 rows that were
+actually burned.** Those rows enter the reserve, a region has memorised their answers, and DEC-22
+— *"NO SINGLE REGION ALREADY HAS THE ANSWER MEMORISED"* — is violated **with a ledger entry
+certifying the opposite**, which is worse than having no ledger and is the same shape as the
+defect this programme cites as its worst find.
+
+**Timing does not settle it** [I]. `c42203c` (19:32:52), `b9a082e` — which introduces the `4982`
+cap in `scripts/csd-train-all.py` (19:41:03) — and `2864ecd`, the KICKOFF note recording
+`reason 0.0039 → 0.0801` (19:42:11) are nine minutes apart [V], and `b9a082e`'s own subject is
+*"wip(regions): classify and reason wiring, **preserved unvalidated**"*. A history that preserves
+work after the fact does not date the run that produced it.
+
+> ### DEC-42 — burn the UNION of both possible draws, and let the gate fail if it is not there
+>
+> **The ambiguity is not resolvable from artefacts on disk, and it does not need to be.** Both
+> candidate draws are computable today, deterministically, from config alone:
+>
+> - **draw R** — the reservoir draw: `reservoir_sample(_iter_pairs(...), 4982, sampling_rng(0, ...))`.
+> - **draw P** — the prefix draw: the **first 4,982 pairs `_iter_pairs` yields in shard order**,
+>   which is exactly what the same call returned before `c42203c`.
+>
+> **The ledger takes `fingerprints(R) ∪ fingerprints(P)`.** Both are marked `reason`-burned. No
+> row of ambiguous provenance is ever certified clean.
+>
+> **The cost, stated so it can be weighed:** **at most 4,982 further rows of the 92,485 the
+> recovery marked clean** — the union is at most 9,964 of 97,467, and in practice smaller, since
+> Algorithm R fills its reservoir with the prefix and then replaces from it, retaining
+> `4,982² / 97,467 ≈ 255` prefix rows in expectation, so the expected union is ≈ 9,709 [I]. The
+> conservative worst case is carried everywhere below. **The recovery survives at 2.13×; the
+> ambiguity does not.**
+>
+> **W2a's fourth check, and it is the one that can fail.** Establish the code revision the
+> `reason` run used — receipt or checkpoint mtime against `c42203c`'s commit time, or a trainer
+> revision recorded in the checkpoint — **and if it cannot be established, record that it could
+> not.** *Absence of evidence must not become the evidence.* Either way the union is written.
+> **The gate:** W2a asserts `|ledger ∩ fingerprints(R)| = 4,982` **and**
+> `|ledger ∩ fingerprints(P)| = 4,982`, and **refuses to emit a ledger that omits either draw.**
+> A fingerprint set carrying only one draw is a **FAIL**, not a partial pass. **Verify it by
+> making it fail:** hand the checker a ledger built from draw R alone and assert it refuses.
+
+**W2a tests all four rather than assuming any**, because this is the largest number in this
+section: (i) the recomputed `fingerprint_corpus` of the parquet on disk today matches;
+(ii) two consecutive computations of **each** draw return identical fingerprints; (iii) the run
+genuinely used `seed = 0` — which is `[I]` for `reason` specifically, since its receipt is the
+deleted one, and is inferred from the three surviving text receipts all recording `seed 0` and
+from `csd-train-all.py` passing `cfg.seed` uniformly; **(iv) the code revision, per DEC-42, with
+the union written either way.** **If (i), (ii) or (iii) fails, the write-off stands and this
+section reverts.**
+
+### The pool, recomputed with the recovery
+
+| source | rows | status |
+|---|---|---|
+| `deepmind/aqua_rat` | 97,467 | **≤ 9,964 BURNED** — the **union** of both candidate draws (DEC-42), recovered by W2a and written to the ledger as `reason`-burned; **≥ 87,503 CLEAN** `[N1 fixed]`. Revision 2 read 4,982 burned / 92,485 clean, which was correct only under an unstated assumption about which sampling algorithm ran |
+| `go_emotions` | 43,410 | BURNED (trained) |
+| `PolyAI/banking77` | 13,083 | BURNED (10,003 trained; a 3,080-row remainder of a burned source that also fails B5 is not worth having) |
+| `openai/gsm8k` | 7,473 | BURNED (trained uncapped) |
+| `zalando-datasets/fashion_mnist` | 60,000 | clean |
+| `deepmind/code_contests` | 13,328 | clean, **allocated `compose`** (§5.2) |
+| `codeparrot/apps` | 10,000 | clean, **allocated `compose`** (§5.2) |
+
+```
+truly clean unallocated .......................... 169,047   (was 174,029 before DEC-42)
+  of which fashion_mnist (28x28 greyscale, no text bin can use it)  60,000
+  TEXT-USABLE clean:  aqua_rat recovered, union burned  87,503
+                    + code_contests 13,328 + apps 10,000 = 23,328
+                    - apps<->code_contests dedupe at cos >= 0.90  -1,784
+  text-usable after dedupe ....................... 109,047   (was 114,029)
+
+reservation required (unchanged sizing) ..........  56,320   of which 51,200 is TRAINING data
+  56,320 as a share of the declared pool .........   23.0%   <- the published figure
+  56,320 as a share of what remains ..............   33.3%   <- the real figure (was 67.6%)
+  text-usable vs the 51,200-row training need ....   2.13x SURPLUS  (was a 2.38x shortfall)
+
+THE THREE BALANCE NUMBERS, WHICH TRAVEL TOGETHER  [N8 fixed]
+  MAX SOURCE SHARE (aqua_rat), unallocated pool ..   51.8%   <- BINDING. B1 hard line 0.50: FAIL
+  MAX SOURCE SHARE (aqua_rat), text-usable pool ..   80.2%   <- the pool the reserve is drawn from
+  fashion_mnist share of what remains ............   35.5%   <- NOT binding; revision 2 printed
+                                                                only this one against B1
+N_eff of the remaining pool = 1/sum(p^2) .........    2.44   (B2 wants >= 3; still short)
+```
+
+> **B1 is a MAX-SHARE rule, and after the recovery the maximum is not `fashion_mnist`'s**
+> `[N8 fixed]`. Revision 2 printed `fashion_mnist 34.5% (B1 hard line 0.50, target 0.40)` and a
+> reader scanning that block saw a B1 pass. The binding number is aqua_rat's: **51.8% of the
+> unallocated pool and 80.2% of the text-usable pool, against `CORPUS-CONTRACT.md:1155`'s
+> *"`p < 0.50` is the hard line, `0.40` is the operating cap"* [V].** The recovery therefore
+> **moves the pool from passing B1 to failing it.** The prose said so in two places; the numbers
+> did not, and the numbers are what a ratifier scans.
+>
+> **What is done about it, in order.** (1) **B1 binds on the reserve, not on the pool** — the
+> reserve does not have to consume the pool in proportion. Hold aqua_rat to the **0.40 operating
+> cap of the reserve's source rows**: ≤ 22,528 of 56,320, leaving 33,792 to come from elsewhere.
+> (2) **The non-aqua_rat text-usable pool is 21,544 rows**, so that gap can only be closed by
+> composites over `fashion_mnist` panels and re-used text rows — i.e. **by W3r's renderer, and
+> for the `visual × *` half by W7v.** So B1 compliance for the reserve is **W7v-dependent**, and
+> that dependency is stated here rather than discovered in W3. (3) **If W7v slips, B1 is carried
+> as a dated waiver naming exactly what the reserve cannot measure** — a corpus dominated by one
+> source in one domain cannot support a claim about generalisation across sources — and that
+> waiver is a W3 deliverable (DEC-38), not a footnote. (4) A **third genuine text source** is
+> already named as one of the only true fetches (§5.5); it is what makes (3) unnecessary.
+>
+> **`N_eff` rose from 2.40 to 2.44 and that is not good news.** It rose because the largest
+> source shrank, not because the pool diversified. A diversity statistic that improves when you
+> burn rows is being read wrong; it is printed because B2 asks for it, and it is still short of
+> B2's ≥ 3 either way.
+
+> **The corpus crisis is downgraded, not dissolved.** A 2.38× shortfall becomes a **2.13×**
+> surplus after DEC-42's union burn, and §9.2 stops being the leading risk. **What does not
+> change:** `N_eff` is 2.44 against B2's ≥ 3, so the reserve still needs either a third genuine
+> text source or B2's dated waiver; and the recovered rows are aqua_rat — one source, one domain
+> — so a reserve built mostly from them **fails B1, in the printed numbers and not only in the
+> prose**. The rendered-composite generator is no longer *load-bearing for funding*; it is
+> load-bearing for **B1 compliance**, for the `visual × *` pairs (W7v) and for source diversity,
+> and its geometry prerequisite is now W3r.
+
+A more permissive accounting keeps banking77's 3,080-row remainder. The conservative figure is
+adopted; the conclusion is identical either way.
+
+## 5.2 DEC-23 — done, and how it was verified `[A34 fixed]`
+
+> **Mark `codeparrot/apps` (10,000) and `deepmind/code_contests` (13,328) as `compose` in the
+> allocation ledger, now, before `language_code` expands to multi-language and before any P2.5c
+> fetch.**
+
+**This has landed.** Verified this session by re-reading the ledger table [V]:
+
+```
+docs/design/CORPUS-CONTRACT.md:964   | `deepmind/code_contests` | 13,328 | ~~code~~ -> **compose** | ATTRIBUTION |
+docs/design/CORPUS-CONTRACT.md:966   | `codeparrot/apps`        | 10,000 | ~~code~~ -> **compose** | PERMISSIVE_OK |
+docs/design/CORPUS-CONTRACT.md:970   "> **Reserved 2026-09-02 (DEC-23).** ... allocation happens now,
+                                      before P2.3 trains `code`/`language_code`, per
+                                      docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md §5.2."
+```
+
+So the threat pass's *"DEC-23 is unexecuted"* is refuted (§11 R1) — while its other half stands
+untouched: **the ledger line is written, a COARSE train-time refusal landed with it, and the
+per-row and derived-case guard is still unbuilt** `[N10g fixed]`. Revision 2 said flatly that
+there is *"no train-time refusal"*; there is one. `0786a77` added
+`RESERVED_FOR_COMPOSE = {"apps": …, "code_contests": …}`, `ReservedSourceError` and
+`_refuse_reserved_shards()`, which raises at shard-resolution time for **any** region, in
+`--dry-run` as well as a real run, and **before `pretrain_region` is ever imported**, with
+`tests/test_reserved_corpus_guard.py` asserting the raise in three constructed cases [V]. It is
+**directory-prefix granularity**, so DEC-38's derived case and per-row case remain uncovered —
+which is the substantive point and is unchanged. The blanket phrasing was not, and pessimism
+about a landed guard is how a landed guard gets built twice. A line in a document
+is not a check in a data loader, and the distinction is the whole point of §5.6.
+
+Revision 1 buried this action inside W2, the fifth row, whose gate also demanded the entire
+reserve, the NSRS filter and a guard verified by making it fire. It is now **W2a** — minutes,
+no dependencies, no GPU — alongside the aqua_rat recovery, and **W2b** carries the expensive
+half.
+
+They are the only remaining licence-clean source of paired *natural-language-problem ↔
+implementation* material in the tree, which makes them the only source for the `memory ×
+language_code` cross-faculty bin. Once a region trains on them they are gone forever.
+
+Caveat carried forward: the two overlap **17.84% of problems at cos ≥ 0.90** — 1,784 of 10,000,
+invisible to hashing because one prefixes every description [V\*]. Dedupe on the stripped
+description *before* splitting, or the compose set is 17.8% contaminated on day one.
+
+
+## 5.3 DEC-22 — the content contract: an admission test, not a provenance hope
+
+The requirement is data where *"NO SINGLE REGION ALREADY HAS THE ANSWER MEMORISED. Otherwise it
+learns to forward to whichever region already knows, which is dispatch, not integration"* [V\*].
+"Held out" does not deliver that — a held-out FiQA question is still *within* `memory`'s
+competence, and forwarding to `memory` solves it.
+
+Make it measurable per row, using the frozen regions themselves:
+
+> **NSRS ADMISSION FILTER.** For candidate item `x` with target `t` and candidate set `C`,
+> compute each frozen region's standalone score `s_r(x, t, C)`. **Admit iff:**
+> 1. **no single region suffices** — `max_r s_r < τ_lo`;
+> 2. **some combination does** — `oracle_late_fusion(s) ≥ τ_hi`;
+> 3. **no trivial baseline suffices** — BM25 (text) or raw-pixel logistic regression (vision)
+>    scores `< τ_lo` on the same item.
+
+> **Condition-(2) exemption, written into the filter rather than contradicted by it**
+> `[A21 fixed]`. §5.5(c) builds the general / out-of-scope bin as *"condition (1) with no
+> condition (2)"*, while W2's gate demanded *"every admitted row satisfies the NSRS filter"* —
+> all three conditions. That was a direct contradiction between two sections of revision 1.
+> **General-bin rows are admitted under conditions (1) and (3) only, are tagged
+> `bin: general, nsrs: c1c3` in the manifest, and their correct answer is DEC-41's `NULL`
+> candidate.** No other bin may use the exemption.
+
+**Thresholds are calibrated, never inherited (DEC-36)** `[A1 fixed]`. `τ_lo` and `τ_hi` are
+drawn from a **calibration subset disjoint at source-row granularity from everything graded**,
+then frozen; the graded set is admitted under frozen thresholds; and the receipt reports **what
+fraction of the graded set would have been rejected**. `s_r` is still recorded for every row —
+it is computed anyway and it is useful diagnostics — but it is **never** reused as B1 or B2.
+Revision 1's saving (*"precomputed rather than a separate experiment"*) is the exact thing that
+destroyed the test; §2.7.0 is the argument.
+
+**Thresholds are stated in chance-normalised units per bin:** `(s − chance)/(1 − chance)`, with
+each bin's chance level recorded in the manifest. Raw `0.35` means a different difficulty in
+every bin — chance is 1/512 on the in-mixture diagonal, 1/200 on the tiny-imagenet probe, 0.0130
+for banking77, 0.0466 for go_emotions [V\*] — so the per-bin scores G2 compares would not
+otherwise be on a common scale.
+
+**And `τ_lo`'s starting value rests on a number nobody has measured** `[A23 fixed]`. Revision 1
+justified condition (3) with *"a random-init encoder scored r@1 ≈ 0.40 on CodeSearchNet from
+lexical overlap alone"*, tagged `[V*]`. That figure exists in the tree only as repeated prose —
+`program/KICKOFF.md:120`, `docs/design/MODEL-MANIFESTS.md:1138`,
+`docs/design/MODERN-TRAINING-STACK.md:509`, `src/cogsyndelta/regions/retrieve.py:22` [V] — while
+the surviving `code` receipt records **0.2285** at `max_len 96` and `program/REMAINING.md:336`
+records 0.0918 at `max_len 256`. **No artefact anywhere produces 0.40.** This is not tidiness:
+if the true lexical floor for code-adjacent material is 0.40, condition (1) at `τ_lo = 0.35`
+rejects essentially every row built from `apps`/`code_contests` — the reserve's main source —
+and the reserve cannot be built from them at all. **W2c measures it and re-derives `τ_lo`
+per bin, and W2b is blocked on that result.**
+
+Three properties worth stating:
+
+- **Condition (1)** makes the reserve *definitionally* the data where dispatch fails.
+- **Condition (2)** — the upper bound — is what stops the reserve from being noise. A row no
+  combination can solve teaches nothing, and a corpus of them is indistinguishable from a broken
+  loader.
+- **Condition (3) is not optional and is the one most likely to be skipped.** Without it a
+  "cross-faculty" composite can be solvable from a colour histogram and the whole integration
+  claim is measuring an artifact.
+- **NSRS is a DIFFICULTY filter, not an INTEGRITY filter** `[T1 fixed]`. A poisoned row — one
+  carrying a rare trigger correlated with a chosen routing outcome — satisfies all three
+  conditions trivially. NSRS was never designed to catch that and does not; §5.6's keyed split,
+  generator identity and the S5 trigger-sensitivity verdict are what cover it. Saying so here
+  stops NSRS being cited later as a control it is not.
+
+**The filter is a guard, so it must be verified by making it fail.** Construct a row that only
+`language_code` can solve and assert rejection; construct a general-bin row and assert it is
+admitted under the `c1c3` exemption and **not** under the full filter. This is the pattern that
+found four guards in this programme that were *"correct in reasoning and wrong in scope,
+reporting success they could not have detected the absence of"* [V\*].
+
+## 5.4 Size, composition, and the split key `[A16 fixed]`
+
+Sizing is unchanged in method; bins are re-keyed to faculties, so `k` drops from 7 to 6.
+
+| component | items | note |
+|---|---|---|
+| per-faculty eval — `language_code`, `memory`, `reasoning`, `visual`, `affect`(probe), `general` × 512 | 3,072 | 6 bins, not 7. `general`'s target is DEC-41's `NULL` candidate |
+| **cross-faculty eval** — 4 live pairs × 512 | 2,048 | pairs below; **2 of the 4 are blocked until W7v** |
+| **compose eval total** | **5,120** | **split 2,560 dev / 2,560 sealed** (§2.7.8) |
+| **interconnect train, ≥10× eval** | **51,200**, of which **≥60% cross-faculty** | the reframe made this *training* data, not eval padding |
+| **RESERVATION TOTAL** | **56,320** | |
+
+The composed-vs-single comparison is **paired**, so McNemar on discordant pairs is the test and
+512 is a reporting floor per bin, not the resolution of the comparison [V\*].
+
+### The split is at SOURCE-ROW granularity, and so is the bootstrap
+
+Revision 1 split 51,200 train / 5,120 eval at *item* granularity and resampled the bootstrap
+*over items*. Composites are built by choosing `n` panels from a pool of text items, so ~30,720
+cross-faculty training composites drawn from a source pool of 21,544–109,047 rows **reuse each
+row many times**. Three consequences, all of which inflate the result:
+
+1. **Train/eval leakage.** An eval composite will contain panels the model saw inside training
+   composites unless the split is made at source-row granularity — which revision 1 never
+   stated. This is A6 one level up: the same mistake of hashing the derived object.
+2. **The bootstrap is over the wrong unit.** Items built from a shared row pool are not
+   independent; resampling items understates variance and inflates the significance of `I` and
+   of every McNemar test.
+3. **The reserve fails this document's own balance rules.** §7.1 instructs `CORPUS-CONTRACT.md`
+   that for constructed corpora *"the generator is the provenance group, and B1/B2 apply to
+   it"*. A reserve supplied mostly by one renderer over two sources has generator share ≈ 1.0
+   against B1's hard line of **0.50** (`CORPUS-CONTRACT.md:1155`: *"`p < 0.50` is the hard
+   line. **0.40** is the operating cap"* [V]) and `N_eff` ≈ 1–2 against B2's ≥ 3. Revision 1
+   wrote the rule and never applied it to the corpus it was proposing.
+
+> **DEC-38 — every split, guard and resample keys on the SOURCE ROW.**
+>
+> - **No source row may appear on both sides of the train/eval split in any derived form.** The
+>   split key is `pair_fingerprint(source_row)`, recorded per item in the manifest.
+> - **Block-bootstrap by source row**, stated in the receipt. Per-pair CIs in §2.7.3 are block
+>   CIs.
+> - **B1/B2 are run on the reserve's own generators** in W3, and the result is either diversified
+>   (a second renderer, a second join source) or carried as a **dated waiver naming exactly what
+>   the reserve therefore cannot measure**. B2 already provides for the waiver; using it is
+>   honest, ignoring the rule is not.
+
+**The four live cross-faculty pairs**, re-keyed to the new taxonomy (`compress × retrieve` was
+one of the contract's four planned pairs and **the merge makes it intra-region**, so it is
+replaced):
+
+| pair | item shape | status | what no region can do alone |
+|---|---|---|---|
+| `memory × language_code` | given a natural-language issue, retrieve the API description, then find the function implementing it | **live** | the old `retrieve × code` |
+| `memory × reasoning` | multi-hop: retrieve two facts, then combine them | **live** | retrieval alone returns one fact; reasoning alone has no facts |
+| `visual × language_code` | locate an element in a frame, then name or act on it | **BLOCKED until W7v** `[A4 fixed]` | the old `vl × classify`. Unconstructible against 64×64 single-object tiles, and the encoder cannot ingest a larger frame at all |
+| `visual × memory` | given a description, find the *frame* that shows it | **BLOCKED until W7v** | genuinely new, and the one that exercises long **visual** context — the operator's stated primary long-context channel |
+
+### Every ablation pair now has an item shape and a sealed-item count `[N2 fixed]`
+
+**A17's defect returned one level down and this is where it is closed.** Revision 2 demoted
+`episodic_store` so *"≥6 of 10 pairs"* would stop secretly meaning *"all 6 real pairs"*, and
+replaced it with DEC-37's *"≥4 of the 6 pairs"* — over **four** declared cross-faculty item
+shapes. **The participant count is four and stays four** — DEC-32 keeps `episodic_store` out and
+DEC-48 keeps `auditory` out, so no revision of this document may quietly change the denominator
+`[S31-1 fixed]`. The four participants generate **six** pairs, so two of them —
+`language_code × reasoning` and `visual × reasoning` — had **no items that require both
+regions**. For such a pair `Δ_A ≈ Δ_B ≈ 0` on the cross-faculty bin, DEC-37's conjunction fails
+**by construction**, and the pair lands in the named `REDUNDANT` quadrant, which is a FAIL. So
+*"≥4 of 6"* silently meant *"all four constructed pairs must pass"* — arrived at by exactly the
+accident A17 named, in the paragraph that fixed A17. **A pass/fail gate must not depend on a
+reader inferring which pairs an item shape happens to cover, so the mapping is printed.**
+
+**Six item shapes, and the mapping to the six ablation pairs.** Two shapes are three-way and are
+declared as such; the cross-faculty eval budget of **2,048 is unchanged** — the shapes are
+allocated inside the four reported bins, not added to them.
+
+| shape | bin it is reported in | eval items | construction (§5.5) | ablation pairs it makes load-bearing |
+|---|---|---:|---|---|
+| **X1** issue → API description → function | `memory × language_code` | 256 | §5.5(a) retrieval half | {memory, language_code} |
+| **X2** **executable three-way join** — retrieve the matching problem (**memory**), then rank candidate solutions by whether they pass the tests (**language_code** + **reasoning**), distractors are other problems' correct solutions | `memory × language_code` | 256 | §5.5(a), label = sandboxed exit code | {memory, language_code}, **{language_code, reasoning}**, {memory, reasoning} |
+| **X3** **multi-hop over rationales** — retrieve two aqua_rat rationales from a pool, then combine the facts they state into an answer **neither states alone** | `memory × reasoning` | 512 | §5.5(a′), **new** `[N9 fixed]` | {memory, reasoning} |
+| **X4** composite locate-then-name | `visual × language_code` | 512 | §5.5(b), needs **W3r** + W7v | {visual, language_code} |
+| **X5** description → frame | `visual × memory` | 256 | §5.5(b), needs **W3r** + W7v | {visual, memory} |
+| **X6** **two-premise numeric composite** — two rendered panels each state one premise; the answer requires combining them and is stated on neither panel | `visual × memory` | 256 | §5.5(b′), **new** `[N2 fixed]` | **{visual, reasoning}** |
+
+**Sealed items per ablation pair** [I], from §2.7.8's split (compose eval 5,120, sealed half
+2,560, of which 1,024 are cross-faculty, i.e. 256 per reported bin):
+
+| ablation pair | shapes | sealed items | status |
+|---|---|---:|---|
+| {memory, language_code} | X1 + X2 | **256** | live |
+| {memory, reasoning} | X2 + X3 | **384** | live |
+| {language_code, reasoning} | X2 | **128** | live, **thin** |
+| {visual, language_code} | X4 | **256** | blocked until W3r + W7v |
+| {visual, memory} | X5 | **128** | blocked, **thin** |
+| {visual, reasoning} | X6 | **128** | blocked, **thin** |
+
+**G3′'s "≥4 of 6" now means what it says**: six pairs, six declared shapes, null rate 0.344
+unchanged. **The three thin pairs are named rather than smoothed over**, and they get a gate:
+**W3 reports each pair's block-bootstrap CI half-width on the DEV half before the seal is
+created.** If any live pair's dev half-width exceeds **±10 pp**, §2.7.8's stated lever fires —
+raise the cross-faculty share of the compose eval — and the reallocation is recorded. **The
+decision is made on the dev half, in advance; it is never a post-hoc re-slicing of the sealed
+half.**
+
+> **If W7v slips, the two `visual × *` bins are dropped from v1 and every count that depends on
+> them is restated in the same breath:** cross-faculty eval falls from 2,048 to 1,024, the
+> compose eval from 5,120 to 4,096, `R` from 4 to 3, the ablation pairs from 6 to 3, and G3′'s
+> criterion from "≥4 of 6" to "**all 3 of 3**" with a null rate of 0.125. That is a materially
+> harsher pass/fail, and it must be stated as such rather than absorbed.
+>
+> **And "all 3 of 3" must be ACHIEVABLE, which under revision 2 it was not** `[N2 fixed]`. The
+> three surviving pairs are {memory, language_code}, {memory, reasoning} and
+> **{language_code, reasoning}** — and the third had no declared item shape, so the branch
+> pre-committed the programme to passing a pair for which no item existed. Its true null rate was
+> **0**, not 0.125. **X2 closes it**: the executable three-way join makes {language_code,
+> reasoning} load-bearing with real items and a subprocess exit code for a label.
+>
+> **Pre-committed with the branch, so the slip does not also make the criterion underpowered:**
+> under the slip, **X2 takes the whole of the `memory × language_code` bin (512 eval / 256
+> sealed) and X1 moves to train-only**, giving all three surviving pairs **≥256 sealed items**.
+>
+> **The general bin is also restated under this branch** `[N9 fixed]`, which revision 2's
+> five-consequence list omitted: §5.5(c)'s construction is a `visual` frame paired with an
+> unrelated `memory` query, so it is W7v-blocked too, and it carries DEC-41's `NULL` gate that
+> A21's fix rests on. §5.5(c′) gives it a **text-only variant** so the `NULL` gate survives the
+> slip.
+>
+> **The recommendation is still to run W7v** — it is folded into a retrain W1's result already
+> made mandatory, so the marginal cost is the resolution change (and W3r, which is CPU-only and
+> has no dependencies), and dropping the visual pairs guts the long-context-is-visual argument
+> that §6.1 rests the whole scheduler case on.
+
+`reasoning × numeric` is deferred with the `numeric` placeholder.
+
+## 5.5 Sourcing — three constructions, ordered by provenance cleanliness
+
+*"No region corpus contains a single such item. They cannot: a region corpus is defined by its
+objective, and a cross-region item has two"* [V\*]. So cross-faculty items must be
+**constructed**. The cleanest first, the model-in-the-loop last.
+
+**(a) Executable joins over `apps` + `code_contests` — 23,328 rows already held, and the reason
+DEC-23 was urgent.** Each row carries a natural-language problem statement, reference solutions
+**and test cases**, so the ground truth is *executed, not annotated*:
+
+> given the problem statement, retrieve the matching problem from a 23k pool (**memory**), then
+> rank candidate solutions by whether they pass the tests (**language_code** + **reasoning**),
+> where the distractors are other problems' correct solutions.
+
+**This item is THREE-WAY, and §5.4's mapping says so rather than leaving it to be inferred**
+`[N2 fixed]`. It is shape **X2**, and it makes three ablation pairs load-bearing:
+{memory, language_code} (the retrieval step), **{language_code, reasoning}** (deriving the
+constraint the statement implies is `reasoning`; reading whether a candidate program satisfies it
+is `language_code`; neither alone ranks the candidates) and {memory, reasoning}. It is the shape
+that makes G3′'s W7v-slip branch achievable at all.
+
+**No model is in the provenance chain — the label is a subprocess exit code.** And the
+apps↔code_contests 17.84% cos≥0.90 overlap stops being purely a contamination problem: dedupe it
+out of the *eval* split, and keep the near-duplicates as **hard train negatives** [I].
+
+> **THE SANDBOX, stated because revision 1 celebrated this generator's provenance and never said
+> where it runs** `[T1 fixed]`. "The label is a subprocess exit code" means **building the
+> reserve executes tens of thousands of third-party programs**. It is the single largest
+> untrusted-code workload in the programme. It runs on a **RuntimeClass the GPU hosts never
+> share** — gVisor or Kata, **no network, no NFS mount, non-root, per-candidate wall-clock and
+> memory caps, read-only rootfs, a scratch tmpfs discarded per candidate**. The fleet already
+> applies this rule to agent sandboxes; this is the same workload class and inherits it.
+>
+> **The control is decorative unless one property holds: the generator must have NO
+> plain-`subprocess` fallback.** If it can degrade to running locally when the sandbox is
+> unavailable, it will, on the day the sandbox is unavailable. *Fails closed:* no sandbox ⇒ the
+> generator raises and the reserve is not built. **Verify by making it fail:** run the generator
+> with the RuntimeClass removed and assert it refuses rather than falling back.
+
+**(a′) Multi-hop over rationales — the construction `memory × reasoning` did not have, and the
+one that gives the recovered aqua_rat rows a cross-faculty consumer that is not the blocked
+renderer** `[N9 fixed]`. §5.4 lists `memory × reasoning` as **live** — one of only two live pairs
+while the `visual × *` pairs are blocked — and revision 2 named **no source, no generator and
+therefore no generator hash for DEC-39's ledger row**. It is shape **X3**:
+
+> from the ≥87,503 recovered aqua_rat rows (§5.1), each carrying a question and a **rationale**,
+> take two rationales that each state one intermediate fact, put both in a retrieval pool of the
+> remaining rationales, and ask a question whose answer requires **both** facts and is stated in
+> **neither** rationale alone.
+
+**Region-wise:** retrieval alone returns one rationale and cannot combine; reasoning alone has no
+facts to combine. **Provenance:** no model in the chain — the two-fact join is mechanical over
+text already held, and the distractor pool is the rest of the source. **Ledger:** the generator is
+named `multihop_rationale_join`, with its source SHA-256 and config hash, per DEC-39.
+**It is text-only and therefore W7v-independent**, which is why it, and not the renderer, is what
+keeps the compose eval alive if W7v slips. **Its admission is not assumed:** items pass W2b's NSRS
+filter like every other, and if `reasoning` alone answers them the filter rejects them and the
+failure is informative — it means the second hop is not doing work.
+
+**(b) Rendered composite-visual items — licence-free, and the source of `visual × *`.** Take `n`
+text items from *already-cleared* sources, render them into a single frame with a deterministic
+layout engine, and ask locate-then-read-then-act:
+
+> "In this frame, find the panel whose text describes X, and return the code in the panel to its
+> right."
+
+Ground truth is derived **mechanically from the layout the renderer chose** — exact, free, and
+generable at any volume. It is genuinely cross-faculty (visual × language × the source item's
+faculty). Licence: a rendering of already-cleared text inherits that text's terms; **no new
+source is acquired.** It serves three stated goals at once — long context *primarily visual*,
+the composite-image argument (*a screenshot IS a collage; training on isolated 64×64 tiles is
+the artificial one*), and the composite-image training item [V\*]. It costs nothing but CPU on
+the 1080 Ti host. **Its geometry and its minimal reference implementation are W3r's deliverable;
+W3 produces the volume against W3r's fixed frame** `[N5 fixed]` — revision 2 made the renderer
+W3's primary deliverable while W7v's gate consumed a rendered composite and W3 was
+`blocked_by: W7v`, which is a cycle in which neither row can start.
+
+**(b′) Two-premise numeric composites — the construction `visual × reasoning` did not have**
+`[N2 fixed]`. Same renderer, same licence position, different ground truth:
+
+> render two panels that each state one premise of a numeric problem drawn from the recovered
+> aqua_rat rows, plus distractor panels; ask for the quantity that follows from **both** premises
+> and is printed on **neither** panel.
+
+`visual` must read two specific panels and `reasoning` must combine them; neither is sufficient,
+and a model that OCRs one panel gets a distractor. It is shape **X6**, and like every `visual × *`
+shape it needs **W3r** for the frame and **W7v** for an encoder that can ingest it.
+
+**Two corrections to revision 1's framing of this generator.** First, it is **no longer
+load-bearing for funding the reserve** — the aqua_rat recovery (§5.1) turns a 2.38× shortfall
+into a 2.13× surplus (2.23× before DEC-42's union burn), so *"this single generator can supply the entire 51,200-row training
+reserve"* is no longer a plan the programme depends on, and leaning on it would drive generator
+share to ≈1.0 against B1 (§5.4). Second, **it produces nothing `visual` can read until W7v**:
+a four-panel composite downsampled to 64×64 is not legible to any encoder, and the encoder
+raises a shape error on anything larger.
+
+**(c) The general / out-of-scope bin, which today has no source at all** [V\*]. **It does not
+need a corpus; it needs a construction.** An out-of-scope item is one where the correct
+behaviour is *low confidence from every region* — so build it as **shuffled cross-modal
+mismatches drawn from the reserve itself** (a `visual` frame paired with an unrelated `memory`
+query). It is admitted under the **`c1c3` exemption** (§5.3), and its correct answer is DEC-41's
+**`NULL` candidate**, gated on `NULL` recall > 0.50 in-bin and `NULL` false-positive < 0.05
+out-of-bin. **Zero new sourcing**, and it directly trains the out-of-label-space rejection that
+both classify regions name as their top gap [V].
+
+**(c′) The general bin's W7v-INDEPENDENT variant, because (c) as written is blocked too**
+`[N9 fixed]`. §5.5(c) builds the bin from *"a `visual` frame paired with an unrelated `memory`
+query"*, so it inherits every W7v and W3r blocker the renderer has — and §5.4's W7v-slip
+restatement did not list it, even though it carries DEC-41's `NULL` gate (`NULL` recall > 0.50
+in-bin, FPR < 0.05 out-of-bin) that A21's fix depends on. **The text-only variant:**
+
+> pair an `apps`/`code_contests` problem statement with an **unrelated** aqua_rat question and ask
+> the question that belongs to neither — every region scores low, the correct answer is DEC-41's
+> `NULL` candidate.
+
+Same `c1c3` exemption, same `NULL` gate, same zero new sourcing, and **no dependency on W3r or
+W7v**. Under the slip branch the general bin is built entirely from (c′) and the `NULL` gate
+survives; with W7v the two variants are mixed and the bin gets cross-modal mismatches as well.
+
+Note a taxonomy dividend: retiring `residual_mlp` — the fallback region that *"has never seen
+real text"* [V\*] — converts the general bin from a **training** requirement into an
+**eval-only** requirement (*does the mind decline rather than confabulate?*). One retirement
+closes the largest named corpus gap in the contract by a taxonomy decision instead of by finding
+a corpus. It does **not** remove the need for an output the eval can read, which is why DEC-41
+names one.
+
+**(d) Local-model synthesis — LAST RESORT**, only after (a)–(c) are exhausted. **The generating
+model is part of the provenance chain** [V\*] and must be named in the manifest with its
+revision and licence, generated with permissively-licensed **local** weights and never a hosted
+API, and its output excluded from every eval split.
+
+**Genuinely new fetches, the only true ones:** a permissively-licensed general-text corpus
+(which also unblocks P6′), a **third text source** to lift `N_eff` off 2.44 **and aqua_rat's binding max-share off 80.2%** (§5.1) `[N8 fixed]`, and
+and — **for the production phase, not for v1** — **audio** for `auditory`
+(DEC-43 as amended by **DEC-48**) `[OP: csd-multimodal-io-intent.md]`. The licence audit is
+**done** and committed at `docs/design/AUDIO-CORPUS-AUDIT.md`, the fetch is row **A0f**, and the
+two cross-faculty item shapes it makes constructible — `auditory × language_code` and
+`auditory × visual` — are row **A3**; all of them are **deferred** behind W6 and an operator go,
+so **no audio row is a v1 sourcing dependency and the six ablation pairs need none of it**.
+Audio remains the *best-provenanced* genuinely-new fetch on this list — **seven provenance
+groups, of which five carry no NC term** `[S31-13 fixed]`, and no BLOCKING source in the
+recommended mix. **The balance claim is `[I]` and cap-dependent, not a finding** `[S31-2 fixed]`:
+`N_eff ≥ 3` is reachable **only at a per-group cap of order a few hundred hours** and fails at a
+1,000-hour cap, because three of the clean groups (MUSAN ~109 h, purpose-recorded ~229 h,
+Freesound ~145 h) are two orders of magnitude smaller than the other three. Whoever picks the cap
+picks the verdict, and A0f's gate (iii) is where that is decided by arithmetic rather than by
+sentence.
+
+## 5.6 The ledger: what is reserved, at what granularity, and how the guard is made to fire
+
+The programme already marks P2.5d as **BLOCKS P2.3** and records the reason correctly:
+*ALLOCATION IS IRREVERSIBLE* [V].
+
+### DEC-38 — reserve at source-row fingerprint granularity `[A6 fixed]`
+
+Revision 1 specified `data/reserve/RESERVED.jsonl`, *"one row per reserved item with a **content
+hash**"*. **That guard is correct for a *fetched* reserve and wrong for a *constructed* one**,
+and §5.5 makes the reserve constructed. A rendered composite's content hash bears no relation to
+the hashes of the source rows it was built from, and neither does a join's.
+
+**The failure, concretely.** Reserve item `R` is a rendered frame whose panel 3 is CodeContests
+problem #4,117. Nothing stops `language_code` from later training on problem #4,117: its hash is
+not in `RESERVED.jsonl` — only `R`'s is. The guard passes, the training run starts, and the
+interconnect is then evaluated on a frame whose answer a region has memorised. **That is exactly
+the condition DEC-22 exists to prevent, defeated by the guard that was supposed to enforce it** —
+and it is the same shape as the defect this programme cites as its worst find (*"dedup and the
+check used the same hash, so overlap was empty by construction, always"*). Revision 1 diagnosed
+that pattern in four places and reproduced it here.
+
+1. **Every constructed item's manifest carries the `pair_fingerprint` of *every source row it
+   consumed*, plus the generator id and revision.** `pair_fingerprint` already exists
+   (`src/cogsyndelta/eval/metrics.py:130-140` [V]) and `_pair_key` already delegates to it for
+   exactly this reason (`regions/pretrain.py:234-250` [V]: *"Two independently-written 'unordered
+   pair key' implementations that drift apart is exactly how a guard ends up checking something
+   other than what it claims to"*). Reuse it; do not write a second one.
+2. **`RESERVED.jsonl` holds the UNION OF SOURCE FINGERPRINTS**, not composite hashes. The
+   train-time guard checks the training pool against that union, **in the data loader, at train
+   time, not at review time** — the loader raises rather than filtering, so it fails closed.
+3. **Verify by making it fire, on the derived case.** Build a composite from a row already in
+   `language_code`'s realised training set and assert the training run **refuses to start**. A
+   guard tested only on a directly-reserved row does not exercise the path that actually leaks.
+   Both refusals are W2b gates.
+
+### DEC-39 — keyed split assignment `[T1 fixed]`
+
+The integrity gates in §5 and §2.6 are all computed by the same pipeline that generates the
+data, and three of the four reserve generators are agent- or code-driven. The `<5`-point
+train/held-out overfit gate catches memorisation; it is **blind to anything present in both
+splits**, where the gap is zero. `assert_no_contamination` (`eval/metrics.py:229` [V]) answers a
+different question — train/eval *overlap* — and is equally blind, because poisoned rows are not
+duplicates of each other, they share a trigger.
+
+> ```
+> split = HMAC(k_split, pair_fingerprint(source_row)) mod N
+> ```
+>
+> `k_split` is held **outside the repo and outside every path an agent can write**. **A
+> generator that cannot choose which rows land in eval cannot defeat any downstream gate**,
+> including the overfit gate. *Fails closed:* **no key ⇒ the loader refuses to build a split at
+> all**, rather than falling back to sequential or seeded assignment. This is the cheapest
+> control in this document and revision 1 did not have it.
+
+### Generator identity, and what the ledger row carries
+
+Each `RESERVED.jsonl` row carries: the source-row fingerprints it consumed, the **generator
+name, the SHA-256 of the generator source, and the config hash**. These are **recomputed on
+load**, and a mismatch **aborts the run** — it does not skip the row. *Fails closed*, provided
+the abort lives in the data loader and not in a pre-flight script someone can forget to run.
+Residual risk, stated: a poisoner with write access to generator *source* defeats content
+hashing, because the hash then faithfully certifies poisoned content. Nothing closes that short
+of human review of generator diffs, which is what OD-1's protected-path control buys.
+
+### Sources are pinned by revision, not by name
+
+The fleet has measured that mirror metadata lies (ten licence mismatches; all 75
+sentence-transformers datasets declare none). The same channel carries **content**, and
+`apps`/`code_contests` arrive through it. **The manifest pins the source revision SHA and the
+fetcher refuses an unpinned fetch.** *Fails closed* because the refusal is in the fetcher.
+
+### On storage, so it is not mis-escalated
+
+The tiered copy of corpora and shards on `gpu5080:/bulk` is **re-acquirable**: everything there
+came from HuggingFace or another trusted source. **A gap in the cold copy is a re-fetch, not a
+recovery incident and not an operator decision** — sample-verify cheaply and re-fetch what is
+missing `[OP: csd-thesis-and-success-criteria]`. What is *not* re-acquirable is the ledger: a
+burned row is burned by the programme's own rule, and the aqua_rat case is only recoverable
+because the *sampling* is deterministic (§5.1), not because the data was backed up.
+
+## 5.7 DEC-31 — the reserve's licence, and the composed model's
+
+The operator's governing rule, verbatim: *"the overall model once fully trained is going to have
+whatever the strictest license is between its data sets and sub models and the model itself —
+that will take precedence and set the tone for all the other licenses throughout the entirety of
+it"* `[OP: csd-release-licence-decision]`.
+
+| object | term | why |
+|---|---|---|
+| `language_code`, `reasoning` | MIT | no restrictive input |
+| `retrieve` (parent) | **NC** | GooAQ's README forbids commercial use and is 77.8% of its corpus; the operator accepts the restrictive reading rather than dropping the source |
+| `compress` (parent) | CC BY-SA if the SA pairs are used | subsumed on merge |
+| **`memory`** | **NC(-SA)** | **a merge inherits the most restrictive licence of its parts.** This is a real, named cost of DEC-02, and the taxonomy decision states it rather than discovering it at release |
+| `visual` | follows its replacement corpus (OD-4); **unreleasable as trained** | tiny-imagenet |
+| the **reserve** | the strictest term among the sources it renders or joins; a rendering of cleared text **inherits that text's terms** | §5.5(b) |
+| **the composed mind** | **NC**, today | strictest input wins, and `memory` is in it |
+
+Two consequences worth stating so they are not rediscovered. **Per-region tiers only matter for
+regions shipped standalone** — the composed release is one licence, and simplicity is the
+operator's stated preference (*"the easiest deconfliction for licensing within my constraints"*).
+And **"may I train on it" stays separate from "may I redistribute it"**: this decision covers
+training and weight release; redistributing GooAQ-derived pairs is still governed by the dataset
+terms, so dataset publication stays private-HF-only.
+
+### DEC-45 — the audio tiers, and why NC costs nothing now that `memory` has already spent it
+
+New in revision 3.1, from `docs/design/AUDIO-CORPUS-AUDIT.md`. The same strictest-input rule,
+applied to two regions that did not exist as requirements when DEC-31 was written. **In revision
+3.2 both regions are DECLARED SEAMS deferred to a production phase (DEC-48), so this table is
+groundwork rather than a v1 licence decision** — it is kept in full and kept correct, because
+recomputing it after a fetch is how a tier gets decided by whatever was already downloaded.
+
+| object | term | why |
+|---|---|---|
+| **`auditory`, clean-tier build** | **CC BY 4.0** | LibriVox + VoxPopuli + AMI + Freesound(filtered to CC0/CC-BY) + MUSAN carry **no NC and no BLOCKING term** — but LibriSpeech, AMI and MUSAN are all `cc-by-4.0`, and **under DEC-31's strictest-input rule one CC BY input makes the output CC BY**. Revision 3.1 wrote *"MIT / CC BY"*, which is **not a licence**: a slash is two verdicts, MIT imposes no attribution condition and is therefore unreachable from this mix, and a reader under schedule pressure reads the left one `[S31-6 fixed]`. **The TASL attribution notice is required in the release.** A strictly public-domain sub-tier (LJSpeech Unlicense, LibriVox PD readings, VoxPopuli CC0, AISHELL-3 Apache-2.0) is a real and interesting third tier, but it **excludes LibriSpeech, AMI, MUSAN, VCTK and Hi-Fi TTS**, i.e. most of the mix, so it gets its own row when someone wants it and not a slash in this one |
+| **`auditory`, with FSD50K's CC-BY-NC clips, full ESC-50, UrbanSound8K or Clotho** | **CC BY-NC 4.0** | those four are **genuinely NC at a real rights holder's own grant** — clean NC, the GooAQ shape, not the tiny-imagenet shape |
+| **`speech_output`, clean tier** | **CC BY 4.0** | LJSpeech, VCTK, Hi-Fi TTS, CSS10, M-AILABS (**8 non-Ukrainian languages** — the Ukrainian subset's *"machine learning purposes only"* carve-out is the entire reason for the count, and revision 3.1 dropped the qualifier from the phrase `[S31-20 fixed]`), AISHELL-3. Same strictest-input arithmetic as the row above: Hi-Fi TTS and VCTK are `cc-by-4.0` `[S31-6 fixed]`. **HiFiTTS-2 is EXCLUDED, and the exclusion is now declared rather than silent** `[S31-20 fixed]`: the audit lists it, it is the largest source in the bucket, and it is dropped for two stated reasons — it is **mirror-verified only**, and the audit's own open question 9 says its ~36,700 h *"would dominate any mix it joins"*. **Four of the six sources here (LJSpeech, CSS10, M-AILABS, Hi-Fi TTS) are ONE LibriVox provenance group under DEC-46**, which is a balance problem, not a licence one — see A2's gate (v) `[S31-5 fixed]` |
+| **`speech_output`, with Expresso** | **CC BY-NC 4.0** | the only expressive/paralinguistic-labelled TTS source found anywhere in the audit; a **standalone-checkpoint cost only** |
+| **the composed mind** | **CC BY-NC-SA 4.0, UNCHANGED** | already the strictest term via `memory` (DEC-31). CC BY-NC-SA is stricter than plain CC BY-NC, so **every NC choice audio adds is absorbed at zero additional cost to the composed release** |
+
+**The consequence, stated plainly because it is counter-intuitive and will otherwise be
+re-derived under pressure: the NC-tolerant policy has already been spent by `memory`, and
+`auditory`/`speech_output` get to use it for free at the composed tier.** A real, separate cost
+exists **only** if either region ever ships as a standalone checkpoint under Option D's
+per-region architecture — which is why that question is OD-15 and why the recommendation there
+is to build the clean tier first and keep the NC sources a named, separable add-on.
+
+**Two things this table does NOT absorb, and conflating them with NC is the error to avoid.**
+**(1) ND is not NC.** TED-LIUM 3 is CC BY-NC-**ND** 3.0 (VERIFIED at the upstream) — *"If you
+remix, transform, or build upon the material, you may not distribute the modified material."*
+DEC-31 moves a release licence to answer a NonCommercial term; nothing in it answers a
+**NoDerivatives** prohibition, which forbids the redistributed derivative outright, commercial or
+not. TED-LIUM is **outside the NC-tolerant policy's scope** and needs its own ruling: **OD-10**.
+**(2) Consent is not copyright.** Common Voice's underlying CC0 dedication is irrevocable as a
+copyright matter, so a frozen pre-October-2025 snapshot is defensible on licence grounds — and a
+static snapshot still **cannot honour a speaker's consent revocation**, which is why Mozilla moved
+distribution to a platform that can. That is a **consent-hygiene** class, not a licence class,
+this document's vocabulary has no slot for it, and inventing one is **OD-11**.
+
+**Seven new mirror-vs-upstream mismatches, and the running tally is now 17.** The audit found
+`agkphysics/AudioSet` (`cc-by-4.0` over re-hosted audio Google's metadata licence never covered),
+`d0rj/audiocaps` (`mit` vs *"academic purposes only"*, INFERRED from a snippet),
+`cvssp/WavCaps` (`cc-by-4.0` vs *"Only academic uses are allowed"*), Clotho (Zenodo's own tag says
+*"Other (Attribution)"* while its `LICENSE` file is NC — the pattern on the *host's* metadata, not
+a third-party mirror), `speechcolab/gigaspeech` (`apache-2.0` over an NC upstream that also
+disclaims owning the audio), `gigant/m-ailabs_speech_dataset_fr` (a meaningless generic `cc` tag
+over a BSD-3-Clause-style upstream that **permits** commercial use), and CSS10 (a GitHub
+Apache-2.0 **code** badge read as a data grant — the CodeSearchNet shape exactly). **Ten were
+already on record for text and vision** (`memory/dataset-mirror-licences-lie.md`); audio added
+seven in one pass over 35 candidates.
+
+**Two corrections landed in the committed audit itself in revision 3.2, and they are recorded here
+because that document is now the only copy the repo has of what the fact files established.**
+**(a)** FSD50K's per-clip stratum shares were printed as *"CC0 36.5%, CC-BY 57.3%, CC-BY-NC
+11.3%"*, which **sums to 105.1%** and is impossible for a one-licence-per-clip column; the derived
+figures from the raw counts are **CC0 38.8%, CC-BY 45.9%, CC-BY-NC 11.8%, and a fourth tier,
+CC Sampling+, at 3.5%** that the *"CC0+CC-BY vs NC"* phrasing silently dropped. Both filter
+denominators were wrong with them (34,976 of 40,966 dev; 8,403 of **10,231** eval) `[S31-10 fixed]`.
+**(b)** The audit's own bucket tables held **one** licence column — mirror tag and upstream terms
+collapsed together — which is *the exact structural rule A0m's gate (i) exists to enforce*, applied
+to everything except the document that states it. **The column is now split in all three tables**
+`[S31-11 fixed]`, which also makes the audit directly consumable as A0m's manifest seed. The
+VERIFIED/INFERRED **marks** survived the original transfer intact; the **numbers under them** did
+not, and that asymmetry is the thing worth remembering about transcribing a fact file into prose. The rule that catches all of them is mechanical and is now
+A0m's gate (i): **record the mirror tag and the upstream text as separate fields with the
+upstream read's own URL and fetch date, and fail the row when the upstream was never independently
+read.** Revision 3.1 phrased that as string inequality between the two fields, which fires on the
+wrong rows in both directions; the corrected form keys on the provenance of the read
+`[S31-3 fixed]`.
+
+### DEC-46 — LibriVox is ONE provenance group, and this is the highest-leverage corpus decision available
+
+Ten of the sixteen speech corpora audited — LibriSpeech, LibriTTS, LibriTTS-R, MLS, Libri-Light,
+LJSpeech, CSS10, M-AILABS, Hi-Fi TTS, HiFiTTS-2 — are re-segmentations, re-recordings or
+quality-restorations over the **same volunteer public-domain-audiobook pool**, spanning both the
+auditory-input bucket and the TTS-output bucket. **A v1 mix assembled by taking the
+highest-recommendation entry from each dataset table would be a ~90% LibriVox monoculture wearing
+ten different names** — the `code`/CodeSearchNet-Python defect (one source with a diverse *look*)
+reproduced at the catalogue level, before a row is fetched.
+
+**Two consequences, both binding.** For **item-level disjointness**, a compose-eval item drawn
+from any one member may share a speaker — or the exact recording — with training material drawn
+from another, so §5.6's fingerprinting must key on the **group**, not the dataset name. For
+**B1/B2**, the ten are **one source** and are capped as one. Without the correction, B1 fails on
+LibriVox alone (Libri-Light is ~60,000 h by itself) or, if VoxPopuli's 400,000 unlabelled hours
+are drawn on to compensate, VoxPopuli simply becomes the new dominant source.
+
+**The balance conclusion is AMENDED in revision 3.2, because revision 3.1 asserted as a finding
+what its own source declined to compute** `[S31-2 fixed]`. Revision 3.1 wrote *"`auditory` can be
+built balanced from day one"* with no `[I]` tag, over an arithmetic the audit explicitly refused:
+*"Sizing that ceiling against real disk and compute budgets is work this audit did not do."* The
+honest statement, tagged:
+
+> **`N_eff ≥ 3` is reachable ONLY at a per-group cap `C` of order a few hundred hours, and B1's
+> operating cap fails at `C = 1,000 h`.** `[I]`, recomputed on the audit's own group hours with
+> Freesound converted to hours (FSD50K ~108 h + ESC-50 ~2.8 h + UrbanSound8K ~8.8 h + Clotho
+> ~24 h ≈ **145 h**; purpose-recorded = AMI 100 + VCTK 44 + AISHELL-3 85 = **229 h**; MUSAN
+> **109 h**), groups capped at `C` and small groups taken at natural size, inverse Simpson on
+> hours: at `C = 250 h`, `N_eff ≈ 5.4` with People's Speech in and **≈ 4.6** with it out; at
+> `C = 1,000 h`, **≈ 3.9 in / ≈ 3.0 out with a max share of 0.403, over the 0.40 operating cap**;
+> at `C = 5,000 h`, **≈ 3.2 in / ≈ 2.2 out at 0.477 — a clear FAIL**. **B1/B2 and corpus scale
+> are in direct tension and the cap has never been sized**: three of the clean groups are two
+> orders of magnitude smaller than the other three, so every cap large enough to matter for a
+> JEPA pretrain pushes the big groups toward dominance. The rules pass comfortably only at a
+> total `auditory` corpus of order **10³ hours**.
+
+**People's Speech is decided explicitly rather than left to the arithmetic** `[S31-2 fixed]`. Its
+`*-clean` configs are `cc-by-sa-*` as well as `cc-by-*`, so **including it moves `auditory`'s
+standalone tier to CC BY-SA 4.0**, while **excluding it costs the sixth group** that DEC-46's own
+`N_eff` argument leans on. **Decision: OUT of the clean tier for the standalone-licence question,
+and counted in the balance arithmetic only as the SA-tier variant** — DEC-45's clean row is
+therefore CC BY 4.0 with five groups, and the six-group figure is reported beside it as the
+SA-tier alternative. Either way the number is printed with its cap, never asserted without one.
+
+**Units, because B1 and B2 are share statistics** `[S31-14 fixed]`. The provenance-group table
+gives LibriVox, VoxPopuli, People's Speech, purpose-recorded and MUSAN in **hours** and Freesound
+in **clips** (51,197 + 2,000 + 8,732 + 4,981). A max share or an inverse Simpson computed over
+mixed units is meaningless — taken naively, Freesound's 66,910 "units" would outrank MUSAN's 109,
+where in hours it is ~145 against 109. **B1/B2 are computed in HOURS**, the Freesound row is
+converted, and A0f's gate prints the unit.
+
+**Two thresholds, and a receipt must report against both** `[S31-15 fixed]`. The audit's heading
+says *"B1 — max single-source share ≤ 0.40"*; this document carries a **0.50 hard line** and a
+**0.40 operating cap** (§5.1, `CORPUS-CONTRACT.md:1155`). The gap is not academic: the
+People's-Speech-out mix at `C = 1,000 h` lands at **0.403** — over the operating cap, under the
+hard line. A0f's gate (iii) reports the share against **both**, with the **hard line as the FAIL
+and the operating cap as a recorded warning**, which is the shape §5.1 already uses for aqua_rat.
+
+**Why this is a DEC and not a note.** It is the audit's own judgment call, not something any
+dataset's licence page states — which is exactly the kind of claim that evaporates under
+schedule pressure unless it is written down with a gate attached. **A0f's gate (iii) prints B1/B2
+both ways and now PASSES OR FAILS on the grouped numbers rather than printing them** — a grouped
+max share over 0.50, or a grouped `N_eff` below 3, **fails the row** `[S31-2 fixed]`. Revision
+3.1's version printed two numbers and asserted nothing, which would have let A0 land with a
+monoculture and a green receipt: precisely OD-13's stated late cost, reproduced inside the gate
+written to prevent it. **The per-name numbers are expected to look fine** — that is the whole
+defect. It needs the operator's sign-off (**OD-13**) before it becomes load-bearing for a cap
+design, because most of the easy clean volume in the entire audit sits inside that one group.
+**Under DEC-48 that sign-off is no longer urgent**, and OD-13 moves with the rows it binds.
+
+
+# 6. Scale path and the dynamic-paging seam
+
+## 6.1 The five numbers the scale path is derived from
+
+| # | number | derivation |
+|---|---|---|
+| **N1** | **3.2675 effective bits/param** | `stored_bytes 6,543,592 × 8 / 16,021,248 params`, from the real `code` PTQ receipt [V\*] |
+| **N2** | **11.41 GiB** for 30B at N1 | `30e9 × 3.267 / 8 / 2^30` |
+| **N3** | **≈3.29 GiB** KV budget on a 16 GiB card | `16.0 − 11.41 − 0.50 (CUDA ctx + frag) − 0.80 (activations)` |
+| **N4** | **192 KB/token** bf16 KV for a 48-layer, 8-KV-head × 128 region | `4 · L · d_kv = 4 · 48 · 1024` |
+| **N5** | **80.30%** of every text region is its token-embedding table | `50,257 × 256 = 12,865,792 / 16,021,248` — exact reconstruction of the receipt param count |
+
+**N3 ÷ N4 is the whole architecture in one division.**
+
+| assumption | KV/token | total token budget |
+|---|---|---|
+| bf16, 48-layer region | 192 KB | **≈17,900 tokens** |
+| bf16, 32-layer region | 128 KB | ≈26,900 tokens |
+| **int8, 32-layer region (DEC-25, the v1 assumption)** | **64 KB** | **≈53,900 tokens** |
+
+**In every case that is the total across every region active at once. Not per region. Total.**
+That is why the interconnect must be a scheduler and not a router: a router picks who runs;
+something has to decide *who gets how many of those tokens*, and that decision is a hard,
+linear, byte-denominated constraint that no amount of emergent attention expresses on its own.
+
+**The check that makes it concrete, and it survives the optimistic assumption.** Long context is
+*primarily visual*. One 1920×1080 screenshot at patch-16 is `120 × 67 = 8,040` patch tokens.
+
+| budget | equal share across 9 regions | one screenshot fits? |
+|---|---|---|
+| 17,900 (conservative) | 1,989 | **no**, by 4× |
+| 53,900 (int8, optimistic) | 5,989 | **no** |
+
+**Uniform per-region context is structurally incapable of serving the stated deployment
+target.** A learned allocator under `Σ_r c_r·ctx_r ≤ B_kv` is not an elegance; it is the only
+configuration in which the mind can look at a screen. The scheduler is load-bearing at the
+target *regardless of the biology*, and the arithmetic says so independently [I, grafted from
+biology-first; a judge called it the best available argument that the operator's framing is
+right on its own terms].
+
+**Composite frame geometry, fixed by W3r (§4.1) and tracked here rather than left open.** Not a
+sixth entry in the table above — those five are specifically the scale-path derivation — but the
+`visual` region's KV/token cost (§1.4's `kv_bytes_per_token`, currently 9,216 at `n_patches 64`)
+is one of the per-region terms in this section's `Σ_r c_r·ctx_r ≤ B_kv` budget, and its `n_patches`
+will change once W7v rebuilds the encoder against the geometry this row fixes:
+
+| quantity | value | source |
+|---|---|---|
+| composite frame side | 128 px | `src/cogsyndelta/vl/composite.py:FRAME_SIZE` |
+| patch side | 8 px | `src/cogsyndelta/vl/composite.py:PATCH_SIZE` |
+| patches per frame | 256 | `src/cogsyndelta/vl/composite.py:N_PATCHES` (`GRID=16`, `16²`) |
+
+Checked-in ground truth for the triple: `tests/fixtures/composite_4panel.png`, byte-reproduced
+from `tests/fixtures/composite_4panel.spec.json`. `visual`'s live config (§1.4) stays at
+`image_size 64, n_patches 64` — and every KV/token figure derived from it above stays the
+64-patch number — until W7v's retrain actually lands; this table records the fixed target, not
+a claim that the rebuild has happened.
+
+## 6.2 DEC-24 — the shared embedding table, decided now because it is cheap now
+
+Six text regions carry six copies of the same GPT-2 BPE table: `6 × 12,865,792 = 77,194,752` of
+`96,127,488` total text-region params. Sharing gives `12,865,792 + 6 × 3,155,456 = 31,798,528`
+— a **3.02× reduction for zero capability loss** [V\*]. At 30B with `d_model 6144` one shared
+table is 0.6% of the model.
+
+> **So it must be decided now, while it is cheap to change and matters, not later when it is
+> expensive to change and doesn't.**
+
+**Applied how, honestly** `[A31 fixed]`. Revision 1 wrote *"mandatory from the first region
+trained after ratification"* and then conceded *"the v1 mind keeps three separate tables"* — a
+mandate unsatisfiable at its first application, since the first rows that train anything (W1b,
+then W4) are a receipt regeneration and a two-parent merge whose tables have already diverged,
+with frozen peers keeping their own. Three corrections:
+
+1. **`memory` inherits `retrieve`'s table**, and the divergence between the two parents' tables
+   is measured and recorded in W4's receipt. `retrieve` because it is the parent whose gate
+   (the FiQA BEIR pool) survives as `memory`'s gate, so its tokenisation statistics are the ones
+   the surviving eval is calibrated against.
+2. **DEC-24 binds from phase 3 (P5′)**, where regions unfreeze and sharing is achievable — not
+   from "the first region trained", which was never a reachable trigger.
+3. **W1's result creates the one earlier opportunity, and it should be taken.** W4 and W7a
+   retrain every text region anyway (§4.0). That is the moment three tables *could* become one
+   at no incremental cost beyond the retrain already being paid for. It is **not** made
+   mandatory here, because it would couple the token-aware retrain's gate to a second variable
+   and a failure would be undiagnosable — but W4's receipt must record whether the table was
+   shared, so phase 3 knows what it inherited.
+
+The 3.02× figure stands as the phase-3 lever it is, with one label correction: it is computed
+for **six** text regions, a configuration §1.2 has merged down to **three**. At three regions
+the saving is `2 × 12,865,792 = 25,731,584` params, a 1.67× reduction on the text-region total.
+
+## 6.3 Feasibility conditions, not optimisations
+
+- **GQA/MQA is a feasibility condition.** Full MHA at `d_kv = 6144` costs **1,152 KB/token**;
+  16k tokens is **18.0 GiB — more than the whole card** [V\*]. An architecture that does not
+  state this can be specified into infeasibility.
+- **Flash / SDPA attention is mandatory.** Materialised attention logits at `T = 16,384`, 48
+  heads, bf16 are `16384² × 48 × 2 = 25.8 GB` [V\*]. The tree already uses
+  `F.scaled_dot_product_attention`, so this is preserved, not introduced.
+- **DEC-25 — int8 KV is the v1 assumption, not the contingency.** The bf16 budget closes to
+  16.00 GiB *exactly, with zero margin*; a budget that closes to the byte on the number the whole
+  design is derived from has not been closed. `ScheduleGraph.nodes[].kv_precision` carries
+  `bf16 | int8 | int4`; declare the field now, build the kernel when the constraint is measured —
+  which by this arithmetic is at the target itself.
+
+## 6.4 DEC-26 — the interconnect parameter cap, set while `D` and `L_ic` are still free
+
+**2–5% of total params — and the cap is scoped, because v1 violates it by 6×** `[A25 fixed]`.
+
+```
+v1 interconnect share = 26,899,751 / 85,807,015 = 31.4%
+```
+
+Revision 1 set the cap in §6.4 and, four sections earlier, celebrated that *"white matter is
+8.5× a region's compute parameters… the centre of gravity in arithmetic"* — two tables that
+cannot both be honoured, with nothing saying the cap applied only at the 30B target. **The cap
+is scoped explicitly:**
+
+> **DEC-26 binds at ≥ 1B total parameters.** Below 1B the interconnect is **deliberately
+> dominant** — that is the thesis, not an overrun — and the v1 share (**31.4%**) is printed
+> beside the cap so a ratifying operator sees the exemption rather than inferring it from two
+> tables four sections apart. The crossover is where region *compute* parameters (not embedding
+> tables) begin to dominate: at v1, regions are 19.7% compute and 80.3% embedding, so the
+> interconnect is 8.5× a region's compute; by 1B per region that ratio inverts.
+
+**At the MLP ratio this design actually specifies, the ceiling claim flips** `[A26 fixed]`. §2.3
+states the workspace blocks are `mlp×4`, and v1's `16,803,840 / 4 = 4,200,960 ≈ 16·512²`
+confirms it. Revision 1's 30B figure of `805,453,824` is `12·D²` per block — **`mlp_ratio 2`**,
+a silent architecture change between two columns of a table arguing an invariant.
+
+| `L_ic` | params at `D=4096`, **`mlp_ratio 4`** | share of 30B | verdict |
+|---|---|---|---|
+| 4 | 1,073,741,824 | **3.6%** | inside the 2–5% band |
+| 8 | 2,147,483,648 | **7.2%** | **above the 5% ceiling** — not the ceiling revision 1 named |
+
+So `L_ic = 4` is the design point and `L_ic = 8` is **outside** the cap, not at it. If depth 8 is
+ever wanted, either the ratio drops to 2 (recovering 5.4%) or the cap is renegotiated — and
+either is a decision, made visibly, rather than a number that quietly changed between columns.
+It remains compatible with the workspace's asymptotics: no term in
+`O(L·D_w²·(1+mlp_ratio) + Σb·D_w² + L·Σb·D_w)` grows with region size (§2.3).
+
+**What must stay high precision regardless of the cap:** the thalamic controller (1.59M) and the
+connectivity read-out. An error in a region's weight perturbs one contribution; an error in an
+attention weight **redirects information**, and an error in the controller *changes which
+faculties ran*. 61 KB of insurance, with existing precedent in the tree (`vl_latent` already
+declares `quantization.skip: true` [V]).
+
+## 6.5 DEC-27 — quantisation gates on the schedule, not only on the metric
+
+The PTQ machinery is real and measured: sensitivity-greedy mixed width, **9.79×** compression on
+`code` with recall drop **0.0039**, `within_budget: true`, `width_histogram {3:16, 4:1}` [V\*].
+The pattern to preserve: norms and the two MLP biases per block stay fp32 (26 tensors, 9,728
+params) [V\*].
+
+**The breakage mechanism nobody else names:** quantisation does not merely lose accuracy inside
+a region — it shifts that region's output distribution, which shifts the interconnect's
+attention logits, **which changes the schedule**. Different regions at different widths drift by
+different amounts. So:
+
+```
+D_sched = E_items [ JSD( a_fp32(item) ‖ a_quant(item) ) ]      # over the region-attention mass
+```
+
+**W10 gate:** quantise **one region at a time**; per region `D_sched ≤ 0.02` nats **and**
+composed metric drop ≤ 0.01 — the same tolerance the existing quant receipts already use. A
+region that fails gets its width promoted, exactly as `retrieve` already promoted two tensors to
+5 and 8 bits [V\*]. The promotion machinery exists; it only needs a second objective. **The
+read-out heads and adapters quantise with the interconnect, not with their region** — they sit
+at the seam where distribution drift becomes schedule drift.
+
+**`D_sched` becomes a training-time quantity if P5′q wins** `[OP: csd-quantize-before-whole-mind-training]`.
+The phase-3 experiment (§4.1, row **P5′q**) asks whether quantising the regions *before* the
+interconnect trains cuts peak VRAM without a drastic quality hit — at toy scale it is free to
+test, and at 1B+ it decides whether phase 3 fits on 24 GiB at all, let alone 16 GiB. The design
+consequence is stated here rather than in the row, because it changes what this decision means:
+
+> **If quantise-first wins, the interconnect must train against QUANTISED region activations**,
+> so that its train-time inputs match deployment — and per-region PTQ sensitivity must therefore
+> be measured **before** regions are frozen, not after. `D_sched` then stops being only a release
+> gate and becomes a **training-time constraint**: a region whose quantisation moves the schedule
+> is a region the interconnect is being trained against under the wrong distribution.
+
+That is the QLoRA insight applied to a composed mind — a quantised frozen base with small
+trainable parts — and the answer is empirical rather than borrowed, because the composition is
+novel. The canonical path stays the default at toy size; P5′q is the matched experiment.
+
+## 6.6 DEC-28 — the dynamic-paging seam
+
+*"Design the seam, build when the constraint is measured."*
+
+```python
+class WeightStore(Protocol):
+    def ensure_resident(self, region: str, precision: str) -> Handle: ...
+    def evict(self, region: str) -> None: ...
+    def residency(self) -> dict[str, bool]: ...
+```
+
+`Schedule.nodes[].resident` is the scheduler's *request*; `WeightStore` is the runtime's
+*fulfilment*. Three rules, each derived from a number rather than asserted:
+
+1. **Trigger.** Build it when `Σ(weight bytes of the resident set) > 0.75 × (VRAM − KV budget −
+   activation budget)`. At 30B / N1 that is 11.41 GiB against a ceiling of
+   `16.0 − 3.29 − 0.80 − 0.50 = 11.41 GiB` — **the seam triggers essentially at the target
+   itself** [V\*]. Do not build it before then; do not be surprised when it is needed.
+2. **Granularity: request or stage boundaries, never per token.** A 3B region at N1 is 1.14 GiB
+   → **61 ms** over PCIe 4.0 x16 at ~20 GB/s effective, against a ~20 ms/token decode step
+   [V\*]. Once per request: 3 tokens of latency. Per token: a 4× slowdown. **An adapter is 17 MB
+   and 0.85 ms**, which is what makes *"broad competence with deep spikes"* physically
+   realisable — dozens of instantly-swappable specialisations, not dozens of resident regions.
+3. **Prefetch is free in this design, and it is the reason it pages well.** The `Schedule` is
+   emitted **before** execution, so at iteration `i` the runtime already knows the full
+   activation set for `i+1` and can prefetch depth-`i+1` regions while depth-`i` computes. **A
+   dispatch router cannot do this — it learns the next region only by running the current one**
+   [I]. **`Schedule.stages` IS the paging plan**: the scheduler built for compute allocation
+   turns out to have already emitted the memory plan, so there is no separate pager, ever.
+
+v1 implementation: `ensure_resident` is a no-op and residency is always `"resident"`. The
+interface costs nothing now and the DAG makes it correct later.
+
+### DEC-33 — memory-gate overlays: the seam's first client, and what it requires of the seam
+
+*"Design the seam, build when the constraint is measured"* is only honest if the seam is designed
+against a real client. **Memory-gate overlays are that client, and they arrive before 30B does**
+`[OP: csd-memory-gate-overlays]`. The requirement, in the operator's terms: learned
+specialisation lives in **differential overlays/offsets on weights and/or activations — never in
+edits to the base weights** — recalled and applied selectively at inference for the use case at
+hand, lightweight in VRAM, with a **loud** disconnect back to default weights.
+
+Four requirements this places on `WeightStore`, and they are not the ones a pure 30B paging story
+would have produced:
+
+1. **Residency is TIERED, not binary.** `residency() -> dict[str, bool]` is insufficient. Hot
+   overlays stay in VRAM, warm in GPU/host cache, cold on disk, and **promotion and eviction are
+   scored on importance, size, age and utility** (recency and frequency of use). That is a
+   memory hierarchy with a *policy*, and the policy is a design object that must be **measured —
+   hit rate, page-in latency, VRAM held — not hard-coded**. The protocol becomes
+   `residency() -> dict[str, Tier]` with `Tier ∈ {vram, cache, disk}`, and `ensure_resident`
+   takes a target tier.
+2. **Granularity is the adapter, which is why this works at all.** §6.6's own arithmetic: a 3B
+   region is 1.14 GiB and **61 ms** to page; **an adapter is 17 MB and 0.85 ms** [V\*]. Overlays
+   are adapter-shaped by construction — low-rank weight deltas per region for *skills*,
+   activation-steering offsets on the shared stream for *personas* — so *"broad competence with
+   deep spikes"* is dozens of instantly-swappable specialisations rather than dozens of resident
+   regions.
+3. **An overlay REFUSES to attach to a base fingerprint it was not trained against.** Overlay
+   provenance records what data trained it and **which base checkpoint fingerprint it targets**;
+   attaching to a different fingerprint raises. This is the same fail-closed pattern as DEC-40's
+   checkpoint hash, and it is **the second client of that mechanism** — which is the argument for
+   building the fingerprint properly once rather than twice.
+4. **Disconnect is LOUD.** Reverting to base weights is observable and logged, never a silent
+   degradation. *A fallback nobody can see is not a fallback.* **Gate (P5′o): an overlay applied
+   and then disconnected reproduces the base model's receipt metrics EXACTLY, and the disconnect
+   appears in the log.**
+
+**Licence:** the strictest-input rule (DEC-31) applies to overlays as it does to regions — an
+overlay trained on NC data is NC, and it makes anything it is attached to NC while attached.
+
+**Composition:** overlays compose with frozen quantised regions (P5′q) and with per-region
+selective activation. That is three mechanisms meeting at one seam, which is the reason to write
+the seam now: `Schedule.nodes[].resident` is already the scheduler's *request*, and an overlay is
+just a smaller thing to request.
+
+## 6.7 DEC-29 — training the fleet at 1 Gb/s, with one correction to the programme
+
+The programme's statement that **cross-host DDP is the wrong tool** is right: a 16M-param model
+is ~64 MB of gradients per step per direction, ≈0.58 s at ~110 MB/s effective, which exceeds the
+step time it would overlap [V\*]. But that argument is about *gradients* and does not generalise
+to phase 3.
+
+| phase | what crosses the wire | volume | verdict |
+|---|---|---|---|
+| **1** per-region pretraining | nothing | 0 | **region-parallel**, near-linear in hosts. Unchanged. |
+| **2** interconnect training | a one-time cached emission dump — **regions are frozen, so their depth-0 tokens are a pure function of the input and can be computed once** | at 16 read tokens/region: `51,200 × 4 × 16 × 512 × 2 B = 3.36 GB` → **31 s** over 1 GbE [V\*]; at the v1 default of 64: **13.4 GB → ~122 s** [I] | **one host**, zero gradient traffic. The 5080 trains the interconnect against a cached emission file **while the 3090 keeps pretraining regions.** Both hosts productive at once. **Caveat, and it is a real interaction between two of this document's grafts:** write-back (DEC-17) makes `h_r` depend on `z` at iteration ≥1, so only the **depth-0** emissions cache. With write-back disabled the whole of phase A caches; with it enabled, one iteration does and the rest are recomputed. |
+| **3** whole-mind dynamic training | pipeline **activations**, not gradients | microbatch 32: **2.1 MB → 19 ms**; microbatch 256: 16.8 MB → 153 ms | **region-granular pipeline parallel is viable where DDP is not** |
+
+**The correction:** pipeline parallelism sends `O(microbatch × slots × D)` while DDP sends
+`O(params)` — **2.1 MB vs 64 MB at microbatch 32, a 30× reduction**, and it overlaps with compute
+rather than blocking a step boundary [V\*].
+
+**Bound, stated so it can be falsified:** the claim holds only at modest microbatch. At the
+runner's current `DEFAULT_BATCH = 1280` the transfer is **83.9 MB ≈ 763 ms**, which is not under
+15% of any plausible step time [V\*]. **Cap phase-3 cross-host microbatch at 256** and use
+gradient accumulation to recover effective batch. P5′'s gate measures this rather than assuming
+it: **cross-host activation traffic ≤ 15% of step time.**
+
+**The honest limit that must be recorded now rather than discovered later:** phase 3 at full 30B
+scale is not trainable on this fleet — joint training couples every region and the largest card
+is 24 GiB. No architecture choice fixes this. The named mitigation is **progressive unfreezing
+by tract**: unfreeze one faculty plus the tracts touching it, rotate. That is memory-bounded and
+is the direct analogue of region-per-host for a coupled model. The pipeline-parallel arithmetic
+above recovers more fleet capability than a flat "not trainable" would suggest, but it does not
+recover all of it.
+
+**And there is a second lever on the same limit, which is why P5′q exists.** Pipeline
+parallelism moves *activations* between hosts; it does nothing about the fact that the canonical
+path needs fp32/bf16 regions **plus optimizer state plus activations** resident during phase 3.
+Frozen **quantised** regions with a trainable interconnect is the shape that fits, and at 3.27
+measured effective bits/param the difference is not marginal. So **P5′q's headline measurement
+is peak VRAM during phase 3**, matched against the canonical run, and it is the number that
+decides whether progressive unfreezing is a mitigation or the only option
+`[OP: csd-quantize-before-whole-mind-training]`.
+
+## 6.8 Hybrid context management falls out; it is not a separate subsystem
+
+The requirement is *"sliding windows over an overarching context, plus latent-reasoning windows.
+Per-region budgets, not one global window"* [V\*]. In this design:
+
+| requirement | mechanism at v1 | mechanism when `episodic_store` is built |
+|---|---|---|
+| sliding windows over an overarching context | each region's `ctx_r` window over its own long input, re-selected per iteration | unchanged |
+| **the overarching context** | **the workspace latents `z`, persisted across the `n_iter` loop, plus the per-request `h_r` cache** — bounded, per-request, and honest about being *within*-request only | **`episodic_store`** — a participant with its own budget. Long context becomes *a region you allocate budget to*, not a special case |
+| latent-reasoning windows | the workspace latents `z [B,64,512]` themselves | unchanged |
+| per-region budgets | `ctx` and `b`, the two simplexes | unchanged |
+
+One mechanism, four requirements, no separate context manager — **with one honest correction**
+`[A17 fixed] [T2 fixed]`. Revision 1 satisfied *"the overarching context"* with `episodic_store`
+and shipped it as `built`. DEC-32 demotes it to a placeholder, so **at v1 the overarching context
+is within-request only**, and the cross-request half of this requirement is deferred with the
+store. That is a smaller claim than revision 1 made and it is the true one: a store with no write
+policy, empty at iteration 0, would have satisfied the requirement on paper and contributed
+nothing on any eval item.
+
+The store's contract is written now precisely so that building it is a specification and not a
+redesign — capacity, FIFO eviction, and a **server-derived partition key** (§1.3, §9.9). It is
+also the first place the architecture acquires cross-request state, and therefore the first place
+it acquires a trust boundary that per-request bounds do not cover.
+
+**Recursive / looped latent refinement remains deferred**, per the operator: the `n_iter`
+workspace loop is bounded and explicitly not a recurrent-depth architecture. The seam exists
+(`halt` and `max_iters`) if that direction is ever taken up.
+
+## 6.9 The post-binary track: ternary, and where it sits
+
+Recorded here as the scale path's continuation, with **no rows and no design commitments today**
+`[OP: csd-ternary-long-term-track]`. The operator's ordering is **binary toy → binary big model →
+ternary toy → ternary big model**, and *"ternary work does not start until the binary big model
+is proven"* — so it sits after everything in §4.1, including P5′. The arithmetic is why it is
+worth recording rather than forgetting: this document's whole scale path is derived from **3.2675
+measured effective bits/param** (N1, §6.1), which puts 30B at ~11.4 GiB and leaves §6.1's budget
+closing with no margin at bf16. Ternary weights (`{-1, 0, +1}`, ~1.58 bits/param
+information-theoretically, cf. BitNet b1.58) would roughly halve that again, which is what would
+put a 30B-class composed mind on a 16 GiB card **with** activation headroom rather than at the
+edge of it. Whether quality holds is the open question the ternary toy exists to answer —
+measured, against untrained baselines, not assumed.
+
+Three constraints that bind any future ternary work and are cheap to record now:
+
+- **Python first, Rust only after the Python implementation proves the idea.** This is the
+  standing language policy, not a preference about this track.
+- **`tzervas/embeddenator` is substrate, not a model repo.** It is filesystem and low-level
+  primitives intended to accelerate VSA, embeddings and ternary arithmetic **on binary
+  hardware**, and it holds a record of what worked and what definitely did not. Read it before
+  designing anything ternary so its negative results are not rediscovered; **do not expect it to
+  supply region or interconnect designs.**
+- **VSA binding/bundling as an interconnect primitive is a hypothesis for the ternary phase, not
+  a current design input.** It is named here so that it is not smuggled into v1 as an
+  architecture choice.
+
+**Two further deferred directions belong beside it, both downstream of DEC-47 and neither built.**
+
+- **Recurrent latent depth.** DEC-47's clause 2 says the scheduler's iteration depth **is** the
+  latent-reasoning loop; the deferred form of that idea is to **loop the forward pass in latent
+  space to refine a prediction** rather than only to re-admit regions
+  `[OP: csd-recursive-latent-transformers]`. v1 already has the shape — `max_iters`, ACT halting,
+  write-back — so the future step is a *training* change (make depth an inference-time knob the
+  objective rewards), not an architecture change. Recorded so the v1 iteration loop is understood
+  as the first version of it rather than as plumbing.
+- **Quantised concept codes as a tract codec.** DEC-47's clause 5: the operator's *"discrete
+  latent concepts"* is a hypothesis about representation, and its testable form is a **VQ-style
+  codebook in the `tract_codec` slot DEC-08 retired `stream_vae` into**, which lands naturally on
+  this track because a small codebook index is close to a ternary payload. **Continuous latents
+  remain the default until a codec is measured against them**, and a codec that is adopted must
+  still satisfy DEC-47's gate: a code index that a region *decodes back to latents* at the far
+  end of the tract is a codec; one that a region *reasons over as a symbol* is the token
+  bottleneck the invariant forbids.
+
+---
+
+# 7. What this invalidates in the other design docs
+
+Precise enough to dispatch one agent per document. Line ranges are the current headings in each
+file as read in this session [V].
+
+## 7.1 `docs/design/CORPUS-CONTRACT.md` (1,332 lines) — **heaviest rework**
+
+| section | what changes | why |
+|---|---|---|
+| §1.1 `code` (72–225) | re-key to `language_code`, faculty `language`, specialisation `code`. **Its "Target composition" REVERSES on `apps`/`code_contests`** — those go to `compose`, not to `code` | DEC-01, DEC-23 |
+| §1.2 `compress` (226–329) **+** §1.3 `retrieve` (330–511) | **MERGE into one `memory` section.** Two "target composition" tables become one; the merged faculty's requirement is *encode + consolidate + retrieve*, not two bi-encoders' corpora concatenated | DEC-02 |
+| §1.3's B3 declaration defect (418–511) | **closed** by adopting the BEIR FiQA-pool eval as `memory`'s gate; the in-mixture number is reported alongside for comparability | DEC-09 |
+| §1.4 `vl_latent` (512–619) | rename `visual`; add the **emission contract** (patch tokens into white matter) and promote composite images from polish to a **prerequisite** of the `visual × *` bins | DEC-03, §5.4 |
+| §1.5 `classify` (620–679) | becomes **"Probes, not regions"**; add the `affect` faculty placeholder and its corpus requirement | DEC-05, DEC-06 |
+| §1.6 `reason` (680–743) | rename `reasoning`; record the phase-3 objective change (latent-step prediction) and the deferred `numeric` split | DEC-04 |
+| §2.1(a) cross-region items (756–776) | the four pairs are **re-keyed** (`compress × retrieve` is now intra-region); the claim *"they cannot exist"* is upgraded with the three constructions in §5.5 | §5.4, §5.5 |
+| §2.1(b) general / out-of-scope (777–795) | now **sourced by construction** (shuffled cross-modal mismatch); `residual_mlp`'s retirement converts it from a training to an eval-only requirement | DEC-07, §5.5(c) |
+| §2.1(c) interleaved batches (796–804) | re-homed to **phase 3 (P5′)**, where it finally has a reason to exist | §4.1 |
+| §2.4 the allocation ledger (938–1002) | add the `compose` allocation for apps + code_contests; add the **aqua_rat total write-off** and the reason (deleted receipt ⇒ unrecoverable sampling) | DEC-23, §5.1 |
+| §2.5 the reservation (1003–1048) | **rewrite.** 244,761 and 23.0% are historical; re-derive against **83,328**; bins 7→6; pairs re-keyed; the reservation is a **construction**, not a fetch. Its preferred gsm8k/banking77 split is dead — both are spent | §5.1, §5.4 |
+| §2.6 the gate ladder (1049–1090) | replace: the ceiling becomes **oracle late fusion (B2)**, and G3′ + the content-swap control + the B0 void condition are added. The current ladder's upper bound is beatable by a good mixer | §2.7 |
+| §2.7 what has no source (1091–1120) | the general bin **now has a construction**; audio is added as the one genuinely-blocked placeholder | §5.5 |
+| Part 3 B1/B2 (1136–1178) | extend the provenance-group definition to **constructed** corpora: the generator (renderer, join, synthesis model) is the provenance group, and B1/B2 apply to it | §5.5 |
+| Part 3 B3 | the *held-out-domain vs in-mixture* rule now also governs the reserve, whose whole point is that it is neither | §5.3 |
+| §2.4 the allocation ledger — **again** | **replace the aqua_rat total write-off with the UNION burn (≤ 9,964 rows) plus ≥ 87,503 clean** (DEC-42), once W2a's **four** checks pass; record **both** draws' fingerprints, the corpus fingerprint of the parquet, whether the run's code revision could be established, and the fact that the *sampling* is what made recovery possible `[N1 fixed]` | §5.1, W2a |
+| §2.4 / new §2.4b **the reserve ledger's schema** | `RESERVED.jsonl` rows carry the **union of source-row `pair_fingerprint`s**, the generator name, the SHA-256 of the generator source and the config hash — **not** composite content hashes; recomputed on load, mismatch **aborts** | DEC-38 |
+| new §2.8 **split assignment** | `split = HMAC(k_split, pair_fingerprint(source_row)) mod N`; `k_split` outside every agent-writable path; **no key ⇒ refuse to build a split** | DEC-39 |
+| Part 1 every source row | **pin the source revision SHA** and refuse an unpinned fetch — mirror metadata is measured to lie, and the same channel carries content | §5.6 |
+| Part 3 B1/B2 | state that for a **constructed** reserve the generator is the provenance group, and either diversify or carry a **dated waiver naming what the reserve cannot measure** | §5.4 |
+
+## 7.2 `docs/design/TRAINING-SUPERSET.md` (1,422 lines)
+
+| section | what changes |
+|---|---|
+| §1 classification tables (108–265) | re-key the four trained regions to faculties; note that `visual`'s corpus is **unreleasable as trained**, so no release claim can include it until replaced |
+| §2 "The phases are the project's own curriculum" (268–311) | replace with the **four phases** (per-region → interconnect → whole-mind dynamic → foundation); phase 3 is new and is where growth happens |
+| §2 per-submodel composition (312–331) | re-key to faculties; `memory` is one submodel with two heads |
+| §2 **"The reserve — constituent-level, not row-level"** (332–385) | **substantially rewritten.** The reserve is the interconnect's **training data**, not phase 3's eval set. Constituent-level reservation cannot express a *constructed* corpus, so an **item-level ledger** with per-item NSRS scores and a generator id is required |
+| §2 "Publishing a reserve you cannot ship" (386–403) | changes shape: most of the reserve is now constructed from already-cleared sources plus a renderer, which alters what is publishable and how |
+| §2 "Enforcing and verifying the separation" (404–465) | add the **refuses-to-start** gate and the make-the-guard-fail test |
+| §5 provenance minimums (815–929) | add: **generator id, revision and licence** for constructed items; the renderer's own licence; the join's source ids; the NSRS scores `s_r` per item |
+| §8 the `kind: corpus` manifest (1200–1337) | add a `constructed` provenance kind and the fields above |
+| §9 build order (1338–1359) | **re-order:** reserve allocation precedes P2.3; corpus construction runs on CPU hosts **in parallel** with GPU work, never serialised behind it |
+
+## 7.3 `docs/design/MODEL-MANIFESTS.md` (1,209 lines)
+
+| section | what changes |
+|---|---|
+| §B required fields (130–264) | add `faculty`, `specialisation`, `emits`, `native_dim`, `adapter`, `token_budget`, `kv_bytes_per_token`, `accepts_condition`, `status` (replacing `live`) |
+| the `objective_family` enum (in §The schema, 534–848) | add **`interconnect-integration`** and **`scheduler-distillation`**. **The "live schema violation" claim is withdrawn** `[A22 fixed]`: re-read this session, `config/mind/csd-regions.json:144,162` set **`objective`**, not `objective_family`; `MODEL-MANIFESTS.md:742` constrains `objective_family` with the enum while `:743` types `objective` as a free-form string; and `csd-regions.json` is not validated against that schema at all [V]. **No violation exists.** Whether `classification-single-label` / `classification-multi-label` belong in `objective_family` is a **design question** — raised separately, and complicated by DEC-05/DEC-06 demoting both classifiers to probes |
+| §The schema (534–848) | add a **third manifest kind for the interconnect**: it is neither a region nor a corpus, it has no pretrain corpus of its own, and its measured fields are budgets and schedule statistics |
+| receipt stages | `pipeline/receipt.py`'s `STAGES` contains `"compose"` and nothing writes it [V\*]; add **`"schedule"`** and make both real |
+| worked example 3 `csd/retrieve` (1032–1153) | becomes `csd/memory`, two heads, BEIR gate |
+| worked example 3b the VL region (1154–1196) | becomes `csd/visual`; record that the **deployed half is the context encoder (10,712,448)**, not the full 22,905,216 |
+| §E adversarial pass (499–533) | add **four** boundaries: the emitted `Schedule` is untrusted data validated by the runtime; **checkpoint loading** goes through one `load_checkpoint()` with `weights_only=True` hardcoded and a per-file SHA-256 verified *before* the file is opened (DEC-40); **`episodic_store` write→read across requests**, with a server-derived partition key (DEC-32); and **reserve construction → controller training**, the training-time path §9.9 did not cover (DEC-39, S5) |
+| **NEW manifest kind: `overlay`** (DEC-33) | a memory-gate overlay is a first-class artifact, not a checkpoint variant. Required fields: **base checkpoint fingerprint it targets** (attach refuses on mismatch), overlay shape and rank, size in bytes at each residency tier, the data that trained it, its **licence under the strictest-input rule**, and the tiered-residency policy's measured hit rate / page-in latency / VRAM held. Its gate is P5′o's: **applied then disconnected reproduces the base receipt exactly, and the disconnect is logged** |
+
+## 7.4 `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` (1,987 lines)
+
+| section | what changes |
+|---|---|
+| §Per-corpus verdicts in use (112–447) | re-key to faculties. **`compress` + `retrieve` verdicts merge into `memory`'s obligation set, which is the union of both and therefore the stricter** — this is a real licence consequence of a taxonomy decision |
+| §The BLOCKING list (488–657) | unchanged in substance; but item 4 (`vl_latent` unreleasable as trained) now blocks **the visual faculty's participation in any released composed mind**, not one region's release |
+| §Training data attribution (966–1027) | add constructed-corpus attributions: a **rendering of cleared text inherits that text's terms**; the renderer's own licence; the generating model for any synthesis |
+| §The composed model (1706–1732) | the composed model's obligation set is now the union over the **reserve** as well, and the reserve is constructed — state the inheritance rule explicitly |
+| §Release licence scenarios / comparison table (1520–1602) | re-key per-region rows to faculties; **add a row for the interconnect**, which has no corpus of its own except the reserve |
+| §Replacement vision corpora (1213–1518) | unchanged as analysis, but it is now on the critical path for any release claim, not a future item |
+| §Decision 2026-09-02 (1896+) | unchanged; annotate that the reserve's licence is now load-bearing for the composed release |
+| §Per-region tier table, and the mirror-mismatch tally | **new in revision 3.1, DEFERRED with the rows in 3.2 (DEC-48) but still written down:** add the `auditory` and `speech_output` rows from `docs/design/AUDIO-CORPUS-AUDIT.md` (DEC-45), record that **ND is outside the NC-tolerant policy's scope** rather than a stricter NC, add the **consent-hygiene** class the vocabulary lacks, and move the mirror-vs-upstream tally from **ten to seventeen** |
+
+## 7.5 `docs/design/MODERN-TRAINING-STACK.md` (878 lines)
+
+| section | what changes |
+|---|---|
+| §1.4 model size (171–209) | the "~87M" figure is **both an over-count at deployment** (10,712,448 of `vl_latent` ships, not 22,905,216) **and an under-count** (it omits the receipt-less regions). Restate with the deployable figure: **85,807,015 params, 343 MB fp32, 35.0 MB at 3.27 bits** for the v1 participant list (§2.3, corrected in revision 2) |
+| §2.11 factorized / pruned embedding — *ADOPT LATER* (663–695) | **verdict changes to a decided architectural item**: one shared token embedding across text faculties, 3.02× at toy scale, mandatory from the first region trained after ratification (DEC-24) |
+| §2.2 gradient accumulation — *REJECT* (365–406) | **re-scoped**, not reversed: rejected for single-host InfoNCE; **required** for phase-3 cross-host pipeline stages, where microbatch must be ≤ 256 (DEC-29) |
+| §2.7 LoRA / adapters — *ADOPT LATER* (526–566) | the justification arrives and is a systems one: an adapter is 17 MB and **0.85 ms** to page against **61 ms** for a whole region. Adapters are how specialisations scale; the region schema now has an `adapter` field |
+| §2.5 EMA — *ADOPT* (454–481) | **the deployment consequence, with the halves the right way round** `[A3 fixed]`: the two encoders are each **46.77% of `vl_latent`**, and it is the **context encoder that does not ship**. `IJEPA.encode` is `target_encoder.embed` (`model/vl_jepa.py:387` [V]) and every probe and transfer number `vl_latent` has comes through it (`regions/vl_pretrain.py:202` [V]), so the target encoder is the deployed half (DEC-34). Add the reason EMA is not merely scaffolding here: `ema_base 0.996 → ema_final 1.0` means the target's momentum rises toward 1.0, so the two halves are **furthest apart at the end of training** — which is exactly when a "just use the other one" substitution would be made |
+| §2.8 QAT vs PTQ (567–600) | add **`D_sched`** as a second PTQ objective; the cheap prerequisite experiment changes shape (DEC-27) |
+| §3 recommended sequence (738–773) **+** §4 experiments (774–859) | insert the interconnect's four training phases; note that the batch-size experiment now interacts with the phase-3 microbatch cap |
+
+## 7.6 Also affected, outside the five named docs
+
+- **`docs/design/VISUAL-INGEST-PIPELINE.md`** — composite / screenshot images move from polish to
+  a **prerequisite** of the `visual × *` cross-faculty bins, and the deterministic layout
+  renderer of §5.5(b) is now a first-class deliverable of that pipeline.
+- **`config/mind/csd-regions.json`** — §1.4's diff.
+- **`program/csd-program.json`** and **`program/REMAINING.md`** — P4/P5/P6 replaced by §4.1.
+- **`src/cogsyndelta/contracts/region.py`** and **`region_spec.py`** — the protocol and the
+  schema of §2.2 and §1.4; `MindSpec`'s single-`stream_dim` check is replaced.
+- **Six tracked files** citing the retired `docs/program/CSD-BRAIN-REGIONS.md` — re-point per
+  §1.5.
+
+---
+
+# 8. Operator decisions that remain **after this revision**
+
+Only what this document cannot settle. Everything revision 1 listed here that has since been
+decided is **removed**, not carried forward — a stale decision list is worse than none, because
+it makes the live items harder to find. Each item below has a recommendation.
+
+**Removed from revision 1's list, because they are settled:**
+
+| was | disposition |
+|---|---|
+| **OD-1** release licence / GooAQ contradiction | **RESOLVED by the operator** `[OP: csd-release-licence-decision]`. The NC reading is accepted, the corpus is kept, and the licence moves rather than the data. **DEC-31** records the strictest-input rule; §5.7 applies it; `memory` is NC and therefore so is the composed mind. The "email AI2" action leaves the blocking list. |
+| **OD-6** disposition of the untracked working files | folded into **OD-7** below, because the set has changed and one of the new files is a security control. |
+
+Three of the items below (**OD-1, OD-2, OD-3**) come from the threat pass and are about code and
+fleet configuration **outside this document's tree**. They are recorded here because this design
+newly *depends* on them, and because a design that quietly assumes a control it does not own is
+how the assumption survives the control.
+
+---
+
+**OD-1 — The autodev write scope contains the guards that protect the reserve and the
+interconnect.** `[T4 recorded]`
+**VERIFIED:** `ALLOW_PREFIXES = ("src/", "tests/", "docs/")`, client-side at
+`scripts/csd-autodev-loop:38` and re-enforced server-side at `scripts/csd-lab-console:453` [V].
+The *enforcement* is sound. The **scope** is the problem: every control this design depends on
+will live inside it — the NSRS filter, the reserve loader check, the `Schedule` validator, the
+`D_sched` quant gate, `assert_no_contamination`, and **the tests that prove each one fires**. A
+prompt-injected tick can weaken a guard and edit the test that would catch the weakening in one
+change, and CI stays green because the test changed too. With merge authority, that lands.
+*Recommendation:* a server-side **protected path set** in `http_apply` alongside the prefix check
+it already performs — guard modules and their failure-mode tests are refused, human-only — paired
+with a **path-scoped Forgejo protection** so the rule survives a new guard being added in a file
+nobody thought to list. **Reducing the write surface is the control; reviewing the commits is
+not.** Also: `apply_proposal` refuses test files with no assert (*"test has no assert; refusing
+pass stubs"*, `csd-autodev-loop:145` [V]) and `http_apply` does **not** replicate it — anything
+posting directly to `/api/apply` skips it. Move it server-side or stop counting it as a control.
+*Why it is the operator's:* it trades autonomy for durability of the guards, and the autonomy is
+the operator's to spend.
+
+**OD-2 — The lab-console upstream proxy forwards the apply token before authorising.**
+`[T4b recorded]`
+**VERIFIED**, `scripts/csd-lab-console:995-1001`: when `UPSTREAM` is set, a POST to any `/api/*`
+path is proxied upstream **with the client `Authorization` header copied verbatim**, *before* the
+local `check_apply_auth` at line 1003 runs [V]. **[I]** The local node therefore performs no
+authorisation of its own on that path and acts as a credential-forwarding proxy; the apply bearer
+reaches whatever `UPSTREAM` names. *Recommendation:* proxy an **explicit default-deny path
+allowlist that excludes `/api/apply`**, and **strip inbound credentials** rather than forwarding
+them, minting a downstream-scoped token instead. *Why it is the operator's:* it changes how the
+operator's own multi-host console works.
+
+**OD-3 — `/data/models` is exported `rw,no_root_squash` to the entire `/24`.**
+[V, `shai-stuff/docs/INVENTORY.md:133`]. This design puts the composed-mind artefacts **and the
+receipts** on that share, and receipts are the programme's only evidence layer — deleting
+evidence is cheaper than forging it and has the same effect, as the deleted `reason` receipt
+already demonstrated. It is also the precondition that made the `torch.load` gap (DEC-40)
+reachable: root on any LAN host is a writer of the receipt that names the checkpoint path.
+*Recommendation:* read-only to everything except the one training host, `root_squash` everywhere
+else, and writes through a service on the training host rather than through the filesystem. *The
+export option is itself the enforcement*, which is why this is cheap and durable.
+
+**OD-4 — When `visual`'s corpus is replaced, now that a `visual` retrain is happening anyway.**
+`visual` is trained on tiny-imagenet, **unreleasable as trained** [V\*]; replacement candidates
+are already audited in `LICENCE-FOR-OPEN-WEIGHTS.md §Replacement vision corpora`. **What changed
+since revision 1:** W7v retrains `visual` regardless (token-aware objective + composite
+resolution), so replacing the corpus **in the same run** costs the corpus fetch and nothing else,
+where revision 1 costed it as a separate ~500 s retrain. *Recommendation:* **replace at W7v.**
+The alternative — after W6 — saves nothing and makes every phase-2 number a statement about an
+unreleasable mind. *Why it is the operator's:* it trades a known cost against a release strategy
+only the operator owns.
+
+**OD-5 — Whether write-back is enabled in phase 2, or deferred to phase 3.**
+DEC-17 adds conditioning prefixes so inter-region conditioning exists at all in phase 2; the risk
+is prefix tuning on a frozen encoder trained at `max_len 96`, out of distribution, spending 8% of
+the length budget. **What changed since revision 1:** W5b's pre-committed fallback now has teeth
+— under the no-write-back branch, either §2.4's `Ĉ` variant is built or the emitted `Schedule`
+carries **no `edges` and no `lockstep_groups`** and the receipt says `topology: not demonstrated`
+`[A20 fixed]`. So deferring is honest rather than merely cheaper. *Recommendation:* **enable it,
+gated by W5b** — the fallback is now well-defined, so the downside is bounded and named.
+*The operator's call is risk appetite.*
+
+**OD-6 — Whether 30B-class is a v1 commitment or a direction.**
+DEC-26 caps the interconnect at 2–5% of total, and revision 2 **scopes that cap to ≥1B
+parameters** and prints v1's actual 31.4% beside it `[A25 fixed]`, so the cap no longer silently
+contradicts §2.3. It also corrects the ceiling: at the design's own `mlp_ratio 4`, `L_ic = 8` is
+**7.2%**, above the band, not at it `[A26 fixed]`. *Recommendation:* treat 30B as a **direction**
+and keep the scoped cap — it costs nothing today (`L_ic = 4` is 3.6%) and it constrains exactly
+one future choice, visibly.
+
+**OD-7 — Disposition of the untracked working files.**
+The set shrank while this revision was being written: `tests/test_checkpoint_load_security.py`
+and the two-script `weights_only=True` fix are now **committed** (`c976e84` [V]), so the item
+that was a security control has resolved itself. What remains untracked:
+`src/cogsyndelta/regions/retrieve.py` and `tests/test_region_retrieve.py`, both written by
+another agent [V]. *Recommendation:* **leave them untracked until W4 consumes them.** DEC-09
+adopts the eval half and retires the FiQA-only training half, so whichever order is chosen the
+file is committed *modified*; committing it first only creates a revert to explain. This document
+does not touch that tree.
+
+*Note for whoever ratifies this:* the tree moved under this revision twice — the DEC-23 ledger
+line and the `weights_only` fix both landed mid-pass, and the threat pass's *"verified by
+absence"* finding on the first was wrong by the time it was read (§11 R1). **Re-probe before
+acting on any code-state claim in this document, including this one.**
+
+**OD-8 — Where `k_split` lives.** DEC-39's keyed split assignment is the cheapest control in the
+document and it is worth exactly as much as the key's location. It must be outside the repo and
+outside every path the autodev loop can write (OD-1). *Recommendation:* the existing SOPS age
+vault, read at train time by the loader, with **no environment-variable fallback** — because a
+fallback is how "no key ⇒ refuse to build a split" quietly becomes "no key ⇒ use seed 0".
+
+**AUDIO ASKS OD-10 TO OD-15 ARE DEFERRED WITH THEIR ROWS, AND NONE OF THEM IS DELETED**
+`[DEC-48]`. The operator's later ruling — *"we can wait to add audio as a future feature once it
+proves out without audio. that will be more of a production phase implementation"*
+`[OP: csd-multimodal-io-intent.md]` — makes audio a **production-phase** feature, so the six asks
+below stop being pre-A0 blockers and become **pre-A0f blockers in the production phase**. They
+are kept in full, with their recommendations and their late costs intact, because the reason each
+one is cheap *now* and expensive *after a fetch or a retrain* is unchanged by when the fetch
+happens: **the deferral moves the deadline, not the arithmetic.** Two keep a residual bearing on
+v1 and are marked where they appear: **OD-13** and **OD-15** are what A0f blocks on
+`[S31-7 fixed]`, and OD-10, OD-11, OD-12 and OD-14 concern sources **outside** the recommended
+mix and block nothing.
+
+**OD-9 — Start the audio licence audit now, or defer it. ANSWERED: START NOW — and the answer
+went further than the question.** The operator's input, verbatim
+`[OP: csd-multimodal-io-intent.md]` — and **since deferred as a schedule by DEC-48**, which does
+not change the answer to OD-9 itself:
+
+> *"the intent for this model is for me to interact via voice and/or text input and text/speech
+> output, and for it to take as input, audio, visual, discrete text/token and output multimodal
+> as well."*
+
+The recommendation became a **requirement**, and it changed two things this document had filed as
+optional: `auditory` was made a required region (**DEC-43**) and a speech-output head a required
+head (**DEC-44**), neither of which OD-9 was asking about — **and both were then deferred to a
+production phase by DEC-48**, which changes when they are built and not whether the audit was
+worth running. **The audit is done and committed at
+`docs/design/AUDIO-CORPUS-AUDIT.md`**; what remains of OD-9 is not a decision but rows **A0m,
+A0f, A1, A2, A3** with gates — **deferred to the production phase by DEC-48** (§4.1, *Production
+phase: audio*) and no longer carrying a phase-2 bill (§4.3). **OD-9 leaves this list**, and the
+audit it produced is banked groundwork that the deferral does not spend.
+
+What it leaves behind is six decisions the audit surfaced and could not make. The pattern is worth
+naming: **answering the cheapest question in the programme opened six more, every one of them cheap
+now and expensive after a fetch or a retrain** — which is the same shape as W1, and the same reason
+to answer them before A0 runs rather than after.
+
+**OD-10 — TED-LIUM 3 is CC BY-NC-ND, and ND is outside the NC-tolerant policy's scope.**
+VERIFIED at the upstream: *"The TED-LIUM corpus is licensed under Creative Commons BY-NC-ND
+3.0... All talks and text are property of TED Conferences LLC."* This is **not** a GooAQ case.
+DEC-31 absorbs a **NonCommercial** term by moving a release licence; a **NoDerivatives** term
+forbids distributing the modified material at all, commercial or not, and no release-licence
+choice answers it. The licensor here is internally consistent and simply forbids what
+training-and-releasing would do — there is no contradiction to resolve by email.
+*Recommendation:* **refuse TED-LIUM, and rule that ND is refused as a class, eval included** —
+`LICENCE-FOR-OPEN-WEIGHTS.md`'s eval-only carve-out rests on a structural guarantee that no
+published parameter derives from the eval set, and a broad reading of "derivative" reaches even
+that. **Cost of deciding late:** trivial if decided now (452 hours against a mix measured in tens
+of thousands, and nothing in the recommended mix depends on it); severe if decided after A1 — an
+ND corpus inside a trained checkpoint is not removable by relicensing, only by retraining.
+*Why it is the operator's:* it extends a licence policy the operator set, into a family that
+policy did not consider.
+
+**OD-11 — Common Voice under consent revocation: a class this vocabulary does not have.**
+Mozilla moved Common Voice exclusively to the Mozilla Data Collective in October 2025, and said
+why (VERIFIED, 2025-08-19): *"When someone chooses to revoke their consent to be included in a
+dataset, we need a way to remove them."* The MDC terms forbid re-hosting (VERIFIED). The
+underlying CC0 dedication is irrevocable as copyright, so a frozen pre-October-2025 snapshot is
+defensible **on licence grounds** and indefensible **on consent grounds**, and those are different
+sentences that this document's `PERMISSIVE_OK`/`BLOCKING` vocabulary collapses into one.
+*Recommendation:* **EVAL-ONLY on a held snapshot, the consent question recorded in the model card
+rather than resolved as a licence question, and a new verdict class — `CONSENT_OPEN` — added to
+the vocabulary** so the next corpus of this shape is not filed as `PERMISSIVE_OK`. If the corpus
+is wanted for training, fetch fresh through MDC and accept its terms as a deliberate act.
+**Cost of deciding late:** 31,841 hours is large enough to be tempting mid-build, and a snapshot
+silently ages against every revocation made after it was taken — the harm accrues without any
+event that would prompt a re-read.
+
+**OD-12 — Emilia and GigaSpeech: accept the BLOCKING reading, or work around it later.**
+Both distributors disclaim owning their own audio — Emilia (VERIFIED): *"Emilia does not own the
+copyright to the audio files; the copyright remains with the original owners of the videos or
+audio."* GigaSpeech (VERIFIED via two secondary corroborations): *"SpeechColab does not own the
+copyright of the audio files."* That is the tiny-imagenet defect, not the GooAQ one: **relicensing
+the release moves NC and SA corpora and moves nothing BLOCKING.** *Recommendation:* **accept
+REFUSE for both, and record the acceptance now, while the scale is still abstract.** **Cost of
+deciding late:** this is the single largest quiet-workaround risk in the audit — 101,000 and
+10,000 hours are exactly the scale that gets rationalised six weeks into a build. Deciding now
+costs nothing; discovering the decision was never made costs A1.
+*Why it is the operator's:* only the operator can accept a rights risk this document can only
+describe.
+
+**OD-13 — LibriVox as ONE provenance group (DEC-46) needs explicit sign-off.**
+It is the audit's own judgment call rather than a claim any dataset page makes, and it is
+load-bearing: it is the difference between a v1 mix that satisfies B1/B2 and one that is a ~90%
+monoculture wearing ten names. **Deferred with the rows by DEC-48; it is what A0f blocks on when
+the production phase opens.** *Recommendation:* **sign it off, and rely on A0f's gate (iii),
+which now PASSES OR FAILS on the grouped numbers rather than printing them, to report B1/B2 both
+ways** so the correction is a pair of numbers rather than an argument — if the
+two agree, the correction was unnecessary and the receipt says so. **Cost of deciding late:** the
+worst kind. A mix built per dataset name looks balanced in every receipt it produces; the defect
+surfaces only as *"`auditory` is a slightly weak version of the thing its name promises"* — the
+failure `CORPUS-CONTRACT.md` exists to catch, cheapest to prevent before the first cap and most
+expensive to diagnose after training.
+
+**OD-14 — BBC Sound Effects: the terms were never verified at the primary source.**
+The BBC's own page refused the fetch; the RemArc characterisation (*"free use for research,
+educational, and personal projects"*, no sale-of-sampled-music) comes from third-party snippets
+only. *Recommendation:* **EVAL-ONLY, and keep it out of A0's fetch list until someone reads the
+BBC's own terms page directly.** **Cost of deciding late:** small in volume, large in principle —
+this project's own rule is that a doc does not beat a probe, and shipping a fetch on a snippet
+would be the audit contradicting the method that produced it. The same holds, at lower stakes,
+for DataSEC/DataSED and the Loquacious Set, both under-verified and both worth one follow-up pass
+before either anchors anything.
+
+**OD-15 — will `auditory` or `speech_output` ever ship as standalone checkpoints?**
+This is the only question that changes what audio actually **costs**. If they ship only inside the
+composed model, that model is CC BY-NC-SA regardless (DEC-31, via `memory`), NC audio is free, and
+Expresso, ESC-50, UrbanSound8K, Clotho and FSD50K's NC clips are all available at no licence cost
+(DEC-45). If either ships standalone, every NC source becomes a real, separate MIT-vs-NC decision
+for that one checkpoint. *Recommendation:* **build the clean tier first and keep the NC sources a
+named, separable add-on**, so the choice stays reversible; the price of that reversibility is
+Expresso's 40 hours of expressive style, which nothing in the clean tier replaces — a
+speech-output head trained on neutral LibriVox narration alone learns to read audiobooks and
+nothing else. **Cost of deciding late:** a checkpoint trained on a mixed tier cannot be un-mixed.
+The reversibility exists only before A1 and A2 run.
+
+
+# 9. Risks and falsifiers
+
+Ordered by (probability × cost of late discovery). Every one names the observable that kills it.
+
+## 9.1 THE CENTRAL BET — **FIRED, AND CLOSED. Resolved by measurement, then CONFIRMED by W1d.**
+
+**Claim at risk:** that a region's sequence of position latents carries more usable information
+than its pooled vector `[DEC-47]` — *latents*, never discrete ids. **Status: FALSIFIED as
+trained, under participation ratio** (§4.0, `[V]`). All four production regions land in the
+pre-committed dead band — ratios 0.66×, 0.78×, 1.00×, 1.30× against a ≤1.5× threshold — and the
+per-item flag (`< 8` usable directions) fires for `code` (4.4) and `retrieve` (5.1).
+
+**Under the other effective-rank definition in the same artefact it is NOT falsified** — entropy
+ranks of 1.21×, 1.16×, 1.21×, 1.84×, all above 1.0 and one outside the dead band `[N3 fixed]`.
+That disagreement never softened the retrain requirement, and **W1d has now removed its standing
+to**: the confirmation was run, on 2026-09-02, in 116.5 seconds, and it **CONFIRMED W1 in every
+region** — clean for `code` (+0.00), `compress` (−1.76) and `vl_latent` (−2.93), and
+**CONFIRMED-BUT-NOISY** for `retrieve` (−6.05, seed self-check spread 2.54 pp against a 2-pp
+rule). **No region was OVERTURNED, and in three of four the sequence-blind arm BEAT the token
+arm.** **The verdict is settled, the retrains are LICENSED, and the penultimate-block fallback is
+dead** — `L_token` attaches at the final block (§4.0). Nothing downstream of DEC-35 is provisional
+any more. The mechanism this document predicted is the one that did it: `∂pooled/∂h_t = m_t/Σm` is identical
+for every unmasked position, so InfoNCE supplies **no positionally differentiated gradient** and
+shapes only the *mean* of the sequence.
+
+**This risk has therefore moved from "watch it" to "pay for it".** The residual risk is now the
+*remedy*, not the bet:
+
+- **R1 — the token-aware retrain does not clear its gate.** Falsifier: W4/W7's pre-committed
+  `token_global_pr_rank ≥ 2× pooled_pr_rank` clause, both ranks participation ratio. **Its first
+  mitigation is gone:** the penultimate-block variant was measured cheaply in W1d, exactly as
+  planned, and **lost in every region**, so the remaining mitigation is §9.14's pivot — regions
+  and interconnect trained together from the start. Measuring a fallback before relying on it is
+  what turned a comfort into a deleted option, and that is the cheap test paying for itself a
+  second time.
+- **R2 — the retrain clears the rank gate and damages the faculty.** Falsifier: the second gate
+  clause (own receipt ≤ 1 point, `banking77` probe ≤ 2 points). A region that trades its faculty
+  for a token surface — its **position latents**, `[DEC-47]` — is reverted, and the receipt says
+  which clause it failed.
+- **R3 — CLOSED. W1's statistic might have been wrong in the direction that mattered; the
+  falsifier was run and it did not fire.** Falsifier: W1d's matched read-out probe, run **before**
+  the retrain was spent `[A9 fixed] [N3 fixed]`. It reported CONFIRMED in all four regions, with
+  the **sequence-blind arm winning in three**, which is a stronger result than the risk asked
+  for. The residual, carried rather than closed: **the instrument is coarse** — an untrained
+  cross-attention read-out is ≈ uniform attention and therefore a linear function of `pool()`,
+  and 600 steps of read-out training slightly *reduced* recall for `code` and `compress` — and
+  **`retrieve`'s confirmation is flagged noisy**, its seed spread exceeding the decision
+  threshold. A coarse instrument that answers the same way four times, three of them against the
+  design's preference, is evidence; it is not a precision measurement of how much the sequence
+  carries, and no later row may cite it as one.
+- **R4 — NEW, and it replaces the fallback that R1 used to point at.** W1d killed the
+  penultimate-block variant (worse or noise in every region; participation-ratio rank 2–4× lower
+  for every text region), so **R1's first mitigation no longer exists** and a region that fails
+  its retrain gate goes straight to §9.14's pivot. Falsifier for the pivot's necessity: W4's gate,
+  which is the first place the retrain either works or does not.
+
+## 9.2 The reserve cannot be funded — **downgraded, not closed**
+**109,047 text rows** against a 51,200-row training requirement after the aqua_rat recovery and
+DEC-42's union burn (§5.1) — a **2.13× surplus** where revision 1 computed a 2.38× shortfall. This was the document's
+leading risk and it was largely self-inflicted: the write-off is refuted by the sampling code
+(`regions/pretrain.py:231`, `corpus.py:159-221` [V]) `[A5 fixed]`.
+
+**What remains, and it is different in kind.** The risk is no longer *volume*, it is *diversity*
+and *verification*:
+
+- **Falsifier: W2a's four checks** `[N1 fixed]`. If the corpus fingerprint does not match, or two
+  calls disagree, or `seed = 0` cannot be established for the `reason` run, **the write-off stands
+  and this section reverts to revision 1's numbers.** The fourth check — which code revision the
+  run used — does not revert the section; it decides whether the union burn was necessary, and the
+  union is written either way (DEC-42). It is tested, not assumed.
+- **Falsifier: B1 on the recovered pool, and it is FAILING as printed** `[N8 fixed]`. aqua_rat is
+  **51.8% of the unallocated pool and 80.2% of the text-usable pool**, against B1's 0.50 hard line
+  and 0.40 operating cap. This is the *binding* max-share; revision 2 printed `fashion_mnist`'s
+  non-binding 35.5% against B1 and read as a pass. Mitigation, in §5.1's order: hold aqua_rat to
+  0.40 of the reserve's **source rows** by construction, close the gap with W3r/W7v composites, and
+  failing that carry a dated waiver.
+- **Falsifier: B2 on the recovered pool.** `N_eff` is **2.44** against B2's ≥ 3 — and it rose from
+  2.40 only because the union burn shrank the largest source, which is not diversification. The
+  recovered rows are all aqua_rat, one source, one domain. Mitigation: a third genuine text source,
+  or B2's dated waiver naming what the reserve cannot measure.
+- **Falsifier: W3's gate** — if the constructive generators do not yield ≥5,120 admitted items
+  per cross-bin pair, phase 2 has no training data. If items fail the NSRS filter because one
+  region solves them alone, the failure is *informative*: it means `visual` is doing OCR and the
+  layout must be made harder.
+
+## 9.3 Superadditivity achieved degenerately — **three ways, not one**
+`I > 0` is manufacturable without any information crossing between regions, and revision 1 named
+only the first of three routes:
+
+| route | closed by |
+|---|---|
+| **presence-as-tag** — read a region's *presence* as a domain label | **content-swap** (§2.7.4), required under both ablation styles |
+| **budget-as-tag** — from phase C, read the *emitted schedule* as a domain label `[A18 fixed]` | **two content-swap arms** (re-emitted vs frozen schedule); G3′ is graded on the frozen arm, and the gap between arms is reported as its own number |
+| **redundancy** — A and B each independently sufficient, so `I` is *maximal* with nothing crossing `[A2 fixed]` | **DEC-37's conjunction** (`Δ_A > 0` **and** `Δ_B > 0` **and** `I > 0`), the `REDUNDANT` quadrant as a named FAIL, and **B2t** |
+
+Listed here because these are the failures that would otherwise be *reported as success*, which
+is this programme's documented recurring defect. **Also listed because the second and third were
+found by an adversarial pass and not by the design** — the lesson being that "the control closes
+the degenerate solution" is a claim that needs its own attacker, not a conclusion.
+
+## 9.4 The scheduler is imitative
+Distillation caps the controller at the dense teacher's behaviour: it can never learn that a
+region the dense model ignored is useful. **Refuted structurally by phase D** (§2.6), which
+trains the controller by the task loss from a non-degenerate initialisation under the floored
+simplex. **Falsifier:** phase D fails to beat phase C ⇒ the receipt says *"scheduler: imitative"*
+and phase C ships. **Second falsifier:** S1–S3 show a constant schedule ⇒ *"scheduling: not
+demonstrated"*, reported as its own verdict (DEC-30).
+
+## 9.5 Write-back damages the frozen regions
+Prefix tuning on an OOD input at `max_len 96`. **Falsifier: W5b's gate** (own-bin drop ≤ 1
+point). **Pre-committed fallback:** disable and record, **and apply §2.4's consequences for
+`Ĉ`, `edges` and `lockstep_groups`** `[A20 fixed]`. See OD-5.
+
+## 9.6 The interconnect memorises the reserve
+**26.9M** interconnect params (26,899,751, §2.3) against ~51k items `[N10d fixed]`. **Falsifier:
+the < 5-point train/held-out gap gate in W5.** Absent from the source proposal; grafted because this is exactly where a silent
+memorisation result comes from.
+
+## 9.7 The `memory` merge is worse than both parents
+Two losses on one trunk can interfere. **Falsifier: W4's gate is explicitly *beats both parents
+on both parents' own gates*.** If it fails, keep them separate and record that hippocampal
+unification is an unpaid claim.
+
+## 9.8 `reasoning` is too weak to receive attention mass
+At r@1 0.0801 it may never be attended to. **Falsifier:** `a_reasoning` in W5's phase A. If it is
+near zero on reasoning-bin items, **the region is the problem, not the interconnect** — and W1b
+must have produced its receipt first, or there is nothing to compare against.
+
+## 9.9 ADVERSARIAL — five boundaries, three of which revision 1 did not have
+
+Required by the project's design-time adversarial rule. Revision 1 modelled **one** boundary and
+modelled it well; the threat pass found three more and one live code gap. All five are here, each
+graded **by construction** / **enforced** — because the first is provable from the
+parameterisation and the rest are fallible, and saying so is the point.
+
+**Ranking note, because it changes what to spend on.** The valuable assets here are **write**
+assets, not read assets: the ability to write `src/` and `tests/` autonomously (it rewrites the
+guard *and* the test that proves the guard fires, in one commit), the reserve allocation ledger
+(integrity and **irreversibility** — the aqua_rat case shows the loss is real), and the
+interconnect weights, which uniquely encode a **policy** rather than a representation and are the
+only thing that trains through phases A–D. Weight *confidentiality* is far down the list and, on
+a LAN with no untrusted human users, close to worthless.
+
+### B1 — untrusted input → controller → `Schedule` → runtime
+
+**The `Schedule` is untrusted data and the runtime validates it before executing it.** The model
+is never trusted to bound its own resource requests.
+
+| attack | bound | enforced where | bound is |
+|---|---|---|---|
+| starve a region | `ctx_r ≥ ctx_min`, `b_r ≥ 1` for every declared region; floored simplex `η/R` | parameterisation **and** validator | **by construction** |
+| budget inflation | `Σ_r c_r·ctx_r ≤ B_kv`, `Σ_r b_r ≤ B_read` | simplex + largest-remainder integerisation, re-checked by validator | **by construction** |
+| compute DoS via halting | `n_iter ≤ I_max` regardless of the halting head | runtime loop bound | enforced |
+| force everything admitted every iteration | per-request FLOP ceiling; reject and fall back to a fixed default `Schedule` | runtime, before execution | enforced |
+| malformed `A` / budgets | shape, dtype, range, simplex sum | validator | enforced |
+| **log injection via `trace_id`** `[T2 fixed]` | `trace_id` is **minted server-side**; a `Schedule` carrying a client-supplied one is **rejected** | validator | enforced |
+| **per-request `h_r` cache abuse** `[A28 fixed]` | cache bounded at `R × n_iter` entries, per-request, destroyed at request end | runtime | enforced |
+
+**One structural comfort that is real and should not be re-solved:** the worst case an attacker
+can reach through B1 is **the dense, ungated configuration** — the one the hardware was already
+sized for — so there is no denial-of-service surface beyond *"the model you already budgeted for
+runs"*. A softmax cannot sum past 1. Further work here is negative value.
+
+### B2 — `episodic_store` write → later request read `[T2 fixed] [A28 fixed]`
+
+**Revision 1's attack table had five rows and none of them mentioned the only writable object in
+the architecture.** The simplex bounds *how much* budget the store receives; it says nothing about
+*whose latents it returns*. If the composed mind runs as a fleet service with more than one caller
+— the stated end state — request *j* attends to latents written by request *i*. No exploit is
+needed; that is the default behaviour of a shared store with a shared budget.
+
+**At v1 this boundary does not exist, because DEC-32 demotes the store to a placeholder.** The
+controls are written now so that building it is a specification:
+
+| attack | bound | enforced where | bound is |
+|---|---|---|---|
+| cross-request poisoning | partition key **derived server-side from the authenticated principal**, never from the request and never from the `Schedule`. The `Schedule` may request **budget**; it may never name a **namespace** | store read path | **by construction**, once built |
+| unbounded growth | declared `capacity_entries`, FIFO eviction. `token_budget.max` bounds what is *read*, never what is *stored* | store write path | enforced |
+| unauthenticated read | unknown principal ⇒ **empty partition** ⇒ zero keys ⇒ the mind degrades to the no-store configuration, which is exactly phase A | store read path | **fails closed to a known-good, already-benchmarked state** |
+
+**Gate when it is built:** extend W9's fuzz to a **two-request** form — request 1 writes, request
+2 reads — and require request 2's `Schedule` and output to be **unchanged from a clean run**.
+
+### B3 — reserve construction → controller training (phases B/C/D) `[T1 fixed]`
+
+**This is the highest-leverage attack in the pass and revision 1 did not cover it.** §9.9 defended
+the *inference* path into the scheduler; the *training* path is softer, more durable, and reaches
+the same asset. Phase D trains the controller by the task loss on reserve items with the
+controller unfrozen; three of the four reserve generators are agent- or code-driven. Influence a
+small fraction of rows so a rare lexical or visual trigger co-occurs with items whose
+loss-minimising schedule admits a chosen region at high `b_r` — or, more usefully, **excludes
+`reasoning`**, already the weakest region at r@1 0.0801 and the most likely to be dropped without
+anyone noticing (§9.8). Yield: **an input-triggered routing backdoor in the dispatcher for every
+faculty, surviving region retrains because regions are frozen.**
+
+**Why the existing gates do not catch it, which is the important part.** NSRS is a *difficulty*
+filter, not an integrity filter — a poisoned row satisfies all three conditions trivially (§5.3).
+The `<5`-point overfit gate catches memorisation and is **blind to poison present in both
+splits**, where the gap is zero. `assert_no_contamination` (`eval/metrics.py:229` [V]) measures
+train/eval *overlap* through normalised-text fingerprints and is equally blind, because poisoned
+rows are not duplicates of each other — they share a trigger. **Every integrity gate in §5 and
+§2.6 is computed by the same pipeline that generates the data**, which is the same shape as the
+programme's own worst recorded find, one level up.
+
+| control | mechanism | bound is |
+|---|---|---|
+| **keyed split assignment** (DEC-39) | `split = HMAC(k_split, source_row_fingerprint) mod N`; key outside every agent-writable path. **A generator that cannot choose which rows land in eval cannot defeat any downstream gate.** No key ⇒ the loader refuses to build a split | **by construction**, and fails closed |
+| **generator identity in the ledger** (§5.6) | generator name + SHA-256 of generator source + config hash per row, recomputed **on load**; mismatch **aborts** the run, does not skip the row | fails closed **iff** the abort is in the data loader, not a pre-flight script |
+| **sandboxed construction** (§5.5a) | executable joins run on a RuntimeClass the GPU never shares: no network, no NFS, non-root, per-candidate wall-clock and memory caps | fails closed **iff** there is no plain-`subprocess` fallback |
+| **S5 trigger sensitivity** (§2.7.6) | per region, change in admission probability under single rare-token insertion; beyond a pre-committed threshold is a **finding**, reported as a third verdict | **does not** fail closed — it is a gate, and gates get waived. It is here because controls 1–3 cannot cover the in-both-splits case and something must |
+
+### B4 — checkpoint file → `torch.load` `[T3 fixed]`
+
+A composed mind loads N region checkpoints, and the programme plans to push them to private HF
+repos [V\*], so a checkpoint can arrive from a Hub or a peer. The tree already records the risk:
+*"the moment a checkpoint can arrive from a Hub or a peer instead of being self-generated,
+`weights_only=False` is remote code execution on load"* [V\*].
+
+**The threat pass found a live gap. Half of it has since been closed by a separate change, and
+the design states which half** — because *"the fix is landing"* and *"the control exists"* are
+different claims, and this programme's recorded history is of the second being asserted on the
+strength of the first.
+
+The gap: `scripts/csd-quantize.py` and `scripts/csd-benchmark.py` both resolved a checkpoint path
+**out of a receipt JSON** and loaded it with `weights_only=False`, so **the file that got
+unpickled was chosen by a document** — on a share exported `rw,no_root_squash` to the whole `/24`
+(OD-3), and under automation, since DEC-27 runs `csd-quantize.py` **once per region,
+repeatedly**.
+
+**LANDED, verified this session by re-reading the tree and the log [V]:** commit `c976e84`
+*"fix(scripts): load receipt-named checkpoints with weights_only=True"*. Both call sites now pass
+`weights_only=True` (`scripts/csd-quantize.py:128`, `scripts/csd-benchmark.py:87`), and
+`tests/test_checkpoint_load_security.py` is **committed and tracked** — a test written to prove
+the guard *fires*, not merely that the keyword is present, which is the tree's own convention.
+The immediate remote-code-execution path is closed.
+
+**STILL REQUIRED, and this design depends on it:** the fix is two call sites, and two call sites
+is a state a future edit can leave. DEC-40 is what makes it durable, and none of it is built yet.
+
+> **DEC-40.** One `load_checkpoint()` in `src/`, the **only** `torch.load` in the repository.
+> `weights_only=True` **hardcoded** — not a default, not a parameter, no override. Manifest
+> SHA-256 verified **before the file is opened** (the landed fix does not do this; it prevents
+> code execution, it does not detect substitution). Scripts import it. **Enforced by a lint rule
+> (ruff or grep in `code-quality.yml`) that fails CI on `torch.load` outside that module — the
+> lint rule is what makes this fail closed when someone forgets, and without it this is a
+> policy, not a control.** The hash-mismatch refusal gets the same negative-test treatment
+> `test_checkpoint_load_security.py` already gives the pickle refusal. It is also the mechanism
+> DEC-33's overlays bind against, which is the argument for building it once, properly.
+>
+> **Row and owner** `[N10c fixed]`: **W0c** in §4.1 — no dependencies, no GPU, three constructed
+> gates (a CI lint rule verified by adding a `torch.load` and watching CI go red; a hash-mismatch
+> refusal with the same negative-test treatment `test_checkpoint_load_security.py` gives the
+> pickle refusal; and `grep -rn "torch.load" src/ scripts/` returning exactly one hit).
+> **Owner: the operator, by hand — explicitly NOT autodev**, because OD-1 records that autodev's
+> write scope plus merge authority can weaken a guard and the test that proves it fires in one
+> change, and DEC-40 is a control on the loader itself.
+
+### B5 — autodev agent → `src/`, `tests/` → merge
+
+Recorded as **OD-1** and **OD-2**: it is outside this document's tree, and it is the boundary
+that decides whether every control above stays built. Reducing the write surface is the control;
+auditing every commit by hand is not — it will be abandoned within a fortnight, after which the
+*belief* that commits are audited persists while the audit does not, which is worse than never
+claiming it.
+
+### Residual risks, accepted deliberately
+
+1. **A poisoner with write access to generator *source* defeats content hashing** — the hash then
+   faithfully certifies poisoned content. **Accept**, because OD-1's protected-path control is
+   exactly what converts this from unbounded to a small named set of files a human must read.
+2. **Inference-time resource DoS against the scheduler.** **Accept and spend nothing further** —
+   B1's by-construction result is genuine.
+3. **Weight confidentiality.** **Accept.** LAN, no untrusted human users, 86M-parameter research
+   artefacts intended for eventual release. The threat to checkpoints is *substitution*, closed
+   by DEC-40; theft is not worth a control.
+4. **The interconnect memorising the reserve** (§9.6). **Accept** — the <5-point gate is
+   adequate. This is an honesty risk, not a security one.
+5. **S5 is a gate and gates get waived.** **Accept** — the in-both-splits case has no structural
+   answer and something imperfect beats nothing. Pre-commit the threshold so waiving it is a
+   visible decision.
+
+### What NOT to build — named, so it does not return through a side door
+
+- **A schedule anomaly detector.** The `Schedule` is *supposed* to vary with input — that is the
+  entire claim of DEC-30 and S1–S3. There is no stable baseline to detect anomalies against, and
+  the false-positive rate equals the rate at which the scheduler is doing its job. The
+  validator's hard bounds are the control.
+- **Per-region checkpoint signing with a key hierarchy.** One manifest with SHA-256 verified
+  before load closes the actual threat. A key hierarchy adds key management and excludes no
+  additional attacker.
+- **Encrypting the reserve at rest.** Its value is integrity and irreversibility. Encryption
+  provides neither. Hash it; do not encrypt it.
+- **Rate-limiting the composed mind for DoS.** See residual risk 2.
+- **Auditing every autodev commit by hand.** See B5.
+- **Re-deriving `provenance` as a region.** Dropped in §1.3 and correctly; recorded here so it
+  does not return through a security argument.
+
+
+## 9.10 The measurement instrument is saturated
+`code` r@1 0.9766 on a 512-pair diagonal. Any composed metric built on that instrument has no
+headroom, so it cannot show composition [I]. **Mitigation:** W4 makes the full-pool FiQA BEIR
+eval the gate, with `recall@10 > 0.20`, `MRR > 0.10`, **> BM25** and **> its own random-init
+baseline** all pre-registered `[A13 fixed]`. **The second half of revision 1's mitigation is
+withdrawn:** *"the NSRS filter's `τ_lo` calibration keeps B1 at 0.3–0.4 on the reserve by
+construction"* is not a mitigation, it is A1 — a baseline pinned by the filter that built the
+data. DEC-36 replaces it, and the headroom the filter manufactures is now *reported* rather than
+*assumed*.
+
+## 9.11 The memory budget has no margin
+The bf16 arithmetic closes to **16.00 GiB exactly**. **Mitigation adopted as the plan rather than
+the contingency: int8 KV (DEC-25)**, which triples the token budget and restores real headroom.
+A 30% sensitivity on the assumptions moves the bf16 token budget from ~17.9k to ~13.8k; the int8
+plan absorbs that.
+
+## 9.12 Phase 3 at 30B is not trainable on this fleet
+Stated in §6.7 with the mitigation (progressive unfreezing by tract) and the correction
+(region-granular pipeline parallel at microbatch ≤ 256 recovers 30× over DDP). **Falsifier: P5′'s
+gate** — cross-host activation traffic ≤ 15% of step time. Recorded now so the plan does not
+silently assume otherwise.
+
+## 9.13 Fatal flaws named by judges — dropped or refuted
+
+*(For the two adversarial passes on revision 1 — skeptic A1–A35 and threat T1–T4b — see §10 for
+the finding-by-finding disposition and §11 for the refutations. This table is the earlier judge
+round and is unchanged.)*
+
+| flaw | source | disposition |
+|---|---|---|
+| lockstep not expressible by depth-grouping (equal depth = independent, not lockstep) | spine | **fixed** by DEC-17 write-back + DEC-18 cycle cross-check |
+| scheduler is imitative / *"forbidden from mattering"* | spine | **refuted** by phase D (§2.6), with the FLOPs-only gate kept at phase C where it belongs |
+| frontal cortex has no objective of its own — *"a definitional dodge"* | spine | **fixed** by `L_unify` + B3 ablation (DEC-20) |
+| the context budget does not budget the dominant term; controller emits pre-computation, consumer is post-computation | spine | **fixed** by DEC-15's two currencies; `ctx_r` is an argument to `tokens()` |
+| scale path stops at *"leaving ~4 GB"* | spine | **fixed** by grafting §6.1–6.7 whole |
+| proposes deleting 1,320 tested lines | spine | **dropped**; DEC-12 marks superseded instead — no sign-off needed, nothing lost |
+| `L_integrate` trains on the statistic the gate measures | systems-first | **dropped** (§2.6) |
+| `provenance` declared a region (a log in the AI-specific slot) | systems-first | **dropped** (§1.3) |
+| `code` → LoRA adapter settles an 87M taxonomy question with a 30B paging argument | systems-first | **dropped**; DEC-01 keeps faculty+specialisation, and the paging argument is kept where it belongs, in §6.6 |
+| Gumbel-ST `active` + Switch aux — the exact mechanism this tree measured collapsing | systems-first | **dropped**; §2.6 phase A makes collapse unrepresentable |
+| P4.0 blocks everything including the corpus work it depends on | systems-first | **dropped**; W2/W3 run in parallel on CPU hosts (§4.2) |
+| I2 ablates an 800-param additive prior, not the tract; a null operation on a sparsified `A` | biology-first | **fixed** as I2′ — mask the ordered pair's cross-attention logits to −inf (§2.7.5) |
+| scheduler relocated out of white matter | biology-first | **dropped** (§2.1) |
+| `code` → `language` rename with a falsifier that does not test the claim | biology-first | **dropped** (DEC-01) |
+| one-big-sequence tract stack whose interconnect cost grows with the budget it allocates | biology-first | **dropped**; no term in the bounded workspace's `O(L·D_w²·(1+mlp_ratio) + Σb·D_w² + L·Σb·D_w)` grows with region size (§2.3, corrected in revision 2) |
+| identified the 80.30% embedding lever and then never shared the table | biology-first | **fixed** by DEC-24 |
+
+## 9.14 What falsifies the whole proposal
+
+> **If, after W5 and W6, the dense workspace at full budgets does not beat oracle late fusion
+> (G3) and does not show a positive interaction term under content-swap (G3′), then cross-region
+> attention over frozen, isolation-trained encoders cannot integrate.**
+
+**The pivot in that case is not to add a router.** It is to **reorder the phases** — regions and
+interconnect trained together from the start, i.e. the operator's phase 3 before phase 2 —
+accepting that region receipts become non-comparable and that region-per-host training is lost.
+That is a materially more expensive programme, which is precisely why W1 (hours, done) and W6
+(minutes of GPU) are placed before anything expensive.
+
+**W1's result raises the prior on that pivot and does not trigger it.** The token surface as
+*trained* carries nothing extra; the question §9.14 asks is whether cross-region attention over
+frozen encoders can integrate **after** those encoders have been given a token-aware objective.
+W4 and W7 exist to answer exactly that, and they are the cheaper of the two ways to find out — a
+few GPU-hours (§4.3) against a whole-programme reordering. If W4/W7 fail their gate, or if W5/W6
+fail after they pass, **the pivot is the third option in §4.0's objective list and is already
+written down**, which is the difference between a fallback and a discussion.
+
+**The decisive experiments in this document are the cheap ones, deliberately: the thing most
+likely to be skipped should be the thing that costs least.** W1 is the proof that this works —
+it cost hours, it fired, and it bought a bounded retrain bill before a single line of
+interconnect existed.
+
+---
+
+# 10. Attack-pass disposition — every finding, and where it landed
+
+Four independent passes have now attacked this document: a skeptic pass against revision 1
+(`attack-skeptic.md`, A1–A35, six critical), a threat-model pass against revision 1
+(`attack-threat.md`, T1–T4b plus a security-theatre list), a second skeptic pass against
+revision 2 (`attack-skeptic-2.md`, N1–N10) and a third against revision 3.1's new material only
+(`attack-skeptic-31.md`, S1–S21). All four files are held **unchanged**. Every finding is **ACCEPTED** — the fix applied in place and cited
+at the changed spot as `[A-n fixed]` / `[T-n fixed]` — or **REFUTED** with a re-read `file:line`
+in §11. Three findings are **ACCEPTED with a partial refutation**: the fix is applied *and* a
+specific sub-claim is refuted, because both are true and collapsing them would lose information.
+
+## 10.1 Skeptic pass
+
+| # | severity | disposition | where |
+|---|---|---|---|
+| **A1** | critical | **ACCEPTED** — admission never sets a baseline; calibration split disjoint from the graded split; B1/B2 recomputed by separate forward pass; τ chance-normalised per bin | §2.7.0 (DEC-36), §5.3 |
+| **A2** | critical | **ACCEPTED** — G3′ becomes the synergy conjunction; `REDUNDANT` quadrant named and FAILed; **B2t** trained matched-capacity late-fusion null added | §2.7.3 (DEC-37), §2.7.1, §2.7.4 |
+| **A3** | critical | **ACCEPTED** — verified `IJEPA.encode` → `target_encoder.embed`; **DEC-34 declares the target encoder the deployed half** (fix option (a)) | §2.3, §1.2, §1.4, §7.5 |
+| **A4** | critical | **ACCEPTED** — **a visual-resolution row is added (W7v)**, folded into the mandatory retrain; the two `visual × *` pairs are marked **blocked until W7v**, with the exact restatement if it slips | §4.1 W7v, §5.4 |
+| **A5** | critical | **ACCEPTED** — verified `reservoir_sample`/`sampling_rng` determinism; **W2a recovers the draw**; §5.1 and §9.2 restated with the reserve funded. **Revision 3 (N1): the recovery burns the UNION of both draws (DEC-42), so the surplus is 2.13×, not 2.23×** | §5.1, §4.1 W2a, §9.2 |
+| **A6** | critical | **ACCEPTED** — **DEC-38** reserves at source-row fingerprint granularity; the derived-item refusal is a W2b gate | §5.6 (DEC-38), §4.1 W2b |
+| **A7** | high | **ACCEPTED** — `blocked_by` column added and filled; `s_r` invalidation rule stated as a first-class constraint; CPU-only work separated from GPU-blocked work | §4.1, §4.2 |
+| **A8** | high | **ACCEPTED** — W7 is no longer "re-run W5"; it is a region-training row with a written objective and gate; the penultimate question moves into W1d's probe | §4.0 (DEC-35), §4.1 |
+| **A9** | high | **ACCEPTED as CONFIRMATION (W1d), with a partial refutation of its premise** — the probe runs *before* the retrain is spent, not instead of W1 | §4.0, §4.1 W1d; **§11 R2** |
+| **A10** | high | **ACCEPTED** — four properties that can fail (pad-invariance, independent reference, row-permutation, batch-composition); the 1e-5 test kept as a refactor smoke test only | §4.1 W0 |
+| **A11** | high | **ACCEPTED** — B0 gets a trained read-out; **B0d** known-dispatch positive control added; absolute scores printed beside `I₀` | §2.7.1, §2.7.2 (G0d), §2.7.3 |
+| **A12** | high | **ACCEPTED** — B0u is **trained** with uniform connectivity from initialisation, matching B3's discipline | §2.7.1 |
+| **A13** | high | **ACCEPTED** — W4 pre-registers five clauses including `recall@10 > 0.20`, `MRR > 0.10`, **> BM25** and **> its own random-init**; W2c re-measures `retrieve`'s untrained baseline | §4.1 W4, W2c, §1.2 |
+| **A14** | high | **ACCEPTED** — dev/sealed split, Holm/BH correction, null rates printed, eval re-sized against the number of decisions | §2.7.8 |
+| **A15** | high | **ACCEPTED** — phase-A `min_r mean(a_r) ≥ η/R` floor (**3.75% at `R = 4`**, written as the expression since 3.2 `[S31-16 fixed]`) with named remedies; "unrepresentable" restated as "unrewarded" | §2.6 |
+| **A16** | high | **ACCEPTED** — source-row split key, block bootstrap, B1/B2 run on the reserve's generators with a dated-waiver path | §5.4 (DEC-38) |
+| **A17** | medium | **ACCEPTED** — option (a): `episodic_store` demoted to `placeholder`, **R = 4 → 6 pairs**, criterion restated | §1.3 (DEC-32), §2.7.7 |
+| **A18** | medium | **ACCEPTED** — budget-as-tag named as its own degenerate solution; **two content-swap arms**, graded on the frozen-schedule arm | §2.7.4 |
+| **A19** | medium | **ACCEPTED** — **DEC-41** names the v1 ranking head and candidate-set construction; B1/B2/G2 defined in that metric | §2.6 (DEC-41) |
+| **A20** | medium | **ACCEPTED** — the no-write-back `Ĉ` variant is defined, and if unbuilt the gate is declared void, `edges`/`lockstep_groups` are not emitted, and the receipt says `topology: not demonstrated` | §2.4, §4.1 W5b/W9, §9.5 |
+| **A21** | medium | **ACCEPTED** — the condition-(2) exemption is written into the filter (`nsrs: c1c3`); abstention is DEC-41's `NULL` candidate with its own gate; sizing stays 3,072 | §5.3, §2.6, §5.5(c) |
+| **A22** | medium | **ACCEPTED** — violation claim and its `[V]` tag withdrawn (re-verified: `objective` ≠ `objective_family`); the two enum values kept; the design question raised separately | §7.3 |
+| **A23** | medium | **ACCEPTED** — W2c measures the untrained `code` baseline and re-derives `τ_lo` per bin in chance-normalised units; W2b is blocked on it | §5.3, §4.1 W2c |
+| **A24** | medium | **ACCEPTED** — adapters recomputed for the v1 list (591,872), white matter 26,899,751, composed 85,807,015; total re-tagged `[I]` | §2.3 |
+| **A25** | medium | **ACCEPTED** — DEC-26 scoped to ≥1B; v1's **31.4%** printed beside the cap with the crossover argument | §6.4 |
+| **A26** | medium | **ACCEPTED** — `mlp_ratio` stated in both columns; at ratio 4, `L_ic=4` is 3.6% and `L_ic=8` is **7.2%, above the ceiling** | §2.3, §6.4 |
+| **A27** | medium | **ACCEPTED** — MAC derivation printed (**1.56 GMAC/item**); complexity restated as `O(L·D_w²·(1+mlp_ratio) + Σb·D_w² + L·Σb·D_w)` | §2.3 |
+| **A28** | medium | **ACCEPTED** — `episodic_store` and the `h_r` cache both get rows in the attack table; two-request fuzz specified | §9.9 B2, §2.5 |
+| **A29** | medium | **ACCEPTED** — W9's gate split into runtime-equivalence (same `Schedule`, eager vs DAG) and sparsity (vs dense) | §4.1 W9 |
+| **A30** | low | **ACCEPTED** — restated as "the token surface retrains nothing"; the retrain budget is §4.3 | §2.2, §4.3 |
+| **A31** | low | **ACCEPTED** — `memory` inherits `retrieve`'s table with the divergence recorded; DEC-24 binds from phase 3; 3.02× relabelled for three regions (1.67×) | §6.2 |
+| **A32** | low | **ACCEPTED** — `token_dim` / `pooled_dim` in the protocol, the schema and every region entry | §2.2, §1.4 |
+| **A33** | low | **ACCEPTED** — `tract_codec` marked `placeholder` with an explicit build trigger | §1.4 |
+| **A34** | low | **ACCEPTED** — split into **W2a** (ledger + recovery, minutes, no deps) and **W2b** (construction + admission + guard) | §4.1, §5.2 |
+| **A35** | low | **ACCEPTED with a partial refutation** — table tagged per row and re-instantiation made a W0 deliverable; the `visual` clause is refuted | §2.3; **§11 R3** |
+
+## 10.2 Threat pass
+
+| # | disposition | where |
+|---|---|---|
+| **T1** (§4.1, B3 training-time controller poisoning) | **ACCEPTED, all four controls** — keyed split (DEC-39), generator identity in the ledger, a stated sandbox with no `subprocess` fallback, and **S5** as a third receipt verdict | §5.6, §5.5(a), §2.7.6, §9.9 B3 |
+| **T2** (§4.2, `episodic_store` partition; `trace_id`) | **ACCEPTED** — removed from v1 participants (DEC-32) **and** the partition/capacity/eviction contract written as its build trigger; `trace_id` minted server-side and rejected if client-supplied | §1.3, §9.9 B2, §2.5 |
+| **T3** (§4.3, `weights_only=False` in two scripts) | **ACCEPTED, and the immediate half has since LANDED** — commit `c976e84`, both call sites now `weights_only=True`, with `tests/test_checkpoint_load_security.py` committed to prove the guard fires [V]. **DEC-40 is the durable half and is still unbuilt:** one `load_checkpoint()`, hardcoded, hash verified **before the file is opened** (the landed fix does not do this), CI lint rule, hash-mismatch negative test. **Revision 3 gives it a row and an owner: W0c, owned by the operator by hand and explicitly not by autodev (OD-1)** `[N10c fixed]`. Revision 2 routed it to "OD-7", which is the disposition of the untracked working files — a different item, so DEC-40 had no owner at all | §9.9 B4, **§4.1 W0c** |
+| **T4** (§4.4, autodev `ALLOW_PREFIXES` scope) | **ACCEPTED as an OPERATOR decision** — outside this tree | **OD-1** |
+| **T4b** (§4.5, lab-console proxy forwards the token before authorising) | **ACCEPTED as an OPERATOR decision** — outside this tree | **OD-2** |
+| **T-4.6** (ledger unbuilt / DEC-23 unexecuted) | **SPLIT: half ACCEPTED, half REFUTED.** The guard is unbuilt — accepted, and it is W2b's gate. **"DEC-23 is unexecuted" is refuted**: the ledger line landed | §5.2, §5.6; **§11 R1** |
+| **T-4.7** (NFS `rw,no_root_squash`; mirror metadata lies) | **ACCEPTED** — NFS recorded as **OD-3**; source revision SHAs pinned in the manifest with the fetcher refusing unpinned fetches | **OD-3**, §5.6 |
+| theatre list (§6) | **ADOPTED VERBATIM** — reproduced as *"What NOT to build"* so it does not return through a side door | §9.9 |
+
+## 10.3 Second skeptic pass (revision 3)
+
+`attack-skeptic-2.md`, findings N1–N10, run against revision 2. It confirmed 31 of 35 skeptic and
+6 of 7 threat findings closed, and all three appendix refutations (R1, R2, R3) as holding. Ten new
+defects; every one is applied in place below and cited at the changed spot.
+
+| # | severity | disposition | where |
+|---|---|---|---|
+| **N1** | **critical** | **ACCEPTED.** The sampling algorithm changed under the recovery (`c42203c`, prefix → reservoir) and W2a's three checks passed under either hypothesis, so 4,982 rows of ambiguous provenance could have been certified clean into the reserve. **DEC-42: burn the UNION of both draws.** Cost: at most 4,982 further rows of the 92,485 the recovery marked clean; the surplus goes 2.23× → **2.13×**. W2a gains a **fourth** precondition and a gate that **fails on a ledger omitting either draw**. §5.1's premise about the deleted receipt is corrected: no receipt on disk ever carried `cap_sampling` | **DEC-42**, §5.1, §4.1 W2a, §9.2 |
+| **N2** | high | **ACCEPTED.** All six ablation pairs now carry a declared item shape, a construction and a printed sealed-item count; two new shapes (**X2** three-way executable join, **X6** two-premise numeric composite) cover the two pairs that had none. The W7v-slip branch's *"all 3 of 3"* is **achievable** — it was not — and gains a pre-committed reallocation so it is not also underpowered | §5.4, §5.5(a), §5.5(b′), DEC-37 |
+| **N3** | high | **ACCEPTED.** §4.0 prints **both** rank definitions; they disagree and the sign reverses for all four regions; the verdict is recorded as **PROVISIONAL PENDING W1d**; W1d is made the deciding step with a rule that names no rank definition; the retrain requirement is **not** softened; W1c's statistic is named and its `< 32 of 512` restated in those units | §4.0, DEC-35, §4.1 W1d/W1c, §9.1, §11 R2 |
+| **N4** | medium | **ACCEPTED.** The fifth measurement, `compress_repo_local` at **2.00× AMBIGUOUS**, is in §4.0's table, flagged non-production and undertrained (step 2,000 of 8,000, `max_len` 256 of 96), with the 2.5× two-checkpoint spread stated as the sizing of W1d's risk | §4.0 |
+| **N5** | medium | **ACCEPTED.** The dependency inversion is broken by **W3r** — frame geometry, minimal renderer, checked-in fixture — a CPU-only row with no dependencies that **both** W7v and W3 depend on. Composite rendering leaves §4.2's CPU-parallel column until W3r lands | §4.1 W3r/W7v/W3, §4.2, §5.5(b) |
+| **N6** | medium | **ACCEPTED.** G0d gains a precedence rule and a remedy path: a redundant *corpus* reports **`corpus: REDUNDANT`** against §5.3 condition (2), not `statistic: broken`; `Δ_A`, `Δ_B`, `Δ_AB` are printed for B0 and B0d so the two causes are separable on the page | §2.7.2, §2.7.3 |
+| **N7** | medium | **ACCEPTED (part a).** B0, B0d, B0u, **B2t** and B3 are budgeted in `T_A` units and GPU-hours — **≈3.15 white-matter-run-equivalents, ≈3–6 GPU-hours** — **B2t is stated to be a second full white-matter run and counted as one**, and *"the decisive experiment is the cheap one"* is restated: the measurement is cheap, its controls are not | §4.3, §2.7.7, §2.7.1 |
+| **N8** | medium | **ACCEPTED.** The **binding** B1 max-share is printed in both accountings — aqua_rat **51.8%** unallocated / **80.2%** text-usable against the 0.50 hard line, a **FAIL** — beside `fashion_mnist`'s non-binding 35.5%, with the four-step remedy and the note that `N_eff` rose to 2.44 only because rows were burned | §5.1, §9.2, §4.1 W3 |
+| **N9** | medium | **ACCEPTED.** `memory × reasoning` gets construction **(a′)** — a multi-hop join over the recovered aqua_rat rationales, text-only and W7v-independent, which also gives the recovered rows a cross-faculty consumer that is not the blocked renderer. The general bin gets **(c′)**, a text-only variant, and is added to the W7v-slip restatement | §5.5(a′), §5.5(c′), §5.4 |
+| **N10** | low | **ACCEPTED, all seven.** (a) DEC-36's verify-by-failing gets the `source: admission \| graded` field that makes it constructible; (b) the W1 evidence is copied into the repo at `docs/design/evidence/w1-token-rank-2026-09-02/` and cited from there; (c) DEC-40 gets row **W0c** and a named owner; (d) the two stale 27.8M sites become 26,899,751; (e) `text_encoder.py`'s path prefix corrected to `regions/`; (f) W0's property (iii) gets both clauses and stops being false as written; (g) §5.2 and §11 R1 stop saying there is no train-time refusal — a coarse one landed at `0786a77` | §2.7.0, §4.0, §4.1 W0/W0c, §2.6, §9.6, §5.2, §11 R1 |
+
+
+## 10.4 Third skeptic pass (revision 3.1)
+
+`attack-skeptic-31.md`, findings **S1–S21** (2 critical, 4 high, 10 medium, 5 low), run against
+revision 3.1's **new material only** — DEC-43 to DEC-46, rows A0–A3, the §2.5 contract change, the
+§1.4 JSON additions, §4.3's audio bill, §5.7's tier tables, §8's OD-10 to OD-15, the committed
+audit and the ratification brief. It also recorded nine claims that **survived attack** (V1–V9),
+including the brief's line count and header discipline, the absence of any BLOCKING source from
+the recommended mix, the `NC`-vs-`BLOCKING` policing, and a ten-row VERIFIED/INFERRED
+spot-check — *"the marking discipline survived the transfer. The numbers did not."*
+
+**Two findings are resolved BY DEC-48's deferral rather than by a fix, and §11 R4 says so rather
+than restating them for `R = 5`.** The rest are fixed in place, on the deferred rows as much as on
+the live ones, because a deferred row still needs a gate that can fire on the day it is picked up.
+
+| # | severity | disposition | where |
+|---|---|---|---|
+| **S1** | **critical** | **RESOLVED BY DEC-48, not recounted.** A fifth participant would have made the all-pairs set **ten**, with `auditory × memory` and `auditory × reasoning` carrying no item shape and therefore pre-committed to `REDUNDANT`/FAIL — the A17/N2 defect a third time. **Audio is deferred: `R` stays 4, the pair set stays 6, and "≥ 4 of 6" at null rate 0.344 is unchanged.** The branch is not deleted, it is **pre-specified in A3** for the day the row is picked up: `auditory` enters as a **non-pair participant** unless A3 declares the two missing shapes, the set is held at **8**, and the criterion is restated **in the same breath** as **≥ 5 of 8**, null rate **0.363** | §11 R4, §4.1 A3, §1.3, §4.1 `s_r` rule |
+| **S2** | **critical** | **RESOLVED BY DEC-48 as a v1 blocker, and FIXED as groundwork.** DEC-45's clean tier and DEC-46's balance claim could not both be true, and the audit had declined to compute either. Fixed anyway: the balance claim is now **`[I]` and cap-dependent** with the recomputed `N_eff` at three caps printed, **People's Speech is decided explicitly** (out of the clean tier, counted only as the SA-tier variant), and **A0f's gate (iii) becomes a PASS/FAIL** — grouped max share > 0.50 or grouped `N_eff` < 3 **fails the row** | §11 R4, DEC-46, DEC-45, §4.1 A0f |
+| **S3** | high | **ACCEPTED.** A0's gate (i) keyed on **string equality** between `mirror_tag` and `licence_upstream`, which FAILs every correctly audited agreeing row (LibriSpeech, MLS, AMI, MUSAN, VCTK, Hi-Fi TTS, LibriTTS-R, AISHELL-3, Expresso) and **passes AudioSet**, the row it was written for. It now keys on **provenance of the read**: a required `licence_upstream_source` (URL + fetch date) that fails when absent, when its host equals the mirror host, or when the date is missing, plus a `grant_scope` enum — `metadata_only` catches AudioSet, `code_only` catches CSS10 and Libri-Light | §4.1 A0m |
+| **S4** | high | **ACCEPTED.** A2's trunk status was unstated and its two possible readings gave a vacuous gate or a guaranteed failure. **The frozen-trunk + adapter reading is adopted**, "exactly" becomes **bit-exact on the logits**, and **A2 is removed from the pre-W2b set** — with a frozen trunk it changes no weights, so the `s_r` rule does not reach it | §4.1 A2, `s_r` rule |
+| **S5** | high | **ACCEPTED.** DEC-46's cap was applied to `auditory` only, and the mix it was not applied to is ~86–91% LibriVox: four of six clean-tier `speech_output` sources are one group. **A0m/A0f's scope now covers BOTH mixes**, and **A2 gains a fifth gate clause** — grouped B1 of the consumed TTS mix printed, share > 0.50 FAILs. Noted where it belongs: this makes **OD-15 a balance question, not only a licence one** | §4.1 A0m/A0f/A2, DEC-45 |
+| **S6** | high | **ACCEPTED.** *"MIT / CC BY"* is not a licence and violates strictest-input on its face — CC BY imposes an attribution condition, MIT does not, and one CC BY input makes the output CC BY. **Both clean-tier cells read `CC BY 4.0`**, with the TASL notice obligation stated and the public-domain sub-tier described as the separate row it would have to be | DEC-45 |
+| **S7** | medium | **ACCEPTED.** A0 said *"no dependencies"* in the same cell that listed five blocking operator decisions. **Split into A0m** (manifests, genuinely unblocked) **and A0f** (fetch, `blocked_by: OD-13, OD-15`), with the note that OD-10/11/12/14 concern sources outside the recommended mix and block nothing | §4.1 A0m/A0f, §8 |
+| **S8** | medium | **ACCEPTED.** A2 trained on bucket C while A0's scope covered only the `auditory` mix. **One clause fixes it**: A0m/A0f fetch and score **both** mixes, with grouped balance numbers printed per mix | §4.1 A0m/A0f |
+| **S9** | medium | **ACCEPTED.** A3's *"refuse an untrained `auditory`"* named **no field the filter could key on** — a random encoder emits outputs and `s_r` is well defined, just low, so the construction produced a number rather than a refusal. **W2b now refuses any region whose `status` is not `built` and whose receipt path is absent or whose checkpoint hash does not match the resident weights**, which gives `planned` a mechanical job and the `s_r` rule an enforcement point | §4.1 A3, §1.4 |
+| **S10** | medium | **ACCEPTED, fixed in the committed audit.** FSD50K's stratum shares summed to **105.1%**. Recomputed from `audio-bucket-B.md:33`: CC0 **38.8%**, CC-BY **45.9%**, CC-BY-NC **11.8%**, **CC Sampling+ 3.5%** — a fourth, restrictive tier the *"CC0+CC-BY vs NC"* phrasing silently dropped. Both denominators corrected (**34,976** of 40,966 dev; 8,403 of **10,231** eval) | `AUDIO-CORPUS-AUDIT.md` |
+| **S11** | medium | **ACCEPTED, fixed in the committed audit.** The audit's own bucket tables collapsed mirror tag and upstream terms into one column — the exact structural rule A0's gate (i) exists to enforce. **The column is split** into `mirror id + tag` and `upstream licence (+ mark)`, which is also what makes the committed doc directly consumable as A0m's manifest seed | `AUDIO-CORPUS-AUDIT.md` |
+| **S12** | medium | **ACCEPTED.** `speech_output` was a sibling entry in `regions[]` with `emits: "tokens"`, i.e. a participant by §2.2's operational definition, contradicting DEC-44's own systems test. **Moved to `language_code`'s `heads` list**, with the standalone entry kept for programme tracking at `emits: null` and `parent: "language_code"` so no count can pick it up | §1.4, DEC-44 |
+| **S13** | medium | **ACCEPTED.** *"six clean non-LibriVox provenance groups"* counted an NC group (Expresso) and a share-alike group (People's Speech) as clean. **Restated: seven provenance groups, of which five carry no NC term**, with "clean" kept for the tier definition it already had | DEC-46, §1.3, §5.5 |
+| **S14** | medium | **ACCEPTED.** The group table mixed hours and clips, and B1/B2 are share statistics. **Computed in hours**, Freesound converted (~145 h), and A0f's gate prints the unit | DEC-46, §4.1 A0f |
+| **S15** | medium | **ACCEPTED.** The audit states B1 as ≤ 0.40 while the design carries a **0.50 hard line and a 0.40 operating cap**, and the recomputed mix lands at **0.403** — between them. **A0f reports against both**, hard line as FAIL, operating cap as recorded warning, the shape §5.1 uses for aqua_rat | DEC-46, §4.1 A0f |
+| **S16** | medium | **ACCEPTED.** The phase-A collapse floor was hard-coded at **3%**, which is `0.15/5` — right only for a five-participant mind. At the v1 `R = 4` it is **3.75%**, so the written gate was **0.75 pp too lenient**, and it would have become accidentally correct the wrong way if `auditory` had landed. **Written as the expression `η/R` everywhere, with the receipt printing the evaluated value beside its own `R`** | §2.4, §2.6, §10.1 A15 |
+| **S17** | low | **ACCEPTED.** The decision index listed DEC-42 after DEC-46. **Moved up one block** | Decision index |
+| **S18** | low | **ACCEPTED.** A1's and A2's verify-by-failing constructions compare the untrained baseline to itself: they prove the comparison is wired, not that the instrument reads, and an ASR stub returning the reference transcript regardless of input would pass. **A2 gains a null-input control** — feed the frozen ASR silence or white noise and assert `WER ≈ 1.0` | §4.1 A2 |
+| **S19** | low | **ACCEPTED.** The brief called `speech_output` a *"phase-2 participant"*; it is a head and adds no participant and no ablation pair, and the only reason it could bear on W2b was the `s_r` weight rule. **Restated in both documents**, and under S4's frozen-trunk reading it need not precede W2b at all | §4.1 `s_r` rule, brief |
+| **S20** | low | **ACCEPTED.** DEC-45 silently dropped **HiFiTTS-2** — the largest source in the bucket — from the `speech_output` clean tier the audit includes, and wrote *"8 languages"* where the audit says *"8 **non-Ukrainian** languages"*. **Both stated**: the exclusion with its two reasons (mirror-verified only; open question 9's *"would dominate any mix it joins"*), and the qualifier restored | DEC-45 |
+| **S21** | low | **ACCEPTED.** The per-pair sealed counts sum to 1,280 against a 2,560-item sealed half — resolved in §5.4 (only 1,024 sealed items are cross-faculty, and shapes overlap pairs) but inherited by A3, which promises to recompute the allocation. **A3's gate now requires the recomputed table to print the cross-faculty sealed TOTAL alongside the per-pair figures**, so the two are visibly reconciled | §4.1 A3 |
+
+---
+
+# 11. Appendix — Findings refuted, with evidence
+
+A refutation here cites a file re-read in this session at a named line. Reasoning alone is not a
+refutation; where I could only argue, I accepted the finding instead. **Four entries: three
+refutations, two of them partial** — the finding's fix is applied and only a specific sub-claim
+falls — **and one dissolution**, R4, where a finding is neither refuted nor fixed because the
+premise it rests on was removed by an operator ruling.
+
+## R1 — "DEC-23 is unexecuted" (threat pass §4.6). REFUTED in half.
+
+**The claim.** *"**VERIFIED by absence:** no `RESERVED.jsonl`, no allocation ledger, and no
+`reserve` reference anywhere in `src/` or `scripts/`… `config/mind/csd-regions.json` still assigns
+`apps`/`code_contests` to nothing… So §5.6's stated gate is currently unbuilt, while DEC-23 is
+described in the document itself as 'one line of JSON today and unrecoverable tomorrow'."*
+
+**What I re-read.**
+
+```
+docs/design/CORPUS-CONTRACT.md:964
+    | `deepmind/code_contests` | 13,328 | ~~code~~ -> **compose** | ATTRIBUTION |
+docs/design/CORPUS-CONTRACT.md:966
+    | `codeparrot/apps`        | 10,000 | ~~code~~ -> **compose** | PERMISSIVE_OK |
+docs/design/CORPUS-CONTRACT.md:970-976
+    "> **Reserved 2026-09-02 (DEC-23).** `deepmind/code_contests` and `codeparrot/apps` are
+     corrected from `code` to `compose` in this table -- they are the only licence-clean paired
+     natural-language-problem <-> implementation source in the tree ... so allocation happens
+     now, before P2.3 trains `code`/`language_code`, per
+     docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md §5.2."
+scripts/csd-train-all.py:311-325   the aqua_rat cap and its B1 rationale, in place
+```
+
+**Verdict: the allocation half is REFUTED — the ledger line has landed, in the allocation table
+the threat pass named, citing this document's own §5.2.** The threat pass ran while another agent
+was applying it, which is exactly the failure mode of *"verified by absence"* in a live tree.
+
+**The other half stands, is accepted, and is not softened by this refutation — but revision 2
+overstated it and revision 3 corrects that too** `[N10g fixed]`. There is still no
+`RESERVED.jsonl` and no per-row reserve reference in `src/`, so §5.6's gate remains unbuilt and it
+is W2b's pre-registered gate, with **both** refusals (direct and derived) required. **What
+revision 2 got wrong: it said there is "no train-time refusal".** A coarse one landed —
+`0786a77`, `scripts/csd-train-all.py:79-120`, `_refuse_reserved_shards()` raising
+`ReservedSourceError` at shard resolution for any region and in `--dry-run`, with
+`tests/test_reserved_corpus_guard.py` proving it fires in three constructed cases [V]. It is
+directory-prefix granularity and covers neither the derived nor the per-row case, which is the
+part that matters and is unchanged. The threat pass's
+ranking of this as the second-highest-value item in the pass is correct and unchanged.
+
+## R2 — A9's premise: "the token cloud's rank is essentially always ≥ the pooled cloud's, for any encoder, trained or not". REFUTED by measurement. The *fix* is accepted.
+
+**The claim.** *"`pool()` is a masked mean of the rows of `tokens()`… The set of pooled vectors
+therefore lies in the span of the token vectors, and it is `N` points rather than `N·T`. The
+participation-ratio effective rank of the token cloud is essentially always ≥ that of the pooled
+cloud, for any encoder, trained or not — a random-init encoder would pass this test. So 'token
+rank materially higher' is close to a tautology and the 'bet is dead' branch is close to
+unreachable."*
+
+**What I re-read.** `docs/design/evidence/w1-token-rank-2026-09-02/results.json` (copied into the
+repo in revision 3, `[N10b fixed]`; the session path it was read from was `scratchpad/exp-w1/`),
+`verdicts` block, measured on the
+production checkpoints with the pre-pool capture verified bit-exact against
+`TextEncoder.forward()` / `IJEPA.encode()` (`verified_notes`, max abs `0.00e+00` per region):
+
+```
+code        pooled 42.63  token-global 28.09   ratio 0.659
+compress    pooled 45.33  token-global 35.57   ratio 0.785
+retrieve    pooled 40.71  token-global 40.65   ratio 0.999
+vl_latent   pooled 18.07  token-global 23.54   ratio 1.303
+```
+
+**Verdict: REFUTED for trained encoders.** Three of the four production regions have token-global
+participation-ratio rank **strictly below** pooled rank, one of them by a third. The stated
+inequality does not hold, and the branch A9 called *"close to unreachable"* was reached by **all
+four** regions. The premise does hold for the *untrained* models in the same file (`code` 1.74
+pooled vs 11.56 token; `compress` 2.10 vs 7.39), which is presumably where the intuition came
+from — and that is the useful part of the finding: **the bias is real at initialisation and
+reverses with training**, so the statistic behaves differently on the objects the decision is
+actually about.
+
+**A scope correction to this refutation, added in revision 3** `[N3 fixed]`. The refutation is of
+A9's premise **as stated in participation-ratio terms**, and it holds there. `results.json` also
+records **entropy-effective rank** for every surface, and on that statistic A9's premise **does
+hold for the trained encoders too** — token rank exceeds pooled rank for all four regions (1.21×,
+1.16×, 1.21×, 1.84×). So the honest verdict is narrower than revision 2's: *A9's premise is
+refuted for the participation-ratio definition the rule was pre-committed against, and is
+supported under the entropy definition.* Both columns are in §4.0. The W1 verdict was recorded as
+provisional pending W1d for exactly this reason, **and revision 3.2 discharges it: W1d ran, its
+rule read task performance rather than rank, and it CONFIRMED W1 in all four regions.** The
+premise refutation above is unchanged by that — it is a statement about rank statistics, and W1d
+deliberately does not use one.
+
+**A9's fix is nonetheless ACCEPTED and applied**, as W1d, and the reasoning was not a courtesy.
+The measurement was one statistic, and it licensed the most expensive item in phase 2 — a
+retrain of every production region. A matched read-out probe cost **116.5 seconds** and could
+have stopped it; **it was run, and it did not**. A
+statistic that came out *against* the design's preference is more credible than one that came out
+for it, and that is a reason to spend a little more on confirmation, not a reason to skip it.
+
+## R3 — A35's third clause: "a `visual` figure that is about a different network than the receipts". REFUTED. The other two clauses are accepted.
+
+**The claim.** A35 lists three defects in §2.3's `[V*]`-tagged parameter table: an explicitly
+`[I]` row (the controller), an adapter row that does not match the v1 region list (A24), and
+*"a `visual` figure that is about a different network than the receipts (A3)"*.
+
+**What I re-read.**
+
+```
+src/cogsyndelta/model/vl_jepa.py:314-317
+    self.encoder = ViTEncoder(cfg)
+    ...
+    self.target_encoder = copy.deepcopy(self.encoder)
+    for param in self.target_encoder.parameters():
+```
+
+**Verdict: REFUTED.** `target_encoder` is a `copy.deepcopy` of `encoder`, so the two halves have
+**identical parameter counts** — 10,712,448 each, as the document's own Appendix records. A3 says
+so itself (*"the arithmetic survives either way"*). The `visual` **row** in the parameter table
+is correct as a number under either choice of deployed half; what was wrong was the **label**,
+and that is A3's finding, fixed by DEC-34. Carrying it a second time as a defect in the
+arithmetic would overstate the damage to a table that needs correcting for two other reasons.
+
+**A35's other two clauses are ACCEPTED**: the table is now tagged per row, the `[V*]` total is
+demoted to `[I]` because a sum over an `[I]` row is `[I]`, the adapter row is recomputed for the
+v1 participant list, and **re-instantiating at the design's actual configuration is a W0
+deliverable** so the total stops being a projection.
+
+## R4 — S1 and S2 (skeptic pass 3.1, both critical). DISSOLVED BY DEC-48, not refuted and not recounted.
+
+**The claims.** **S1:** *"adding `auditory` makes **ten** ablation pairs, not eight, and two of
+the four new ones FAIL by construction"* — `C(5,2) = 10`, with `auditory × memory` and
+`auditory × reasoning` carrying no declared item shape, so `Δ_A ≈ Δ_B ≈ 0`, the pair lands in
+DEC-37's `REDUNDANT` quadrant, and *"≥ 4 of 6"* becomes undefined over a denominator of 10.
+**S2:** *"DEC-45's clean tier and DEC-46's balance claim cannot both be true, and the audit itself
+declined to support either"* — People's Speech in moves the tier to CC BY-SA, People's Speech out
+costs the sixth group the `N_eff` argument needs.
+
+**Both are correct against revision 3.1.** Neither is refuted here, and neither is answered by
+recomputing a criterion for `R = 5`.
+
+**What actually happened.** The operator ruled, later on 2026-09-02 than the intent that created
+the rows `[OP: csd-multimodal-io-intent.md]`: *"we can wait to add audio as a future feature once
+it proves out without audio. that will be more of a production phase implementation."* **DEC-48
+defers `auditory` and `speech_output` to a production phase.** So:
+
+- **S1's premise is gone.** There is no fifth participant in v1. `R = 4`, the all-pairs set is
+  **six**, and G3′'s *"≥ 4 of 6"* at null rate **0.344** stands exactly as §2.7.3 wrote it. **The
+  correct response is not to restate the criterion for `R = 5`** — that would be answering a
+  question the programme no longer asks, and it would put a `≥ N of 10` gate in a document whose
+  v1 has four participants. What S1 earned instead is a **pre-specification inside A3** for the
+  day the row is picked up: `auditory` enters as a **non-pair participant** unless A3 declares
+  shapes for the two missing pairs, the set is held at **6 + 2 = 8**, and the criterion is
+  restated **in the same breath** as **≥ 5 of 8** with null rate **`P(Bin(8,0.5) ≥ 5) = 0.363`**
+  printed beside it. That is S1's own fix (b), written where it will be read.
+- **S2 stops being a v1 blocker and its substance is fixed anyway**, because DEC-45 and DEC-46 stay
+  in the document as groundwork and a wrong groundwork table is worse than none: the balance claim
+  is tagged **`[I]`** and made **cap-dependent** with `N_eff` recomputed at three caps, People's
+  Speech is **decided explicitly** (out of the clean tier, counted only as the SA-tier variant),
+  both clean-tier cells read **CC BY 4.0**, and **A0f's gate (iii) becomes a PASS/FAIL** rather
+  than a print — grouped max share > 0.50 or grouped `N_eff` < 3 fails the row.
+
+**Why this is recorded as a dissolution rather than a fix.** The pattern matters: a critical
+finding against a *requirement* can be answered by an operator changing the requirement, and when
+that happens the honest record says *the premise was removed*, not *the finding was closed*. S1
+and S2 would both be live again the moment audio is picked up, which is precisely why their fixes
+are written into the deferred rows rather than deleted with them.
+
+---
+
+# Appendix — measured numbers this document depends on
+
+Tags are **per line**, not per block `[A35 fixed]`. `[V*]` = measured by instantiating the real
+classes or by reading a receipt. `[V]` = read in a named file in this session. `[I]` = arithmetic
+over those. **Numbers revision 2 changed carry the old value beside them**, so a reader who saw
+revision 1 is not silently handed a different figure.
+
+```
+--- REGION PARAMETERS ------------------------------------------------- tag ---
+TextEncoder(vocab 50257, dim 256, depth 4, heads 4)   16,021,248      [V*]
+  embedding table                                     12,865,792      [V*]  (80.3046%)
+  non-embedding compute                                3,155,456      [V*]  (19.6954%)
+IJEPA(JEPAConfig())                                   22,905,216      [V*]
+  EMA target encoder  (THE DEPLOYED HALF, DEC-34)     10,712,448      [V*]  (46.7686%)
+  context encoder (training scaffolding, discarded)   10,712,448      [V*]  (46.7686%)
+  predictor                                            1,480,320      [V*]   (6.4628%)
+     ^ the two halves are copy.deepcopy of each other (vl_jepa.py:316 [V]), so the counts
+       are identical and only the LABEL changed in revision 2. IJEPA.encode is
+       target_encoder.embed (vl_jepa.py:387 [V]); _features feeds the probe through it
+       (vl_pretrain.py:202 [V]).
+4 x TextEncoder + IJEPA                               86,990,208      [V*]  <- the "~87M", exactly
+
+--- WHITE MATTER v1, RECOMPUTED FOR THE v1 PARTICIPANT LIST [A24] -------------
+workspace blocks x4 @ D=512, 8 heads, mlp_ratio 4     16,803,840      [V*]
+frontal read-out                                       3,150,848      [V*]
+thalamic controller                                    1,588,007      [I]   at 3 heads; design has 4
+conditioning prefixes (3x256 + 1x384, n_cond 8)        4,727,808      [V*]
+region adapters (3 x 256->512, 1 x 384->512)             591,872      [I]   was 986,624 (6 text)
+episodic_store projections                                     0      --    demoted, DEC-32 (was 524,288)
+latent bank + norm + type embeddings                      37,376      [V*]
+WHITE MATTER v1 TOTAL                                 26,899,751      [I]   was 27,818,791
+  ^ a sum over an [I] row is [I]. W0 re-instantiates it at the design's actual config.
+
+--- COMPOSED MIND v1 ----------------------------------------------------------
+language_code + memory + reasoning + visual           58,907,264      [V*]
++ white matter                                        26,899,751      [I]
+COMPOSED MIND v1 DEPLOYABLE                           85,807,015      [I]   was 86,726,055
+  fp32                                                   343 MB       [I]   was 347 MB
+  at 3.2675 effective bits/param                          35.0 MB     [I]   was 35.4 MB
+  interconnect share of the mind                          31.4%       [I]   vs DEC-26's 2-5%,
+                                                                            scoped to >=1B (§6.4)
+memory-merge saving                                   15,890,176      [V*]
+shared-embedding saving, 6 text regions               64,328,960      [V*]  (3.02x) -- but v1 has
+shared-embedding saving, 3 text regions               25,731,584      [I]   (1.67x)   THREE (§6.2)
+
+--- WORKSPACE COMPUTE, DERIVED [A27] ------------------------------------------
+workspace MAC/item (L=64, Sum b=256, depth 4, mlp 4)    1.56 GMAC     [I]   was 620.8 MMAC [V*];
+                                                                            does not reconcile
+  per block: 4D^2L + 2L^2D + 2D(4D)L + 2D^2L + 2D^2*Sb + 2L*Sb*D = 390.1 MMAC
+workspace KV bytes/item (bf16)                            2.10 MB     [V*]
+complexity  O(L*D^2*(1+mlp_ratio) + Sb*D^2 + L*Sb*D)                  [I]   was O(L*Sb*D) only
+30B interconnect, D=4096, L_ic=4, mlp_ratio 4      1,073,741,824      [I]   3.6% (was 2.7% @ mlp 2)
+30B interconnect, D=4096, L_ic=8, mlp_ratio 4      2,147,483,648      [I]   7.2% -- ABOVE the 5%
+                                                                            ceiling revision 1 named
+
+--- W1, MEASURED 2026-09-02 [V] ----------------------------------------------
+pre-pool capture verified bit-exact (max abs 0.00e+00) vs TextEncoder.forward()/IJEPA.encode()
+region      pooled PR   token-global PR   ratio   per-item PR   verdict (bar: <=1.5x dead, >=2x ok)
+code           42.63          28.09       0.66x       4.4        BET DEAD  (per-item flag <8 fires)
+compress       45.33          35.57       0.78x       8.5        BET DEAD
+retrieve       40.71          40.65       1.00x       5.1        BET DEAD  (per-item flag <8 fires)
+vl_latent      18.07          23.54       1.30x       8.3        BET DEAD
+cross-region pooled CKA, trained: max 0.336 (regions are distinct)
+trained-vs-untrained pooled mean cosine: 0.84-0.98 -> 0.02-0.36 (training worked)
+CAVEAT: the three text regions share seed=0 and identical configs, so their UNTRAINED models are
+        the same weights and untrained cross-region CKA is 1.0 BY CONSTRUCTION -- not a baseline.
+        Standing rule: vary the untrained seed per region in every future baseline.
+
+--- RECEIPTS -----------------------------------------------------------------
+code r@1 0.2285 -> 0.9766 | compress 0.0371 -> 0.7070 | retrieve 0.0000 -> 0.7480   [V*]
+  ^ retrieve's untrained 0.0000 is not a baseline; W2c re-measures it [A13]
+  ^ code's untrained 0.2285 conflicts with the "~0.40 lexical floor" prose in four files;
+    W2c settles it and tau_lo is re-derived from the result [A23]
+vl_latent probe top1 0.0335 -> 0.0606, transfer 0.1535 -> 0.2625, collapsed: false [V*]
+  ^ all of these measure the EMA TARGET encoder (DEC-34)
+reason 0.0039 -> 0.0801 (RECEIPT DELETED, prose only; W1b regenerates)             [V*]
+banking77 0.0127 -> 0.8453 (deleted) | go_emotions 0.0497 -> 0.3642 (deleted)      [V*]
+wall clocks: code 1087.2s | compress 426.7s | retrieve 595.1s | vl_latent 496.7s   [V*]
+  ^ the basis for the phase-2 retrain budget, ~3-5 GPU-hours (§4.3)
+PTQ (code): 9.79x compression, drop 0.0039, within_budget true, {3:16, 4:1}        [V*]
+            3.2675 effective bits/param
+stream geometry: mean pairwise cosine 0.89, entropy-effective rank 8.7 of 128      [V*]
+gate collapse:  linear gate 1.0 / 0.0 on tinystories, stream_dim 16, batch 8       [V*]
+
+--- CORPUS, AFTER THE aqua_rat RECOVERY [A5] ---------------------------------
+244,761 declared                                                                  [V*]
+  burned: go_emotions 43,410 + banking77 13,083 + gsm8k 7,473
+        + aqua_rat <= 9,964  (UNION of both draws, DEC-42)                        [V]/[I]
+clean unallocated                                     169,047      was  83,328
+  fashion_mnist (no text bin can use it)               60,000
+  TEXT-USABLE after apps<->code_contests dedupe       109,047      was  21,544
+required 56,320, of which 51,200 is training data
+  as a share of what remains                            33.3%      was   67.6%
+  vs the 51,200-row training need                       2.13x SURPLUS  (was 2.38x SHORTFALL)
+  MAX SOURCE SHARE (aqua_rat), unallocated              51.8%   BINDING; B1 hard line 0.50 -- FAIL
+  MAX SOURCE SHARE (aqua_rat), text-usable              80.2%   the pool the reserve draws from
+  fashion_mnist share of what remains                   35.5%      was   72.0%  (NOT binding)
+  N_eff = 1/sum(p^2)                                     2.44      was    1.79  (B2 wants >= 3 --
+                                                                        still short; §9.2)
+DETERMINISM THAT MAKES THE RECOVERY POSSIBLE [V]:
+  regions/pretrain.py:231   reservoir_sample(stream, limit, sampling_rng(seed, shards, columns))
+  corpus.py:159-181         sampling_rng: seed + shard BASENAMES + columns
+  corpus.py:189-221         Algorithm R; its only randomness is the rng it is handed
+  regions/pretrain.py:177-193  _iter_pairs yields "in shard order"
+  scripts/csd-train-all.py:325 ("reason/aqua_rat-raw/train.parquet", ("question","rationale"), 4982)
+  W2a TESTS all three preconditions; if any fails, the write-off stands.
+
+--- STATISTICS -----------------------------------------------------------------
+P(Bin(10, 0.5) >= 6)  = 386/1024 = 0.377   revision 1's "6 of 10 pairs" null rate  [I]
+P(Bin(6,  0.5) >= 4)  =  22/64   = 0.344   revision 2's "4 of 6 pairs" null rate   [I]
+P(Bin(3,  0.5) >= 3)  =   1/8    = 0.125   the "3 of 3" rate if W7v slips (§5.4)   [I]
+binomial half-width 1.96*sqrt(0.25/n): +-4.33pp at n=512; +-6.1pp at n=2,560       [I]
+
+--- FLEET ----------------------------------------------------------------------
+3090 Ti 24 GiB (.98) | 5080 16 GiB (.251, DEPLOYMENT TARGET) | 1080 Ti (.243, no train)   [V*]
+1 Gb/s between training hosts; ~110 MB/s effective                                       [V*]
+/data/models exported rw,no_root_squash to the whole /24 (OD-3)                          [V]
+```
