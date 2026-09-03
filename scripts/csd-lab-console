@@ -65,6 +65,30 @@ WORKTREES = {
 }
 PROTECTED_WT = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
 ALLOW_PREFIXES = ("src/", "tests/", "docs/")
+# Guard modules and the tests that prove they fire. http_apply refuses these
+# regardless of what worktree or path the client claims -- OD-1: the
+# autodev write scope must never include the code that checks autodev's own
+# output. Paired with a Forgejo path-scoped protection on the same paths so
+# the rule survives a new guard landing somewhere not yet listed here.
+PROTECTED_APPLY_PATHS = frozenset(
+    {
+        "src/cogsyndelta/eval/metrics.py",
+        "src/cogsyndelta/regions/pretrain.py",
+        "src/cogsyndelta/regions/_checkpoint.py",
+        "scripts/csd-train-all.py",
+        "tests/test_guards_can_fail.py",
+        "tests/test_reserved_corpus_guard.py",
+        "tests/test_checkpoint_load_security.py",
+    }
+)
+PROTECTED_APPLY_PREFIXES = (".github/workflows/", ".githooks/")
+
+
+def is_protected_apply_path(rel: str) -> bool:
+    """True for a guard module/test or CI/hook path that autodev must not touch."""
+    return rel in PROTECTED_APPLY_PATHS or rel.startswith(PROTECTED_APPLY_PREFIXES)
+
+
 ROOT = Path(__file__).resolve().parents[1]
 GOALS = ROOT / "docs/program/GOALS.md"
 ROUTER_JSON = ROOT / "config/model-router.json"
@@ -459,7 +483,7 @@ def check_apply_auth(header: str) -> bool:
     return hmac.compare_digest(got, want)
 
 
-def http_apply(worktree: str, rel: str, content: str) -> dict:
+def http_apply(worktree: str, rel: str, content: str) -> dict:  # noqa: PLR0911
     """Allowlisted worktree write. Never kang-main-wip."""
     dest = WORKTREES.get(worktree)
     if dest is None or not dest.is_dir():
@@ -467,10 +491,14 @@ def http_apply(worktree: str, rel: str, content: str) -> dict:
     if dest.resolve() == PROTECTED_WT.resolve():
         return {"ok": False, "error": "refusing kang-main-wip"}
     rel = rel.lstrip("/")
+    if is_protected_apply_path(rel):
+        return {"ok": False, "error": f"protected path: {rel}"}
     if ".." in Path(rel).parts or not rel.startswith(ALLOW_PREFIXES):
         return {"ok": False, "error": f"path not allowed: {rel}"}
     if len(content) > 400_000:
         return {"ok": False, "error": "content too large"}
+    if "def test_" in content and "assert" not in content and "pytest.raises" not in content:
+        return {"ok": False, "error": "test has no assert; refusing pass stubs"}
     target = (dest / rel).resolve()
     if dest.resolve() not in target.parents:
         return {"ok": False, "error": "escaped worktree"}

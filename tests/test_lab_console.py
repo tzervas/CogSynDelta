@@ -287,3 +287,56 @@ def test_proxy_default_deny_and_no_credential_relay(
     code, _raw = mod.dispatch_api_get("/api/status", "")
     assert code == 200
     assert "Authorization" not in captured["headers"]
+
+
+# --- OD-1: server-side protected paths and no-assert refusal in http_apply --
+
+
+def test_http_apply_refuses_protected_guard_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = load_lab(tmp_path, monkeypatch)
+    wt = tmp_path / "p1-08"
+    (wt / "src").mkdir(parents=True)
+    mod.WORKTREES = {"p1-08": wt}
+    mod.PROTECTED_WT = tmp_path / "memory-gate"
+
+    for rel in (
+        "src/cogsyndelta/eval/metrics.py",
+        "src/cogsyndelta/regions/pretrain.py",
+        "src/cogsyndelta/regions/_checkpoint.py",
+        "scripts/csd-train-all.py",
+        "tests/test_guards_can_fail.py",
+        "tests/test_reserved_corpus_guard.py",
+        "tests/test_checkpoint_load_security.py",
+        ".github/workflows/ci.yml",
+        ".githooks/pre-push",
+    ):
+        rec = mod.http_apply("p1-08", rel, "poisoned")
+        assert rec["ok"] is False, rel
+        assert "protected" in rec["error"], rel
+        assert not (wt / rel).exists(), rel
+
+    # A neighbouring, non-guarded src/ file is untouched by the guard.
+    ok = mod.http_apply("p1-08", "src/cogsyndelta/regions/whatever.py", "x = 1\n")
+    assert ok["ok"] is True
+
+
+def test_http_apply_refuses_assertless_test_stub(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = load_lab(tmp_path, monkeypatch)
+    wt = tmp_path / "p1-08"
+    (wt / "tests").mkdir(parents=True)
+    mod.WORKTREES = {"p1-08": wt}
+    mod.PROTECTED_WT = tmp_path / "memory-gate"
+
+    stub = "def test_always_passes():\n    pass\n"
+    rec = mod.http_apply("p1-08", "tests/test_stub.py", stub)
+    assert rec["ok"] is False
+    assert "no assert" in rec["error"]
+    assert not (wt / "tests/test_stub.py").exists()
+
+    real = "def test_real():\n    assert 1 == 1\n"
+    ok = mod.http_apply("p1-08", "tests/test_stub.py", real)
+    assert ok["ok"] is True
