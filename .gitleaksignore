@@ -8,16 +8,21 @@
 #
 # The two entries below are the docs/ratified-design-2026-09-02 merge
 # (PR #5, fleet-security / gitleaks, run 2026-09-03T11:28:54Z): the
-# "generic-api-key" rule matches the substring "token" inside "tokenizer"
-# and flags a plain filesystem path in evidence-run prose, not a credential.
-# Both files are committed, byte-for-byte experiment outputs -- one is
-# checksummed in docs/design/evidence/w1d-readout-probe-2026-09-02/SHA256SUMS
-# -- so the fix is a scoped ignore rather than a reword that would corrupt
-# the recorded evidence.
+# "generic-api-key" rule matches a key=value-shaped substring that follows
+# the word "tokenizer" a few characters later in a logged filesystem path,
+# and flags that path in evidence-run prose, not a credential. Both files
+# are committed, byte-for-byte experiment outputs -- one is checksummed in
+# docs/design/evidence/w1d-readout-probe-2026-09-02/SHA256SUMS -- so the fix
+# is a scoped ignore rather than a reword that would corrupt the recorded
+# evidence.
 #
-# docs/design/evidence/w1-token-rank-2026-09-02/results.json:350
-#   "tokenizer loaded from /mnt/fleet-datasets/tritter/gpt2_tokenizer.json, vocab_size=50257"
+# Do NOT quote the flagged line here. This file is itself committed and
+# git-history-scanned, so a verbatim copy of the matched substring makes
+# .gitleaksignore match the same rule against its own content -- that
+# regression shipped in 6f8ff7b and is why this paragraph exists. Refer to
+# the finding by file:line only; open the file to see the actual text.
+#
+# docs/design/evidence/w1-token-rank-2026-09-02/results.json:350 -- tokenizer load path + vocab size, logged during the eval run
 27b0e4d4f0f949764693c6996fdd14d0d6acfef2:docs/design/evidence/w1-token-rank-2026-09-02/results.json:generic-api-key:350
-# docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:590
-#   "tokenizer loaded from /mnt/fleet-datasets/tritter/gpt2_tokenizer.json, vocab_size=50257"
+# docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:590 -- same tokenizer load line, different evidence run
 27b0e4d4f0f949764693c6996fdd14d0d6acfef2:docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:generic-api-key:590
