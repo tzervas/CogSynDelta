@@ -38,7 +38,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-import torch.nn.functional as F
 from tokenizers import Tokenizer
 from torch import nn
 
@@ -65,6 +64,11 @@ from cogsyndelta.regions._checkpoint import (
     sha256_file,
 )
 from cogsyndelta.regions._receipt import trainer_defaults, write_receipt
+from cogsyndelta.regions._token_objective import (
+    _build_mlm_head,
+    _mlm_token_loss,
+    _token_decorrelation_loss,
+)
 from cogsyndelta.regions._tokencache import corpus_token_cache
 from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig, info_nce
 
@@ -187,6 +191,22 @@ class PretrainConfig:
     """Fraction of non-padding positions the MLM head is asked to predict, per side, per
     step -- BERT's own ratio. Read only when `token_loss_weight > 0`."""
 
+    token_loss_chunk: int = 2048
+    """Rows of the masked-position hidden state `_mlm_token_loss` projects to the
+    vocabulary at once, each chunk checkpointed
+    (`torch.utils.checkpoint.checkpoint(..., use_reentrant=False)`) so only one chunk's
+    `[chunk, vocab_size]` logits are ever resident -- see that function's docstring in
+    `cogsyndelta.regions._token_objective` for why: an unchunked projection at the
+    pre-registered `memory` batch (1280) OOM'd (docs/design/evidence/
+    w4-masked-token-loss-2026-09-03/), and the loss this produces is mathematically
+    IDENTICAL to the unchunked form regardless of `chunk`'s value -- this is a memory
+    knob, not a numerical one.
+
+    Default 2048 keeps a chunk's fp32 logits under ~512 MiB at this project's GPT-2
+    vocabulary (50,257): `2048 * 50257 * 4 bytes` is ~392 MiB. `0` disables chunking --
+    the original single-projection shape, byte-identical to every token-aware run before
+    this field existed. Read only when `token_loss_weight > 0`; ignored otherwise."""
+
     init_embedding_from: str | None = None
     """DEC-24 (§6.2): path to another region's `TextEncoder` checkpoint whose token
     embedding table (`embed.weight`) is copied into THIS run's freshly constructed model
@@ -241,118 +261,13 @@ def _resolve_device(spec: str) -> torch.device:
 # and both read from TextEncoder.tokens() -- the pre-pool, post-norm token matrix W0 added
 # for exactly this purpose -- rather than from `forward()`'s pooled output, which is the
 # surface InfoNCE alone can never put a gradient on directly (§4.0: "a gradient AT EVERY
-# POSITION, which InfoNCE structurally cannot supply").
+# POSITION, which InfoNCE structurally cannot supply"). `_build_mlm_head`,
+# `_mlm_token_loss` and `_token_decorrelation_loss` themselves now live in
+# `cogsyndelta.regions._token_objective` (N2 import hygiene -- see that module's
+# docstring) and are re-exported here unchanged via the import above, so every existing
+# call site below (and every existing `from cogsyndelta.regions.pretrain import
+# _mlm_token_loss`-style test) keeps working with no change of its own.
 # ---------------------------------------------------------------------------------------
-
-
-def _build_mlm_head(
-    dim: int, vocab_size: int, device: torch.device
-) -> tuple[nn.Linear, nn.Parameter]:
-    """A discardable MLM head plus a learned `[MASK]` replacement vector.
-
-    Neither is part of `TextEncoder`'s own module tree or state dict -- §4.0 describes
-    masked-token prediction as "a BERT-style MLM head ... discarded after training", and
-    every existing checkpoint reader (`csd-quantize.py`, `csd-benchmark.py`,
-    `regions/retrieve.py`) loads `TextEncoder.state_dict()` and nothing else. A `[MASK]`
-    EMBEDDING rather than a reserved vocabulary id: the GPT-2 BPE table this project uses
-    has no spare id set aside for one, and adding a row would change `vocab_size` (and
-    therefore every existing checkpoint's embedding shape) for a feature most regions
-    never turn on.
-
-    Returns:
-        `(mlm_head, mask_embedding)`, both already moved to `device` and initialised
-        Normal(0, 0.02) zero-bias -- the same convention `TextEncoder._init_weights` uses,
-        so the auxiliary head starts in the same regime as the trunk it is attached to.
-    """
-    head = nn.Linear(dim, vocab_size).to(device)
-    nn.init.normal_(head.weight, mean=0.0, std=0.02)
-    nn.init.zeros_(head.bias)
-    mask_embedding = nn.Parameter(torch.zeros(dim, device=device))
-    nn.init.normal_(mask_embedding, mean=0.0, std=0.02)
-    return head, mask_embedding
-
-
-def _mlm_token_loss(
-    model,
-    mlm_head: nn.Linear,
-    mask_embedding: torch.Tensor,
-    input_ids: torch.Tensor,
-    attention_mask: torch.Tensor,
-    mask_prob: float,
-) -> tuple[torch.Tensor, int]:
-    """§4.0's masked-token prediction, attached at the FINAL block.
-
-    Replicates `TextEncoder.tokens()` (embed -> blocks -> norm) with one difference: at a
-    sampled subset of REAL (non-padding) positions, the token embedding is replaced by
-    `mask_embedding` before the blocks run, and the head predicts the ORIGINAL id at
-    those positions from the final-block representation. Reads `model.embed`,
-    `model.pos_embed` and `model.blocks` directly rather than adding a masking parameter
-    to `TextEncoder.tokens()` itself -- the same sanctioned access pattern
-    `docs/design/evidence/w1-token-rank-2026-09-02/measure_w1.py` already uses to capture
-    the identical surface read-only, so every OTHER caller of `tokens()`/`forward()` (every
-    region that never sets `token_loss_weight`) sees no change to `TextEncoder` at all.
-
-    Args:
-        model: A `TextEncoder`.
-        mlm_head: `nn.Linear(dim, vocab_size)`, from :func:`_build_mlm_head`.
-        mask_embedding: `[dim]`, from :func:`_build_mlm_head`.
-        input_ids: `[B, T]`.
-        attention_mask: `[B, T]`, 1 for real tokens.
-        mask_prob: Fraction of real positions to mask, in expectation.
-
-    Returns:
-        `(loss, n_masked)`. `loss` is `0.0` (a zero tensor, no grad) when the sampled mask
-        selects nothing -- possible on a very short batch -- so a caller can add it to the
-        total loss unconditionally without special-casing an empty selection. `n_masked`
-        is reported for the receipt/history, not used in the loss itself.
-    """
-    b, t = input_ids.shape
-    real = attention_mask.bool()
-    draw = torch.rand(b, t, device=input_ids.device)
-    mlm_mask = (draw < mask_prob) & real
-    n_masked = int(mlm_mask.sum().item())
-    if n_masked == 0:
-        return input_ids.new_zeros((), dtype=torch.float32), 0
-
-    h = model.embed(input_ids)
-    h = torch.where(mlm_mask.unsqueeze(-1), mask_embedding.to(h.dtype), h)
-    h = h + model.pos_embed[:, :t]
-    for block in model.blocks:
-        h = block(h, attention_mask)
-    h = model.norm(h)  # [B, T, dim] -- the FINAL block, pre-pool, post-norm
-
-    logits = mlm_head(h[mlm_mask])  # [n_masked, vocab_size]
-    targets = input_ids[mlm_mask]
-    loss = F.cross_entropy(logits.float(), targets)
-    return loss, n_masked
-
-
-def _token_decorrelation_loss(h: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """§4.0's `L_decorr`: a VICReg/Barlow-Twins-shaped off-diagonal penalty on the
-    token-position feature covariance, driving cross-position redundancy down.
-
-    Flattens every REAL (non-padding) token position across the whole batch into one
-    `[N, dim]` matrix -- the same "token-global" surface the W4/W7 rank gate measures
-    (see `cogsyndelta.eval.benchmark.participation_ratio`) -- centers it, and penalizes
-    the squared off-diagonal mass of its `dim x dim` feature covariance, normalised by
-    `dim` so the penalty's scale does not grow with the encoder width.
-
-    Args:
-        h: `[B, T, dim]`, the FINAL block's pre-pool token representations.
-        mask: `[B, T]`, 1 for real positions.
-
-    Returns:
-        A scalar loss, `0.0` (no grad) when fewer than 2 real positions survive.
-    """
-    flat = h[mask.bool()].float()
-    if flat.size(0) < 2:
-        return h.new_zeros(())
-    flat = flat - flat.mean(dim=0, keepdim=True)
-    n = flat.size(0)
-    dim = flat.size(1)
-    cov = (flat.T @ flat) / max(1, n - 1)
-    off_diag_sq = cov.pow(2).sum() - cov.diagonal().pow(2).sum()
-    return off_diag_sq / dim
 
 
 def _final_block_rank_stats(
@@ -1196,7 +1111,10 @@ def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
 
     Deliberately excludes purely administrative fields that do not change what is being
     trained or measured: `out_dir`, `checkpoint_every`, `eval_every`, `device`,
-    `allow_unfingerprinted_resume`. Every field kept here -- steps, batch_size, lr,
+    `allow_unfingerprinted_resume`, `token_loss_chunk` (a memory knob whose loss is
+    mathematically identical for any value -- see that field's own docstring -- so a
+    checkpoint trained under one chunk size is a valid continuation under another). Every
+    field kept here -- steps, batch_size, lr,
     warmup, grad_clip, max_len, seed, holdout_pairs, the encoder shape, the pair columns,
     the shard list, the tokenizer, the graded set, the corpus content fingerprint, and the
     split-building code fingerprint -- changes the run itself, so a checkpoint trained
@@ -1507,10 +1425,22 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
             if cfg.token_loss_weight > 0.0:
                 assert mlm_head is not None and mask_embedding is not None
                 token_loss_a, n_masked_a = _mlm_token_loss(
-                    model, mlm_head, mask_embedding, a_ids, a_mask, cfg.token_loss_mask_prob
+                    model,
+                    mlm_head,
+                    mask_embedding,
+                    a_ids,
+                    a_mask,
+                    cfg.token_loss_mask_prob,
+                    chunk=cfg.token_loss_chunk,
                 )
                 token_loss_p, n_masked_p = _mlm_token_loss(
-                    model, mlm_head, mask_embedding, p_ids, p_mask, cfg.token_loss_mask_prob
+                    model,
+                    mlm_head,
+                    mask_embedding,
+                    p_ids,
+                    p_mask,
+                    cfg.token_loss_mask_prob,
+                    chunk=cfg.token_loss_chunk,
                 )
                 token_loss = 0.5 * (token_loss_a + token_loss_p)
                 loss = loss + cfg.token_loss_weight * token_loss
