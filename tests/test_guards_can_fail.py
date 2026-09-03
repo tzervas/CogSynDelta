@@ -1589,3 +1589,33 @@ def test_pretrain_region_receipt_records_chance_and_untrained_baseline_seed(
     assert receipt["untrained_baseline_seed"] == cfg.seed
     assert receipt["chance"]["recall@1"] == pytest.approx(1 / receipt["held_out"]["n_pairs"])
     assert set(receipt["beats_untrained"]) == {"recall@1", "recall@10"}
+
+
+def test_pretrain_region_receipt_carries_code_revision_and_trainer_defaults(
+    tmp_path: Path,
+) -> None:
+    """Wired-through control for `_receipt.write_receipt`, mirroring the test above: a
+    real `pretrain_region` run must carry `code_revision` (this checkout's real,
+    non-"unknown" SHA -- `pretrain_region` itself never patches `write_receipt`'s default
+    `capture`, so a mutation that dropped the `write_receipt` call site, or reverted to
+    the old inline `path.write_text(...)`, leaves this key absent) and `config.
+    trainer_defaults` matching this run's own `steps`/`batch_size`/`lr`/`bf16`/`max_len`."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    from cogsyndelta.regions.pretrain import pretrain_region
+
+    cfg = _tiny_pretrain_cfg(tmp_path, graded_shards=[], graded_name="")
+
+    receipt = pretrain_region(cfg)
+
+    assert set(receipt["code_revision"]) == {"git_sha", "dirty", "branch"}
+    assert receipt["code_revision"]["git_sha"] != "unknown"
+    assert isinstance(receipt["code_revision"]["dirty"], bool)
+    assert receipt["config"]["trainer_defaults"] == {
+        "steps": cfg.steps,
+        "batch_size": cfg.batch_size,
+        "lr": cfg.lr,
+        "bf16": cfg.bf16,
+        "max_len": cfg.max_len,
+    }

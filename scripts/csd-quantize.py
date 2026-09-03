@@ -195,6 +195,8 @@ def quantize_text_region(
 
 
 def main() -> int:
+    from cogsyndelta.regions._receipt import write_receipt
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", default=str(DEFAULT_STATE))
     ap.add_argument("--regions", default="code,compress,retrieve")
@@ -227,9 +229,11 @@ def main() -> int:
             print(f"    FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
             failures.append(region)
             continue
-        path = out_dir / f"{region}-quant-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
-        path.write_text(json.dumps(rec, indent=2) + "\n")
-        rec["receipt_path"] = str(path)
+        write_receipt(
+            rec,
+            out_dir,
+            f"{region}-quant-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json",
+        )
         results.append(rec)
         if not rec["within_budget"]:
             failures.append(region)
