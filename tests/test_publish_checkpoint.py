@@ -38,6 +38,17 @@ def load_mod() -> Any:
 mod = load_mod()
 
 
+@pytest.fixture(autouse=True)
+def _allow_tmp_path_as_checkpoint_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every fixture below writes its checkpoint under pytest's tmp_path, not under one
+    of the script's real allow-listed roots (/akula-data/csd, the repo). Extend the
+    allow-list with tmp_path so the path-containment fix -- a security control, not
+    something most of these tests mean to exercise -- doesn't reject legitimate test
+    fixtures. The containment tests further down point deliberately outside tmp_path
+    and so are unaffected by this."""
+    monkeypatch.setattr(mod, "ALLOWED_CHECKPOINT_ROOTS", [*mod.ALLOWED_CHECKPOINT_ROOTS, tmp_path])
+
+
 # --------------------------------------------------------------------------- fixtures
 
 
@@ -168,7 +179,6 @@ def test_no_public_flag_exists() -> None:
         ("classify_banking77", "mit"),
         ("classify_go_emotions", "mit"),
         ("reason", "mit"),
-        ("vl_latent", "mit"),
         ("compress", "cc-by-sa-4.0"),
         ("retrieve", "cc-by-nc-sa-4.0"),
     ],
@@ -181,6 +191,22 @@ def test_licence_tier_matches_decision_2026_09_02(region: str, tier: str) -> Non
 def test_licence_tier_unknown_aborts(region: str) -> None:
     with pytest.raises(mod.PublishAbortError, match="licence tier"):
         mod.licence_tier(region)
+
+
+def test_vl_latent_is_blocking_not_mit() -> None:
+    # docs/design/LICENCE-FOR-OPEN-WEIGHTS.md section 4: unreleasable as trained --
+    # 100,000/100,000 pretraining images with no licence grant in the provenance chain.
+    # LICENCE_TIER still carries "mit" for vl_latent's eventual composite replacement
+    # (Decision 2026-09-02), but licence_tier() must refuse regardless of that value.
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier("vl_latent")
+
+
+def test_vl_latent_blocks_full_plan_before_any_file_read(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    receipt = make_training_receipt(tmp_path, checkpoint, region="vl_latent")
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.build_plan("vl_latent", "tzervas/cogsyndelta-vl-jepa", receipt, None, None)
 
 
 def test_unknown_tier_aborts_full_plan_before_any_file_read(tmp_path: Path) -> None:
@@ -223,6 +249,65 @@ def test_missing_checkpoint_aborts(tmp_path: Path) -> None:
     receipt = {"checkpoint": str(missing)}
     with pytest.raises(mod.PublishAbortError, match="not found"):
         mod.verify_checkpoint_sha(missing, receipt)
+
+
+# ------------------------------------------------------- checkpoint containment (review fix)
+#
+# checkpoint_path_from_receipt() reads a receipt-controlled path with zero containment
+# was the first review finding: a receipt pointing '../../../../../../../tmp/.../
+# not_a_checkpoint_stand_in.txt' produced a valid upload plan for that file and exited
+# 0. Both closing checks (allow-listed root, allow-listed suffix) get their own test,
+# plus a regression test shaped exactly like the review's own reproduction.
+
+
+def test_checkpoint_outside_allowed_roots_aborts(tmp_path: Path) -> None:
+    # A directory that exists but was never added to ALLOWED_CHECKPOINT_ROOTS by this
+    # test file's autouse fixture (that fixture only allow-lists tmp_path itself).
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as outside_dir:
+        outside = Path(outside_dir) / "final.pt"
+        outside.write_bytes(b"fake-weights-blob")
+        receipt = {"checkpoint": str(outside)}
+        with pytest.raises(mod.PublishAbortError, match="outside the allow-listed"):
+            mod.checkpoint_path_from_receipt(receipt)
+
+
+def test_checkpoint_bad_suffix_aborts(tmp_path: Path) -> None:
+    not_a_checkpoint = tmp_path / "not_a_checkpoint_stand_in.txt"
+    not_a_checkpoint.write_text("definitely not a checkpoint")
+    receipt = {"checkpoint": str(not_a_checkpoint)}
+    with pytest.raises(mod.PublishAbortError, match="suffix"):
+        mod.checkpoint_path_from_receipt(receipt)
+
+
+def test_receipt_path_traversal_to_arbitrary_file_aborts(tmp_path: Path) -> None:
+    # Shaped exactly like the review's own reproduction: a receipt naming a file that
+    # both escapes the allow-listed roots AND isn't a checkpoint by suffix. The
+    # containment check runs first (before hashing anything), so this must not produce
+    # a plan, must not exit 0, and above all must never reach sha256_of() on the target.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as outside_dir:
+        target = Path(outside_dir) / "not_a_checkpoint_stand_in.txt"
+        target.write_text("secret file contents that must never be hashed or uploaded")
+        traversal = ("../" * 10) + str(target).lstrip("/")
+        receipt = {"checkpoint": traversal}
+        with pytest.raises(mod.PublishAbortError):
+            mod.checkpoint_path_from_receipt(receipt)
+
+
+def test_checkpoint_containment_blocks_full_plan(tmp_path: Path) -> None:
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as outside_dir:
+        outside = Path(outside_dir) / "final.pt"
+        outside.write_bytes(b"fake-weights-blob")
+        receipt_path = make_training_receipt(tmp_path, outside)
+        with pytest.raises(mod.PublishAbortError, match="outside the allow-listed"):
+            mod.build_plan(
+                "compress", "tzervas/cogsyndelta-region-compress", receipt_path, None, None
+            )
 
 
 # ---------------------------------------------------------- private-by-construction
@@ -469,6 +554,79 @@ def test_load_region_config_compress_has_role() -> None:
     cfg = mod.load_region_config("compress")
     assert cfg["name"] == "compress"
     assert cfg.get("role")
+
+
+# ---------------------------------------------------- region cross-check (review fix)
+#
+# --region was decoupled from every receipt's own declared region, which laundered the
+# licence tier: passing a receipt with region='compress' together with --region code
+# produced repo=tzervas/cogsyndelta-region-code and licence=mit in the card. These
+# tests pin the fix: build_plan() must cross-check --region against the training
+# receipt's 'region' and, when supplied, the eval receipt's producer.component and the
+# quant receipt's 'region'.
+
+
+def test_region_mismatch_training_receipt_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    # Receipt says compress; --region claims code -- exactly the review's repro shape.
+    receipt_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    with pytest.raises(mod.PublishAbortError, match="does not match --region"):
+        mod.build_plan("code", "tzervas/cogsyndelta-region-code", receipt_path, None, None)
+
+
+def test_region_mismatch_does_not_leak_the_wrong_licence(tmp_path: Path, capsys: Any) -> None:
+    # Regression shape for the review finding: must never reach a state where
+    # license: mit is written into a card for a receipt whose real region is compress
+    # (cc-by-sa-4.0). Assert on both the raised error and that nothing gets printed.
+    checkpoint = make_checkpoint(tmp_path)
+    receipt_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    with pytest.raises(mod.PublishAbortError, match="does not match --region"):
+        mod.build_plan("code", "tzervas/cogsyndelta-region-code", receipt_path, None, None)
+    assert "license: mit" not in capsys.readouterr().out
+
+
+def test_region_mismatch_eval_receipt_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="retrieve")  # wrong region
+    with pytest.raises(mod.PublishAbortError, match="eval receipt's region"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, None
+        )
+
+
+def test_region_mismatch_quant_receipt_aborts(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="retrieve")  # wrong region
+    with pytest.raises(mod.PublishAbortError, match="quant receipt's region"):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+def test_region_matches_across_all_three_receipts_succeeds(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan(
+        "compress",
+        "tzervas/cogsyndelta-region-compress",
+        train_path,
+        eval_path,
+        quant_path,
+    )
+    assert plan.region == "compress"
+
+
+def test_receipt_region_requires_the_field(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    receipt_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    receipt = json.loads(receipt_path.read_text())
+    del receipt["region"]
+    with pytest.raises(mod.PublishAbortError, match="no 'region'"):
+        mod.assert_region_matches(receipt, "compress", "training")
 
 
 # ------------------------------------------------------------------- content match

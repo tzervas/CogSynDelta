@@ -27,7 +27,23 @@ than guess a licence for it (the operator's rule, recorded in the
 `csd-release-licence-decision` memory: "the overall model ... is going to have
 whatever the strictest license is between its data sets and sub models" -- silently
 defaulting an unaudited region to MIT would violate that rule the moment its real
-input turns out to need one).
+input turns out to need one). `vl_latent` is BLOCKING, not merely a tier: section 4
+states it is unreleasable as trained, so `licence_tier()` refuses it outright before
+ever consulting `LICENCE_TIER`'s "mit" entry for it (that entry is for the region's
+eventual composite replacement, per Decision 2026-09-02, not today's checkpoint).
+`--region` is also cross-checked against every receipt's own declared region before
+anything else is read from them -- the licence tier is derived from `--region`, and an
+unchecked mismatch would let a receipt's real licence tier be laundered under whatever
+`--region` claims.
+
+CHECKPOINT PATH IS CONTAINED, NOT TRUSTED
+A receipt's 'checkpoint' value is attacker-reachable -- anyone who can write a receipt
+JSON, or misdirect an operator/agent into pointing `--receipt` at one, otherwise
+controls what file this script reads. `checkpoint_path_from_receipt()` resolves that
+path and requires it to sit under an allow-listed root (`/akula-data/csd`, this repo)
+and carry an allow-listed suffix (`.pt`, `.safetensors`) before anything is hashed --
+closing off "point a receipt at any file readable by this process and get it uploaded,
+with its sha256 published in the model card."
 
 IDEMPOTENCY
 Every file this script would upload is hashed first and compared against what the
@@ -87,6 +103,24 @@ LICENCE_TIER: dict[str, str] = {
     "composed": "cc-by-nc-sa-4.0",
     "cogsyndelta": "cc-by-nc-sa-4.0",
 }
+
+# A region's checkpoint value is 100% receipt-controlled -- see checkpoint_path_from_receipt
+# below. Anyone who can write (or misdirect an operator/agent into pointing --receipt at) a
+# receipt JSON must not thereby gain "upload this file, whatever it is, to a remote repo,
+# with its sha256 published in the model card". Two independent fail-closed checks apply
+# before any hashing happens: the resolved path must sit under one of these roots, and it
+# must carry one of these suffixes.
+ALLOWED_CHECKPOINT_ROOTS: list[Path] = [Path("/akula-data/csd"), REPO_ROOT]
+ALLOWED_CHECKPOINT_SUFFIXES: frozenset[str] = frozenset({".pt", ".safetensors"})
+
+# Regions whose training data has no licence grant anywhere in the provenance chain at
+# all -- BLOCKING per docs/design/LICENCE-FOR-OPEN-WEIGHTS.md section 4, strictly worse
+# than "unknown". Checked inside licence_tier() before the tier lookup below, so a
+# BLOCKING region refuses regardless of what LICENCE_TIER says for it (vl_latent's entry
+# there is for its eventual composite replacement -- Decision 2026-09-02 -- not for the
+# tiny-imagenet checkpoint that exists today, which is why the tier value alone is not
+# a safe gate).
+BLOCKING_REGIONS: frozenset[str] = frozenset({"vl_latent"})
 
 LICENCE_WHY: dict[str, str] = {
     "code": "no NC or share-alike input in the catalogue, once GitHub-licence-filtered",
@@ -159,6 +193,13 @@ def default_repo(region: str, owner: str = DEFAULT_OWNER, base: str = DEFAULT_BA
 
 
 def licence_tier(region: str) -> str:
+    if region in BLOCKING_REGIONS:
+        raise PublishAbortError(
+            f"region {region!r} is BLOCKING per docs/design/LICENCE-FOR-OPEN-WEIGHTS.md "
+            "section 4 -- unreleasable as trained (no licence grant anywhere in the "
+            "provenance chain). Refusing regardless of any licence tier value on record "
+            "for it; BLOCKING is strictly worse than unknown."
+        )
     tier = LICENCE_TIER.get(region)
     if tier is None:
         raise PublishAbortError(
@@ -186,13 +227,83 @@ def load_region_config(region: str, regions_path: Path = DEFAULT_REGIONS_CONFIG)
     raise PublishAbortError(f"region {region!r} not found in {regions_path}")
 
 
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def checkpoint_path_from_receipt(receipt: dict[str, Any]) -> Path:
+    """The checkpoint a receipt names -- resolved and contained, never trusted verbatim.
+
+    A receipt's 'checkpoint' value is attacker-reachable (anyone who can write a receipt
+    JSON, or misdirect --receipt at one). Without containment this becomes arbitrary-file
+    upload: whatever the path names gets hashed, uploaded, and its sha256 published in the
+    model card. So: resolve symlinks/`..` first, then require the resolved path to sit
+    under an allow-listed root AND carry an allow-listed suffix, and abort before touching
+    the filesystem again (no hashing, no upload) if either check fails.
+    """
     ckpt = receipt.get("checkpoint") or receipt.get("artifacts", {}).get("checkpoint")
     if not ckpt:
         raise PublishAbortError(
             "training receipt has no 'checkpoint' (or artifacts.checkpoint) path"
         )
-    return Path(ckpt)
+    raw = Path(ckpt)
+    resolved = raw.resolve()
+
+    if resolved.suffix not in ALLOWED_CHECKPOINT_SUFFIXES:
+        raise PublishAbortError(
+            f"receipt checkpoint {raw} has suffix {resolved.suffix!r}, not one of "
+            f"{sorted(ALLOWED_CHECKPOINT_SUFFIXES)} -- refusing to treat an arbitrary "
+            "receipt-named file as a checkpoint"
+        )
+
+    allowed_roots = [r.resolve() for r in ALLOWED_CHECKPOINT_ROOTS]
+    if not any(_is_relative_to(resolved, root) for root in allowed_roots):
+        raise PublishAbortError(
+            f"receipt checkpoint {raw} resolves to {resolved}, outside the allow-listed "
+            f"checkpoint roots {[str(r) for r in ALLOWED_CHECKPOINT_ROOTS]} -- refusing "
+            "to upload a file a receipt points at outside those roots"
+        )
+    return resolved
+
+
+def receipt_region(receipt: dict[str, Any], label: str) -> str:
+    """The region a receipt itself claims, however that receipt shape spells it.
+
+    Training/quant receipts carry a top-level 'region'; eval receipts (schema
+    model-pipeline-receipt/v1) carry it as producer.component instead. Either way the
+    field is required, not merely consulted if present -- a receipt that omits it entirely
+    would otherwise be a way to dodge the cross-check below.
+    """
+    if "region" in receipt:
+        val = receipt["region"]
+    else:
+        producer = receipt.get("producer")
+        val = producer.get("component") if isinstance(producer, dict) else None
+    if not val:
+        raise PublishAbortError(
+            f"{label} receipt has no 'region' (or producer.component) field -- refusing: "
+            "cannot verify it matches --region"
+        )
+    return str(val)
+
+
+def assert_region_matches(receipt: dict[str, Any], region: str, label: str) -> None:
+    """--region is what licence_tier() and the repo name are derived from. Nothing else
+    ties it to the receipt actually being published, so a mismatch -- a CLI typo, or a
+    misdirected agent -- would launder that receipt's real licence tier under whatever
+    --region claims. One comparison per receipt closes the class."""
+    claimed = receipt_region(receipt, label)
+    if claimed != region:
+        raise PublishAbortError(
+            f"{label} receipt's region {claimed!r} does not match --region {region!r} -- "
+            "refusing: the licence tier and repo name are derived from --region, and a "
+            "mismatch would publish this receipt's data under a different licence than "
+            "the one it was actually trained/evaluated under"
+        )
 
 
 def verify_checkpoint_sha(checkpoint: Path, receipt: dict[str, Any]) -> str:
@@ -393,6 +504,14 @@ def build_plan(
     train_receipt = load_json(train_receipt_path)
     eval_receipt = load_json(eval_receipt_path) if eval_receipt_path else None
     quant_receipt = load_json(quant_receipt_path) if quant_receipt_path else None
+
+    # --region drives the licence tier and repo name; verify every receipt actually says
+    # it's for this region before reading anything else out of them.
+    assert_region_matches(train_receipt, region, "training")
+    if eval_receipt is not None:
+        assert_region_matches(eval_receipt, region, "eval")
+    if quant_receipt is not None:
+        assert_region_matches(quant_receipt, region, "quant")
 
     checkpoint = checkpoint_path_from_receipt(train_receipt)
     checkpoint_sha256 = verify_checkpoint_sha(checkpoint, train_receipt)
