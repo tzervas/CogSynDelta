@@ -222,6 +222,11 @@ def quantize_text_region(
             # checkpoint above.
             "quantized_path": str(quantized_path),
             "quantized_sha256": quantized_sha256,
+            # `pack_state_dict` always moves every stored tensor to the CPU before
+            # writing (see its module's header comment for why), so this is a fact
+            # about the format's guarantee, not a measurement of the host that ran
+            # this pass -- true whether `model` itself lived on `cuda:0` or `cpu`.
+            "artifact_device": "cpu",
         },
         "corpus_fingerprint": fingerprint,
         "tolerance": tolerance,
