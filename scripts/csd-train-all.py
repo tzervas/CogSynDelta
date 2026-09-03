@@ -75,6 +75,50 @@ one root, and `SourceSpec` is a plain 3-tuple used identically for `code`/`compr
 map is consulted once, in `run_region`, before any `_shards()` call for that region.
 """
 
+RESERVED_FOR_COMPOSE: dict[str, str] = {
+    "apps": "codeparrot/apps (10,000 rows)",
+    "code_contests": "deepmind/code_contests (13,328 rows)",
+}
+"""DEC-23 (docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md §5.2, applied
+docs/design/CORPUS-CONTRACT.md §2.4, reserved 2026-09-02): the only licence-clean
+paired natural-language-problem <-> implementation source in the tree, which makes them
+the only material for the `memory x language_code` cross-faculty bin. Allocation is
+irreversible -- once a region trains on a row it is permanently ineligible for the
+composed model -- so this must be enforced BEFORE `code`/`language_code` ever resolves a
+shard under either directory, not discovered after the fact.
+
+Keyed by the directory name `Dataset.local` (scripts/csd-corpus-expand.py) fetches each
+source into -- `<region>/<name>` -- so a resolved shard path is caught by
+`_refuse_reserved_shards` regardless of which root (`CORPUS`, `LOCAL_CORPUS`, or a future
+`REGION_CORPUS_ROOT` override) it was resolved against.
+"""
+
+
+class ReservedSourceError(RuntimeError):
+    """Raised when a region's resolved sources fall under a `compose`-reserved corpus.
+
+    Fails closed: this is checked at shard-resolution time, inside the same loop every
+    region's sources pass through, so it fires for ANY region (not only `code`), for
+    `--dry-run` as well as a real run, and before `pretrain_region` is ever imported or
+    called. See docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md §5.6: "the gate ... is
+    not 'the ledger exists'. It is: a training run seeded with one reserved row REFUSES
+    TO START."
+    """
+
+
+def _refuse_reserved_shards(region: str, glob_pat: str, shards: list[str]) -> None:
+    """Raise :class:`ReservedSourceError` if any resolved shard is under a reserved corpus."""
+    for shard in shards:
+        for name, note in RESERVED_FOR_COMPOSE.items():
+            if name in Path(shard).parts:
+                raise ReservedSourceError(
+                    f"region {region!r} source {glob_pat!r} resolved a shard under the "
+                    f"reserved directory {name!r} ({note}, allocated `compose` -- see "
+                    f"docs/design/CORPUS-CONTRACT.md §2.4). Reserved sources may only be "
+                    f"consumed by the composed model. Refusing to start. shard: {shard}"
+                )
+
+
 BASE_BATCH = 256
 BASE_LR = 3e-4
 """The batch/LR pair every text-region receipt before 2026-09-02 was trained at.
@@ -170,6 +214,25 @@ def _shards(pattern: str, root: Path = CORPUS) -> list[str]:
 # guess.
 SourceSpec = tuple[str, tuple[str, str], int]
 
+GradedSpec = tuple[str, tuple[str, str, str], str]
+"""A region's optional graded/human-scored held-out set: (glob, (left, right, score)
+columns, name-recorded-in-the-receipt). `None` for a region that declares no graded gate.
+
+This is what went missing across the R4 regression: `compress` trained a graded gate
+once by hand (receipts/compress-20260902T153612Z.json, graded_held_out.spearman 0.4956,
+beats_untrained.spearman true) through regions/compress.py's own `compress_config`, which
+sets `PretrainConfig.graded_shards` directly. When this runner (`run_region`, below)
+became the production entrypoint for `compress` instead, its `PretrainConfig(...)` call
+never set `graded_shards` at all -- the field defaults to `[]`, `pretrain_region` treats
+that as "no graded set declared" (see `_prepare_graded`), and the gate silently stopped
+appearing in every receipt after, with nothing raising. A `GradedSpec` entry here is what
+`run_region` resolves into `PretrainConfig.graded_shards/graded_columns/graded_name`, and
+`pretrain_region` now refuses to write a receipt that drops it once declared (see
+`regions/pretrain.py`'s `_assert_graded_gate_present`). The glob/columns/name below match
+`regions/compress.py`'s `GRADED_SHARD`/`graded_columns`/`graded_name` exactly -- both
+paths must agree on what "the compress graded gate" means.
+"""
+
 # The third element of each entry is the region's DEFAULT max_len: how many tokens of
 # each side the tokenizer keeps before truncating, and the width the encoder's
 # positional table is sized to (see run_region -- one value feeds both). 96 for every
@@ -183,11 +246,15 @@ SourceSpec = tuple[str, tuple[str, str], int]
 # recall@1 there (0.9863 at steps=4000, batch=1280) may therefore be signature matching
 # rather than function-body semantics -- `--max-len 256 --regions code` is the arm that
 # tests it, at whatever `--batch` the longer sequences still fit in.
-REGIONS: dict[str, tuple[list[SourceSpec], str, int]] = {
+#
+# The fourth element is this region's `GradedSpec`, or `None` if it declares no graded
+# gate. Only `compress` has one today.
+REGIONS: dict[str, tuple[list[SourceSpec], str, int, GradedSpec | None]] = {
     "code": (
         [("region/code/codesearchnet-python/**/*.parquet", ("docstring", "code"), 0)],
         "docstring <-> function; NOT next-token over GitHub",
         96,
+        None,
     ),
     "compress": (
         # all-nli ships FOUR configs under one directory, with four different schemas AND
@@ -202,6 +269,15 @@ REGIONS: dict[str, tuple[list[SourceSpec], str, int]] = {
         [("region/compress/all-nli/pair/train*.parquet", ("anchor", "positive"), 0)],
         "neighbours stay neighbours in a short latent; all-nli entailment pairs only",
         96,
+        # STS-B validation, held out entirely from training (see regions/compress.py's
+        # module docstring for why): a graded human-scored set, so the region gets a
+        # Spearman gate on top of the retrieval one. Must match regions/compress.py's
+        # COMPRESS_ROOT-relative `GRADED_SHARD`, `graded_columns` and `graded_name`.
+        (
+            "region/compress/stsb/data/validation-00000-of-00001.parquet",
+            ("sentence1", "sentence2", "score"),
+            "stsb-validation",
+        ),
     ),
     "retrieve": (
         [
@@ -211,6 +287,7 @@ REGIONS: dict[str, tuple[list[SourceSpec], str, int]] = {
         ],
         "query -> passage rank; multi-source, gooaq capped for balance",
         96,
+        None,
     ),
     "reason": (
         # Both sources are (question, worked-solution) pairs, so this fits the SAME
@@ -243,6 +320,7 @@ REGIONS: dict[str, tuple[list[SourceSpec], str, int]] = {
         # trains with; see the reason region's training receipt for the same numbers).
         # At 256 both fall under 1.1% truncated.
         256,
+        None,
     ),
 }
 
@@ -357,7 +435,9 @@ def run_region(
         steps: Optimizer steps.
         batch: Physical batch size; also sets `lr` (see :func:`lr_for_batch`).
         shard_limit: Keep only this many shards of an uncapped source; 0 means all.
-        dry: Resolve and print the sources, then stop without training.
+        dry: Resolve every source (including the region's graded set, if declared) and
+            print the resolved PretrainConfig fields as a plan, then stop without
+            starting a run or importing torch.
         bf16: Run the forward under bf16 autocast where the device supports it. False is
             the fp32 arm -- the only way to tell "bf16 cost recall" apart from "the batch
             or the schedule did", which is a question that has to be answerable from the
@@ -372,7 +452,7 @@ def run_region(
     Returns:
         The receipt, or None when the region has no usable sources or `dry` is set.
     """
-    sources, note, default_max_len = REGIONS[name]
+    sources, note, default_max_len, graded_spec = REGIONS[name]
     resolved_max_len = default_max_len if max_len is None else max_len
     corpus_root = REGION_CORPUS_ROOT.get(name, CORPUS)
     print(f"\n=== {name} — {note}", flush=True)
@@ -382,6 +462,11 @@ def run_region(
     resolved: list[SourceSpec] = []
     for glob_pat, cols, cap in sources:
         shards = _shards(glob_pat, corpus_root)
+        # Fail closed BEFORE anything else looks at these shards: a `compose`-reserved
+        # source (see RESERVED_FOR_COMPOSE) must never be trained by any region, so this
+        # runs ahead of the shard-limit slice, the MISSING check and dry-run's early
+        # return -- every path out of this loop for this source is downstream of it.
+        _refuse_reserved_shards(name, glob_pat, shards)
         if shard_limit and not cap:
             shards = shards[:shard_limit]
         if not shards:
@@ -401,22 +486,6 @@ def run_region(
     if not resolved:
         print(f"    no usable sources — skipping {name}", flush=True)
         return None
-    # Pair-draws, not steps, is what is held constant when the batch changes: at
-    # batch 256 an 8,000-step run drew 2.05M pairs, and the same 2.05M is 1,600 steps
-    # at 1,280. Printing it makes a run that quietly does 5x the work visible in the
-    # first ten lines of output rather than in the wall clock an hour later.
-    print(
-        f"    steps={steps} batch={batch} lr={lr_for_batch(batch):.2e} "
-        f"pair_draws={steps * batch:,} max_len={resolved_max_len}"
-        + (f" (default {default_max_len})" if resolved_max_len != default_max_len else ""),
-        flush=True,
-    )
-    if dry:
-        return None
-
-    # Imported here so --dry-run works without torch present.
-    from cogsyndelta.regions import PretrainConfig, pretrain_region
-    from cogsyndelta.regions.text_encoder import TextEncoderConfig
 
     # Single-source regions keep the simple path; multi-source ones are materialised by
     # the trainer via explicit shard lists per source.
@@ -428,6 +497,79 @@ def run_region(
         {"shards": _shards(g, corpus_root), "columns": list(c), "limit": cap}
         for g, c, cap in resolved[1:]
     ]
+
+    # Resolve the region's graded/human-scored held-out set, if it declares one (see
+    # `GradedSpec`). This is what R4 lost: `compress` declares one, this runner used to
+    # never resolve it, `PretrainConfig.graded_shards` stayed `[]`, and the Spearman gate
+    # silently stopped appearing in every receipt after the one hand-run at 11:36 on
+    # 2026-09-02 (receipts/compress-20260902T153612Z.json). A region with no `graded_spec`
+    # (every region but `compress`, today) resolves to an empty `graded_shards`, which
+    # `pretrain_region` correctly reads as "no graded gate declared" -- see
+    # `regions/pretrain.py`'s `_prepare_graded`/`_assert_graded_gate_present`.
+    graded_shards: list[str] = []
+    graded_cols: tuple[str, str, str] = ("sentence1", "sentence2", "score")
+    graded_name = ""
+    if graded_spec is not None:
+        graded_glob, graded_cols, graded_name = graded_spec
+        graded_shards = _shards(graded_glob, corpus_root)
+        if graded_shards:
+            print(
+                f"    graded  {len(graded_shards):>2} shard(s)  {graded_cols}  "
+                f"name={graded_name!r}  {graded_glob}",
+                flush=True,
+            )
+        else:
+            # Declared but unresolved (e.g. an unmounted export). Do NOT silently drop
+            # the gate here -- print it loudly, and let `pretrain_region`'s own guard
+            # decide: `graded_shards` stays `[]`, which today means "no graded set", the
+            # same as a region that never declared one. If that ever needs to be a hard
+            # refusal instead (missing corpus, not an undeclared gate), it belongs in
+            # `pretrain_region`, not swallowed here.
+            print(
+                f"    graded source MISSING: {graded_glob} -- {name} declares a graded "
+                f"gate but it will not run this time",
+                flush=True,
+            )
+
+    # Pair-draws, not steps, is what is held constant when the batch changes: at
+    # batch 256 an 8,000-step run drew 2.05M pairs, and the same 2.05M is 1,600 steps
+    # at 1,280. Printing it makes a run that quietly does 5x the work visible in the
+    # first ten lines of output rather than in the wall clock an hour later.
+    print(
+        f"    steps={steps} batch={batch} lr={lr_for_batch(batch):.2e} "
+        f"pair_draws={steps * batch:,} max_len={resolved_max_len}"
+        + (f" (default {default_max_len})" if resolved_max_len != default_max_len else ""),
+        flush=True,
+    )
+
+    if dry:
+        # The resolved PretrainConfig fields, printed without importing PretrainConfig
+        # itself (that import pulls in torch/tokenizers -- see the comment below) and
+        # without starting a run. `graded_shards`/`graded_columns`/`graded_name` are
+        # included deliberately: a dry run is how `compress`'s graded gate is verified
+        # wired without spending GPU time, which is exactly the check R4 had no way to
+        # make cheaply.
+        plan = {
+            "region": name,
+            "pair_columns": list(pair_cols),
+            "shards": shards,
+            "extra_sources": extra_sources,
+            "steps": steps,
+            "batch_size": batch,
+            "lr": lr_for_batch(batch),
+            "max_len": resolved_max_len,
+            "holdout_pairs": 512,
+            "graded_shards": graded_shards,
+            "graded_columns": list(graded_cols),
+            "graded_name": graded_name,
+        }
+        print("    resolved PretrainConfig (dry run, no training started):", flush=True)
+        print(json.dumps(plan, indent=2), flush=True)
+        return None
+
+    # Imported here so --dry-run works without torch present.
+    from cogsyndelta.regions import PretrainConfig, pretrain_region
+    from cogsyndelta.regions.text_encoder import TextEncoderConfig
 
     cfg = PretrainConfig(
         region=name,
@@ -454,6 +596,9 @@ def run_region(
         encoder=TextEncoderConfig(dim=256, depth=4, n_heads=4, max_len=resolved_max_len),
         bf16=bf16,
         out_dir=str(state / "receipts"),
+        graded_shards=graded_shards,
+        graded_columns=graded_cols,
+        graded_name=graded_name,
     )
     started = time.time()
     receipt = pretrain_region(cfg)

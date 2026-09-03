@@ -961,11 +961,22 @@ Here is the entire licence-clean, currently-unallocated staged pool:
 | `deepmind/aqua_rat` | 97,467 | reason | PERMISSIVE_OK |
 | `zalando-datasets/fashion_mnist` | 60,000 (train split, as staged) | vl | PERMISSIVE_OK |
 | `google-research-datasets/go_emotions` | 43,410 | classify | PERMISSIVE_OK |
-| `deepmind/code_contests` | 13,328 | code | ATTRIBUTION |
+| `deepmind/code_contests` | 13,328 | ~~code~~ -> **compose** | ATTRIBUTION |
 | `PolyAI/banking77` | 13,083 | classify | ATTRIBUTION |
-| `codeparrot/apps` | 10,000 | code | PERMISSIVE_OK |
+| `codeparrot/apps` | 10,000 | ~~code~~ -> **compose** | PERMISSIVE_OK |
 | `openai/gsm8k` | 7,473 | reason | PERMISSIVE_OK |
 | **total** | **244,761** | | of which **218,350** PERMISSIVE_OK |
+
+> **Reserved 2026-09-02 (DEC-23).** `deepmind/code_contests` and `codeparrot/apps` are
+> corrected from `code` to `compose` in this table -- they are the only licence-clean
+> paired natural-language-problem <-> implementation source in the tree (the only
+> material for the `memory x language_code` cross-faculty bin), so allocation happens
+> now, before P2.3 trains `code`/`language_code`, per
+> `docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` §5.2. `scripts/csd-train-all.py`
+> refuses to start any region whose resolved sources fall under a reserved corpus
+> directory (`RESERVED_FOR_COMPOSE` / `ReservedSourceError`), enforced at train time.
+> This does not change the "100% to regions, nothing to compose" verdict below for the
+> other five sources -- see §2.5.
 
 **As planned, P2.2/P2.3 allocate 100% of that pool to regions and leave the composed model
 with nothing.** Not "not much" — nothing. Every other staged corpus is either already
