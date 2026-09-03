@@ -98,9 +98,13 @@ source into -- `<region>/<name>` -- so a resolved shard path is caught by
 class ReservedSourceError(RuntimeError):
     """Raised when a region's resolved sources fall under a `compose`-reserved corpus.
 
-    Fails closed: this is checked at shard-resolution time, inside the same loop every
-    region's sources pass through, so it fires for ANY region (not only `code`), for
-    `--dry-run` as well as a real run, and before `pretrain_region` is ever imported or
+    Fails closed: this is checked at shard-resolution time, before any slice/limit and
+    before torch import, at the call site each runner uses to resolve its own sources
+    (`run_region`'s source loop, `run_vl_region`'s train/probe_eval/transfer resolution,
+    and `run_classify_region`'s shard resolution against `LOCAL_CORPUS`) -- so it fires
+    for ANY region trained through any of those three entry points (not only `code`
+    through `run_region`), for `--dry-run` as well as a real run, and before
+    `pretrain_region`/`pretrain_vl_region`/`pretrain_classify_region` is ever imported or
     called. See docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md §5.6: "the gate ... is
     not 'the ledger exists'. It is: a training run seeded with one reserved row REFUSES
     TO START."
@@ -223,10 +227,15 @@ def _shards(pattern: str, root: Path = CORPUS) -> list[str]:
 # The cap exists for balance, not for speed. gooaq alone is 3,012,496 pairs -- 96% of
 # everything available to `retrieve` -- so training uncapped would produce a gooaq model
 # wearing a retrieval region's name. Capped at 400k it is 78% of a ~514k mix, comparable
-# in size to `code` (455k) and `compress` (320k). Held-out eval stays on fiqa dev/test,
-# which is a different domain (financial QA) and therefore measures transfer rather than
-# memorisation. Raise the cap if transfer is the bottleneck; that is a measurement, not a
-# guess.
+# in size to `code` (455k) and `compress` (320k). The holdout is NOT a fiqa dev/test
+# split: `build_splits` shuffles the concatenated three-source pool and takes a uniform
+# sample of that mixture, so at ~79% GooAQ post-cap the expected fiqa content of a
+# 512-pair holdout is only ~5.6 items post-dedup -- this is an in-mixture recall number,
+# not a transfer measurement (see docs/design/CORPUS-CONTRACT.md Part 3, which this
+# comment used to contradict). A real fiqa-only transfer evaluation exists separately in
+# `cogsyndelta/regions/retrieve.py`, which trains on fiqa `train` alone and scores against
+# the full BEIR-style fiqa corpus. Raise the cap if in-mixture balance is the bottleneck;
+# that is a measurement, not a guess.
 SourceSpec = tuple[str, tuple[str, str], int]
 
 GradedSpec = tuple[str, tuple[str, str, str], str]
@@ -408,8 +417,12 @@ VL_REGIONS: dict[str, dict] = {
         "probe_eval": "vl/tiny-imagenet/data/valid-*.parquet",
         "columns": ("image", "label"),
         # cifar100 is a DIFFERENT dataset with different classes, so the probe on it
-        # measures whether the representation transfers rather than memorises -- the same
-        # reason `retrieve` is scored on out-of-domain fiqa.
+        # measures whether the representation transfers rather than memorises. Unlike
+        # `retrieve`'s holdout -- which is a uniform sample of an in-mixture pool, NOT an
+        # out-of-domain fiqa split; see the `SourceSpec` comment above and
+        # docs/design/CORPUS-CONTRACT.md Part 3 -- this probe really does train on one
+        # shard (`train`) and evaluate on an entirely separate one (`transfer`), so it is
+        # actually out-of-domain.
         "transfer": "vl/cifar100/cifar100/test-*.parquet",
         "transfer_columns": ("img", "fine_label"),
         "note": "I-JEPA over 64x64 patches; gated on a linear probe, never on loss",
@@ -719,6 +732,16 @@ def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> 
     train = _shards(spec["train"])
     probe_eval = _shards(spec["probe_eval"])
     transfer = _shards(spec["transfer"])
+    # Same fail-closed requirement as `run_region` (see RESERVED_FOR_COMPOSE and
+    # `ReservedSourceError`): a reserved shard must never train ANY region, and this VL
+    # path resolves its own shards independently of `run_region`'s loop, so it needs its
+    # own call, ahead of the MISSING check and dry-run's early return below.
+    for label, glob_pat, got in (
+        ("train", spec["train"], train),
+        ("probe_eval", spec["probe_eval"], probe_eval),
+        ("transfer", spec["transfer"], transfer),
+    ):
+        _refuse_reserved_shards(name, glob_pat, got)
     for label, got in (("train", train), ("probe_eval", probe_eval), ("transfer", transfer)):
         print(f"    {len(got):>2} shard(s)  {label}", flush=True)
         if not got:
@@ -804,6 +827,11 @@ def run_classify_region(
     print(f"    corpus root: {LOCAL_CORPUS} (not the shared {CORPUS})", flush=True)
 
     shards = _shards(spec["shards"], LOCAL_CORPUS)
+    # Same fail-closed requirement as `run_region` (see RESERVED_FOR_COMPOSE and
+    # `ReservedSourceError`) -- doubly so here, since `LOCAL_CORPUS` (/bulk/csd-corpus) is
+    # the exact root `apps` and `code_contests` were fetched under, so a careless future
+    # `CLASSIFY_REGIONS` glob is one wildcard away from resolving straight into them.
+    _refuse_reserved_shards(name, spec["shards"], shards)
     print(
         f"    {len(shards):>2} shard(s)  text={spec['text_column']!r} "
         f"label={spec['label_column']!r} multi_label={spec['multi_label']}  {spec['shards']}",

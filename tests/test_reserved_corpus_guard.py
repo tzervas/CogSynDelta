@@ -157,3 +157,93 @@ def test_code_region_dry_run_is_unaffected_when_sources_stay_clean(
         mod.run_region(name="code", state=tmp_path, steps=1, batch=1, shard_limit=0, dry=True)
     except mod.ReservedSourceError:
         pytest.fail("clean source incorrectly refused as reserved")
+
+
+# ---------------------------------------------------------------------------------------
+# Entry-point level -- `run_vl_region` and `run_classify_region`.
+#
+# `_refuse_reserved_shards` is called from `run_region`'s source loop, but until this
+# guard was added `run_vl_region` (train/probe_eval/transfer resolution) and
+# `run_classify_region` (shard resolution against `LOCAL_CORPUS` -- the exact root
+# `apps`/`code_contests` were fetched under) resolved shards with no check at all. Same
+# shape as the `run_region` tests above: monkeypatch `_shards` to return a reserved path,
+# assert the runner refuses before `dry=True` would otherwise return `None` cleanly.
+# ---------------------------------------------------------------------------------------
+
+
+def test_vl_region_run_refuses_to_start_when_resolved_sources_include_a_reserved_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`run_vl_region` must refuse a reserved shard exactly like `run_region` does.
+
+    Regression guard for the gap this file's module docstring now (accurately) describes
+    as closed: before this test existed, `run_vl_region` never called
+    `_refuse_reserved_shards` at all, so a `VL_REGIONS` glob resolving into `apps` or
+    `code_contests` would train silently.
+    """
+    monkeypatch.setattr(
+        mod,
+        "_shards",
+        lambda pattern, root=mod.CORPUS: ["/mnt/fleet-datasets/csd/region/code/apps/train.parquet"],
+    )
+
+    with pytest.raises(mod.ReservedSourceError):
+        mod.run_vl_region(name="vl_latent", state=tmp_path, steps=1, batch=1, dry=True)
+
+
+def test_vl_region_dry_run_is_unaffected_when_sources_stay_clean(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Negative control: an unreserved resolved shard must not trip the VL guard either."""
+    monkeypatch.setattr(
+        mod,
+        "_shards",
+        lambda pattern, root=mod.CORPUS: [
+            "/mnt/fleet-datasets/csd/vl/tiny-imagenet/data/train-0.parquet"
+        ],
+    )
+
+    try:
+        mod.run_vl_region(name="vl_latent", state=tmp_path, steps=1, batch=1, dry=True)
+    except mod.ReservedSourceError:
+        pytest.fail("clean source incorrectly refused as reserved")
+
+
+def test_classify_region_run_refuses_to_start_when_resolved_sources_include_a_reserved_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`run_classify_region` must refuse a reserved shard, doubly important because it
+    resolves against `LOCAL_CORPUS` (`/bulk/csd-corpus`) -- the exact root `apps` and
+    `code_contests` were fetched to (see `RESERVED_FOR_COMPOSE`'s docstring). Before this
+    test existed, `run_classify_region` never called `_refuse_reserved_shards` at all.
+    """
+    monkeypatch.setattr(
+        mod,
+        "_shards",
+        lambda pattern, root=mod.LOCAL_CORPUS: ["/bulk/csd-corpus/code/apps/train.parquet"],
+    )
+
+    with pytest.raises(mod.ReservedSourceError):
+        mod.run_classify_region(
+            name="classify_banking77", state=tmp_path, steps=1, batch=1, dry=True
+        )
+
+
+def test_classify_region_dry_run_is_unaffected_when_sources_stay_clean(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Negative control: an unreserved resolved shard must not trip the classify guard."""
+    monkeypatch.setattr(
+        mod,
+        "_shards",
+        lambda pattern, root=mod.LOCAL_CORPUS: [
+            "/bulk/csd-corpus/classify/banking77/train.parquet"
+        ],
+    )
+
+    try:
+        mod.run_classify_region(
+            name="classify_banking77", state=tmp_path, steps=1, batch=1, dry=True
+        )
+    except mod.ReservedSourceError:
+        pytest.fail("clean source incorrectly refused as reserved")
