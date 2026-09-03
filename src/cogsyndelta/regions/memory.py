@@ -97,11 +97,17 @@ MEASURED_VRAM_AT_BATCH_512 = {
     "note": (
         "53.7% of the 3090 Ti's 24,564 MiB at the whole-card figure -- comfortable "
         "headroom for the production 8,000-step run at this batch, matching "
-        "DEFAULT_BATCH's own measured-table convention in scripts/csd-train-all.py. Even "
-        "at 50 steps the token-aware terms already moved the final-block rank ratio to "
-        "5.74x pooled (16.11/2.81) -- well past §4.0's 2.0x gate, the first real-data "
-        "evidence the terms are not a no-op at production scale, not just on the tiny "
-        "synthetic fixtures tests/test_token_aware_objective.py constructs."
+        "DEFAULT_BATCH's own measured-table convention in scripts/csd-train-all.py. "
+        "VRAM/timing only -- see EVIDENCE_50_STEP_CONTROL_ARM below for what the "
+        "final-block rank actually shows at this step count; the rank claim this note "
+        "used to make here ('moved the ratio to 5.74x pooled, well past the 2.0x gate, "
+        "the first real-data evidence the terms are not a no-op') was measured on a "
+        "harness that did not match W1's pre-committed one (both sides of the held-out "
+        "pairs through a subsampling participation ratio, not W1's single-side, "
+        "full-surface pr_effective_rank -- see 'fix(memory): align W4's final-block "
+        "rank measurement with W1's pre-committed harness') and had no control arm, so "
+        "it could not tell 'the terms worked' from 'this statistic doesn't discriminate "
+        "at 50 steps' apart. It does not, per EVIDENCE_50_STEP_CONTROL_ARM."
     ),
 }
 """Row W4's own smoke-run receipt, condensed -- a SHORT run only (50 steps, no full
@@ -115,6 +121,73 @@ VERIFIED by direct measurement, not inferred from `scripts/csd-train-all.py`'s o
 since those regions never turn them on): the MLM head and the decorrelation loss add
 real compute and memory no prior region ever paid, so extrapolating from that table
 would have been a guess wearing a measurement's clothes."""
+
+EVIDENCE_50_STEP_CONTROL_ARM = {
+    "measured": "2026-09-03, 3090 Ti (24 GiB), real fiqa/all-nli/natural-questions/gooaq "
+    "corpus, 50 steps, batch_size=512, max_len=96, dim=256/depth=4/n_heads=4 "
+    "(16,021,248 params), seed=0 -- IDENTICAL config across all three arms, only the "
+    "two weights below vary",
+    "harness": "cogsyndelta.eval.benchmark.pr_effective_rank on the FINAL block's "
+    "token-global surface, ONE side of the held-out pairs, full surface, no "
+    "subsampling -- the same measurement W1's pre-committed harness "
+    "(docs/design/evidence/w1-token-rank-2026-09-02/measure_w1.py) used, not the "
+    "mismatched one MEASURED_VRAM_AT_BATCH_512's original note reported against. "
+    "Full evidence: docs/design/evidence/w4-control-arm-2026-09-03/",
+    "code_revision": "5554fcb5efc3e8453fe09e0cf75b862f5c13519b",
+    "arms": {
+        "control": {
+            "token_loss_weight": 0.0,
+            "decorr_weight": 0.0,
+            "pooled_pr_rank": 1.9995955920659791,
+            "token_global_pr_rank": 4.037415218462928,
+            "ratio": 2.0191158824727538,
+        },
+        "token_only": {
+            "token_loss_weight": TOKEN_LOSS_WEIGHT,
+            "decorr_weight": 0.0,
+            "pooled_pr_rank": 1.9994038259022515,
+            "token_global_pr_rank": 4.047204865224132,
+            "ratio": 2.0242058221519055,
+        },
+        "both_on": {
+            "token_loss_weight": TOKEN_LOSS_WEIGHT,
+            "decorr_weight": DECORR_WEIGHT,
+            "pooled_pr_rank": 2.1809807874236706,
+            "token_global_pr_rank": 4.887977255410147,
+            "ratio": 2.241183087717234,
+        },
+    },
+    "gate_e_clause_1_discriminates_at_50_steps": False,
+    "note": (
+        "The control arm (both weights OFF) already clears §4.0's `token_global_pr_rank "
+        ">= 2.0 * pooled_pr_rank` threshold on its own, at 2.0191x -- 50 steps is short "
+        "enough that `pooled_pr_rank` sits barely above the 1.0 floor (InfoNCE has not "
+        "yet had the steps to differentiate items) while `token_global_pr_rank` starts "
+        "measurably higher for an unrelated reason (a token-position surface has more "
+        "inherent local variation than a pooled vector even untrained). Gate (e) clause "
+        "1's ratio-vs-2.0x threshold is therefore NOT DISCRIMINATING at this step count, "
+        "on this harness -- a `passed: True` here does not distinguish 'the token-aware "
+        "terms worked' from 'the terms were never turned on'. The threshold itself is "
+        "unchanged (a design-doc matter, not this evidence's to alter); whether it "
+        "discriminates at the production 8,000-step scale is not measured here. The "
+        "terms' real, attributable effect reads off the RAW token_global_pr_rank "
+        "instead: control->both_on moves it by +0.8506, of which +0.0098 (1.2%) is "
+        "attributable to token_loss_weight alone (control->token_only, decorr_weight=0.0 "
+        "throughout that step) and +0.8408 (98.8%) to decorr_weight "
+        "(token_only->both_on). L_decorr accounts for essentially all of the measured "
+        "movement at these weights, at this step count, on this corpus -- L_token is "
+        "not provably a no-op (see the mutation-verified gradient tests in "
+        "tests/test_token_aware_objective.py), but its measured effect on this "
+        "statistic here is small next to L_decorr's."
+    ),
+}
+"""Row W4's control-arm evidence (COMMIT 3, reviewer finding B2): the SAME 50-step smoke
+run MEASURED_VRAM_AT_BATCH_512 above reports VRAM/timing for, run THREE ways -- both
+weights off, token_loss_weight alone, and memory_config()'s own on-by-default weights --
+so a reader can tell what the token-aware terms actually changed apart from what a
+50-step run of ANYTHING would already show. See
+docs/design/evidence/w4-control-arm-2026-09-03/README.md for the full write-up,
+per-arm summary JSONs, the reproduction command, and checkpoint sha256s."""
 
 P1_GATE = {"stsb_spearman": 0.40, "emb_std": 0.01}
 """The SAME basic sanity floor `regions/compress.py`'s `P1_GATE` uses -- "did the

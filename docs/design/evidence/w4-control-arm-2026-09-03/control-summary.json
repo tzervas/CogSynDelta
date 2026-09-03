@@ -1,0 +1,42 @@
+{
+  "arm": "control",
+  "token_loss_weight": 0.0,
+  "decorr_weight": 0.0,
+  "wall_elapsed_s": 18.79,
+  "training_loop_elapsed_s": 3.3,
+  "mean_step_time_ms": 66.0,
+  "peak_allocated_mib": 292.4,
+  "peak_reserved_mib": 322.0,
+  "final_block_rank": {
+    "pooled_pr_rank": 1.9995955920659791,
+    "pooled_entropy_rank": 39.748565673828125,
+    "token_global_pr_rank": 4.037415218462928,
+    "token_global_entropy_rank": 42.49875259399414,
+    "n_tokens": 5395.0
+  },
+  "token_global_over_pooled_ratio": 2.0191158824727538,
+  "gate_e_pr_clause_passes_at_2x": true,
+  "parameters": 16021248,
+  "checkpoint": "/akula-data/session-backup-staging/w4-control-arm-2026-09-03/control-arm-runs/control/memory-checkpoints/ca31ca50/final.pt",
+  "checkpoint_sha256": "1864b359e0cc1cb4241cdc0205539e37163bba5323a893fd4a4c33eef224b797",
+  "config_fingerprint": "6fc0cf23ff8591ff2241278f82c001d2",
+  "seed": 0,
+  "device": "cuda",
+  "precision": {
+    "autocast": "bf16",
+    "requested_bf16": true,
+    "master_weights": "fp32",
+    "logits": "fp32 (forced in info_nce)",
+    "eval": "fp32"
+  },
+  "held_out_recall@1": 0.00390625,
+  "graded_held_out_spearman": 0.08229286853441915,
+  "encoder_config": {
+    "vocab_size": 50257,
+    "dim": 256,
+    "depth": 4,
+    "n_heads": 4,
+    "max_len": 96,
+    "out_dim": null
+  }
+}
