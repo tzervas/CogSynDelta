@@ -22,6 +22,17 @@
 # regression shipped in 6f8ff7b and is why this paragraph exists. Refer to
 # the finding by file:line only; open the file to see the actual text.
 #
+# The fingerprints below cover the two evidence-file occurrences at the
+# commit that introduced them (27b0e4d), but they do NOT and CANNOT cover
+# 6f8ff7b's own quoting of the same text inside this file: gitleaks runs in
+# full git-history mode (fleet-security.yml has no --no-git), so that
+# immutable historical commit is rescanned on every run regardless of how
+# this file reads today. That occurrence is suppressed by the regex
+# allowlist in .gitleaks.toml instead, which matches the exact substring
+# under the generic-api-key rule regardless of which commit or file quotes
+# it. Keep both: the fingerprints here document the reviewed occurrences by
+# commit; .gitleaks.toml is what actually keeps the gate green.
+#
 # docs/design/evidence/w1-token-rank-2026-09-02/results.json:350 -- tokenizer load path + vocab size, logged during the eval run
 27b0e4d4f0f949764693c6996fdd14d0d6acfef2:docs/design/evidence/w1-token-rank-2026-09-02/results.json:generic-api-key:350
 # docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:590 -- same tokenizer load line, different evidence run
