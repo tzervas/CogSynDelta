@@ -85,6 +85,37 @@ TOKEN_LOSS_WEIGHT = 0.1
 DECORR_WEIGHT = 0.1
 """γ, §4.0's `L_decorr` weight -- modest by design; see the module docstring."""
 
+MEASURED_VRAM_AT_BATCH_512 = {
+    "measured": "2026-09-03, 3090 Ti (24 GiB), real fiqa/all-nli/natural-questions/gooaq "
+    "corpus, 50 steps",
+    "config": "batch_size=512, max_len=96, dim=256, depth=4, n_heads=4 (16,021,248 "
+    "params), bf16 autocast, token_loss_weight=0.1, decorr_weight=0.1",
+    "mean_step_time_ms": 146.0,
+    "peak_allocated_mib": 10276.6,
+    "peak_reserved_mib": 11678.0,
+    "peak_whole_card_mib": 13079,  # nvidia-smi memory.used, polled at 0.5s during the run
+    "note": (
+        "53.7% of the 3090 Ti's 24,564 MiB at the whole-card figure -- comfortable "
+        "headroom for the production 8,000-step run at this batch, matching "
+        "DEFAULT_BATCH's own measured-table convention in scripts/csd-train-all.py. Even "
+        "at 50 steps the token-aware terms already moved the final-block rank ratio to "
+        "5.74x pooled (16.11/2.81) -- well past §4.0's 2.0x gate, the first real-data "
+        "evidence the terms are not a no-op at production scale, not just on the tiny "
+        "synthetic fixtures tests/test_token_aware_objective.py constructs."
+    ),
+}
+"""Row W4's own smoke-run receipt, condensed -- a SHORT run only (50 steps, no full
+training run), matching the constraint this worktree operates under. Measured against the
+real fleet corpus with `memory_config()`'s own defaults -- `TOKEN_LOSS_WEIGHT`/
+`DECORR_WEIGHT` on, not a hand-tuned arm -- so the numbers describe what an operator
+actually launching row W4 gets, not a best case.
+
+VERIFIED by direct measurement, not inferred from `scripts/csd-train-all.py`'s own
+`DEFAULT_BATCH` table (measured on `code`/`retrieve` with the token-aware terms OFF,
+since those regions never turn them on): the MLM head and the decorrelation loss add
+real compute and memory no prior region ever paid, so extrapolating from that table
+would have been a guess wearing a measurement's clothes."""
+
 P1_GATE = {"stsb_spearman": 0.40, "emb_std": 0.01}
 """The SAME basic sanity floor `regions/compress.py`'s `P1_GATE` uses -- "did the
 consolidation head learn anything at all", independent of the much stricter

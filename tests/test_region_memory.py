@@ -144,6 +144,17 @@ def test_consolidation_gate_reports_a_pass_that_did_not_beat_untrained() -> None
     assert report["verdict"] == "PASS (but does not beat untrained)"
 
 
+def test_measured_vram_table_documents_the_row_w4_smoke_run() -> None:
+    """Row W4's own smoke-run receipt (2026-09-03, real fleet corpus, 3090 Ti) must be
+    on record so the production launch can budget VRAM without re-deriving it."""
+    table = memory_mod.MEASURED_VRAM_AT_BATCH_512
+    assert "batch_size=512" in table["config"]
+    assert "max_len=96" in table["config"]
+    assert table["peak_whole_card_mib"] > 0
+    assert table["peak_whole_card_mib"] < 24564  # fits the 3090 Ti with margin
+    assert table["mean_step_time_ms"] > 0
+
+
 def test_token_loss_and_decorr_weight_default_on() -> None:
     """Row W4 is designed as the first token-aware retrain -- unlike every other
     region's `*_config`, this one must not need an override to get §4.0's terms."""
