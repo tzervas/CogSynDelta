@@ -24,6 +24,25 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "csd-publish-checkpoint.py"
 
+# huggingface_hub is deliberately NOT a project dependency (scripts/csd-hf-repos.py
+# uses raw urllib against HF's REST API for exactly this reason -- see its module
+# docstring) and so is absent from the isolated CI venv scripts/ci_local.sh builds via
+# `uv sync --group dev`. This script's own import of it is lazy (inside publish(),
+# only reached once a token is present), but `patch("huggingface_hub.HfApi", ...)`
+# below still needs the *name* importable to resolve its target. Stub it into
+# sys.modules when the real package isn't installed so these tests need no network
+# dependency and no project-dependency change -- every test patches HfApi itself
+# before it matters, so a placeholder attribute here is never actually exercised.
+if "huggingface_hub" not in sys.modules:
+    try:
+        import huggingface_hub as _hf_probe  # noqa: F401
+    except ModuleNotFoundError:
+        import types
+
+        _hf_stub = types.ModuleType("huggingface_hub")
+        _hf_stub.HfApi = object  # placeholder; every test patches this before use
+        sys.modules["huggingface_hub"] = _hf_stub
+
 
 def load_mod() -> Any:
     loader = importlib.machinery.SourceFileLoader("csd_publish_checkpoint", str(SCRIPT))
