@@ -55,7 +55,9 @@ def evaluate_route_load(
 ) -> dict[str, float]:
     """Measure top-k load fractions on a fresh batch drawn from ``source``.
 
-    Why: DoD requires load on a batch of 8, independent of train batch size.
+    Why: DoD requires load on an eval batch, independent of train batch size and sized
+    for a statistical margin against sampling noise (see the 2026-09-04 note below, and
+    ``tests/test_poc_route_train.py::_cpu_train_cfg``).
 
     The batch used to be ``torch.rand``, which made this the least informative
     measurement in the PoC: a gate scores a linear projection of its input, and on
@@ -72,6 +74,21 @@ def evaluate_route_load(
     that by spreading tokens over the sphere so that any linear gate had to split them.
     The claim holds for the corpus this PoC is measured on; it is not a property of the
     aux term alone.
+
+    2026-09-04 (test/poc-route-load-determinism): that "batch of 8" figure above is
+    exactly the problem. At an ~0.125 measured minority-routing rate, an 8-token eval
+    batch is a ``Binomial(n=8, p=0.125)`` draw with ``P(zero minority hits) = 0.875**8
+    ~= 34%`` -- a false "collapsed load" from pure sampling noise roughly one run in
+    three, no code or hardware fault required. ``scripts/ci_local.sh`` (the pre-push
+    gate) syncs CUDA torch and lets ``trained_corpus`` resolve to the GPU; a plain
+    interactive ``pytest`` run may stay on CPU. Neither torch nor cuDNN promises
+    bit-identical reductions across that difference even with a fixed seed, and 24
+    Adam steps are enough to turn a sub-ULP rounding difference into a different
+    trained gate. Either path only has to flip one of the 8 eval tokens to hit the 34%
+    tail. The test suite fixed this by widening ``eval_batch_size`` to 64
+    (``P(zero minority hits) ~= 0.0002``) rather than chasing cross-device bit-parity,
+    which is not a real fix available here. This function's contract did not change --
+    ``batch_size`` is still just "however many tokens the caller wants evaluated."
 
     Args:
         router: Trained softmax gate.
