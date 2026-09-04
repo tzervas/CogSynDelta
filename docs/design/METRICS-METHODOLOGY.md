@@ -1873,8 +1873,8 @@ Receipt field -> section. `kind` is the receipt this field is written into
 | `metrics["rank.recall@1"]` .. `["rank.recall@10"]` | eval, eval-quantized | [§3.1](#31-rankrecall1-rankrecall5-rankrecall10) |
 | `metrics["rank.mrr"]` | eval, eval-quantized | [§3.2](#32-rankmrr) |
 | `metrics["rank.ndcg@10"]` | eval, eval-quantized | [§3.3](#33-rankndcg10) |
-| `metrics["rank.map"]` | eval, eval-quantized | [§3.4](#34-rankmap) |
-| `metrics["rank.precision@10"]` | eval, eval-quantized | [§3.5](#35-rankprecision10) |
+| `metrics["rank.map"]` | *(retired -- not written by v2, see §3.4)* | [§3.4](#34-rankmap) |
+| `metrics["rank.precision@10"]` | *(retired -- not written by v2, see §3.5)* | [§3.5](#35-rankprecision10) |
 | `metrics["rank.candidates"]` | eval, eval-quantized | [§3.6](#36-rankcandidates) |
 | `metrics["eff.parameters"]`, `["eff.stored_mb"]`, `["eff.capability_per_param"]`, `["eff.capability_per_mb"]` | eval, eval-quantized | [§3.7](#37-effparameters-effstored_mb-effcapability_per_param-effcapability_per_mb) |
 | `metrics["eff.latency_p50_ms"]` .. `["eff.peak_vram_mb"]` | eval, eval-quantized | [§3.8](#38-efflatency_p50_ms-latency_p95_ms-latency_p99_ms-throughput_per_s-peak_vram_mb) |
