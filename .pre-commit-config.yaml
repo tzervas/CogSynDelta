@@ -52,6 +52,16 @@ repos:
         exclude: ^docs/design/evidence/
 
   # Mypy - type checking
+  # LOCAL hook, not mirrors-mypy: mirrors-mypy runs mypy in an isolated venv
+  # seeded only by `additional_dependencies`, which cannot see the project's
+  # actual dependencies (openai, anthropic, llama-index, faiss, pyarrow,
+  # tokenizers, pytest, ...) and silently misses every type error that depends
+  # on one of them. `uv run mypy` runs the repo's own mypy, installed via the
+  # `dev` dependency group into the project's uv-managed venv, so it resolves
+  # real dependency types and picks up [tool.mypy] in pyproject.toml
+  # (ignore_missing_imports, strict_optional, exclude, ...) instead of
+  # duplicating those settings as hook args.
+  #
   # Runs over every tracked *.py except: tests/benchmarks/examples/scripts at repo
   # root (ci.yml's required "Type check with mypy" step runs `mypy src/` alone and
   # docs/DEVELOPMENT_STANDARDS.md's Quick Reference agrees -- this hook is a
@@ -61,14 +71,16 @@ repos:
   # its mypy findings are a dynamically-loaded-class pattern that would need a
   # real redesign, not a mechanical fix). deploy/, config/, setup.py and
   # libs/algebraic-training/ are included and clean.
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+  - repo: local
     hooks:
       - id: mypy
-        additional_dependencies: [torch, numpy, pyyaml, types-PyYAML]
-        args: [--ignore-missing-imports, --no-strict-optional]
+        name: mypy (uv run, project venv)
+        entry: uv run mypy
+        language: system
+        types: [python]
         files: \.py$
         exclude: ^(tests/|benchmarks/|examples/|scripts/|docs/design/evidence/)
+        require_serial: true
 
   # Pydocstyle - Google style docstring enforcement
   - repo: https://github.com/pycqa/pydocstyle
