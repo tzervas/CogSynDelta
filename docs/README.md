@@ -94,6 +94,11 @@ Three rules follow, and they are not negotiable:
    **Cite an ADR by full filename, never by number** — three files share the `0009-` prefix
    (`0009-algebraic-training-optimization.md`, `0009-reference-materials.md`,
    `0009-supplement-algebraic-training-research.md`), so "ADR-0009" names three documents.
+4. **[`technical/model-card-pipeline.md`](technical/model-card-pipeline.md) is likewise a
+   separate class**, not covered by rule 2 and not one of `technical/`'s thirteen ratified
+   chapters: a standalone tooling reference for how a region's model card is built
+   (`scripts/csd-card.py`, `cogsyndelta.cards`) and every point it refuses to publish an
+   unstated number.
 
 ## Design is not implementation
 
