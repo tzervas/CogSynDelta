@@ -1749,3 +1749,107 @@ def test_stubbed_methodology_map_missing_a_v2_key_fails_the_card_build(
         mod.build_plan(
             "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
         )
+
+
+# ============================================== card metrics_schema stamp (round 3 review)
+#
+# `_methodology_section` used to derive the card's ONE `- **Metrics schema:**` line from
+# the TRAINING receipt alone, then merge train + eval + quant metrics into the same
+# table -- so a v1 training receipt re-benchmarked/re-quantized with v2 code (the
+# near-term real case for every already-trained matrix cell) printed a false
+# `csd-metrics/v1 (not recorded)` stamp directly above a table of v2 field names.
+# `metrics_schema` is identity key #1 of MM §14's refuse predicate; a published card
+# naming the wrong one is the provenance-falsehood class this branch exists to close.
+
+
+def _set_metrics_schema(path: Path, schema: str) -> None:
+    receipt = json.loads(path.read_text())
+    receipt["metrics_schema"] = schema
+    path.write_text(json.dumps(receipt))
+
+
+def test_card_metrics_schema_stamp_is_a_single_value_when_all_receipts_agree(
+    tmp_path: Path,
+) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    for path in (train_path, eval_path, quant_path):
+        _set_metrics_schema(path, "csd-metrics/v2")
+
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, quant_path
+    )
+
+    assert "- **Metrics schema:** `csd-metrics/v2`" in plan.card
+    assert "disagree" not in plan.card
+
+
+def test_card_metrics_schema_stamp_shows_disagreement_rather_than_claiming_v1(
+    tmp_path: Path,
+) -> None:
+    """The near-term real case: a v1 training receipt (no `metrics_schema` field --
+    predates this migration, reads back as the `csd-metrics/v1 (not recorded)`
+    fallback) paired with an eval and a quant receipt this branch's v2 code produced
+    (both stamp `csd-metrics/v2`). The card must not print a single
+    `csd-metrics/v1 (not recorded)` stamp above a table full of v2 field names."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    for path in (eval_path, quant_path):
+        _set_metrics_schema(path, "csd-metrics/v2")
+    assert "metrics_schema" not in json.loads(train_path.read_text()), (
+        "fixture must stay v1-shaped (no metrics_schema field) on disk, or this test proves nothing"
+    )
+
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, quant_path
+    )
+
+    schema_line = next(
+        line for line in plan.card.splitlines() if line.startswith("- **Metrics schema:**")
+    )
+    assert schema_line != "- **Metrics schema:** `csd-metrics/v1 (not recorded)`"
+    assert "train=`csd-metrics/v1 (not recorded)`" in schema_line
+    assert "eval=`csd-metrics/v2`" in schema_line
+    assert "quant=`csd-metrics/v2`" in schema_line
+
+
+def test_pre_fix_train_receipt_only_lookup_would_have_claimed_v1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MUTATION PROOF: stub `_metrics_schema_line` back to the exact pre-fix formula
+    (`train_receipt.get('metrics_schema', 'csd-metrics/v1 (not recorded)')`, train
+    receipt only) and confirm the card THEN claims `csd-metrics/v1 (not recorded)` on
+    the same v1-train/v2-eval/v2-quant trio the test above uses -- driven through the
+    real `build_plan` -> `build_card` -> `_methodology_section` pipeline, proving the
+    test above is not vacuous and that this fix, not something else about the trio, is
+    what changed the printed stamp."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    for path in (eval_path, quant_path):
+        _set_metrics_schema(path, "csd-metrics/v2")
+
+    def pre_fix_line(
+        train_receipt: dict[str, Any],
+        eval_receipt: dict[str, Any] | None,
+        quant_receipt: dict[str, Any] | None,
+    ) -> str:
+        del eval_receipt, quant_receipt  # the pre-fix formula never looked at these
+        schema = train_receipt.get("metrics_schema", "csd-metrics/v1 (not recorded)")
+        return f"- **Metrics schema:** `{schema}`"
+
+    monkeypatch.setattr(mod, "_metrics_schema_line", pre_fix_line)
+
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, quant_path
+    )
+
+    assert "- **Metrics schema:** `csd-metrics/v1 (not recorded)`" in plan.card, (
+        "reproducing the pre-fix train-receipt-only lookup must claim v1 -- this is "
+        "the exact defect this branch's fix closes"
+    )

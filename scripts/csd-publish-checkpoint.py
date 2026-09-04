@@ -1299,6 +1299,58 @@ def _card_metric_keys(
     return list(keys)
 
 
+def _metrics_schema_line(
+    train_receipt: dict[str, Any],
+    eval_receipt: dict[str, Any] | None,
+    quant_receipt: dict[str, Any] | None,
+) -> str:
+    """The card's single `- **Metrics schema:**` line -- across every receipt
+    `build_card` was given, not only the training one.
+
+    `metrics_schema` is identity key #1 of MM §14's refuse predicate: a card that
+    stamps `csd-metrics/v1` while rendering a table of `csd-metrics/v2` field names
+    (`effective_rank_entropy`, `quant.plan_recall@1`, ...) right below it is the same
+    class of provenance falsehood the refuse predicate exists to catch -- and the
+    near-term real case for every already-trained matrix cell is exactly that: a
+    training receipt from before this migration (no `metrics_schema` field at all,
+    reads back as the `csd-metrics/v1 (not recorded)` fallback) re-benchmarked and
+    re-quantized with this branch's v2 code (both stamp `csd-metrics/v2`). Refusing to
+    publish that combination outright would block re-publishing every already-trained
+    checkpoint until it is retrained from scratch, which is worse than the falsehood
+    this fixes -- so when the receipts disagree, this renders each one's own stamp
+    instead of picking one and hiding the disagreement.
+
+    Args:
+        train_receipt: The training receipt `build_card` was given.
+        eval_receipt: The eval receipt, or `None`.
+        quant_receipt: The quant receipt, or `None`.
+
+    Returns:
+        A single markdown bullet line: one stamp when every supplied receipt agrees,
+        or a `train=... eval=... quant=...` breakdown (only the receipts actually
+        supplied) when they do not.
+    """
+    labeled = [
+        (name, receipt.get("metrics_schema", "csd-metrics/v1 (not recorded)"))
+        for name, receipt in (
+            ("train", train_receipt),
+            ("eval", eval_receipt),
+            ("quant", quant_receipt),
+        )
+        if receipt is not None
+    ]
+    schemas = {schema for _, schema in labeled}
+    if len(schemas) == 1:
+        return f"- **Metrics schema:** `{next(iter(schemas))}`"
+    per_receipt = ", ".join(f"{name}=`{schema}`" for name, schema in labeled)
+    return (
+        "- **Metrics schema:** receipts disagree -- "
+        f"{per_receipt}. The tables above merge metrics from more than one schema; "
+        "read each metric's own row provenance above, not this line alone, before "
+        "comparing numbers across them."
+    )
+
+
 def _methodology_section(
     train_receipt: dict[str, Any],
     eval_receipt: dict[str, Any] | None,
@@ -1360,7 +1412,7 @@ def _methodology_section(
         )
     lines += [
         "",
-        f"- **Metrics schema:** `{train_receipt.get('metrics_schema', 'csd-metrics/v1 (not recorded)')}`",
+        _metrics_schema_line(train_receipt, eval_receipt, quant_receipt),
         f"- **Corpus fingerprint:** `{train_receipt.get('corpus', {}).get('fingerprint', '(none recorded)')}`",
         f"- **Seed:** `{train_receipt.get('config', {}).get('seed', '(none recorded)')}`",
         f"- **Code revision:** `{rev}`",
