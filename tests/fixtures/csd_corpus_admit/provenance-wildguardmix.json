@@ -1,0 +1,46 @@
+{
+  "catalogue_entry": {
+    "caveat": "ODC-By's own §2.4 licenses the database, not the individual contents -- grant_scope database_rights_only, which R2 tests.",
+    "faculty": "moral_safety",
+    "grant_scope": "database_rights_only",
+    "provenance_group": "allenai-wildguard",
+    "repo_id": "allenai/wildguardmix",
+    "why": "The only candidate purpose-built for REFUSAL CALIBRATION specifically, which the DEC-59 brief names."
+  },
+  "fetched_at": "2026-09-03T23:02:41Z",
+  "file_count": 4,
+  "file_manifest": [
+    {
+      "bytes": 512,
+      "path": "README.md",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "bytes": 4823112,
+      "path": "wildguardtrain.parquet",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "bytes": 1204833,
+      "path": "wildguardtest.parquet",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "bytes": 331,
+      "path": "LICENSE.md",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333"
+    }
+  ],
+  "licence_fetch_date": "2026-09-03",
+  "licence_mirror_tag": "odc-by",
+  "licence_upstream_source": "https://huggingface.co/datasets/allenai/wildguardmix and https://raw.githubusercontent.com/allenai/wildguard/main/LICENSE.md",
+  "licence_upstream_verbatim": "Data: `license: odc-by` on the first-party AI2 card. Code: full Apache License 2.0, \"Copyright 2024\", \"Allen Institute for AI\", at the wildguard repo LICENSE.md.",
+  "mirror_url": "https://huggingface.co/datasets/allenai/wildguardmix",
+  "provenance_group": "allenai-wildguard",
+  "resolved_revision": "0000000000000000000000000000000000000000",
+  "tool_version": "0.1.0",
+  "total_bytes": 6028788,
+  "upstream_url": "https://huggingface.co/datasets/allenai/wildguardmix",
+  "verdict": "ATTRIBUTION",
+  "verification_status": "VERIFIED"
+}

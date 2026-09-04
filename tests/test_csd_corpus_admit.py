@@ -221,6 +221,10 @@ def test_run_checklist_fails_when_any_single_check_fails() -> None:
 
 
 def test_cli_exit_zero_on_admit(tmp_path: Path) -> None:
+    # --no-catalogue-check: this test is about basic CLI plumbing (exit code, JSON
+    # existing-shares parsing), not catalogue content -- CLEAN_PROVENANCE's real repo_id
+    # (google-research-datasets/paws) is refused by the real default catalogue pending
+    # red-flag resolution (see the dedicated real-fixture tests for that).
     prov = tmp_path / "provenance.json"
     prov.write_text(json.dumps(CLEAN_PROVENANCE), encoding="utf-8")
     proc = subprocess.run(
@@ -233,6 +237,7 @@ def test_cli_exit_zero_on_admit(tmp_path: Path) -> None:
             "memory",
             "--existing-shares",
             json.dumps({"gooaq": 3000}),
+            "--no-catalogue-check",
         ],
         capture_output=True,
         text=True,
@@ -254,6 +259,8 @@ def test_cli_exit_nonzero_on_refuse(tmp_path: Path) -> None:
             str(prov),
             "--region",
             "memory",
+            "--existing-shares",
+            "{}",
         ],
         capture_output=True,
         text=True,
@@ -282,6 +289,86 @@ def test_cli_rejects_malformed_existing_shares_json(tmp_path: Path) -> None:
         check=False,
     )
     assert proc.returncode == 2
+
+
+def test_cli_errors_one_line_when_existing_shares_and_corpus_root_both_omitted(
+    tmp_path: Path,
+) -> None:
+    # Round-2 review non-blocking item: a bare invocation must error with a one-line
+    # instruction, never silently REFUSE (the old default of "{}" forced b1_share to 1.0
+    # and REFUSE on every default invocation, indistinguishable from a real refusal).
+    prov = tmp_path / "provenance.json"
+    prov.write_text(json.dumps(CLEAN_PROVENANCE), encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "--provenance", str(prov), "--region", "memory"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 2
+    assert "REFUSE" not in proc.stdout
+    assert "--existing-shares" in proc.stderr
+    assert "--corpus-root" in proc.stderr
+    # "one-line instruction": the usage error itself, not a stack trace.
+    assert "Traceback" not in proc.stderr
+
+
+def test_cli_errors_when_existing_shares_and_corpus_root_both_given(tmp_path: Path) -> None:
+    prov = tmp_path / "provenance.json"
+    prov.write_text(json.dumps(CLEAN_PROVENANCE), encoding="utf-8")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--provenance",
+            str(prov),
+            "--region",
+            "memory",
+            "--existing-shares",
+            "{}",
+            "--corpus-root",
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 2
+    assert "only one of" in proc.stderr
+
+
+def test_cli_derives_existing_shares_from_corpus_root(tmp_path: Path) -> None:
+    corpus_root = tmp_path / "corpus"
+    existing_ds_dir = corpus_root / "memory" / "gooaq"
+    existing_ds_dir.mkdir(parents=True)
+    (existing_ds_dir / "provenance.json").write_text(
+        json.dumps({"provenance_group": "gooaq", "row_count": 3000}), encoding="utf-8"
+    )
+    prov = tmp_path / "provenance.json"
+    prov.write_text(json.dumps(CLEAN_PROVENANCE), encoding="utf-8")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--provenance",
+            str(prov),
+            "--region",
+            "memory",
+            "--corpus-root",
+            str(corpus_root),
+            "--no-catalogue-check",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    # CLEAN_PROVENANCE's own provenance_group is "paws" (distinct from "gooaq"), 1000
+    # rows added -- 1000 / (3000 + 1000) = 0.25 <= 0.40, same arithmetic as
+    # test_b1_share_passes_under_cap, now proven to arrive via --corpus-root disk scan
+    # rather than a hand-typed --existing-shares value.
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "ADMIT" in proc.stdout
+    assert "1000/4000" in proc.stdout
 
 
 # --------------------------------------------------------------------------------------
@@ -385,10 +472,15 @@ def test_catalogue_check_fails_on_metadata_only_grant_scope() -> None:
     assert not result.passed
 
 
-def test_catalogue_check_passes_on_database_rights_only_grant_scope() -> None:
+def test_catalogue_check_fails_on_database_rights_only_grant_scope() -> None:
+    # B4: `database_rights_only` licenses the compilation/database right, not the
+    # individual contents (allenai/wildguardmix's real grant, ODC-By ss2.4) -- this tool
+    # used to admit it (mismatching the factory, which has always refused it), letting
+    # wildguardmix through this second-look gate while the factory refused it outright.
     row = dict(CLEAN_ROW, grant_scope="database_rights_only")
     result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
-    assert result.passed
+    assert not result.passed
+    assert "grant_scope" in result.detail
 
 
 def test_catalogue_check_fails_on_enrichment_refuse_marker() -> None:
@@ -397,11 +489,43 @@ def test_catalogue_check_fails_on_enrichment_refuse_marker() -> None:
     row = dict(CLEAN_ROW, enrichment_licence_result="R9 REFUSE at ingest per 20-enrichment")
     result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
     assert not result.passed
-    assert "REFUSE marker" in result.detail
+    assert "REFUSE/NONE ADMISSIBLE marker" in result.detail
 
 
-def test_catalogue_check_enrichment_refuse_marker_is_case_insensitive() -> None:
-    row = dict(CLEAN_ROW, enrichment_licence_result="quietly refuse at ingest")
+def test_catalogue_check_enrichment_refuse_marker_is_case_sensitive_not_insensitive() -> None:
+    # Round-2 review, non-blocking item: this tool used to match "refuse" case-
+    # INSENSITIVELY, disagreeing with the factory's case-sensitive \bREFUSE[SD]?\b on 3
+    # catalogue rows. Ordinary lower-case prose that merely discusses refusal elsewhere
+    # ("refused at ingest (R4)" as a sub-clause note) must NOT trigger the gate -- only
+    # the catalogue's own shouting-case authoring convention does.
+    row = dict(CLEAN_ROW, enrichment_licence_result="quietly refuse at ingest (lower case)")
+    result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
+    assert result.passed
+
+
+def test_catalogue_check_enrichment_refuse_marker_matches_shouting_case() -> None:
+    row = dict(CLEAN_ROW, enrichment_licence_result="R9 REFUSE at ingest per 20-enrichment")
+    result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
+    assert not result.passed
+
+
+def test_catalogue_check_enrichment_refuse_marker_matches_refused_and_refuses_variants() -> None:
+    for word in ("REFUSED", "REFUSES"):
+        row = dict(CLEAN_ROW, enrichment_licence_result=f"{word} at ingest")
+        result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
+        assert not result.passed, word
+
+
+def test_catalogue_check_none_admissible_marker_fails() -> None:
+    row = dict(CLEAN_ROW, enrichment_licence_result="NONE ADMISSIBLE today under any tier")
+    result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
+    assert not result.passed
+
+
+def test_catalogue_check_enrichment_marker_checked_on_enrichment_plan_too() -> None:
+    # Mirrors the factory's _has_enrichment_refusal_marker, which checks BOTH
+    # enrichment_licence_result and enrichment_plan.
+    row = dict(CLEAN_ROW, enrichment_plan="R9 REFUSE at ingest")
     result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
     assert not result.passed
 
@@ -419,19 +543,94 @@ def test_catalogue_check_missing_redistribute_field_does_not_crash_or_fail() -> 
     assert result.passed
 
 
-def test_catalogue_check_red_flags_alone_do_not_fail() -> None:
-    # google-research-datasets/paws (the clean reference case) carries a
-    # provenance_red_flags entry and is still admissible -- gating on presence alone
-    # would refuse the survey's cleanest grant.
+def test_catalogue_check_red_flag_without_resolution_fails() -> None:
+    # A non-empty provenance_red_flags with no provenance_red_flags_resolution entry is
+    # UNRESOLVED, per RED_FLAG_RESOLUTION_RULE, and MUST fail -- this is the real,
+    # currently-live state of google-research-datasets/paws's catalogue row (round-2
+    # review B1: the factory's real RED_FLAGS_BLOCK_ADMISSION gate already refuses paws
+    # for exactly this reason). Gating on unresolved presence is deliberate; see the
+    # resolved-entry test below for the case that does NOT fail.
     row = dict(CLEAN_ROW, provenance_red_flags=["built from separately-licensed sentences"])
     result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
+    assert not result.passed
+    assert "unresolved provenance_red_flag" in result.detail
+    assert "provenance_red_flags=" in result.detail  # surfaced in the failing detail too
+
+
+def test_catalogue_check_red_flag_with_resolved_true_entry_passes() -> None:
+    flag = "built from separately-licensed sentences"
+    row = dict(
+        CLEAN_ROW,
+        provenance_red_flags=[flag],
+        provenance_red_flags_resolution=[{"flag": flag, "resolved": True}],
+    )
+    result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
     assert result.passed
-    assert "provenance_red_flags" in result.detail  # surfaced, even though it did not fail
+    assert "provenance_red_flags" in result.detail  # surfaced even though it did not fail
+
+
+def test_catalogue_check_red_flag_resolution_must_match_flag_text_exactly() -> None:
+    # A resolution entry for a DIFFERENT flag text does not resolve this one.
+    row = dict(
+        CLEAN_ROW,
+        provenance_red_flags=["flag A"],
+        provenance_red_flags_resolution=[{"flag": "flag B", "resolved": True}],
+    )
+    result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
+    assert not result.passed
+
+
+def test_catalogue_check_red_flag_resolution_entry_must_be_resolved_true_not_just_present() -> None:
+    # A resolution entry that exists for the right flag but has resolved=False (or a
+    # missing/truthy-but-not-True `resolved`) does NOT resolve it -- presence alone is
+    # not enough, only an explicit resolved=True.
+    flag = "built from separately-licensed sentences"
+    row = dict(
+        CLEAN_ROW,
+        provenance_red_flags=[flag],
+        provenance_red_flags_resolution=[{"flag": flag, "resolved": False}],
+    )
+    result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
+    assert not result.passed
+
+
+def test_catalogue_check_multiple_red_flags_partially_resolved_still_fails() -> None:
+    row = dict(
+        CLEAN_ROW,
+        provenance_red_flags=["flag A", "flag B"],
+        provenance_red_flags_resolution=[{"flag": "flag A", "resolved": True}],
+    )
+    result = mod.check_catalogue_structural_refusals("clean/row", {"clean/row": row})
+    assert not result.passed
+    # exactly the still-unresolved flag B is named as unresolved, not the resolved flag A
+    assert mod._unresolved_red_flags(
+        ["flag A", "flag B"], [{"flag": "flag A", "resolved": True}]
+    ) == ["flag B"]
+    assert "flag B" in result.detail
+
+
+# --------------------------------------------------------------------------------------
+# _unresolved_red_flags directly
+# --------------------------------------------------------------------------------------
+
+
+def test_unresolved_red_flags_empty_when_no_flags() -> None:
+    assert mod._unresolved_red_flags([], []) == []
+
+
+def test_unresolved_red_flags_all_unresolved_when_no_resolution_list() -> None:
+    assert mod._unresolved_red_flags(["a", "b"], []) == ["a", "b"]
+
+
+def test_unresolved_red_flags_ignores_non_dict_resolution_entries() -> None:
+    # A malformed resolution list entry (not a dict) must not crash, and must not
+    # resolve anything.
+    assert mod._unresolved_red_flags(["a"], ["not-a-dict"]) == ["a"]  # type: ignore[list-item]
 
 
 # --------------------------------------------------------------------------------------
 # run_checklist with catalogue_index: backward compatible when omitted (checks 1-3 only,
-# matching the pre-B4-fix test_run_checklist_* tests above), and a 4th result when given.
+# matching the pre-B4-fix test_run_checklist_* tests above), and checks 4+5 when given.
 # --------------------------------------------------------------------------------------
 
 
@@ -440,13 +639,14 @@ def test_run_checklist_without_catalogue_index_has_three_checks() -> None:
     assert {r.name for r in results} == {"licence_tier", "b1_share", "verification_status"}
 
 
-def test_run_checklist_with_catalogue_index_has_four_checks() -> None:
+def test_run_checklist_with_catalogue_index_has_five_checks() -> None:
     results = mod.run_checklist(
         CLEAN_PROVENANCE, "memory", {"gooaq": 3000}, catalogue_index={"clean/row": CLEAN_ROW}
     )
     names = {r.name for r in results}
     assert "catalogue_structural_refusals" in names
-    assert len(results) == 4
+    assert "policy_constants_drift" in names
+    assert len(results) == 5
 
 
 def test_run_checklist_refuses_on_catalogue_structural_refusal_alone() -> None:
@@ -496,13 +696,51 @@ def _real_catalogue_index() -> dict[str, dict[str, Any]]:
     return mod.load_catalogue_index(REAL_CATALOGUE)
 
 
-def test_real_paws_fixture_is_admitted() -> None:
+def test_real_paws_fixture_is_refused_pending_red_flag_resolution() -> None:
+    # Round-2 review B1, verbatim: paws is NOT the clean reference case it used to be in
+    # this suite -- the real catalogue row carries a provenance_red_flags entry with no
+    # provenance_red_flags_resolution entry, so it is UNRESOLVED per RED_FLAG_RESOLUTION_
+    # RULE and this second-look gate refuses it, same as the factory's real (already-
+    # committed) RED_FLAGS_BLOCK_ADMISSION gate does today. This will flip back to ADMIT
+    # once TASK A adds a resolution entry to paws's catalogue row -- see
+    # test_real_paws_fixture_is_admitted_once_red_flag_resolved for proof the mechanism
+    # itself does admit it once that entry exists.
     provenance = json.loads((FIXTURES / "provenance-paws.json").read_text(encoding="utf-8"))
     results = mod.run_checklist(
         provenance,
         "memory",
         {"other": 1_000_000_000},
         catalogue_index=_real_catalogue_index(),
+    )
+    assert not all(r.passed for r in results)
+    catalogue_result = next(r for r in results if r.name == "catalogue_structural_refusals")
+    assert not catalogue_result.passed
+    assert "unresolved provenance_red_flag" in catalogue_result.detail
+    # every OTHER check still passes -- this is check 4 alone catching it, same discipline
+    # as the narrativeqa/cqadupstack ground-pass proofs below.
+    licence_result = next(r for r in results if r.name == "licence_tier")
+    verified_result = next(r for r in results if r.name == "verification_status")
+    assert licence_result.passed
+    assert verified_result.passed
+
+
+def test_real_paws_fixture_is_admitted_once_red_flag_resolved() -> None:
+    # Proves the resolution mechanism actually admits, not just that it refuses:
+    # take the REAL catalogue row for paws (untouched on disk -- this only mutates an
+    # in-memory copy) and add the one resolution entry TASK A is expected to add, for
+    # paws's own real red-flag text read straight off the row.
+    real_row = _real_catalogue_index()["google-research-datasets/paws"]
+    (real_flag,) = real_row["provenance_red_flags"]
+    resolved_row = dict(
+        real_row,
+        provenance_red_flags_resolution=[{"flag": real_flag, "resolved": True}],
+    )
+    provenance = json.loads((FIXTURES / "provenance-paws.json").read_text(encoding="utf-8"))
+    results = mod.run_checklist(
+        provenance,
+        "memory",
+        {"other": 1_000_000_000},
+        catalogue_index={"google-research-datasets/paws": resolved_row},
     )
     assert all(r.passed for r in results), [(r.name, r.detail) for r in results if not r.passed]
 
@@ -542,9 +780,34 @@ def test_real_cqadupstack_fixture_is_refused_on_enrichment_marker() -> None:
     assert not all(r.passed for r in results)
     catalogue_result = next(r for r in results if r.name == "catalogue_structural_refusals")
     assert not catalogue_result.passed
-    assert "REFUSE marker" in catalogue_result.detail
+    assert "REFUSE/NONE ADMISSIBLE marker" in catalogue_result.detail
     licence_result = next(r for r in results if r.name == "licence_tier")
     assert licence_result.passed
+
+
+def test_real_wildguardmix_fixture_is_refused_on_database_rights_only_grant_scope() -> None:
+    # B4 verbatim: allenai/wildguardmix's real grant_scope is database_rights_only (ODC-By
+    # ss2.4 licenses the compilation/database right, not the individual contents) --
+    # verdict ATTRIBUTION requires only the `mit` tier, which `code` already carries, and
+    # verification_status is VERIFIED, so checks 1 and 3 both pass; only check 4 catches
+    # the grant_scope defect. Before the B4 fix this tool's FULL_CONTENT_GRANT_SCOPES
+    # included database_rights_only and ADMITted this dataset while the factory refused
+    # it -- a live split-brain between the two gates.
+    provenance = json.loads((FIXTURES / "provenance-wildguardmix.json").read_text(encoding="utf-8"))
+    results = mod.run_checklist(
+        provenance,
+        "code",
+        {"other": 1_000_000_000},
+        catalogue_index=_real_catalogue_index(),
+    )
+    assert not all(r.passed for r in results)
+    catalogue_result = next(r for r in results if r.name == "catalogue_structural_refusals")
+    assert not catalogue_result.passed
+    assert "database_rights_only" in catalogue_result.detail
+    licence_result = next(r for r in results if r.name == "licence_tier")
+    verified_result = next(r for r in results if r.name == "verification_status")
+    assert licence_result.passed
+    assert verified_result.passed
 
 
 def test_real_narrativeqa_fixture_row_count_is_estimated_from_bytes() -> None:
@@ -561,7 +824,9 @@ def test_real_narrativeqa_fixture_row_count_is_estimated_from_bytes() -> None:
 # --------------------------------------------------------------------------------------
 
 
-def test_cli_admits_real_paws_fixture_against_default_catalogue() -> None:
+def test_cli_refuses_real_paws_fixture_pending_red_flag_resolution() -> None:
+    # See test_real_paws_fixture_is_refused_pending_red_flag_resolution -- same defect,
+    # exercised through the actual CLI entry point against the real default catalogue.
     proc = subprocess.run(
         [
             sys.executable,
@@ -572,6 +837,47 @@ def test_cli_admits_real_paws_fixture_against_default_catalogue() -> None:
             "memory",
             "--existing-shares",
             json.dumps({"other": 1_000_000_000}),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 1
+    assert "REFUSE" in proc.stdout
+    assert "unresolved provenance_red_flag" in proc.stdout
+
+
+def test_cli_admits_real_paws_fixture_once_red_flag_resolved(tmp_path: Path) -> None:
+    # End-to-end proof (real CLI, real provenance fixture) that the resolution mechanism
+    # actually admits: a copy of the real bundled catalogue with ONLY paws's missing
+    # provenance_red_flags_resolution entry added (the one field TASK A is expected to
+    # add), pointed at via --catalogue. Nothing on disk under docs/design/ is touched.
+    real_catalogue = json.loads(REAL_CATALOGUE.read_text(encoding="utf-8"))
+    patched_entries = []
+    for entry in real_catalogue["entries"]:
+        if entry.get("repo_id") == "google-research-datasets/paws":
+            (real_flag,) = entry["provenance_red_flags"]
+            entry = dict(
+                entry,
+                provenance_red_flags_resolution=[{"flag": real_flag, "resolved": True}],
+            )
+        patched_entries.append(entry)
+    patched_catalogue = dict(real_catalogue, entries=patched_entries)
+    catalogue_path = tmp_path / "catalogue-patched.json"
+    catalogue_path.write_text(json.dumps(patched_catalogue), encoding="utf-8")
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--provenance",
+            str(FIXTURES / "provenance-paws.json"),
+            "--region",
+            "memory",
+            "--existing-shares",
+            json.dumps({"other": 1_000_000_000}),
+            "--catalogue",
+            str(catalogue_path),
         ],
         capture_output=True,
         text=True,
@@ -625,3 +931,138 @@ def test_cli_no_catalogue_check_flag_skips_check_4() -> None:
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "catalogue_structural_refusals" not in proc.stdout
+
+
+# --------------------------------------------------------------------------------------
+# resolve_existing_shares_from_corpus_root: the --corpus-root alternative to hand-typed
+# --existing-shares JSON.
+# --------------------------------------------------------------------------------------
+
+
+def test_resolve_existing_shares_from_corpus_root_sums_by_provenance_group(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "memory" / "gooaq").mkdir(parents=True)
+    (tmp_path / "memory" / "gooaq" / "provenance.json").write_text(
+        json.dumps({"provenance_group": "gooaq", "row_count": 3000}), encoding="utf-8"
+    )
+    (tmp_path / "memory" / "gooaq-2").mkdir(parents=True)
+    (tmp_path / "memory" / "gooaq-2" / "provenance.json").write_text(
+        json.dumps({"provenance_group": "gooaq", "row_count": 500}), encoding="utf-8"
+    )
+    (tmp_path / "memory" / "other").mkdir(parents=True)
+    (tmp_path / "memory" / "other" / "provenance.json").write_text(
+        json.dumps({"provenance_group": "other", "count": 7000}), encoding="utf-8"
+    )
+    shares = mod.resolve_existing_shares_from_corpus_root(tmp_path)
+    assert shares == {"gooaq": 3500, "other": 7000}
+
+
+def test_resolve_existing_shares_from_corpus_root_reads_group_from_catalogue_entry(
+    tmp_path: Path,
+) -> None:
+    # Real factory shape: provenance_group only under the trimmed catalogue_entry, no
+    # top-level provenance_group -- same fallback repo_id_of already relies on.
+    ds_dir = tmp_path / "memory" / "paws"
+    ds_dir.mkdir(parents=True)
+    (ds_dir / "provenance.json").write_text(
+        json.dumps({"catalogue_entry": {"provenance_group": "paws"}, "total_bytes": 400}),
+        encoding="utf-8",
+    )
+    shares = mod.resolve_existing_shares_from_corpus_root(tmp_path)
+    assert shares == {"paws": 400 // mod.BYTES_PER_TOKEN}
+
+
+def test_resolve_existing_shares_from_corpus_root_skips_corrupt_provenance(
+    tmp_path: Path,
+) -> None:
+    ds_dir = tmp_path / "memory" / "broken"
+    ds_dir.mkdir(parents=True)
+    (ds_dir / "provenance.json").write_text("{not json", encoding="utf-8")
+    good_dir = tmp_path / "memory" / "good"
+    good_dir.mkdir(parents=True)
+    (good_dir / "provenance.json").write_text(
+        json.dumps({"provenance_group": "good", "row_count": 10}), encoding="utf-8"
+    )
+    shares = mod.resolve_existing_shares_from_corpus_root(tmp_path)
+    assert shares == {"good": 10}
+
+
+def test_resolve_existing_shares_from_corpus_root_skips_missing_provenance_group(
+    tmp_path: Path,
+) -> None:
+    ds_dir = tmp_path / "memory" / "no-group"
+    ds_dir.mkdir(parents=True)
+    (ds_dir / "provenance.json").write_text(json.dumps({"row_count": 10}), encoding="utf-8")
+    assert mod.resolve_existing_shares_from_corpus_root(tmp_path) == {}
+
+
+def test_resolve_existing_shares_from_corpus_root_empty_when_no_provenance_files(
+    tmp_path: Path,
+) -> None:
+    assert mod.resolve_existing_shares_from_corpus_root(tmp_path) == {}
+
+
+# --------------------------------------------------------------------------------------
+# check_policy_constants_drift (check 5): forward-compatible against provenance.json
+# without an `admission` block (every real one today), and refuses a real, present drift.
+# --------------------------------------------------------------------------------------
+
+
+def test_policy_constants_drift_passes_when_no_admission_block() -> None:
+    result = mod.check_policy_constants_drift({"verdict": "PERMISSIVE_OK"})
+    assert result.passed
+    assert "not yet applicable" in result.detail
+
+
+def test_policy_constants_drift_passes_when_constants_match_exactly() -> None:
+    provenance = {"admission": {"constants": dict(mod.ADAPTER_POLICY_CONSTANTS)}}
+    result = mod.check_policy_constants_drift(provenance)
+    assert result.passed
+
+
+def test_policy_constants_drift_fails_when_constants_disagree() -> None:
+    # MUST fail: a single differing field (policy_version bumped on one side only) is
+    # exactly the split-brain this check exists to catch.
+    drifted = dict(mod.ADAPTER_POLICY_CONSTANTS, policy_version="9999-99-99-drifted")
+    provenance = {"admission": {"constants": drifted}}
+    result = mod.check_policy_constants_drift(provenance)
+    assert not result.passed
+    assert "disagrees" in result.detail
+
+
+def test_policy_constants_drift_fails_when_admission_block_missing_constants_key() -> None:
+    provenance = {"admission": {"policy_version": mod.POLICY_VERSION}}
+    result = mod.check_policy_constants_drift(provenance)
+    assert not result.passed
+
+
+def test_policy_constants_drift_fails_when_admission_block_is_not_a_dict() -> None:
+    provenance = {"admission": "not-a-dict"}
+    result = mod.check_policy_constants_drift(provenance)
+    assert not result.passed
+
+
+# --------------------------------------------------------------------------------------
+# ADAPTER_POLICY_CONSTANTS pinned against tests/fixtures/dataset-factory-policy.json --
+# fails loudly if either side changes without the other (round-2 review non-blocking
+# item). See the module docstring's TASK A COORDINATION note for what is, and is not,
+# independently verified against the factory repo as of this fix.
+# --------------------------------------------------------------------------------------
+
+POLICY_FIXTURE = ROOT / "tests" / "fixtures" / "dataset-factory-policy.json"
+
+
+def test_adapter_policy_constants_match_pinned_fixture() -> None:
+    fixture = json.loads(POLICY_FIXTURE.read_text(encoding="utf-8"))
+    assert fixture == mod.ADAPTER_POLICY_CONSTANTS
+
+
+def test_full_content_grant_scopes_excludes_database_rights_only() -> None:
+    # B4, pinned directly: this set must NOT include database_rights_only (that was the
+    # actual defect -- the factory's dataset_factory.admission.FULL_CONTENT_GRANT_SCOPES
+    # has never included it).
+    assert "database_rights_only" not in mod.FULL_CONTENT_GRANT_SCOPES
+    assert frozenset({"whole_corpus", "whole_corpus (heterogeneous per file)"}) == (
+        mod.FULL_CONTENT_GRANT_SCOPES
+    )

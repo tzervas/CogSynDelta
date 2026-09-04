@@ -1,0 +1,13 @@
+{
+  "policy_version": "2026-09-03-r3",
+  "full_content_grant_scopes": [
+    "whole_corpus",
+    "whole_corpus (heterogeneous per file)"
+  ],
+  "forbidden_redistribute_flags": [
+    "nd"
+  ],
+  "red_flag_resolution_rule": "a provenance_red_flags entry is unresolved unless provenance_red_flags_resolution carries an entry for it with resolved=true",
+  "enrichment_refusal_marker_pattern": "\\bREFUSE[SD]?\\b",
+  "enrichment_none_admissible_marker": "NONE ADMISSIBLE"
+}

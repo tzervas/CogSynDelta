@@ -4,15 +4,32 @@
 WHAT THIS DOES AND DOES NOT DO
 This is a read-only gate, not a fetcher and not a corpus mutator. It reads one dataset
 factory `provenance.json` (see program/datasets/README.md `S2`) plus a target CSD region
-name, and prints four checks: licence tier vs. the region's already-declared tier,
+name, and prints five checks: licence tier vs. the region's already-declared tier,
 provenance-group share against CORPUS-CONTRACT.md's B1 (<= 0.40 post-admission),
-`verification_status == VERIFIED`, and (check 4, see below) a second, independent read of
-the full catalogue row's own structural refusal signals. It does not touch
-CORPUS-CONTRACT.md, csd-regions.json,
+`verification_status == VERIFIED`, (check 4) a second, independent read of the full
+catalogue row's own structural refusal signals, and (check 5) whether `provenance.json`'s
+own `admission.constants` block (once the factory writes one) agrees with this tool's
+pinned policy constants. It does not touch CORPUS-CONTRACT.md, csd-regions.json,
 or any region's fetch list -- admitting a dataset for real is a human/agent action taken
 after reading this tool's output, same discipline as csd-corpus-expand.py's structural
 REFUSE gate (no override flag) but advisory rather than fetch-blocking, because this tool
 runs after the fetch, not during it.
+
+TASK A COORDINATION (round-2 review, closing B4 + the non-blocking items on the CSD side)
+As of this fix, `dataset_factory.admission` (the factory repo) has NOT yet landed TASK A:
+`FULL_CONTENT_GRANT_SCOPES`/`FORBIDDEN_REDISTRIBUTE_FLAGS`/the enrichment-marker regex are
+transcribed here from the factory's `admission.py` AS IT STANDS TODAY (verified by reading
+that module directly, same discipline as the licence-tier table below); the
+`provenance_red_flags_resolution` rule and `policy_version`/`admission.constants` block are
+transcribed from this task's own specification of what TASK A defines, because the
+factory has not committed either yet. `check_policy_constants_drift` (check 5) is written
+to be forward-compatible: it PASSES with a note when `provenance.json` carries no
+`admission` block at all (every real provenance.json fetched before TASK A lands, which is
+all of them today), and only FAILs once a real drift is observable -- a present-but-
+disagreeing `admission.constants` block. The day TASK A lands, re-verify
+`ADAPTER_POLICY_CONSTANTS` and `tests/fixtures/dataset-factory-policy.json` against the
+factory's real committed values (`policy_version` in particular, invented here as
+"2026-09-03-r3" pending that commit) and update both together.
 
 WHY THE LICENCE-TIER TABLE IS DUPLICATED HERE, NOT IMPORTED
 scripts/csd-publish-checkpoint.py's LICENCE_TIER is the source of truth for what a region
@@ -44,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,10 +110,73 @@ BYTES_PER_TOKEN = 4
 # grant_scope values (docs/design/datasets/catalogue-2026-09-03.json note 3, plus the
 # survey's `code_only`/`metadata_only`) that cover the dataset's actual text/content for
 # training use. Anything else (`code_only`: only code/annotation layer is licensed, not
-# the underlying text; `metadata_only`: only bibliographic metadata) means the grant does
-# NOT cover what a corpus admission would actually emit -- structurally inadmissible
-# regardless of the catalogue's `verdict`, per B1's narrativeqa finding.
-FULL_CONTENT_GRANT_SCOPES: frozenset[str] = frozenset({"whole_corpus", "database_rights_only"})
+# the underlying text; `metadata_only`: only bibliographic metadata; `database_rights_only`:
+# only the compilation/database right, not the individual contents -- allenai/wildguardmix's
+# real grant, ODC-By ss2.4) means the grant does NOT cover what a corpus admission would
+# actually emit -- structurally inadmissible regardless of the catalogue's `verdict`, per
+# B1's narrativeqa finding.
+#
+# MUST equal `dataset_factory.admission.FULL_CONTENT_GRANT_SCOPES` in the factory repo
+# exactly (round-2 review B4: this set used to also admit `database_rights_only`, which
+# the factory's own gate refuses -- wildguardmix ADMITted through this tool while the
+# factory refused it, a live split-brain). `test_full_content_grant_scopes_matches_fixture`
+# pins it against tests/fixtures/dataset-factory-policy.json so a future edit that widens
+# (or narrows) either side alone fails loudly instead of drifting again.
+FULL_CONTENT_GRANT_SCOPES: frozenset[str] = frozenset(
+    {"whole_corpus", "whole_corpus (heterogeneous per file)"}
+)
+
+# `redistribute` flags that hard-forbid training/redistribution with no override, mirrored
+# from `dataset_factory.admission.FORBIDDEN_REDISTRIBUTE_FLAGS` exactly (see the drift
+# fixture above) -- "nd" (No-Derivatives) forbids producing a derivative work at all, and
+# training a model on the content is exactly that.
+FORBIDDEN_REDISTRIBUTE_FLAGS: frozenset[str] = frozenset({"nd"})
+
+# Marks a structural refusal inside `enrichment_licence_result` (and, mirroring the
+# factory's `_has_enrichment_refusal_marker`, `enrichment_plan`) prose. Transcribed
+# VERBATIM from `dataset_factory.admission.ENRICHMENT_REFUSAL_MARKER_RE` /
+# `ENRICHMENT_NONE_ADMISSIBLE_MARKER` -- deliberately CASE-SENSITIVE, matching only the
+# catalogue's own shouting-case authoring convention ("R9 REFUSE AT INGEST", "NONE
+# ADMISSIBLE TODAY") rather than ordinary lower-case prose that merely discusses refusal
+# elsewhere ("refused at ingest (R4)" as a sub-clause note). Round-2 review found this
+# tool matching case-INSENSITIVELY instead, disagreeing with the factory on 3 catalogue
+# rows -- this is the fix.
+ENRICHMENT_REFUSAL_MARKER_RE = re.compile(r"\bREFUSE[SD]?\b")
+ENRICHMENT_NONE_ADMISSIBLE_MARKER = "NONE ADMISSIBLE"
+
+# A `provenance_red_flags` entry counts as UNRESOLVED unless
+# `provenance_red_flags_resolution` (a list of {"flag": <exact red-flag text>, "resolved":
+# bool, ...}) carries an entry for that exact flag text with resolved=True. This is the
+# rule TASK A defines on the factory side; the shape (`flag` + `resolved` keys) is this
+# tool's own transcription of that rule pending the factory's actual commit -- see
+# `_unresolved_red_flags`'s docstring and the module docstring's TASK A COORDINATION note.
+RED_FLAG_RESOLUTION_RULE = (
+    "a provenance_red_flags entry is unresolved unless provenance_red_flags_resolution "
+    "carries an entry for it with resolved=true"
+)
+
+# Pinned by tests/fixtures/dataset-factory-policy.json: `policy_version` identifies which
+# revision of the shared admission policy this tool was built against. TASK A (factory
+# repo, dataset_factory/admission.py) has not landed as of this tool's B4 fix -- there is
+# no real `policy_version` to read yet, so this is this tool's OWN declared version,
+# pending reconciliation the day the factory starts emitting `admission.constants` into
+# provenance.json (see `check_policy_constants_drift`). Bump it, and the fixture, together
+# whenever any constant in this block changes.
+POLICY_VERSION = "2026-09-03-r3"
+
+# The full set of pinned policy constants, in the same shape the factory is expected to
+# write into provenance.json under `admission.constants` (round-2 review, non-blocking
+# item: "the factory writes an `admission` block into provenance.json ... and the CSD
+# adapter pins the same constants in a fixture test that fails when they drift"). Read by
+# `check_policy_constants_drift` and by `test_adapter_policy_constants_match_fixture`.
+ADAPTER_POLICY_CONSTANTS: dict[str, Any] = {
+    "policy_version": POLICY_VERSION,
+    "full_content_grant_scopes": sorted(FULL_CONTENT_GRANT_SCOPES),
+    "forbidden_redistribute_flags": sorted(FORBIDDEN_REDISTRIBUTE_FLAGS),
+    "red_flag_resolution_rule": RED_FLAG_RESOLUTION_RULE,
+    "enrichment_refusal_marker_pattern": ENRICHMENT_REFUSAL_MARKER_RE.pattern,
+    "enrichment_none_admissible_marker": ENRICHMENT_NONE_ADMISSIBLE_MARKER,
+}
 
 DEFAULT_CATALOGUE_PATH = (
     Path(__file__).resolve().parents[1]
@@ -258,12 +339,42 @@ def load_catalogue_index(path: Path) -> dict[str, dict[str, Any]]:
     return index
 
 
+def _has_enrichment_refusal_marker(*texts: str) -> bool:
+    """True if any of `texts` carries the catalogue's shouting-case structural-refusal
+    marker convention -- transcribed from the factory's `_has_enrichment_refusal_marker`
+    (checks `enrichment_licence_result` AND `enrichment_plan`, same as here)."""
+    for text in texts:
+        if ENRICHMENT_REFUSAL_MARKER_RE.search(text):
+            return True
+        if ENRICHMENT_NONE_ADMISSIBLE_MARKER in text:
+            return True
+    return False
+
+
+def _unresolved_red_flags(red_flags: list[str], resolution: list[dict[str, Any]]) -> list[str]:
+    """Which of `red_flags` are unresolved, per RED_FLAG_RESOLUTION_RULE: a flag counts as
+    unresolved unless `resolution` (the catalogue row's `provenance_red_flags_resolution`)
+    carries an entry whose `flag` equals it exactly and whose `resolved` is `True`.
+
+    An entry that is not a dict, or whose `resolved` is anything other than the literal
+    `True` (a truthy string, a missing key, `False`), does not count -- resolution is an
+    explicit, structural marker, not something this tool infers from a resolution entry
+    merely existing for that flag.
+    """
+    resolved_flags = {
+        entry.get("flag")
+        for entry in resolution
+        if isinstance(entry, dict) and entry.get("resolved") is True
+    }
+    return [flag for flag in red_flags if flag not in resolved_flags]
+
+
 def check_catalogue_structural_refusals(
     repo_id: str, catalogue_index: dict[str, dict[str, Any]]
 ) -> CheckResult:
     """Check 4 (second, independent look): apply the catalogue row's own structural
     refusal signals, cross-referenced by `repo_id` -- the same fields the factory's
-    `admission.check_admission` parses into provenance.json but never gates on (ground-
+    `admission.check_admission` parses into provenance.json but never gated on (ground-
     pass B3), read here from the catalogue directly rather than trusted from provenance.
 
     A repo_id absent from the catalogue index FAILS closed (refusing rather than
@@ -273,19 +384,23 @@ def check_catalogue_structural_refusals(
     Refusal signals, each independently sufficient:
       - `grant_scope` not in FULL_CONTENT_GRANT_SCOPES (B1: narrativeqa's `code_only`
         licenses the annotation/code layer, not the underlying books/scripts a corpus
-        admission would actually emit).
-      - `enrichment_licence_result` containing a REFUSE marker (B2: BeIR/cqadupstack's
-        "R9 REFUSE at ingest" -- Stack Exchange's per-item attribution obligation is a
-        structural refusal, not a caveat).
-      - `redistribute.nd` true (no-derivatives forbids training a derivative model on
-        the data at all, independent of verdict/tier).
-
-    `provenance_red_flags` is NOT itself a refusal signal -- google-research-datasets/paws
-    (the clean admissible reference case) carries one ("Google's grant covers the dataset
-    AS RELEASED...") and is still PERMISSIVE_OK/whole_corpus/no-REFUSE. Red flags are
-    surfaced in the detail string on every row (pass or fail) so a human reviewing the
-    checklist output sees them, but they do not gate on their own -- gating on presence
-    alone would refuse the one dataset the survey names as the cleanest grant in it.
+        admission would actually emit; B4: wildguardmix's `database_rights_only` licenses
+        the compilation right, not the individual contents).
+      - `enrichment_licence_result` or `enrichment_plan` carrying a REFUSE/NONE ADMISSIBLE
+        marker (B2: BeIR/cqadupstack's "R9 REFUSE at ingest" -- Stack Exchange's per-item
+        attribution obligation is a structural refusal, not a caveat). Matched
+        case-sensitively against the catalogue's own shouting-case convention -- see
+        ENRICHMENT_REFUSAL_MARKER_RE's module-level comment.
+      - a `redistribute` flag in FORBIDDEN_REDISTRIBUTE_FLAGS set true (`nd`:
+        no-derivatives forbids training a derivative model on the data at all,
+        independent of verdict/tier).
+      - an UNRESOLVED `provenance_red_flags` entry, per RED_FLAG_RESOLUTION_RULE /
+        `_unresolved_red_flags`. This is new: the round-2 review found google-research-
+        datasets/paws itself refused by the factory's real (already-committed)
+        RED_FLAGS_BLOCK_ADMISSION gate, because its catalogue row's red flag carries no
+        `provenance_red_flags_resolution` entry -- paws is NOT a clean reference case
+        today, it is refused pending that entry landing (TASK A). A red flag with a
+        resolved=true resolution entry is surfaced in the detail string but does not gate.
     """
     row = catalogue_index.get(repo_id)
     if row is None:
@@ -303,12 +418,30 @@ def check_catalogue_structural_refusals(
             f"(admissible: {sorted(FULL_CONTENT_GRANT_SCOPES)})"
         )
     enrichment_result = str(row.get("enrichment_licence_result") or "")
-    if "refuse" in enrichment_result.lower():
-        reasons.append(f"enrichment_licence_result carries a REFUSE marker: {enrichment_result!r}")
+    enrichment_plan = str(row.get("enrichment_plan") or "")
+    if _has_enrichment_refusal_marker(enrichment_result, enrichment_plan):
+        reasons.append(
+            "enrichment_licence_result/enrichment_plan carries a REFUSE/NONE ADMISSIBLE "
+            f"marker (enrichment_licence_result={enrichment_result!r}, "
+            f"enrichment_plan={enrichment_plan!r})"
+        )
     redistribute = row.get("redistribute") or {}
-    if redistribute.get("nd"):
-        reasons.append("redistribute.nd=True: no-derivatives forbids a trained derivative model")
-    red_flags = row.get("provenance_red_flags") or []
+    forbidden_flags_set = sorted(
+        flag for flag in FORBIDDEN_REDISTRIBUTE_FLAGS if redistribute.get(flag) is True
+    )
+    if forbidden_flags_set:
+        reasons.append(
+            f"redistribute flag(s) {forbidden_flags_set} forbid training/redistribution "
+            "with no override (nd: no-derivatives forbids a trained derivative model)"
+        )
+    red_flags = list(row.get("provenance_red_flags") or [])
+    red_flags_resolution = list(row.get("provenance_red_flags_resolution") or [])
+    unresolved = _unresolved_red_flags(red_flags, red_flags_resolution)
+    if unresolved:
+        reasons.append(
+            f"{len(unresolved)} unresolved provenance_red_flag(s) (no "
+            f"provenance_red_flags_resolution entry with resolved=true): {unresolved!r}"
+        )
     flags_note = f"; provenance_red_flags={red_flags!r}" if red_flags else ""
     if reasons:
         detail = "; ".join(reasons) + flags_note
@@ -316,8 +449,60 @@ def check_catalogue_structural_refusals(
     return CheckResult(
         "catalogue_structural_refusals",
         True,
-        f"grant_scope={grant_scope!r}, no enrichment REFUSE marker, redistribute.nd not "
-        f"set{flags_note}",
+        f"grant_scope={grant_scope!r}, no enrichment REFUSE marker, no forbidden "
+        f"redistribute flags, no unresolved red flags{flags_note}",
+    )
+
+
+def check_policy_constants_drift(provenance: dict[str, Any]) -> CheckResult:
+    """Check 5: `provenance.json`'s own `admission.constants` block (once the factory
+    writes one -- see the module docstring's TASK A COORDINATION note) must agree with
+    this tool's pinned ADAPTER_POLICY_CONSTANTS exactly. A drift here means the factory
+    and this second-look tool are silently applying two different policies to the same
+    admission decision -- exactly the split-brain B4 found, but caught automatically
+    instead of by the next round of manual review.
+
+    Forward-compatible on purpose: a `provenance.json` with no `admission` block at all
+    (every real one fetched before TASK A lands, which is all of them as of this fix)
+    PASSES with a note that the check is not yet applicable -- it does not retroactively
+    refuse every dataset already on disk for lacking a field the factory did not emit yet.
+    Once the factory starts writing the block, an ABSENT block would instead mean the
+    factory silently stopped -- but that transition is TASK A's to make and re-verify
+    against, not something this tool can distinguish today.
+    """
+    if "admission" not in provenance:
+        return CheckResult(
+            "policy_constants_drift",
+            True,
+            "provenance.json carries no `admission` block (factory has not yet started "
+            "emitting one, pending TASK A) -- drift check not yet applicable",
+        )
+    admission_block = provenance.get("admission")
+    if not isinstance(admission_block, dict):
+        return CheckResult(
+            "policy_constants_drift",
+            False,
+            f"provenance.json's `admission` key is present but not an object: {admission_block!r}",
+        )
+    constants = admission_block.get("constants")
+    if not isinstance(constants, dict):
+        return CheckResult(
+            "policy_constants_drift",
+            False,
+            "provenance.json carries an `admission` block but no `constants` sub-object",
+        )
+    if constants != ADAPTER_POLICY_CONSTANTS:
+        return CheckResult(
+            "policy_constants_drift",
+            False,
+            f"provenance admission.constants={constants!r} disagrees with this tool's "
+            f"own ADAPTER_POLICY_CONSTANTS={ADAPTER_POLICY_CONSTANTS!r}",
+        )
+    return CheckResult(
+        "policy_constants_drift",
+        True,
+        f"provenance admission.constants matches this tool's policy exactly "
+        f"(policy_version={ADAPTER_POLICY_CONSTANTS['policy_version']!r})",
     )
 
 
@@ -331,7 +516,10 @@ def run_checklist(
     """Run the admission checklist. `catalogue_index` (see `load_catalogue_index`) is
     optional so unit tests can exercise checks 1-3 in isolation with a synthetic
     provenance dict and no catalogue on disk; the CLI (`main`) always loads and passes
-    one -- check 4 is part of every real admission decision, not an opt-in extra.
+    one -- checks 4 and 5 are part of every real admission decision, not an opt-in extra.
+    Paired together (both gated on `catalogue_index is not None`) because both are
+    production-decision-time, second-look checks against the shared factory policy, unlike
+    checks 1-3 which read only the provenance dict handed to this function.
     """
     tier_table = REGION_TIER if region_tier is None else region_tier
     verdict = provenance.get("verdict", "")
@@ -345,11 +533,45 @@ def run_checklist(
     ]
     if catalogue_index is not None:
         results.append(check_catalogue_structural_refusals(repo_id_of(provenance), catalogue_index))
+        results.append(check_policy_constants_drift(provenance))
     return results
 
 
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def resolve_existing_shares_from_corpus_root(root: Path) -> dict[str, int]:
+    """Derive `--existing-shares` by scanning every `provenance.json` under `root`
+    (recursive), for `--corpus-root` -- the alternative to hand-typing the JSON.
+
+    Each dataset's contribution is `resolve_added_count`'s own result (a real
+    `row_count`/`count` when the factory emits one, else the ESTIMATED
+    `total_bytes // BYTES_PER_TOKEN` fallback) -- the existing-shares baseline is measured
+    exactly the same way the candidate being admitted is, so the two sides of the B1 share
+    computation are not silently apples-to-oranges.
+
+    A `provenance.json` that fails to parse (corrupt or a partial fetch) is skipped rather
+    than crashing the whole scan; a dataset with no `provenance_group` on either the
+    top level or the trimmed `catalogue_entry` is skipped the same way -- there is no
+    group to attribute its count to. Neither omission is reported here (this is a best-
+    effort disk scan, not a validation pass); a caller that needs to know what was
+    skipped should scan `root` itself.
+    """
+    shares: dict[str, int] = {}
+    for prov_path in sorted(root.rglob("provenance.json")):
+        try:
+            provenance = _load_json(prov_path)
+        except (json.JSONDecodeError, OSError):
+            continue
+        group = provenance.get("provenance_group") or provenance.get("catalogue_entry", {}).get(
+            "provenance_group"
+        )
+        if not group:
+            continue
+        added_count, _estimated = resolve_added_count(provenance)
+        shares[str(group)] = shares.get(str(group), 0) + added_count
+    return shares
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -367,9 +589,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--existing-shares",
-        default="{}",
+        default=None,
         help="JSON object: provenance_group -> current row/token count in the region's "
-        "corpus, before this admission. Defaults to empty (a fresh region).",
+        "corpus, before this admission. No default -- pass --existing-shares '{}' "
+        "EXPLICITLY to admit into a fresh region with zero existing rows (a silent "
+        "default here previously forced every admission's B1 share to 1.0 and REFUSE, "
+        "round-2 review non-blocking item). Mutually exclusive with --corpus-root.",
+    )
+    parser.add_argument(
+        "--corpus-root",
+        type=Path,
+        default=None,
+        help="Corpus root directory (e.g. the factory's fetch destination) to derive "
+        "--existing-shares from by scanning every provenance.json under it -- the "
+        "alternative to hand-typing the JSON. Mutually exclusive with --existing-shares.",
     )
     parser.add_argument(
         "--catalogue",
@@ -378,23 +611,37 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to the full dataset-factory catalogue JSON (schema "
         "csd-dataset-factory-catalogue/v1), for check 4's second, independent structural-"
         "refusal look. Defaults to docs/design/datasets/catalogue-2026-09-03.json in this "
-        "repo. Pass --no-catalogue-check to skip check 4 entirely.",
+        "repo. Pass --no-catalogue-check to skip checks 4 and 5 entirely.",
     )
     parser.add_argument(
         "--no-catalogue-check",
         action="store_true",
-        help="Skip check 4 (catalogue structural refusals). Only for the checklist's "
-        "checks 1-3 against a provenance.json in isolation -- production admission "
-        "decisions should keep check 4 on.",
+        help="Skip checks 4 and 5 (catalogue structural refusals, policy constants "
+        "drift). Only for the checklist's checks 1-3 against a provenance.json in "
+        "isolation -- production admission decisions should keep checks 4 and 5 on.",
     )
     args = parser.parse_args(argv)
 
-    provenance = _load_json(args.provenance)
-    try:
-        existing_shares = json.loads(args.existing_shares)
-    except json.JSONDecodeError as exc:
-        parser.error(f"--existing-shares is not valid JSON: {exc}")
+    if args.existing_shares is not None and args.corpus_root is not None:
+        parser.error("pass only one of --existing-shares or --corpus-root, not both")
         return 2  # pragma: no cover - argparse.error already exits
+    if args.existing_shares is None and args.corpus_root is None:
+        parser.error(
+            "one of --existing-shares or --corpus-root is required -- pass "
+            "--existing-shares '{}' explicitly to admit into a fresh region with zero "
+            "existing rows, or --corpus-root to derive shares from disk"
+        )
+        return 2  # pragma: no cover - argparse.error already exits
+
+    provenance = _load_json(args.provenance)
+    if args.corpus_root is not None:
+        existing_shares = resolve_existing_shares_from_corpus_root(args.corpus_root)
+    else:
+        try:
+            existing_shares = json.loads(args.existing_shares)
+        except json.JSONDecodeError as exc:
+            parser.error(f"--existing-shares is not valid JSON: {exc}")
+            return 2  # pragma: no cover - argparse.error already exits
 
     catalogue_index = None if args.no_catalogue_check else load_catalogue_index(args.catalogue)
 
