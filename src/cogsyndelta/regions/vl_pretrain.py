@@ -54,7 +54,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from cogsyndelta.corpus import stable_cache_tag
+from cogsyndelta.corpus import CORPUS_FINGERPRINT_SCHEME, fingerprint_corpus, stable_cache_tag
 from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig, check_checkpoint_grid_compatible
 from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
 from cogsyndelta.regions._receipt import trainer_defaults, write_receipt
@@ -603,9 +603,33 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     if final_transfer and baseline_transfer:
         beats["transfer_top1"] = final_transfer["top1"] > baseline_transfer["top1"]
 
+    # Same helper and scheme the text harnesses stamp (regions/pretrain.py
+    # `_corpus_content_fingerprint`) -- no new scheme for visual. Primary source is
+    # `train_shards`: the unlabelled I-JEPA pretrain images, which is "which rows this
+    # run trained on" for this objective (`probe_train_shards` reads the SAME images
+    # under labels for the probe; `probe_eval_shards`/`transfer_shards` are held out,
+    # not trained on, so they do not belong in a corpus-identity hash any more than a
+    # text region's holdout split does).
+    corpus_fingerprint = fingerprint_corpus(
+        cfg.train_shards, columns=[cfg.image_column, cfg.label_column]
+    )
+
     receipt = {
         "region": cfg.region,
         "objective": "I-JEPA latent prediction; gated on linear probe, never on loss",
+        # sample_masks (vl_jepa.py) is torch.randperm over patch indices, NOT I-JEPA's
+        # spatial multi-block sampling -- stamping the truth here rather than letting a
+        # reader assume the paper's scheme (g8-visual/S02.md §9 "Pitfalls"; kickoff
+        # "receipts that still use randperm must print masking: random-permutation").
+        # Multi-block masking is NOT implemented in this increment.
+        "masking": "random-permutation",
+        "corpus": {
+            "shards": [Path(s).name for s in cfg.train_shards],
+            "fingerprint": corpus_fingerprint,
+            "fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
+            "image_column": cfg.image_column,
+            "label_column": cfg.label_column,
+        },
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at)),
         # Cumulative TRAINING time across every session, not wall time since
         # `started_at` -- the latter would count a crash-to-resume gap as compute.
