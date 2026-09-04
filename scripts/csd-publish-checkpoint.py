@@ -128,7 +128,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OWNER = "tzervas"
@@ -791,6 +791,353 @@ def _dict_table(d: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+#  ------------------------------------------------------------- metrics methodology
+#
+# WHY THIS EXISTS
+# `docs/design/METRICS-METHODOLOGY.md` is the full reference (formula, file:line, eval
+# set, comparison rule, caveats) for every metric this project measures. A published
+# card is read in isolation, on the Hub, by someone who has never opened this repo -- so
+# every number the card actually prints gets a one-line pointer into that reference
+# rather than relying on the reader to find (or trust) it exists. `_methodology_section`
+# below is refused-closed: a metric key the card prints with no entry in
+# `METRIC_METHODOLOGY` aborts the publish (see its docstring) rather than shipping a
+# number with no stated formula.
+
+METHODOLOGY_DOC = "docs/design/METRICS-METHODOLOGY.md"
+"""Repo-relative path to the methodology reference, named in every card. Not a hyperlink
+-- the card is read from a private HF repo that does not carry this file, so a relative
+link would 404; naming the path in the CogSynDelta repo matches how this file already
+points elsewhere (e.g. `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, above)."""
+
+
+class MetricMethodology(NamedTuple):
+    """One line of 'how this number was produced', for one metric-table key."""
+
+    definition: str
+    """Short name of the formula -- what METRICS-METHODOLOGY.md's own (b)/(c) sections
+    spell out in full."""
+    battery: str
+    """Which measurement pass produced it. Two metrics with the same name from a
+    different battery are not comparable -- see METRICS-METHODOLOGY.md §4."""
+    source: str
+    """The file the formula is implemented in, repo-relative."""
+
+
+# Every metric-table row key `build_card` can print, mapped to where its formula and
+# battery are documented in full. Keyed by the BARE row name `_dict_table` prints (e.g.
+# "recall@1", not "held_out.recall@1") -- the same key means the same formula wherever it
+# appears in a training receipt (held_out / untrained_baseline / beats_untrained all read
+# `evaluate()`'s output), so one entry covers all three sections. Extend this whenever
+# `build_card` starts printing a new key, or `_methodology_section` refuses to publish.
+METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
+    "n_pairs": MetricMethodology(
+        "size of the closed held-out pool this row's numbers were computed over",
+        "training held-out battery",
+        "src/cogsyndelta/regions/pretrain.py",
+    ),
+    "recall@1": MetricMethodology(
+        "recall@k (k=1): fraction of queries whose matched positive is the top-scored "
+        "candidate in the closed held-out pool",
+        "training held-out battery",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "recall@10": MetricMethodology(
+        "recall@k (k=10): fraction of queries whose matched positive is in the top-10 "
+        "of the closed held-out pool",
+        "training held-out battery",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "mrr": MetricMethodology(
+        "mean reciprocal rank of the matched positive over the closed held-out pool",
+        "training held-out battery",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "emb_std": MetricMethodology(
+        "per-feature embedding std, averaged over features, anchor side only (the collapse signal)",
+        "training held-out battery",
+        "src/cogsyndelta/regions/pretrain.py",
+    ),
+    "spearman": MetricMethodology(
+        "Spearman rank correlation (Pearson over average ranks) between predicted "
+        "cosine similarity and the graded corpus's human score",
+        "training held-out battery, graded set",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "beats_untrained": MetricMethodology(
+        "rank.recall@1 (eval battery) > the training receipt's untrained_baseline "
+        "recall@1, unmargined -- a different, simpler rule than the training receipt's "
+        "own beats_untrained gate of the same name",
+        "eval battery",
+        "scripts/csd-benchmark.py",
+    ),
+    "not_anisotropic": MetricMethodology(
+        "repr.anisotropy < 0.9",
+        "eval battery",
+        "scripts/csd-benchmark.py",
+    ),
+    "uses_its_dimensions": MetricMethodology(
+        "repr.effective_rank_ratio > 0.05",
+        "eval battery",
+        "scripts/csd-benchmark.py",
+    ),
+    "anisotropy": MetricMethodology(
+        "mean cosine similarity between random (off-diagonal) pairs, anchors+positives "
+        "pooled -- a representation-geometry diagnostic, NOT a quality score",
+        "eval battery",
+        "src/cogsyndelta/eval/benchmark.py",
+    ),
+    "alignment": MetricMethodology(
+        "mean squared distance between MATCHED pairs (Wang & Isola); read only "
+        "together with uniformity, never alone",
+        "eval battery",
+        "src/cogsyndelta/eval/benchmark.py",
+    ),
+    "uniformity": MetricMethodology(
+        "log mean Gaussian potential over all pairs (Wang & Isola); read only together "
+        "with alignment, never alone",
+        "eval battery",
+        "src/cogsyndelta/eval/benchmark.py",
+    ),
+    "effective_rank": MetricMethodology(
+        "Shannon entropy of the normalised singular-value spectrum, exponentiated -- "
+        "the ENTROPY definition, not the participation-ratio one training receipts "
+        "report under token_aware.final_block_rank (see METRICS-METHODOLOGY.md §9)",
+        "eval battery",
+        "src/cogsyndelta/eval/benchmark.py",
+    ),
+    "dimensions": MetricMethodology(
+        "raw embedding width",
+        "eval battery",
+        "src/cogsyndelta/eval/benchmark.py",
+    ),
+    "effective_rank_ratio": MetricMethodology(
+        "effective_rank / dimensions -- how much of the available space is actually used",
+        "eval battery",
+        "src/cogsyndelta/eval/benchmark.py",
+    ),
+    # Contamination -- current (multi-channel) receipt shape.
+    "train_pairs_seen": MetricMethodology(
+        "training pairs streamed past the contamination guard",
+        "contamination guard",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "train_pairs_removed": MetricMethodology(
+        "training rows dropped for colliding with the held-out set on a GATED channel "
+        "(pair_exact or pair_content) -- a repair; the channel figures below are "
+        "measured BEFORE this removal",
+        "contamination guard",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "eval_pairs": MetricMethodology(
+        "size of the held-out set the contamination guard indexed",
+        "contamination guard",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "gated_channels": MetricMethodology(
+        "which of the six overlap channels cause training-row removal "
+        "(pair_exact, pair_content); the rest are reported only",
+        "contamination guard",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "channels": MetricMethodology(
+        "per-channel overlap counts and fractions -- see METRICS-METHODOLOGY.md §6.2 "
+        "for which channels are gated vs. merely reported",
+        "contamination guard",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "eval_duplicate_positives": MetricMethodology(
+        "held-out pairs sharing a positive with another held-out pair -- caps recall@1 "
+        "below 1.0 by construction when nonzero",
+        "contamination guard",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    # Contamination -- legacy (single-key) receipt shape; still read by this script.
+    "train_unique": MetricMethodology(
+        "unique training texts under whitespace/case normalisation "
+        "(legacy single-key contamination shape)",
+        "contamination guard (legacy)",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "eval_unique": MetricMethodology(
+        "unique held-out texts under whitespace/case normalisation "
+        "(legacy single-key contamination shape)",
+        "contamination guard (legacy)",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "overlap": MetricMethodology(
+        "held-out texts also present in training under the same normalisation "
+        "(legacy single-key contamination shape)",
+        "contamination guard (legacy)",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    "eval_fraction_contaminated": MetricMethodology(
+        "overlap / eval_unique",
+        "contamination guard",
+        "src/cogsyndelta/eval/metrics.py",
+    ),
+    # Quantization.
+    "fp32_metric_recomputed": MetricMethodology(
+        "recall@1 measured fresh on the loaded fp32 checkpoint -- the training held-out "
+        "battery, NOT the eval battery's rank.recall@1 (see METRICS-METHODOLOGY.md §4)",
+        "training held-out battery (quantize stage)",
+        "scripts/csd-quantize.py",
+    ),
+    "quantized_metric": MetricMethodology(
+        "recall@1 measured on the IN-MEMORY dequantized plan, before the packed "
+        "artifact is ever written to disk -- a claim about the plan, not about the "
+        "published bytes (see METRICS-METHODOLOGY.md §4)",
+        "training held-out battery (quantize stage)",
+        "scripts/csd-quantize.py",
+    ),
+    "drop": MetricMethodology(
+        "fp32_metric_recomputed - quantized_metric",
+        "training held-out battery (quantize stage)",
+        "scripts/csd-quantize.py",
+    ),
+    "tolerance": MetricMethodology(
+        "largest acceptable absolute drop in the task metric -- a configured input, "
+        "not a measurement",
+        "quantize stage configuration",
+        "scripts/csd-quantize.py",
+    ),
+    "within_budget": MetricMethodology(
+        "drop <= tolerance",
+        "training held-out battery (quantize stage)",
+        "scripts/csd-quantize.py",
+    ),
+    "compression_ratio": MetricMethodology(
+        "fp32_bytes / stored_bytes -- a PAYLOAD/STORAGE ratio, NOT a speed or throughput claim",
+        "quant/ptq.py byte accounting",
+        "src/cogsyndelta/quant/ptq.py",
+    ),
+    "fp32_bytes": MetricMethodology(
+        "sum(parameter.numel() * 4) -- weights only, never optimizer or RNG state",
+        "quant/ptq.py byte accounting",
+        "src/cogsyndelta/quant/ptq.py",
+    ),
+    "stored_bytes": MetricMethodology(
+        "packed codes + per-channel scale/zero-point for quantized tensors, plus 4 "
+        "bytes/element for fp32-kept tensors",
+        "quant/ptq.py byte accounting",
+        "src/cogsyndelta/quant/ptq.py",
+    ),
+}
+
+
+def _card_metric_keys(
+    train_receipt: dict[str, Any],
+    eval_receipt: dict[str, Any] | None,
+    quant_receipt: dict[str, Any] | None,
+) -> list[str]:
+    """Every metric-table row key `build_card` actually prints, de-duplicated, in
+    encounter order -- the exact set `_methodology_section` must cover. Mirrors
+    `build_card`'s own `_dict_table` calls one-for-one; keep the two in sync if either
+    changes which sections print a table (a test pins this -- see
+    `tests/test_metrics_methodology.py`).
+    """
+    keys: dict[str, None] = {}
+    for section in (
+        train_receipt.get("held_out", {}),
+        train_receipt.get("untrained_baseline", {}),
+        train_receipt.get("beats_untrained", {}),
+    ):
+        for k in section:
+            keys[k] = None
+    if eval_receipt is not None:
+        for k in eval_receipt.get("gates", {}):
+            keys[k] = None
+        for k in eval_receipt.get("metrics", {}):
+            if k.startswith("repr."):
+                keys[k[len("repr.") :]] = None
+    for k in train_receipt.get("contamination", {}):
+        if k != "examples":
+            keys[k] = None
+    if quant_receipt is not None:
+        for k in (
+            "fp32_metric_recomputed",
+            "quantized_metric",
+            "drop",
+            "tolerance",
+            "within_budget",
+            "compression_ratio",
+            "fp32_bytes",
+            "stored_bytes",
+        ):
+            if k in quant_receipt:
+                keys[k] = None
+    return list(keys)
+
+
+def _methodology_section(
+    train_receipt: dict[str, Any],
+    eval_receipt: dict[str, Any] | None,
+    quant_receipt: dict[str, Any] | None,
+    rev: str,
+    train_receipt_filename: str,
+    eval_receipt_filename: str | None,
+    quant_receipt_filename: str | None,
+) -> str:
+    """'How these numbers were produced': one line per metric key this card prints,
+    naming its definition, battery and source file, plus the receipt-level provenance
+    (corpus fingerprint, seed, code revision, receipt filenames) every number above was
+    read from.
+
+    Args:
+        train_receipt: The training receipt `build_card` was given.
+        eval_receipt: The eval receipt, or `None`.
+        quant_receipt: The quant receipt, or `None`.
+        rev: This checkpoint's code revision, exactly as `build_card`'s own Provenance
+            section prints it.
+        train_receipt_filename: Basename of the training receipt file, as uploaded.
+        eval_receipt_filename: Basename of the eval receipt file, or `None`.
+        quant_receipt_filename: Basename of the quant receipt file, or `None`.
+
+    Returns:
+        The section as markdown.
+
+    Raises:
+        PublishAbortError: A metric key this card prints has no entry in
+            `METRIC_METHODOLOGY` -- refusing to publish a number with no stated formula
+            rather than silently shipping one undocumented. This is the enforcement
+            `tests/test_metrics_methodology.py` proves is load-bearing by stubbing
+            `METRIC_METHODOLOGY` empty and asserting the card build then fails.
+    """
+    keys = _card_metric_keys(train_receipt, eval_receipt, quant_receipt)
+    missing = [k for k in keys if k not in METRIC_METHODOLOGY]
+    if missing:
+        raise PublishAbortError(
+            f"card would print metric key(s) {sorted(missing)} with no entry in "
+            "METRIC_METHODOLOGY -- refusing to publish a number with no stated "
+            f"definition/battery/source. Add an entry (and, if it names a new formula, "
+            f"a section to {METHODOLOGY_DOC}) before publishing."
+        )
+    lines = [
+        "## How these numbers were produced",
+        "",
+        f"Full definitions, formulas, `file:line` anchors and comparison rules for every "
+        f"metric below: `{METHODOLOGY_DOC}` in this repository.",
+        "",
+        "| metric | definition | battery | source |",
+        "|---|---|---|---|",
+    ]
+    for key in sorted(keys):
+        m = METRIC_METHODOLOGY[key]
+        lines.append(f"| `{key}` | {m.definition} | {m.battery} | `{m.source}` |")
+    lines += [
+        "",
+        f"- **Corpus fingerprint:** `{train_receipt.get('corpus', {}).get('fingerprint', '(none recorded)')}`",
+        f"- **Seed:** `{train_receipt.get('config', {}).get('seed', '(none recorded)')}`",
+        f"- **Code revision:** `{rev}`",
+        f"- **Training receipt:** `{train_receipt_filename}`",
+    ]
+    if eval_receipt_filename is not None:
+        lines.append(f"- **Eval receipt:** `{eval_receipt_filename}`")
+    if quant_receipt_filename is not None:
+        lines.append(f"- **Quant receipt:** `{quant_receipt_filename}`")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def build_card(
     region: str,
     region_cfg: dict[str, Any],
@@ -806,6 +1153,9 @@ def build_card(
     quantized_file_bytes: int | None = None,
     quantized_stored_bytes: int | None = None,
     quantized_width_histogram: dict[str, int] | None = None,
+    train_receipt_filename: str = "",
+    eval_receipt_filename: str | None = None,
+    quant_receipt_filename: str | None = None,
 ) -> str:
     corpus = train_receipt.get("corpus", {})
     contamination = train_receipt.get("contamination", {})
@@ -877,6 +1227,17 @@ def build_card(
         ]
     else:
         parts.append("_No quant receipt supplied -- this checkpoint is fp32._\n")
+    parts += [
+        _methodology_section(
+            train_receipt,
+            eval_receipt,
+            quant_receipt,
+            rev,
+            train_receipt_filename,
+            eval_receipt_filename,
+            quant_receipt_filename,
+        ),
+    ]
     if quant_receipt is not None and quantized_filename is not None:
         # Facts about the FILE only. The measured-vs-budget story (compression ratio,
         # metric drop, tolerance, within_budget, stored_bytes) lives in the
@@ -1077,6 +1438,9 @@ def build_plan(
         quantized_file_bytes=quantized_path.stat().st_size if quantized_path else None,
         quantized_stored_bytes=quantized_stored_bytes,
         quantized_width_histogram=quantized_width_histogram,
+        train_receipt_filename=train_receipt_path.name,
+        eval_receipt_filename=eval_receipt_path.name if eval_receipt is not None else None,
+        quant_receipt_filename=quant_receipt_path.name if quant_receipt is not None else None,
     )
 
     files: dict[str, Path | bytes] = {
