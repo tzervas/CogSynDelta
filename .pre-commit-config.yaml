@@ -30,36 +30,45 @@ repos:
         args: [--strict, --force-scope]
 
   # Ruff - unified linting and formatting (replaces black, isort, flake8)
-  # files: matches [tool.ruff] include in pyproject.toml plus examples/ (the same set
-  # `ruff check`/`ruff format` are run over in .github/workflows/ci.yml's lint job).
-  # Without it, --all-files hands ruff every *.py in the repo including one-off
-  # evidence/experiment scripts under docs/design/evidence/ that were never meant to
-  # be held to this project's lint bar (ruff checks explicit args regardless of
-  # pyproject's own include list, so those slipped through here otherwise).
+  # Runs over every tracked *.py in the repo (report only -- no --fix in the hook;
+  # a lint gate that rewrites files instead of failing on them isn't a gate).
+  # The one carve-out is docs/design/evidence/: one-off measurement scripts that
+  # already produced published experimental results (see the CSD program docs and
+  # KB entries for W1/W1d/W2c). `ruff check` on them surfaces real findings --
+  # B023 loop-variable-closure bugs, subprocess argument-safety flags -- that are
+  # not safe to fix mechanically without risking the recorded numbers; that
+  # directory needs a deliberate pass, not a lint-gate sweep. Everything else
+  # previously excluded here (deploy/, config/, setup.py, libs/algebraic-training/)
+  # is maintained code and is included and clean.
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.13
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-        files: ^(src|tests|scripts|benchmarks|examples)/.*\.py$
+        args: [--exit-non-zero-on-fix]
+        files: \.py$
+        exclude: ^docs/design/evidence/
       - id: ruff-format
-        files: ^(src|tests|scripts|benchmarks|examples)/.*\.py$
+        files: \.py$
+        exclude: ^docs/design/evidence/
 
   # Mypy - type checking
-  # files: ^src/ matches the only mypy invocation this repo actually treats as
-  # authoritative (ci.yml's required "Type check with mypy" step runs `mypy src/`
-  # alone; docs/DEVELOPMENT_STANDARDS.md's Quick Reference agrees). Explicit args
-  # bypass pyproject's [tool.mypy] exclude the same way they bypass ruff's include,
-  # so without this the hook also typechecks deploy/ and docs/design/evidence/
-  # one-off scripts that were never written against this project's typing bar.
+  # Runs over every tracked *.py except: tests/benchmarks/examples/scripts at repo
+  # root (ci.yml's required "Type check with mypy" step runs `mypy src/` alone and
+  # docs/DEVELOPMENT_STANDARDS.md's Quick Reference agrees -- this hook is a
+  # superset of that authoritative check, not a replacement for it, so the parts
+  # CI doesn't hold to a typing bar stay out here too) and docs/design/evidence/
+  # (see the ruff hook's comment above -- same one-off-scripts risk, worse: 22 of
+  # its mypy findings are a dynamically-loaded-class pattern that would need a
+  # real redesign, not a mechanical fix). deploy/, config/, setup.py and
+  # libs/algebraic-training/ are included and clean.
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.19.1
     hooks:
       - id: mypy
         additional_dependencies: [torch, numpy, pyyaml, types-PyYAML]
         args: [--ignore-missing-imports, --no-strict-optional]
-        files: ^src/
-        exclude: ^(tests/|benchmarks/|examples/|scripts/)
+        files: \.py$
+        exclude: ^(tests/|benchmarks/|examples/|scripts/|docs/design/evidence/)
 
   # Pydocstyle - Google style docstring enforcement
   - repo: https://github.com/pycqa/pydocstyle
@@ -82,13 +91,22 @@ repos:
         exclude: ^src/cogsyndelta/__init__.py$
 
   # Shellcheck - shell script linting (matches *.sh and any file with a bash/sh shebang)
+  # severity=info, not warning: SC2086 (unquoted expansion) and most of the checks
+  # this gate exists to catch are shellcheck's "info" level. severity=warning let
+  # every info-level finding through silently -- verified with a constructed
+  # `echo $1` probe (flagged at info, invisible at warning). style level (the
+  # shellcheck default) is left out: it's naggy formatting preference, not bugs.
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1
     hooks:
       - id: shellcheck
-        args: [--severity=warning]
+        args: [--severity=info]
 
-  # yamllint - YAML style/lint, config in .yamllint.yaml
+  # yamllint - YAML style/lint, config in .yamllint.yaml. truthy is pinned to
+  # level: error there (not --strict here): --strict would also promote
+  # line-length, deliberately kept advisory-only at level: warning, into a
+  # blocking finding across every over-120-char line in the repo, which isn't
+  # what that rule is for.
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0
     hooks:

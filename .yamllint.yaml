@@ -1,7 +1,14 @@
 extends: default
 
 rules:
+  # level: error (not the ruleset default of warning) so a truthy violation
+  # actually fails the gate -- yamllint only turns warning-level findings into a
+  # non-zero exit under --strict, and --strict would also promote line-length
+  # (deliberately kept at warning, below) into a blocking finding, which isn't
+  # what that rule is for. Verified: an unquoted `on:` key / `yes` value exits 0
+  # at the ruleset default, exits 2 with level: error here.
   truthy:
+    level: error
     check-keys: true
     allowed-values: ["true", "false"]
   line-length:
