@@ -998,14 +998,40 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         battery_id="eval_holdout",
         pooling="pooled_both",
     ),
-    "effective_rank": MetricMethodology(
+    # `effective_rank_entropy` (g7 §3.1): the RENAME (was bare `effective_rank`, kept
+    # below for a receipt on disk before the rename -- src/cogsyndelta/eval/benchmark.py
+    # writes `repr.effective_rank_entropy` today; `_card_metric_keys` strips the `repr.`
+    # prefix so this table is keyed on the bare name either way).
+    "effective_rank_entropy": MetricMethodology(
         "Shannon entropy of the normalised singular-value spectrum, exponentiated -- "
         "the ENTROPY definition, not the participation-ratio one training receipts "
-        "report under token_aware.final_block_rank (see METRICS-METHODOLOGY.md §9)",
+        "report under token_aware.final_block_rank (see METRICS-METHODOLOGY.md §9). "
+        "Renamed from effective_rank to name which of this project's three 'effective "
+        "rank' definitions it is.",
         "eval battery",
         "src/cogsyndelta/eval/benchmark.py",
         battery_id="eval_holdout",
         pooling="pooled_both",
+    ),
+    "effective_rank": MetricMethodology(
+        "LEGACY name for effective_rank_entropy (pre-g7 eval receipts); Shannon entropy "
+        "of the normalised singular-value spectrum, exponentiated -- the ENTROPY "
+        "definition, not the participation-ratio one training receipts report under "
+        "token_aware.final_block_rank (see METRICS-METHODOLOGY.md §9)",
+        "eval battery (legacy key)",
+        "src/cogsyndelta/eval/benchmark.py",
+        battery_id="eval_holdout",
+        pooling="pooled_both",
+    ),
+    "emb_std_anchor": MetricMethodology(
+        "mean per-feature embedding std, anchor side only (the collapse signal) -- the "
+        "eval-battery counterpart to a training receipt's held_out.emb_std (g7 §3.1: "
+        "same formula, ANCHOR-only pooling, never pooled_both like the rest of this "
+        "receipt's representation group)",
+        "eval battery",
+        "src/cogsyndelta/eval/benchmark.py",
+        battery_id="eval_holdout",
+        pooling="anchor",
     ),
     "dimensions": MetricMethodology(
         "raw embedding width",

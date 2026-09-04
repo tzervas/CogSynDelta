@@ -19,7 +19,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,6 +32,24 @@ from cogsyndelta.quant.ptq import (
     packed_stored_bytes,
     packed_width_histogram,
     save_packed_artifact,
+)
+from cogsyndelta.regions.pretrain import PretrainConfig, pretrain_region
+from cogsyndelta.regions.text_encoder import TextEncoderConfig
+
+# Reused, not reimplemented: the same tokenizer/parquet fixture builders and
+# hyphenated-module loaders tests/test_benchmark_metrics_v2_receipt.py already built to
+# drive REAL v2 eval / eval-quantized receipts through production code (`bench` =
+# csd-benchmark.py, `quant` = csd-quantize.py, both loaded there via the same importlib
+# indirection this file uses for `mod` above).
+from tests.test_benchmark_metrics_v2_receipt import (
+    _build_pairs_parquet,
+    _build_tokenizer,
+)
+from tests.test_benchmark_metrics_v2_receipt import (
+    bench as _v2_bench,
+)
+from tests.test_benchmark_metrics_v2_receipt import (
+    quant as _v2_quant,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -697,6 +715,114 @@ def test_dry_run_against_real_compress_receipts_aborts_sha_absent() -> None:
         ]
     )
     assert rc == 2
+
+
+# --------------------------- review fix: --dry-run must not abort on this branch's OWN
+# --------------------------- v2 receipts (blocking item 1, feat/metrics-v2)
+
+
+def test_dry_run_publishes_real_v2_eval_and_eval_quantized_receipts_end_to_end(
+    tmp_path: Path,
+) -> None:
+    """The review's exact failure: `--dry-run` ABORTED with `card would print metric
+    key(s) ['effective_rank_entropy', 'emb_std_anchor'] with no entry in
+    METRIC_METHODOLOGY` on a receipt `scripts/csd-benchmark.py` (this branch's own lane
+    A) produces natively -- `METRIC_METHODOLOGY` here (lane B) had renamed
+    `effective_rank_ratio` -> `effective_rank_entropy_ratio` but never added
+    `effective_rank_entropy` or `emb_std_anchor`. A hand-built receipt would not have
+    caught this: the hole is specifically that lane A's real output and lane B's table
+    disagreed, so this drives a REAL tiny CPU pretrain + benchmark + quantize run
+    (region "code" -- a real MIT-tiered region name, so `--dry-run` reaches the
+    METRIC_METHODOLOGY check this fix targets rather than aborting earlier on an
+    unknown licence tier; same tokenizer/parquet fixture builders as
+    tests/test_benchmark_metrics_v2_receipt.py) through the publish script's own
+    `--dry-run`, for both `kind=eval` and `kind=eval-quantized` receipts, exactly as
+    the review's repro did.
+    """
+    region = "code"
+    tok_path = tmp_path / "tokenizer.json"
+    shard_path = tmp_path / "pairs.parquet"
+    _build_tokenizer(tok_path, 40)
+    _build_pairs_parquet(shard_path, 40)
+    receipts_dir = tmp_path / "receipts"
+
+    cfg = PretrainConfig(
+        region=region,
+        pair_columns=("anchor", "positive"),
+        shards=[str(shard_path)],
+        steps=2,
+        batch_size=4,
+        holdout_pairs=4,
+        eval_every=2,
+        checkpoint_every=2,
+        max_len=16,
+        seed=3,
+        device="cpu",
+        encoder=TextEncoderConfig(dim=8, depth=1, n_heads=2, max_len=16),
+        tokenizer_path=str(tok_path),
+        out_dir=str(receipts_dir),
+    )
+    pretrain_region(cfg)
+    train_path = next(receipts_dir.glob(f"{region}-*.json"))
+
+    def fake_regions_spec() -> dict:
+        class _Entry:
+            sources: ClassVar = [("pairs.parquet", ("anchor", "positive"), 0)]
+            root = tmp_path
+
+        return {
+            "REGIONS": {},
+            "_shards": lambda *a, **k: [str(shard_path)],
+            "region_spec": lambda name: _Entry(),
+        }
+
+    orig_bench_spec, orig_quant_spec = _v2_bench._regions_spec, _v2_quant._load_regions_spec
+    _v2_bench._regions_spec = fake_regions_spec
+    _v2_quant._load_regions_spec = fake_regions_spec
+    try:
+        eval_rec = _v2_bench.benchmark_region(region, tmp_path)
+        assert eval_rec is not None
+        eval_path = eval_rec.write(receipts_dir)
+
+        quant_rec = _v2_quant.quantize_text_region(
+            region, tmp_path, tolerance=1.0, aggressive=3, max_bits=8
+        )
+        eval_quant_rec = _v2_bench.benchmark_region_quantized(
+            region, tmp_path, Path(quant_rec["artifacts"]["quantized_path"])
+        )
+        eval_quant_path = eval_quant_rec.write(receipts_dir)
+    finally:
+        _v2_bench._regions_spec = orig_bench_spec
+        _v2_quant._load_regions_spec = orig_quant_spec
+
+    with patch("huggingface_hub.HfApi", side_effect=AssertionError("no network in --dry-run")):
+        rc_eval = mod.main(
+            [
+                "--region",
+                region,
+                "--receipt",
+                str(train_path),
+                "--eval-receipt",
+                str(eval_path),
+                "--dry-run",
+            ]
+        )
+        rc_eval_quantized = mod.main(
+            [
+                "--region",
+                region,
+                "--receipt",
+                str(train_path),
+                "--eval-receipt",
+                str(eval_quant_path),
+                "--dry-run",
+            ]
+        )
+
+    assert rc_eval == 0, "kind=eval dry-run must not abort on this branch's own v2 receipt"
+    assert rc_eval_quantized == 0, (
+        "kind=eval-quantized dry-run must not abort on this branch's own v2 receipt"
+    )
 
 
 # -------------------------------------------------- receipt must be a JSON object (review fix)
