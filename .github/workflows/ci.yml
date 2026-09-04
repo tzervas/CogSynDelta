@@ -62,9 +62,11 @@ jobs:
 
   shell-yaml-lint:
     name: Shell & YAML Lint
-    # Runs on pull_request too (unlike the pre-commit job below): shellcheck and
-    # yamllint are cheap and don't pull torch, so there's no reason to defer them
-    # to push-only the way the mypy-carrying pre-commit job is.
+    # Lightweight, torch-free lint pass: shellcheck and yamllint run via
+    # `uvx pre-commit run <hook>`, an ephemeral tool env with no project sync.
+    # Kept as its own job (rather than folded into lint-gate below) so a shell
+    # or YAML mistake fails fast without waiting on lint-gate's full `uv run`
+    # project sync, which pulls the cu128 torch env.
     runs-on: [self-hosted, linux, x64, podman]
     steps:
       - uses: actions/checkout@v7
@@ -81,7 +83,8 @@ jobs:
 
       # Run just the shellcheck and yamllint hooks via uvx (ephemeral tool env, no
       # project sync needed) -- deliberately not the full `pre-commit run --all-files`
-      # used by the pre-commit job, since that also runs the torch-carrying mypy hook.
+      # used by the lint-gate job below, since that also runs the torch-carrying
+      # mypy hook and needs the full project env synced first.
       - name: shellcheck (every *.sh and bash-shebang file)
         run: uvx pre-commit run shellcheck --all-files
 
