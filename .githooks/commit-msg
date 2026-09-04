@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Reject a commit message that is not Conventional Commits before it lands.
+#
+# WHY THIS EXISTS
+# cz check is the same validator .github/workflows/conventions.yml runs over the PR
+# title and the pushed commit range, and the same one .pre-commit-config.yaml wires as
+# the `commitizen` hook (stages: [commit-msg]) for anyone who has pre-commit installed.
+# Three surfaces, one implementation -- a hand-rolled regex here would drift from what
+# CI actually enforces. This hook is the cheap, always-on copy: it needs only uvx,
+# which the repo already requires (see .githooks/pre-commit).
+#
+# ALLOW-LIST
+# `cz check` already passes merge commits and `bump:`-type messages on its own --
+# verified below in the mutation proofs rather than special-cased here, so this hook
+# does not duplicate or diverge from cz's allow-list logic.
+#
+# FAIL CLOSED
+# No uvx -> no way to validate -> block the commit with a one-line install hint,
+# same failure mode as .githooks/pre-commit and .githooks/pre-push already use.
+set -uo pipefail
+
+CZ_VERSION="4.18.0"
+MSG_FILE="${1:-}"
+
+if [ -z "$MSG_FILE" ] || [ ! -f "$MSG_FILE" ]; then
+    echo "commit-msg: no commit message file passed (expected \$1)" >&2
+    exit 1
+fi
+
+if ! command -v uvx >/dev/null 2>&1; then
+    echo "commit-msg: uvx not found. Install: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+    echo "commit-msg: BLOCKED — cannot validate commit message format without uvx." >&2
+    exit 1
+fi
+
+if ! uvx --from "commitizen==${CZ_VERSION}" cz check --commit-msg-file "$MSG_FILE"; then
+    echo "commit-msg: BLOCKED — message must follow Conventional Commits (type(scope): subject)." >&2
+    echo "commit-msg: see docs/CONTRIBUTING.md#commit-messages, or run 'uvx --from commitizen cz commit'." >&2
+    exit 1
+fi
+
+exit 0

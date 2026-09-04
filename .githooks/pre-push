@@ -12,19 +12,85 @@
 # .github/workflows/ci.yml, so this cannot drift from CI without the drift being visible
 # in one place.
 #
+# 2026-09-04: added two gates ahead of the existing ones, both enforcing the same rules
+# .github/workflows/conventions.yml holds a remote copy of, so a rejected push never has
+# to wait for CI to say so:
+#   (a) branch/tag naming -- refuses refs/heads/main and refs/heads/master (PR-only:
+#       this repo's branch protection is a policy, not (yet) a server-side hook, so this
+#       is the enforcement until one exists) and any branch not matching the
+#       type/kebab-case convention; tags must be semver.
+#   (b) `cz check --rev-range` over every commit about to be pushed, so a badly-formatted
+#       commit that slipped past (or bypassed) the commit-msg hook is still caught here.
+#
 # Override with --no-verify when you genuinely need to push a WIP branch. That is a
 # deliberate act, which is the point.
+#
+# PRE_PUSH_SKIP_SLOW_GATES=1 skips scripts/ci_local.sh (the naming and cz-range checks
+# still run). It exists for the naming-check mutation proofs -- ci_local.sh takes
+# minutes and pulls CPU torch, which those proofs have no need of -- and is not a general
+# escape hatch: it is documented here precisely so it stays visible, not to encourage use.
 set -uo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT" || exit 1
 
+CZ_VERSION="4.18.0"
+BRANCH_RE='^(feat|fix|docs|chore|refactor|test|ci|build|perf|style|revert)/[a-z0-9][a-z0-9._-]*$'
+TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.]+)?$'
+NULL_SHA="0000000000000000000000000000000000000000"
+
 fail=0
 
+# git passes one "local_ref local_sha remote_ref remote_sha" line per updated ref on
+# stdin. Buffer them into an array up front: they are consumed twice below (naming
+# check, then GPG-note check), and a pipe/fd can only be read once.
+push_lines=()
+while IFS= read -r line; do
+    [ -n "$line" ] && push_lines+=("$line")
+done
+
+# --- (a) branch / tag naming ----------------------------------------------------------
+for line in "${push_lines[@]}"; do
+    read -r _local_ref local_sha remote_ref remote_sha <<<"$line"
+    [ "$local_sha" = "$NULL_SHA" ] && continue  # a delete; nothing to name-check
+
+    case "$remote_ref" in
+        refs/heads/main | refs/heads/master)
+            echo "pre-push: BLOCKED — refusing to push directly to ${remote_ref#refs/heads/}; open a PR instead." >&2
+            fail=1
+            ;;
+        refs/heads/*)
+            branch_name="${remote_ref#refs/heads/}"
+            if ! [[ "$branch_name" =~ $BRANCH_RE ]]; then
+                echo "pre-push: BLOCKED — branch '$branch_name' does not match $BRANCH_RE" >&2
+                fail=1
+            fi
+            ;;
+        refs/tags/*)
+            tag_name="${remote_ref#refs/tags/}"
+            if ! [[ "$tag_name" =~ $TAG_RE ]]; then
+                echo "pre-push: BLOCKED — tag '$tag_name' does not match $TAG_RE" >&2
+                fail=1
+            fi
+            ;;
+    esac
+done
+
+if [ "$fail" -ne 0 ]; then
+    echo "pre-push: naming check failed; not running the remaining gates." >&2
+    exit "$fail"
+fi
+
+if [ "${PRE_PUSH_SKIP_SLOW_GATES:-0}" = "1" ]; then
+    echo "pre-push: PRE_PUSH_SKIP_SLOW_GATES=1 set — naming check passed, stopping here." >&2
+    exit 0
+fi
+
 # --- GPG signing (the original contents of this hook) --------------------------------
-while read -r _local_ref local_sha _remote_ref remote_sha; do
-    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
-    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+for line in "${push_lines[@]}"; do
+    read -r _local_ref local_sha _remote_ref remote_sha <<<"$line"
+    [ "$local_sha" = "$NULL_SHA" ] && continue
+    if [ "$remote_sha" = "$NULL_SHA" ]; then
         range="$local_sha"
     else
         range="${remote_sha}..${local_sha}"
@@ -34,6 +100,35 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
         echo "pre-push: note — $unsigned commit(s) in $range are unsigned" >&2
     fi
 done
+
+# --- (b) commit message range check ---------------------------------------------------
+# Mirrors what .github/workflows/conventions.yml runs remotely, but locally and before
+# the slow gates -- catch a bad message before spending minutes on ci_local.sh.
+base_ref="forgejo/main"
+git rev-parse --verify --quiet "$base_ref" >/dev/null || base_ref="origin/main"
+if git rev-parse --verify --quiet "$base_ref" >/dev/null; then
+    merge_base="$(git merge-base "$base_ref" HEAD 2>/dev/null || true)"
+    if [ -n "$merge_base" ] && [ "$merge_base" != "$(git rev-parse HEAD)" ]; then
+        if command -v uvx >/dev/null 2>&1; then
+            echo "pre-push: cz check --rev-range ${merge_base}..HEAD"
+            if ! uvx --from "commitizen==${CZ_VERSION}" cz check --rev-range "${merge_base}..HEAD"; then
+                echo "pre-push: BLOCKED — one or more commits are not Conventional Commits." >&2
+                fail=1
+            fi
+        else
+            echo "pre-push: uvx not found. Install: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+            echo "pre-push: BLOCKED — cannot validate commit range without uvx." >&2
+            fail=1
+        fi
+    fi
+else
+    echo "pre-push: note — no $base_ref to diff against; skipping cz check --rev-range" >&2
+fi
+
+if [ "$fail" -ne 0 ]; then
+    echo "pre-push: BLOCKED — fix the above, or 'git push --no-verify' if this is a deliberate WIP push." >&2
+    exit "$fail"
+fi
 
 # --- the actual gates ----------------------------------------------------------------
 if [ -x scripts/ci_local.sh ] || [ -f scripts/ci_local.sh ]; then

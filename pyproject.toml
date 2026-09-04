@@ -254,29 +254,19 @@ python_functions = ["test_*"]
 addopts = "-v --tb=short"
 asyncio_mode = "auto"
 
-[tool.semantic_release]
-version_variables = ["src/cogsyndelta/__init__.py:__version__"]
-version_toml = ["pyproject.toml:project.version"]
-branch = "main"
-build_command = "uv build"
-upload_to_pypi = false
-upload_to_release = true
-commit_message = "chore(release): {version} [skip ci]"
-tag_format = "v{version}"
-
-[tool.semantic_release.branches.main]
-match = "main"
-prerelease = false
-
-[tool.semantic_release.branches.develop]
-match = "develop"
-prerelease = true
-prerelease_token = "dev"
-
-[tool.semantic_release.commit_parser_options]
-allowed_tags = ["feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore"]
-minor_tags = ["feat"]
-patch_tags = ["fix", "perf"]
-
-[tool.semantic_release.changelog]
-changelog_file = "CHANGELOG.md"
+# Replaces python-semantic-release (2026-09-04): semantic-release's config lived in the
+# now-removed [tool.semantic_release*] sections above and drove a GitHub-era release.yml
+# that pushed to main directly and published to ghcr.io -- both wrong for this repo's
+# Forgejo-native, PR-only workflow. commitizen enforces the same Conventional Commits
+# format at commit-msg and pre-push time (.githooks/, .pre-commit-config.yaml) and drives
+# the version bump + changelog from a PR, not a bot pushing main. major_version_zero
+# keeps 0.x bumps on minor/patch (matches the current 0.2.0) until a deliberate 1.0.
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "pep621"
+tag_format = "v$version"
+update_changelog_on_bump = true
+changelog_incremental = true
+annotated_tag = true
+major_version_zero = true
+version_files = ["src/cogsyndelta/__init__.py:__version__"]

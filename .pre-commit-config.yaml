@@ -21,13 +21,21 @@ repos:
       - id: debug-statements
       - id: mixed-line-ending
 
-  # Conventional Commits - commit message validation
-  - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v3.6.0
+  # Commitizen - commit message and pushed-range validation.
+  # Replaces conventional-pre-commit (2026-09-04): commitizen is the same validator the
+  # tracked .githooks/commit-msg + .githooks/pre-push hooks and
+  # .github/workflows/conventions.yml already run (`cz check`), so anyone with
+  # pre-commit installed gets an identical result instead of a second, possibly
+  # drifting implementation of "is this Conventional Commits". commitizen-branch
+  # replays the pre-push commit-range check (`cz check --rev-range`) for pre-commit
+  # users the same way .githooks/pre-push does directly.
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.18.0
     hooks:
-      - id: conventional-pre-commit
+      - id: commitizen
         stages: [commit-msg]
-        args: [--strict, --force-scope]
+      - id: commitizen-branch
+        stages: [pre-push]
 
   # Ruff - unified linting and formatting (replaces black, isort, flake8)
   # Runs over every tracked *.py in the repo (report only -- no --fix in the hook;
