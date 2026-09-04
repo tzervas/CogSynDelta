@@ -44,6 +44,7 @@ DISPATCH_HOOK = (
     "                    args.dry_run,\n"
     "                    args.max_len,\n"
     "                    args.init_embedding_from,\n"
+    "                    args.seed,\n"
     "                )\n"
 )
 
@@ -223,6 +224,9 @@ def _assert_memory_and_compress_dispatch_correctly(
     assert kwargs["max_len"] == module.region_spec("memory").default_max_len
     assert kwargs["out_dir"] == str(tmp_path / "receipts")
     assert kwargs["retrieve_checkpoint"] is None
+    # --seed was not passed on argv; must still default to 0 (PretrainConfig.seed's own
+    # default), not be silently dropped.
+    assert kwargs["seed"] == 0
 
 
 def test_regions_memory_dispatches_to_run_memory_pretrain_not_pretrain_region(
@@ -265,6 +269,46 @@ def test_regions_memory_forwards_init_embedding_from_as_retrieve_checkpoint(
     rc = mod.main()
     assert rc == 0
     assert memory_calls[0]["retrieve_checkpoint"] == fake_ckpt
+
+
+def test_regions_memory_forwards_seed_via_region_runners_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--seed` must reach `run_memory_pretrain(seed=...)` through the `REGION_RUNNERS`
+    dispatch path exactly as it reaches `PretrainConfig.seed` through the generic
+    `run_region` path -- `memory` trains through its own entry point (see
+    `run_memory_region`'s docstring), so it needs its own forwarding wire, not a free
+    ride off `run_region`'s."""
+    monkeypatch.setattr(mod, "CORPUS", tmp_path)
+
+    memory_calls: list[dict[str, Any]] = []
+
+    def fake_run_memory_pretrain(**kwargs: Any) -> dict[str, Any]:
+        memory_calls.append(kwargs)
+        return _fake_memory_receipt()
+
+    monkeypatch.setattr("cogsyndelta.regions.memory.run_memory_pretrain", fake_run_memory_pretrain)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "csd-train-all.py",
+            "--regions",
+            "memory",
+            "--steps",
+            "5",
+            "--batch",
+            "4",
+            "--state",
+            str(tmp_path),
+            "--seed",
+            "7",
+        ],
+    )
+    rc = mod.main()
+    assert rc == 0
+    assert memory_calls[0]["seed"] == 7
 
 
 # ---------------------------------------------------------------------------------------

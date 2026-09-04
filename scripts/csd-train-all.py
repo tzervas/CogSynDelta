@@ -682,6 +682,7 @@ def run_region(
     allow_unfingerprinted_resume: bool = False,
     allow_missing: bool = False,
     init_embedding_from: str | None = None,
+    seed: int = 0,
 ) -> dict | None:
     """Train one region and return its receipt.
 
@@ -698,10 +699,6 @@ def run_region(
             the fp32 arm -- the only way to tell "bf16 cost recall" apart from "the batch
             or the schedule did", which is a question that has to be answerable from the
             runner rather than from a one-off script nobody can rerun.
-        init_embedding_from: DEC-24 -- forwarded to `PretrainConfig.init_embedding_from`
-            when set (a real checkpoint path). `None` (the default) trains a random-init
-            table for every region, including one `SHARED_EMBEDDING_TABLE_SOURCE` names
-            as DESIGNED to inherit one -- intent alone applies nothing.
         max_len: Override this region's default max_len (see `REGIONS`). None keeps the
             region's own default. Feeds BOTH `PretrainConfig.max_len` (tokenisation
             truncation) and `TextEncoderConfig.max_len` (the positional table's width,
@@ -715,6 +712,22 @@ def run_region(
             skip that source instead of raising :class:`CorpusSourceMissingError`. False
             (raise) unless the operator passes `--allow-missing`; see that error's
             docstring for what this used to do silently.
+        init_embedding_from: DEC-24 -- forwarded to `PretrainConfig.init_embedding_from`
+            when set (a real checkpoint path). `None` (the default) trains a random-init
+            table for every region, including one `SHARED_EMBEDDING_TABLE_SOURCE` names
+            as DESIGNED to inherit one -- intent alone applies nothing.
+        seed: Forwarded to `PretrainConfig.seed` -- governs the model's initial weights
+            (`torch.manual_seed(cfg.seed)`), a cap's reservoir sample (`load_pairs`'s
+            `sampling_rng`) and the pre-training pair shuffle (`_random.Random(cfg.seed)`
+            -- see `regions/pretrain.py`'s `pretrain_region`). Default 0 matches
+            `PretrainConfig.seed`'s own default, so omitting `--seed` on the command
+            line trains byte-identically to every run before this parameter existed.
+            Recorded in the written receipt at `receipt["config"]["seed"]` (every
+            `PretrainConfig` field is folded into `receipt["config"]` via `asdict(cfg)`
+            -- already true for every region trained through `pretrain_region`) and
+            again at `receipt["untrained_baseline_seed"]` (a dedicated field naming the
+            seed the untrained baseline's weights were constructed with) -- this
+            parameter is what makes either value something other than always 0.
 
     Returns:
         The receipt, or None when the region has no usable sources or `dry` is set.
@@ -825,7 +838,7 @@ def run_region(
     # first ten lines of output rather than in the wall clock an hour later.
     print(
         f"    steps={steps} batch={batch} lr={lr_for_batch(batch):.2e} "
-        f"pair_draws={steps * batch:,} max_len={resolved_max_len}"
+        f"pair_draws={steps * batch:,} max_len={resolved_max_len} seed={seed}"
         + (f" (default {default_max_len})" if resolved_max_len != default_max_len else ""),
         flush=True,
     )
@@ -855,6 +868,7 @@ def run_region(
             "batch_size": batch,
             "lr": lr_for_batch(batch),
             "max_len": resolved_max_len,
+            "seed": seed,
             "holdout_pairs": 512,
             "graded_shards": graded_shards,
             "graded_columns": list(graded_cols) if graded_cols is not None else None,
@@ -898,6 +912,7 @@ def run_region(
         # would silently defeat a longer-context run: tokenisation would still cap at the
         # old length, so the encoder's extra positional capacity would never be exercised.
         max_len=resolved_max_len,
+        seed=seed,
         holdout_pairs=512,
         eval_every=max(1, steps // 6),
         warmup_steps=max(50, steps // 15),
@@ -974,6 +989,7 @@ def run_memory_region(
     dry: bool,
     max_len: int | None = None,
     init_embedding_from: str | None = None,
+    seed: int = 0,
 ) -> dict | None:
     """Train `memory` through its OWN entry point, `regions/memory.py`'s
     `run_memory_pretrain` -- not the generic `run_region` -> `pretrain_region` path every
@@ -1000,11 +1016,17 @@ def run_memory_region(
     not overridden, exactly as `run_region` does), `--init-embedding-from` (forwarded as
     `retrieve_checkpoint` -- DEC-24's `SHARED_EMBEDDING_TABLE_SOURCE` names `memory` as
     the region DESIGNED to inherit `retrieve`'s token embedding table), and the state root
-    (`out_dir=state/"receipts"`, matching `run_region`'s own `out_dir`). `seed` is left at
-    `run_memory_pretrain`'s own default (0) -- the same default `PretrainConfig.seed`
-    already has, which `run_region` also never overrides, so the two paths agree without
-    either one naming a `--seed` CLI flag that does not exist yet. `--shard-limit`,
-    `--allow-missing`, `--allow-unfingerprinted-resume` and `--no-bf16` are NOT forwarded:
+    (`out_dir=state/"receipts"`, matching `run_region`'s own `out_dir`), and now `seed`
+    as well (forwarded to `run_memory_pretrain(seed=...)`, which forwards it into
+    `memory_config(seed=...)` and from there into the same `PretrainConfig.seed`
+    `run_region` sets -- both paths agree on the meaning of `--seed`, and the matrix's
+    own `memory` command template already passes `--seed {seed}` straight to
+    `python -m cogsyndelta.regions.memory`, independently of this script; this is what
+    makes `--regions memory --seed N` through THIS script agree with that). Default 0
+    matches `run_memory_pretrain`'s own default (the same default `PretrainConfig.seed`
+    has), so omitting `--seed` trains byte-identically to every run before this
+    parameter existed. `--shard-limit`, `--allow-missing`, `--allow-unfingerprinted-resume`
+    and `--no-bf16` are NOT forwarded:
     `memory_config()` resolves its own full corpus with no shard cap or missing-source
     tolerance (mirroring `compress_config`'s required-source contract), has no resume
     path of its own to opt into unfingerprinted checkpoints for, and `PretrainConfig`'s
@@ -1029,6 +1051,9 @@ def run_memory_region(
             `retrieve_checkpoint`. `None` (the default) trains a random-init embedding
             table, exactly as `run_region`'s own `init_embedding_from=None` does for
             every other region.
+        seed: Forwarded to `run_memory_pretrain(seed=...)` -- see that function's own
+            `seed` argument and `run_region`'s identically-named parameter for what it
+            governs. Default 0 matches `run_memory_pretrain`'s own default.
 
     Returns:
         The receipt `run_memory_pretrain` returns (with its `retrieval`/`gates` blocks
@@ -1043,7 +1068,7 @@ def run_memory_region(
         flush=True,
     )
     print(
-        f"    steps={steps} batch={batch} lr={lr:.2e} max_len={resolved_max_len}"
+        f"    steps={steps} batch={batch} lr={lr:.2e} max_len={resolved_max_len} seed={seed}"
         + (f" (default {default_max_len})" if resolved_max_len != default_max_len else ""),
         flush=True,
     )
@@ -1057,6 +1082,7 @@ def run_memory_region(
             "batch_size": batch,
             "lr": lr,
             "max_len": resolved_max_len,
+            "seed": seed,
             "out_dir": out_dir,
             "shared_embedding_table": {
                 "designed_source": SHARED_EMBEDDING_TABLE_SOURCE.get(name),
@@ -1079,6 +1105,7 @@ def run_memory_region(
         batch_size=batch,
         lr=lr,
         max_len=resolved_max_len,
+        seed=seed,
         out_dir=out_dir,
         retrieve_checkpoint=init_embedding_from,
     )
@@ -1106,7 +1133,7 @@ def run_memory_region(
 
 
 REGION_RUNNERS: dict[
-    str, Callable[[str, Path, int, int, bool, int | None, str | None], dict | None]
+    str, Callable[[str, Path, int, int, bool, int | None, str | None, int], dict | None]
 ] = {"memory": run_memory_region}
 """Per-region override naming a DEDICATED runner instead of the generic `run_region` /
 `pretrain_region` path -- consulted by `main()`'s dispatch loop the same way
@@ -1124,8 +1151,17 @@ docstring for the full account.
 """
 
 
-def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> dict | None:
-    """Train the visual region. Separate path because its metric is a probe, not recall."""
+def run_vl_region(
+    name: str, state: Path, steps: int, batch: int, dry: bool, seed: int = 0
+) -> dict | None:
+    """Train the visual region. Separate path because its metric is a probe, not recall.
+
+    Args:
+        seed: Forwarded to `VLPretrainConfig.seed`. Default 0 matches that field's own
+            default, so omitting `--seed` is unchanged from before this parameter
+            existed. See `run_region`'s identically-named parameter for what a region's
+            seed governs.
+    """
     spec = VL_REGIONS[name]
     print(f"\n=== {name} — {spec['note']}", flush=True)
 
@@ -1147,7 +1183,7 @@ def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> 
         if not got:
             print(f"    source MISSING for {label} — skipping {name}", flush=True)
             return None
-    print(f"    steps={steps} batch={batch}", flush=True)
+    print(f"    steps={steps} batch={batch} seed={seed}", flush=True)
     if dry:
         return None
 
@@ -1168,6 +1204,7 @@ def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> 
         transfer_label_column=spec["transfer_columns"][1],
         steps=steps,
         batch_size=batch,
+        seed=seed,
         warmup_steps=max(50, steps // 15),
         eval_every=max(1, steps // 8),
         checkpoint_every=min(CHECKPOINT_EVERY, max(1, steps // 3)),
@@ -1212,7 +1249,7 @@ def run_vl_region(name: str, state: Path, steps: int, batch: int, dry: bool) -> 
 
 
 def run_classify_region(
-    name: str, state: Path, steps: int, batch: int, dry: bool, bf16: bool = True
+    name: str, state: Path, steps: int, batch: int, dry: bool, bf16: bool = True, seed: int = 0
 ) -> dict | None:
     """Train one classify specialist and return its receipt.
 
@@ -1221,6 +1258,12 @@ def run_classify_region(
     cross-entropy or per-label BCE, per the spec's `multi_label`) and its own metrics
     (top1/top5/macro-F1, or macro/micro average precision). See
     `regions/classify_pretrain.py`'s module docstring for the full reasoning.
+
+    Args:
+        seed: Forwarded to `ClassifyPretrainConfig.seed`. Default 0 matches that field's
+            own default, so omitting `--seed` is unchanged from before this parameter
+            existed. See `run_region`'s identically-named parameter for what a region's
+            seed governs.
     """
     spec = CLASSIFY_REGIONS[name]
     print(f"\n=== {name} — {spec['note']}", flush=True)
@@ -1242,7 +1285,7 @@ def run_classify_region(
         return None
     print(
         f"    steps={steps} batch={batch} lr={lr_for_batch(batch):.2e} "
-        f"max_len={spec['max_len']} holdout_rows={spec['holdout_rows']}",
+        f"max_len={spec['max_len']} holdout_rows={spec['holdout_rows']} seed={seed}",
         flush=True,
     )
     if dry:
@@ -1265,6 +1308,7 @@ def run_classify_region(
         steps=steps,
         batch_size=batch,
         max_len=spec["max_len"],
+        seed=seed,
         holdout_rows=spec["holdout_rows"],
         eval_every=max(1, steps // 6),
         warmup_steps=max(50, steps // 15),
@@ -1360,6 +1404,28 @@ def main() -> int:
             "the arm that tests it. See program/REMAINING.md."
         ),
     )
+    ap.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help=(
+            "RNG seed for every selected region -- forwarded to PretrainConfig.seed / "
+            "VLPretrainConfig.seed / ClassifyPretrainConfig.seed / "
+            "run_memory_pretrain(seed=...), whichever runner a region dispatches "
+            "through (see run_region / run_vl_region / run_classify_region / "
+            "run_memory_region). Governs the model's initial weights "
+            "(torch.manual_seed), a source cap's reservoir sample, and the "
+            "pre-training pair/row shuffle -- see regions/pretrain.py's pretrain_region "
+            "for the exact call sites. Default 0 matches every one of those configs' "
+            "own default, so omitting this flag trains byte-identically to every run "
+            "before it existed. For the text regions (code/compress/retrieve/reason/"
+            "memory), recorded in the written receipt at receipt['config']['seed'] and "
+            "receipt['untrained_baseline_seed'] (both already written by "
+            "pretrain_region for every region trained through it). Exists so the "
+            "matrix harness (program/matrix/csd-matrix.yaml's `seed` axis) can drive "
+            "this without reaching into PretrainConfig directly."
+        ),
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument(
         "--allow-unfingerprinted-resume",
@@ -1414,6 +1480,7 @@ def main() -> int:
         "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "steps": args.steps,
         "batch": args.batch,
+        "seed": args.seed,
         "regions": {},
     }
 
@@ -1425,10 +1492,18 @@ def main() -> int:
             continue
         try:
             if name in VL_REGIONS:
-                receipt = run_vl_region(name, state, args.steps, args.batch, args.dry_run)
+                receipt = run_vl_region(
+                    name, state, args.steps, args.batch, args.dry_run, seed=args.seed
+                )
             elif name in CLASSIFY_REGIONS:
                 receipt = run_classify_region(
-                    name, state, args.steps, args.batch, args.dry_run, bf16=not args.no_bf16
+                    name,
+                    state,
+                    args.steps,
+                    args.batch,
+                    args.dry_run,
+                    bf16=not args.no_bf16,
+                    seed=args.seed,
                 )
             elif name in REGION_RUNNERS:
                 receipt = REGION_RUNNERS[name](
@@ -1439,6 +1514,7 @@ def main() -> int:
                     args.dry_run,
                     args.max_len,
                     args.init_embedding_from,
+                    args.seed,
                 )
             else:
                 receipt = run_region(
@@ -1453,6 +1529,7 @@ def main() -> int:
                     allow_unfingerprinted_resume=args.allow_unfingerprinted_resume,
                     allow_missing=args.allow_missing,
                     init_embedding_from=args.init_embedding_from,
+                    seed=args.seed,
                 )
         except Exception as exc:
             print(f"  {name}: FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
