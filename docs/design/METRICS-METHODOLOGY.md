@@ -333,7 +333,7 @@ Same `recall_at_k()` formula and closed-pool semantics as §2.1
 
 ### 3.2 `rank.mrr`
 
-Same `mean_reciprocal_rank()` as §2.2 (`src/cogsyndelta/eval/benchmark.py:412`).
+Same `mean_reciprocal_rank()` as §2.2 (`src/cogsyndelta/eval/benchmark.py:413`).
 
 ### 3.3 `rank.ndcg@10`
 
