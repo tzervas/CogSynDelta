@@ -15,6 +15,7 @@ is_protected=0
 # list of branch-name patterns to iterate over, not a single value.
 # shellcheck disable=SC2086
 for pat in $protected; do
+  # $pat is meant to glob-match (main, "release-*", ...), not compare literally.
   # shellcheck disable=SC2254
   case "$branch" in
     $pat) is_protected=1; break ;;
