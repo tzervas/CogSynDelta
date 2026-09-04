@@ -161,9 +161,11 @@ jobs:
   # Optional: Upload to private registry (GitHub Packages)
   publish-to-github-packages:
     name: Publish to GitHub Packages
+    # ghcr.io only exists on github.com; skip immediately so a Forgejo
+    # workflow_dispatch doesn't burn a runner slot on a doomed publish.
     runs-on: [self-hosted, linux, x64, podman]
     needs: release
-    if: ${{ github.event.inputs.dry_run != 'true' }}
+    if: ${{ github.event.inputs.dry_run != 'true' && github.server_url == 'https://github.com' }}
     permissions:
       contents: read
       packages: write
