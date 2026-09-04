@@ -86,6 +86,14 @@ def capture_code_revision(repo_root: Path | None = None) -> dict[str, Any]:
     verified-clean), so a receipt written outside a git checkout still carries a
     `code_revision` block, just an honestly uninformative one, rather than this function
     raising and the caller having to decide whether that is fatal.
+
+    `describe` (`git describe --tags --always --dirty`) is captured SEPARATELY from the
+    three commands above and can degrade on its own: a repository with no tags reachable
+    from HEAD makes `git describe` exit non-zero even though `rev-parse` and `status`
+    both succeeded, and treating that as a total failure would replace a perfectly good
+    sha with "unknown". It is recorded because a sha alone does not tell a reader WHERE
+    in the history a receipt sits -- "v0.2.0-14-gf48fd8a-dirty" does, at a glance, which
+    is the whole job of a provenance block someone reads months later.
     """
     root = repo_root or Path(__file__).resolve().parent
     clean_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
@@ -120,16 +128,28 @@ def capture_code_revision(repo_root: Path | None = None) -> dict[str, Any]:
             timeout=10,
             check=False,
         )
+        describe = subprocess.run(
+            ["git", "describe", "--tags", "--always", "--dirty"],  # noqa: S607
+            cwd=root,
+            env=clean_env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
     except (OSError, subprocess.SubprocessError):
-        return {"git_sha": "unknown", "dirty": True, "branch": "unknown"}
+        return {"git_sha": "unknown", "dirty": True, "branch": "unknown", "describe": "unknown"}
 
     if sha.returncode != 0 or branch.returncode != 0 or status.returncode != 0:
-        return {"git_sha": "unknown", "dirty": True, "branch": "unknown"}
+        return {"git_sha": "unknown", "dirty": True, "branch": "unknown", "describe": "unknown"}
 
     return {
         "git_sha": sha.stdout.strip(),
         "dirty": bool(status.stdout.strip()),
         "branch": branch.stdout.strip(),
+        # Degrades alone: no reachable tag means a non-zero exit here while every other
+        # command succeeded. See this function's docstring.
+        "describe": describe.stdout.strip() if describe.returncode == 0 else "unknown",
     }
 
 

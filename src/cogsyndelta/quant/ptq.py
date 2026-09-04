@@ -103,6 +103,25 @@ def dequantize_tensor(q: QuantizedTensor) -> torch.Tensor:
     return torch.from_numpy(codes * scale + zero).reshape(q.shape)
 
 
+def fp32_reference_bytes(model: nn.Module) -> int:
+    """The fp32 reference size a compression ratio is measured against: every
+    parameter tensor at 4 bytes/element, weights only.
+
+    This is the ONE definition of "how big is the fp32 model" this module uses --
+    :func:`build_plan` stamps it as `QuantPlan.fp32_bytes`, and `compression_ratio`
+    (``fp32_bytes / stored_bytes``) is only meaningful because both sides count the
+    same thing: parameter tensors, never optimizer state, RNG state, or any other
+    checkpoint bookkeeping that ``torch.save`` happens to have written alongside the
+    weights. A caller measuring "the fp32 size" any other way -- e.g. a checkpoint
+    file's ``stat().st_size``, which for a resumable training checkpoint also carries
+    the Adam optimizer's momentum and variance buffers (routinely ~2x the weights
+    themselves) -- produces a number that is not comparable to this one, and so not
+    comparable to a quantized artifact's `packed_stored_bytes` either. Any reader that
+    wants a ratio comparable to `compression_ratio` must call this, not reinvent it.
+    """
+    return sum(p.numel() * 4 for p in model.parameters())
+
+
 def quantizable(model: nn.Module, min_elements: int = 4096) -> list[str]:
     """Names of parameters worth quantizing.
 
@@ -248,7 +267,7 @@ def build_plan(
 
     plan = QuantPlan(bits=dict.fromkeys(names, aggressive_bits), baseline=baseline)
     plan.fp32 = [n for n, _ in model.named_parameters() if n not in plan.bits]
-    plan.fp32_bytes = sum(p.numel() * 4 for p in model.parameters())
+    plan.fp32_bytes = fp32_reference_bytes(model)
 
     for _ in range(len(names) * len(LADDER)):
         probe, size = apply_plan(model, plan)

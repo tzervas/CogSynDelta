@@ -28,9 +28,12 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+from cogsyndelta.regions._receipt import capture_code_revision
 
 SCHEMA = "model-pipeline-receipt/v1"
 
@@ -63,7 +66,19 @@ class Receipt:
     """What `metrics` should be read against -- an untrained model, an fp32 reference."""
     gates: dict[str, bool] = field(default_factory=dict)
     """The producer's verdict. A run passes only if every gate is true."""
-    artifacts: dict[str, str] = field(default_factory=dict)
+    artifacts: dict[str, Any] = field(default_factory=dict)
+    """What this stage produced, and the hashes that bind the receipt to those bytes.
+
+    `Any` rather than `str` because two entries are deliberately NESTED records, not
+    scalars: `source_training_receipt` and `source_quant_receipt` are
+    `{"path": ..., "sha256": ...}` pairs, so an eval receipt names the predecessor
+    receipt it read AND the content hash of that receipt, not merely a mutable path.
+    The annotation said `dict[str, str]` while both eval paths had been writing those
+    records all along -- a mismatch nothing caught, because `scripts/` was outside the
+    typechecked surface (L1). Widening the annotation is the honest fix: flattening the
+    records would change a receipt shape that is already on disk, and dropping them
+    would lose the binding.
+    """
     provenance: dict[str, Any] = field(default_factory=dict)
     detail: dict[str, Any] = field(default_factory=dict)
     """Architecture-specific payload. Readers pass it through, they do not parse it."""
@@ -71,6 +86,35 @@ class Receipt:
     seconds: float = 0.0
     device: str = ""
     schema: str = SCHEMA
+    kind: str = ""
+    """A shape predicate finer than `stage`: e.g. `stage="eval"` covers both an fp32 pass
+    (`kind="eval"`) and a quantized-artifact pass (`kind="eval-quantized"`) -- same stage,
+    different provenance, different filename, and a reader (or a matrix harness selecting
+    a receipt by kind, never by "latest under this glob") must be able to tell them apart
+    without inspecting `provenance` or `artifacts`. Empty string means "not set" (a
+    receipt written before this field existed, or a stage with no finer distinction to
+    make); `write()` falls back to `stage` for the filename in that case, so this is
+    additive and every existing caller is unaffected.
+
+    The matrix harness does NOT classify on this string. `model_matrix.receipts.kind_of`
+    reads `provenance.eval_target == "quantized"` and reports `eval-quant`, so this
+    project's `"eval-quantized"` and the harness's `receipt_kind: eval-quant` describe the
+    same receipt and neither has to be renamed to match the other (H3/L2). What DOES have
+    to agree is the FILENAME: `program/matrix/csd-matrix.yaml`'s `test-quant.receipt` glob
+    matches `cogsyndelta-{region}-eval-quantized-*.json`, which is what `write()` below
+    produces from this field -- so renaming `kind` silently breaks receipt selection in
+    the matrix even though classification would still work.
+    """
+    code_revision: dict[str, Any] = field(default_factory=dict)
+    """What code produced these numbers: `git_sha`, `dirty`, `branch`, `describe`.
+
+    Stamped by `write()` from `cogsyndelta.regions._receipt.capture_code_revision` -- the
+    SAME helper every training and quantization receipt already routes through -- so one
+    reader can compare an eval receipt's revision against a training receipt's without
+    knowing which producer wrote which. Empty only on a receipt read back from disk that
+    predates this field (`adapt` passes through whatever it finds, including nothing); a
+    receipt this class WRITES always has it, because `write()` refuses otherwise.
+    """
 
     @property
     def passed(self) -> bool:
@@ -82,12 +126,54 @@ class Receipt:
         """
         return bool(self.gates) and all(self.gates.values())
 
-    def write(self, out_dir: Path) -> Path:
-        """Write to ``{out_dir}/{project}-{component}-{stage}-{timestamp}.json``."""
+    def write(
+        self,
+        out_dir: Path,
+        *,
+        capture: Callable[[Path | None], dict[str, Any] | None] = capture_code_revision,
+    ) -> Path:
+        """Write to ``{out_dir}/{project}-{component}-{kind or stage}-{timestamp}.json``.
+
+        Uses `kind` when set (so `eval` and `eval-quantized` land under distinguishable
+        filenames and can never glob-collide) and falls back to `stage` otherwise --
+        every receipt written before `kind` existed named the file this same way.
+
+        STAMPS `code_revision` FIRST, AND REFUSES TO WRITE WITHOUT IT. Training and
+        quantization receipts have gone through `regions/_receipt.write_receipt` -- which
+        raises rather than let a receipt reach disk with no provenance block -- since that
+        helper existed; eval receipts, written through this method, carried none at all.
+        The consequence was not cosmetic: the matrix harness's G5b gate is
+        "`code_revision.git_sha` equals the run's code sha and `dirty` is false", and it
+        could not fire on the one receipt kind (`eval-quantized`) whose entire purpose is
+        to prove a published artifact was scored by known code. A metric with no
+        attributable code behind it is a number, not evidence.
+
+        The refusal is fail-closed for the same reason `write_receipt`'s is: the real
+        `capture_code_revision` never returns falsy (it degrades to an honest "unknown"
+        block instead), so a falsy return means the capture MECHANISM is broken, and a
+        receipt silently missing its provenance is worse than one that fails loudly --
+        nothing downstream checks for the gap, so the first sign of it would be an
+        operator staring at a green run they can no longer place against a commit.
+
+        Args:
+            out_dir: directory to write into; created if it does not exist. The filename
+                inside it is derived, never passed -- see the format above.
+            capture: injection seam for the test that proves the refusal fires. Production
+                callers never pass it.
+        """
+        revision = capture(None)
+        if not revision:
+            raise RuntimeError(
+                "Receipt.write: code_revision capture returned nothing -- refusing to "
+                f"write a {self.kind or self.stage!r} receipt with no code_revision block"
+            )
+        self.code_revision = dict(revision)
+
         out_dir.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
         p = self.producer
-        path = out_dir / f"{p.project}-{p.component}-{self.stage}-{stamp}.json"
+        segment = self.kind or self.stage
+        path = out_dir / f"{p.project}-{p.component}-{segment}-{stamp}.json"
         path.write_text(json.dumps(asdict(self), indent=2, default=str) + "\n")
         return path
 
@@ -124,6 +210,11 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             started_utc=raw.get("started_utc", ""),
             seconds=float(raw.get("seconds", 0.0)),
             device=raw.get("device", ""),
+            # A producer that wrote `kind` directly (csd-benchmark.py's fp32/quantized
+            # eval receipts) is trusted; one that did not falls back to `stage`, matching
+            # `write()`'s own filename fallback.
+            kind=raw.get("kind") or raw.get("stage", "unknown"),
+            code_revision=raw.get("code_revision", {}),
         )
 
     component = raw.get("region")
@@ -135,6 +226,7 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
         return Receipt(
             producer=Producer("cogsyndelta", component, "dense-transformer"),
             stage="quantize",
+            kind=raw.get("kind") or "quant",
             metrics={
                 "metric": _num(raw.get("quantized_metric")) or 0.0,
                 "compression_ratio": _num(raw.get("compression_ratio")) or 0.0,
@@ -151,6 +243,7 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             },
             started_utc=raw.get("recorded_utc", ""),
             device=raw.get("device", ""),
+            code_revision=raw.get("code_revision", {}),
         )
 
     # Pretrain receipts, text and visual. Both carry held_out + untrained_baseline; the
@@ -173,6 +266,7 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
                 "cogsyndelta", component, "i-jepa" if visual else "dense-transformer"
             ),
             stage="pretrain",
+            kind=raw.get("kind") or "train",
             metrics={k: v for k, v in ((k, _num(v)) for k, v in held.items()) if v is not None},
             baseline={k: v for k, v in ((k, _num(v)) for k, v in base.items()) if v is not None},
             gates=dict(raw.get("beats_untrained") or {}),
@@ -192,6 +286,7 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             started_utc=raw.get("started_utc") or raw.get("recorded", ""),
             seconds=float(raw.get("seconds") or raw.get("elapsed_s") or 0.0),
             device=raw.get("device", ""),
+            code_revision=raw.get("code_revision", {}),
         )
     return None
 

@@ -1609,7 +1609,7 @@ def test_pretrain_region_receipt_carries_code_revision_and_trainer_defaults(
 
     receipt = pretrain_region(cfg)
 
-    assert set(receipt["code_revision"]) == {"git_sha", "dirty", "branch"}
+    assert set(receipt["code_revision"]) == {"git_sha", "dirty", "branch", "describe"}
     assert receipt["code_revision"]["git_sha"] != "unknown"
     assert isinstance(receipt["code_revision"]["dirty"], bool)
     assert receipt["config"]["trainer_defaults"] == {
