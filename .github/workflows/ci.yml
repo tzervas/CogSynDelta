@@ -1,6 +1,5 @@
 name: CI/CD Pipeline
 
-# Manual only — no push/pull_request CI triggers
 "on":
   push:
     branches:
@@ -89,11 +88,16 @@ jobs:
       - name: yamllint
         run: uvx pre-commit run yamllint --all-files
 
-  pre-commit:
-    name: Pre-commit Checks
-    # Not a required merge check. The mypy hook pulls torch and starves the
-    # homelab queue; ruff+mypy jobs already cover the same surface on PRs.
-    if: github.event_name != 'pull_request'
+  lint-gate:
+    name: Lint gate (scripts/lint.sh)
+    # Runs on pull_request too, not just push: this is the actual gate the repo's
+    # own docs (scripts/lint.sh's header, docs/DEVELOPMENT_STANDARDS.md) already
+    # claim CI enforces on every PR -- it wasn't, before this job. Cost note: this
+    # goes through `uv run` (scripts/lint.sh), so it syncs the full project env
+    # (cu128 torch included) before pre-commit even starts, unlike the lighter
+    # `uvx pre-commit run <hook>` calls in shell-yaml-lint above, which skip that
+    # sync entirely. If that turns out to starve the homelab runner queue on PRs,
+    # the fix is a warm/shared uv cache on the runner, not skipping this job.
     runs-on: [self-hosted, linux, x64, podman]
     steps:
       - uses: actions/checkout@v7
@@ -108,8 +112,8 @@ jobs:
             echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
           uv --version
 
-      - name: Run pre-commit on all files
-        run: uvx pre-commit run --all-files
+      - name: Run scripts/lint.sh
+        run: bash scripts/lint.sh
 
   quality:
     name: Quality Score Check
