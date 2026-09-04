@@ -10,7 +10,9 @@ c) gets special attention because it is the one the module docstring names by na
 
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 
 import pytest
 import torch
@@ -20,6 +22,8 @@ pytest.importorskip("pyarrow", reason="train group not installed")
 from cogsyndelta.eval import beir_fiqa
 
 pytestmark = pytest.mark.cpu
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 # ---------------------------------------------------------------------------------------
@@ -412,6 +416,23 @@ _W1_CODE_TRAINED_POOLED_PR_RANK = 42.633552623237634
 _W1_CODE_TRAINED_GLOBAL_PR_RANK = 28.091115489593022
 _W1_CODE_TRAINED_POOLED_ENTROPY_RANK = 114.9809799194336
 _W1_CODE_TRAINED_GLOBAL_ENTROPY_RANK = 138.874267578125
+
+_W1_FIXTURE = _REPO_ROOT / "docs/design/evidence/w1-token-rank-2026-09-02/results.json"
+
+
+def test_w1_pin_matches_the_frozen_fixture_it_was_transcribed_from() -> None:
+    """The four `_W1_CODE_TRAINED_*` constants above are transcribed, not read, from
+    `_W1_FIXTURE` -- transcribed so the sign-disagreement regression below has no
+    filesystem dependency of its own. That transcription could silently drift from the
+    frozen file (a typo, someone regenerating the fixture without updating the pin);
+    this test is the one place that would catch it."""
+    if not _W1_FIXTURE.is_file():
+        pytest.skip(f"frozen W1 fixture not present in this checkout: {_W1_FIXTURE}")
+    trained = json.loads(_W1_FIXTURE.read_text())["regions"]["code"]["regions"]["trained"]
+    assert trained["pooled_pr_rank"] == _W1_CODE_TRAINED_POOLED_PR_RANK
+    assert trained["token_global_pr_rank"] == _W1_CODE_TRAINED_GLOBAL_PR_RANK
+    assert trained["pooled_entropy_rank"] == _W1_CODE_TRAINED_POOLED_ENTROPY_RANK
+    assert trained["token_global_entropy_rank"] == _W1_CODE_TRAINED_GLOBAL_ENTROPY_RANK
 
 
 def test_w1_sign_disagreement_regression_pr_and_entropy_ratios_stay_separate() -> None:
