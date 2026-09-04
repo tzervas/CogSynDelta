@@ -371,12 +371,16 @@ def test_card_metric_keys_matches_known_sections(tmp_path: Path) -> None:
     _plan, train_path, eval_path, quant_path = _build_full_plan(tmp_path)
     train_receipt = json.loads(train_path.read_text())
     eval_receipt = json.loads(eval_path.read_text())
-    quant_receipt = json.loads(quant_path.read_text())
+    # `_card_metric_keys` assumes its `quant_receipt` argument has already been
+    # normalised (see its own docstring) -- `build_plan` (the real caller) always
+    # does this before calling it; mirror that here rather than handing it the raw
+    # v1-shaped fixture `make_quant_receipt` writes to disk.
+    quant_receipt = mod.normalize_quant_receipt_v1(json.loads(quant_path.read_text()))
     keys = set(mod._card_metric_keys(train_receipt, eval_receipt, quant_receipt))
     assert {"recall@1", "recall@10"} <= keys  # held_out / untrained_baseline / beats_untrained
     assert {"beats_untrained", "not_anisotropic", "uses_its_dimensions"} <= keys  # eval gates
     assert {"anisotropy", "effective_rank_ratio"} <= keys  # eval representation
-    assert {"compression_ratio", "stored_bytes"} <= keys  # quant
+    assert {"quant.compression_ratio", "stored_bytes"} <= keys  # quant
 
 
 def test_methodology_provenance_fields_present(tmp_path: Path) -> None:
