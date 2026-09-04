@@ -8,14 +8,19 @@ drift guard, not a proof the prose still matches, so re-read the anchor before t
 copy of this file.
 
 **Schema stamp: `metrics_schema: "csd-metrics/v2"`** (§14). Sections 1-11 below describe the
-receipt field names this project's code writes **today** -- unchanged by this patch, and still
-ground truth for what is actually on disk. Sections 12-19 are the `csd-metrics/v2` layer: the
-canonical name each of those v1 fields maps to, a refuse-function a harness must apply before
-comparing two numbers, a retire list, and the standing statements a card or harness must not
-contradict. **v2 is a naming and comparison-discipline layer over the same measurements, not a
-code rewrite** -- a v1 field name in a receipt is not wrong, and nothing in §§12-19 licenses
-inventing a new receipt field this project's code does not yet write. Source: `g7-latent-eval-
-metrics.md` (2026-09-04), read from `/akula-data/session-backup-staging/tools/grok-jobs/`.
+receipt field names this project's code wrote **before** the `csd-metrics/v2` migration
+landed; most of it is still ground truth for what is on disk **today** (§2's training-receipt
+fields are entirely unchanged), but a handful of §3/§9 fields the migration actually renamed,
+retired, or demoted are marked inline where they diverge -- check §15's deprecation map before
+trusting an unmarked §1-§11 field name against a receipt written after this migration.
+Sections 12-19 are the `csd-metrics/v2` layer: the canonical name each v1 field maps to (now
+IMPLEMENTED, not only proposed -- `compare()`, §14, is the refuse-function in production,
+`src/cogsyndelta/eval/metrics.py:763-843`), a retire list, and the standing statements a card
+or harness must not contradict. **v2 is a naming and comparison-discipline layer over the same
+measurements, not a formula rewrite** -- a v1 field name in a receipt written before the
+migration is not wrong, and nothing in §§12-19 licenses inventing a receipt field this
+project's code does not write. Source: `g7-latent-eval-metrics.md` (2026-09-04), read from
+`/akula-data/session-backup-staging/tools/grok-jobs/`.
 
 **Why this document exists.** A published model card prints numbers like `recall@1: 0.99`,
 `anisotropy: 0.02`, `compression_ratio: 9.83x`. None of those names are standardized across the
@@ -181,9 +186,12 @@ fingerprint matching what training recorded (§6) -- never re-globbed or re-samp
   `src/cogsyndelta/regions/pretrain.py:561` and `evaluate_graded()` at
   `src/cogsyndelta/regions/pretrain.py:612`. The identical formula also exists as a
   standalone, tested function, `representation_std()`
-  (`src/cogsyndelta/eval/metrics.py:655-672`), but no production call site invokes it (see
-  §11.5) -- the receipt field and the shared function compute the same thing without one
-  calling the other.
+  (`src/cogsyndelta/eval/metrics.py:671-687`) -- since csd-metrics/v2 this IS also a
+  production call site: `benchmark_embeddings()` calls `representation_std(a)` for the eval
+  battery's `repr.emb_std_anchor` (§12.5, §11.5). `held_out.emb_std` /
+  `graded_held_out.emb_std` here still duplicate the formula inline rather than calling the
+  shared function, so those two train-receipt fields and the eval-receipt field are the same
+  formula from separate call sites, not one calling the other.
 - **(d)** `held_out.emb_std` / `untrained_baseline.emb_std`: the **anchor side only** (`a` in
   `evaluate()`, `src/cogsyndelta/regions/pretrain.py:534,561`) of the held-out split.
   `graded_held_out.emb_std`: the **left side only** (`a` in `evaluate_graded()`,
@@ -350,6 +358,12 @@ Same `mean_reciprocal_rank()` as §2.2 (`src/cogsyndelta/eval/benchmark.py:364`)
 
 ### 3.4 `rank.map`
 
+> **RETIRED as a written receipt field (csd-metrics/v2, §13).** `benchmark_embeddings()`
+> deliberately no longer computes or writes `rank.map` -- `average_precision()` stays
+> importable only for the sameness-guard test that pins `map == mrr` on this pool
+> (`src/cogsyndelta/eval/benchmark.py:403-407`). The formula below still describes what the
+> function computes when called directly; it is not on a current receipt.
+
 - **(a)** `rank.map`.
 - **(b)** Mean average precision, single relevant item per query -- with one relevant document,
   AP is `1/rank`, so **MAP equals MRR** in this battery.
@@ -371,6 +385,12 @@ Same `mean_reciprocal_rank()` as §2.2 (`src/cogsyndelta/eval/benchmark.py:364`)
   battery they are the same computation by construction.
 
 ### 3.5 `rank.precision@10`
+
+> **RETIRED as a written receipt field (csd-metrics/v2, §13).** `benchmark_embeddings()`
+> deliberately no longer computes or writes `rank.precision@10` -- `precision_at_k()` stays
+> importable only for the sameness-guard test that pins `p@10 == r@10/10` on this pool
+> (`src/cogsyndelta/eval/benchmark.py:403-407`). The formula below still describes what the
+> function computes when called directly; it is not on a current receipt.
 
 - **(a)** `rank.precision@10`.
 - **(b)** Fraction of the top-`k` that is relevant; with exactly one positive this **caps at
@@ -525,6 +545,12 @@ context for reading every `rank.*` figure beside it.
 
 ### 3.12 `repr.effective_rank`, `repr.dimensions`, `repr.effective_rank_ratio`
 
+> **RENAMED (csd-metrics/v2, §15).** `repr.effective_rank` -> `repr.effective_rank_entropy`
+> and `repr.effective_rank_ratio` -> `repr.effective_rank_entropy_ratio` -- same formulas
+> (unchanged by this section), current field names and full entries at §12.1. `repr.dimensions`
+> is unrenamed. The names below (`effective_rank`, `effective_rank_ratio`) are the LEGACY
+> names for a receipt written before this migration; §15 keeps both mapped.
+
 - **(a)** All three.
 - **(b)** `repr.effective_rank` is the **Shannon-entropy** effective rank (see §9 for the
   formula and its participation-ratio counterpart -- **do not conflate the two**).
@@ -549,6 +575,15 @@ context for reading every `rank.*` figure beside it.
   both are "entropy effective rank."
 
 ### 3.13 `gates.beats_untrained`, `gates.not_anisotropic`, `gates.uses_its_dimensions`
+
+> **RENAMED / DEMOTED (csd-metrics/v2, §12.9, §13).** `gates.beats_untrained` (eval,
+> unmargined) -> `gate.beats_untrained_eval` -- same predicate, current name and full entry at
+> §12.9. `gates.not_anisotropic` is DEMOTED entirely: a current eval / eval-quantized receipt
+> no longer writes this gate at all (`repr.anisotropy` stays a recorded metric, just not a
+> gate -- §13). `gates.uses_its_dimensions` is unrenamed but now reads the renamed
+> `repr.effective_rank_entropy_ratio` (§3.12) at the same `0.05` floor. A current receipt's
+> `gates` therefore has exactly two keys, `beats_untrained_eval` and `uses_its_dimensions`, not
+> the three below.
 
 - **(a)** All three, under `gates` in an eval / eval-quantized receipt.
 - **(b)**
@@ -1182,19 +1217,22 @@ legitimate "before vs. after" comparison.
 4. **The untrained baseline is not "zero."** See §1 in full before reading a small
    `recall@1`/`spearman` as a failure -- check it against `chance` and
    `untrained_baseline`/`untrained_graded_baseline` first.
-5. **`token_weighted_perplexity()` and `representation_std()` are implemented, tested, and
-   exported, but no production training or eval path calls either one today.**
-   `token_weighted_perplexity()` (`src/cogsyndelta/eval/metrics.py:75-97`) and
-   `representation_std()` (`src/cogsyndelta/eval/metrics.py:655-672`) are exercised only by
-   `tests/test_eval_metrics.py` (confirmed by a repo-wide search for their call sites, 2026-09).
-   No region currently reports a `perplexity` field despite the module's own opening docstring
-   framing the project's efficiency claim around "without decreasing quality and/or increasing
-   perplexity" (`src/cogsyndelta/eval/metrics.py:1-8`) -- if a future card or receipt does show
-   a `perplexity` field, its formula is `token_weighted_perplexity()`'s
-   (§2's `emb_std` sibling), and it should cite this document's entry for it rather than an
-   assumed standard definition. `representation_std()`'s formula is used in practice (§2.3),
-   just not through this function -- `held_out.emb_std` and `graded_held_out.emb_std` are an
-   inline duplicate of it, not a call to it.
+5. **`token_weighted_perplexity()` is implemented, tested, and exported, but no production
+   training or eval path calls it.** `token_weighted_perplexity()`
+   (`src/cogsyndelta/eval/metrics.py:75-97`) is exercised only by `tests/test_eval_metrics.py`
+   (confirmed by a repo-wide search for its call sites, 2026-09). No region currently reports a
+   `perplexity` field despite the module's own opening docstring framing the project's
+   efficiency claim around "without decreasing quality and/or increasing perplexity"
+   (`src/cogsyndelta/eval/metrics.py:1-8`) -- if a future card or receipt does show a
+   `perplexity` field, its formula is `token_weighted_perplexity()`'s (§2's `emb_std`
+   sibling), and it should cite this document's entry for it rather than an assumed standard
+   definition. `representation_std()` (`src/cogsyndelta/eval/metrics.py:671-687`) is
+   DIFFERENT: since csd-metrics/v2 it IS a production call site --
+   `benchmark_embeddings()` calls `representation_std(a)` for the eval battery's
+   `repr.emb_std_anchor` (§12.5, §2.3(c)) -- `held_out.emb_std` and `graded_held_out.emb_std`
+   remain an inline duplicate of the same formula, not a call to the function, so one region's
+   receipt can carry the formula computed through the function (`repr.emb_std_anchor`) beside
+   two fields computing it inline (`held_out.emb_std`, `graded_held_out.emb_std`).
 6. **`kind: "eval"` and `kind: "eval-quantized"` gates use a different, unmargined
    `beats_untrained` rule than the training receipt's own `beats_untrained`.** See §3.13(f). Do
    not assume the two were decided by the same threshold just because they share a name.
@@ -1206,12 +1244,13 @@ legitimate "before vs. after" comparison.
 
 ## 12. `csd-metrics/v2` canonical field names
 
-One canonical receipt-field name per formula. Where a v2 name differs from what this
-project's code writes today, that is a **rename this document licenses for a future harness
-patch**, not a claim the field exists under the new name yet -- check §15 before assuming a
-name below is on disk.
+One canonical receipt-field name per formula. `csd-benchmark.py`'s `benchmark_embeddings()`
+writes every §12.1/§12.3/§12.4/§12.5/§12.6 name below to a current eval / eval-quantized
+receipt (§15 records the v1 name each superseded, for reading an older receipt); §12.2's
+`token.*` names and §12.7's `beir.*` names are NOT yet written by any production receipt --
+check §15 before assuming a name below is on disk for a GIVEN battery.
 
-### 12.1 `repr.effective_rank_entropy`
+### 12.1 `repr.effective_rank_entropy`, `repr.effective_rank_entropy_ratio`
 
 - **Formula** (Roy & Vetterli, EUSIPCO 2007, Def. 1 + Property 1; logs base *e*, `0 log 0 :=
   0`):
@@ -1238,6 +1277,26 @@ name below is on disk.
   **not** compare against `token.pooled_entropy_rank` / `token.global_entropy_rank` (§12.2) --
   same formula, different pool (both-sides-pooled-and-subsampled here vs. anchor-only-full-
   surface there), not interchangeable numbers (§9, carried forward unchanged under v2).
+- **Sameness special-case:** none.
+
+**`repr.effective_rank_entropy_ratio`** -- `repr.effective_rank_entropy / repr.dimensions`,
+i.e. how much of the available embedding width the encoder actually uses. Renamed from
+`repr.effective_rank_ratio` (§3.12, §15) to name which of this project's three "effective
+rank" definitions the ratio's numerator is (§9: the entropy one, never the participation-ratio
+one §12.2 reports).
+
+- **Formula:** `effective_rank_entropy_ratio = effective_rank_entropy / dimensions`
+  (`src/cogsyndelta/eval/benchmark.py:447`).
+- **Pool / `battery_id`:** same as `repr.effective_rank_entropy` above (`pooled_both`,
+  `eval_holdout` / `eval_quantized_holdout`) -- it is that same number, rescaled.
+- **Unit:** `[0, 1]`.
+- **Why this metric:** the raw rank alone is not comparable across two encoders of different
+  embedding width; the ratio is (§3.12(e)).
+- **Falsifies:** `gate.uses_its_dimensions` (`effective_rank_entropy_ratio > 0.05`,
+  `scripts/csd-benchmark.py:358,522`, §12.9) -- the `0.05` floor is slack, not a tight bound:
+  W1's own production regions sit at `~0.45-0.51` (`csd-benchmark.py:358`), so a value near the
+  floor is a genuine "paying to store more than it uses" signal, not measurement noise (§13).
+- **Comparison rule:** same as `repr.effective_rank_entropy` above.
 - **Sameness special-case:** none.
 
 **Do not invent `repr.effective_rank_pr`.** `participation_ratio()` (the pooled,
@@ -1519,7 +1578,7 @@ receipt above:**
 | `tau = 5e-4` copied onto CSD | Reject | Huginn's exit threshold is tuned for a 65,536-way readout; not portable onto a 2-/10-way toy without re-derivation. |
 | Tokens/s as the reasoning-efficiency headline | Reject for latent loops | Depth/thoughts is the right unit for a recurrent latent core, not sequence length. |
 | Mutual information between layers | Reject | Kornblith Sec. 4: an invertible network makes MI equal to `H(input)` regardless of what the layers do. |
-| A blended "quality score" | Reject | `compare()` names regressions per-field and refuses a blend by design (`metrics.py:675-706`). |
+| A blended "quality score" | Reject | `compare()` names regressions per-field and refuses a blend by design (`metrics.py:763-843`). |
 | Coconut extra sequence slots as CSD's `K` | Reject | KV grows with thoughts (Coconut is horizontal); CSD's latent loop is vertical, no sequence growth. |
 | Control-task accuracy alone, or alignment/uniformity alone | Reject as ranking | Selectivity and joint geometry are the point (§12.4, Hewitt & Liang). |
 | `g6-switch-toy/` as an `acc(K)` host | Reject | The routing-load-balance toy has no `K` -- not a latent-reasoning metric. |
@@ -1561,10 +1620,19 @@ same code_revision.git_sha                # this doc's §10 item 6
 same seed                                 # this doc's §10 item 7
 ```
 
-Implement this as a **function**, not a comment -- the existing `compare()`
-(`src/cogsyndelta/eval/metrics.py:675-706`) diffs only shared keys today and does not check
-schema, fingerprint, `battery_id`, pooling, or sha. Shipping v2 names without this predicate
-re-creates the exact plan-vs-artifact misread §4 already documents once.
+**IMPLEMENTED as a function, not a comment.** `compare()`
+(`src/cogsyndelta/eval/metrics.py:763-843`) IS this refuse-predicate: it walks every
+`MetricIdentity` field in the declared order above and returns a `ComparisonRefusal` (not a
+diff) the moment one differs, before ever touching `values`
+(`src/cogsyndelta/eval/metrics.py:806-830`) -- see `tests/test_eval_metrics.py`'s
+per-identity-key parametrisation and `tests/test_guards_can_fail.py`'s DEFECT 7 mutation
+proofs. The v1 version this replaced diffed only shared keys and checked none of schema,
+fingerprint, `battery_id`, pooling, or sha; shipping v2 field names without this predicate
+would have re-created the exact plan-vs-artifact misread §4 already documents once. Production
+callers of `compare()` are still limited to tests, though: no training, eval, or publish
+script invokes it today (confirmed by a repo-wide search for its call sites outside
+`tests/` and its own docstrings, 2026-09), so the predicate is correct and proven but not yet
+wired into a comparison a human or CI job would actually run.
 
 **Special case, not a generic `compare()`:** `assert_sameness` for `map == mrr`, `p@10 ==
 r@10/10` (§13), `held_out.recall@1` vs. `rank.recall@1` on the same sha (§10 item 3), and
@@ -1812,11 +1880,20 @@ Receipt field -> section. `kind` is the receipt this field is written into
 | BEIR-FiQA `recall@1`/`recall@10`/`recall@100`/`mrr` | (evidence/gate scripts, not a receipt `kind` above) | [§7.2](#72-rank_metrics-recall1-recall10-recall100-mrr-multi-relevant) |
 | W4 gates `a_beats_both_parents` .. `e_retrain_gate` | (evidence/gate scripts) | [§7.4](#74-the-w4-gates-a_beats_both_parents-e_retrain_gate) |
 
-### `csd-metrics/v2` canonical names (§12) -- not yet written by any receipt unless noted in §15
+### `csd-metrics/v2` canonical names (§12)
+
+A current eval / eval-quantized receipt writes `repr.effective_rank_entropy`,
+`.effective_rank_entropy_ratio`, `repr.anisotropy`, `repr.alignment`, `repr.uniformity`, and
+`repr.emb_std_anchor` (§12.1, §12.3, §12.4, §12.5) under these exact names -- NOT "not yet
+written." The `token.*` (§12.2), `beir.*` (§12.7), and `quant.*` (§12.8, written only by the
+publish script's own read-time normalisation, not by `csd-quantize.py` itself) names remain
+unwritten by any production receipt; check §15 before assuming an unmarked name below is on
+disk for a given battery.
 
 | v2 canonical field | maps from (v1, if renamed) | section |
 |---|---|---|
-| `repr.effective_rank_entropy` | `repr.effective_rank` | [§12.1](#121-repreffective_rank_entropy) |
+| `repr.effective_rank_entropy` | `repr.effective_rank` | [§12.1](#121-repreffective_rank_entropy-repreffective_rank_entropy_ratio) |
+| `repr.effective_rank_entropy_ratio` | `repr.effective_rank_ratio` | [§12.1](#121-repreffective_rank_entropy-repreffective_rank_entropy_ratio) |
 | `token.pooled_pr_rank`, `.global_pr_rank`, `.pooled_entropy_rank`, `.global_entropy_rank` | `token_aware.final_block_rank.*` | [§12.2](#122-tokenpooled_pr_rank--tokenglobal_pr_rank--tokenpooled_entropy_rank--tokenglobal_entropy_rank) |
 | `repr.anisotropy` | (same name) | [§12.3](#123-repranisotropy), [§16](#16-the-anisotropy-naming-caveat) |
 | `repr.alignment`, `repr.uniformity` | (same names) | [§12.4](#124-repralignment--repruniformity) |
