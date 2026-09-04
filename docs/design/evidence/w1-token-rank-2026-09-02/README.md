@@ -93,3 +93,16 @@ this directory will overwrite the copy here, so re-run it elsewhere and diff.
   the same weights. It must never be cited as a baseline.
 - `pooled_mean_pairwise_cosine` — falls from 0.84–0.98 untrained to 0.02–0.36 trained, i.e.
   training worked; the verdict is about token-vs-pooled, not about whether the regions learned.
+
+## Note (append-only, 2026-09-04, lane D): `csd-metrics/v2` canonical names
+
+`docs/design/METRICS-METHODOLOGY.md` §12.2/§17 (added 2026-09-04) gives the PR/entropy pair
+above canonical receipt-field names: `*_pr_rank` → `token.pooled_pr_rank` /
+`token.global_pr_rank`; `*_entropy_rank` → `token.pooled_entropy_rank` /
+`token.global_entropy_rank`. The table in this file's "Both rank definitions" section is
+reproduced verbatim as MM §17's evidence for why the two disagree in sign (PR down-weights
+the spectral tail, entropy up-weights it) — nothing above changes as a result, this is a
+naming pointer only. `cross_region_cka` above is MM §12's g7-cross-reference for latent-
+reasoning metric **L5** (linear CKA across regions): established as a **diagnostic**, never a
+capability ranking — the same "must never be cited as a baseline" rule this file already
+states for the untrained `1.0` case.

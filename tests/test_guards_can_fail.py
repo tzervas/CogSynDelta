@@ -56,6 +56,7 @@ import importlib.util
 import sys
 from dataclasses import replace
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -65,6 +66,7 @@ from cogsyndelta.eval import (
     pair_contamination_report,
     screen_pair_contamination,
 )
+from cogsyndelta.eval.metrics import MetricGroup, MetricIdentity, compare
 
 pytestmark = pytest.mark.cpu
 
@@ -1619,3 +1621,186 @@ def test_pretrain_region_receipt_carries_code_revision_and_trainer_defaults(
         "bf16": cfg.bf16,
         "max_len": cfg.max_len,
     }
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 7 -- feat/metrics-v2's own review found two guards this project shipped with NO
+# proof in this file, this file's own charter ("a guard with no failing-case test is a
+# comment with a function signature"): the csd-metrics/v2 refuse-predicate (`compare()`,
+# g7-latent-eval-metrics.md §3.3) and the `beats_untrained` -> `beats_untrained_eval`
+# rename in `scripts/csd-benchmark.py` (g7 §3.2). Real, non-vacuous proofs already
+# existed -- `tests/test_eval_metrics.py::test_compare_refuses_on_each_identity_key_independently`
+# and `tests/test_benchmark_metrics_v2_receipt.py::test_fp32_receipt_gates_are_renamed_and_not_anisotropic_is_gone`
+# -- but neither lived here. The review named two of that first test's OWN mutation
+# proofs as tautological (they rename keys in a local dict and assert the local dict was
+# renamed, proving nothing about production code): `test_pre_rename_gate_shape_would_fail_this_files_own_assertions`
+# and `test_receipt_missing_the_renamed_fields_would_fail_the_positive_assertions`, both
+# in tests/test_benchmark_metrics_v2_receipt.py. The tests below are the SAME assertions
+# as the real ones, mirrored here rather than rewritten, driven against production code
+# (`compare()` itself; a real tiny CPU pretrain + `csd-benchmark.py`'s own
+# `benchmark_region`), not against a local stand-in dict.
+# ---------------------------------------------------------------------------------------
+
+
+def _defect7_identity(**overrides: object) -> MetricIdentity:
+    """A baseline `MetricIdentity` every field of which matches its own defaults --
+    each test below overrides exactly ONE field so a refusal can be pinned to it.
+    Mirrors `tests/test_eval_metrics.py::_identity`."""
+    base: dict[str, object] = {
+        "metrics_schema": "csd-metrics/v2",
+        "corpus_fingerprint": "fp-code-holdout-abc123",
+        "fingerprint_scheme": "csd-corpus-fp/v2",
+        "battery_id": "eval_holdout",
+        "k": None,
+        "pooling": "pooled_both",
+        "checkpoint_sha256": "127adeba58e39a1a0211e185adad74586d08b9fd0bdda8e2da4f5614f49ad8e1",
+        "region": "code",
+        "git_sha": "a7694090903664bc256b4b96d998b37cacd316cf",
+        "seed": 0,
+    }
+    base.update(overrides)
+    return MetricIdentity(**base)  # type: ignore[arg-type]
+
+
+def _defect7_group(values: dict[str, float], **identity_overrides: object) -> MetricGroup:
+    return MetricGroup(identity=_defect7_identity(**identity_overrides), values=values)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("field", "candidate_override", "expected_receipt_name"),
+    [
+        ("metrics_schema", {"metrics_schema": "csd-metrics/v1"}, "metrics_schema"),
+        ("corpus_fingerprint", {"corpus_fingerprint": "fp-different"}, "corpus.fingerprint"),
+        (
+            "fingerprint_scheme",
+            {"fingerprint_scheme": "csd-corpus-fp/v1"},
+            "corpus.fingerprint_scheme",
+        ),
+        ("battery_id", {"battery_id": "eval_quantized_holdout"}, "battery_id"),
+        ("k", {"k": 10}, "k"),
+        ("pooling", {"pooling": "anchor"}, "pooling"),
+        (
+            "checkpoint_sha256",
+            {"checkpoint_sha256": "deadbeef" * 8},
+            "artifacts.checkpoint_sha256",
+        ),
+        ("region", {"region": "retrieve"}, "region / producer.component"),
+        ("git_sha", {"git_sha": "0" * 40}, "code_revision.git_sha"),
+        ("seed", {"seed": 1}, "seed"),
+    ],
+)
+def test_compare_refuse_predicate_catches_every_identity_key(
+    field: str, candidate_override: dict[str, object], expected_receipt_name: str
+) -> None:
+    """MUTATION PROOF: `compare()` (`src/cogsyndelta/eval/metrics.py`) is csd-metrics/v2's
+    refuse-predicate -- the v1 version diffed whatever keys two dicts happened to share
+    and said nothing about whether they described the same measurement at all, which is
+    exactly what let an in-memory plan's `quantized_metric` get read next to a
+    packed-artifact eval-quantized `rank.recall@1` as though interchangeable. Stubbing
+    the identity loop (`for field_name in MetricIdentity._fields:` -> `for field_name in
+    ():`) makes every one of these 10 parametrisations fail: VERIFIED against a scratch
+    mutant copy of this tree, not asserted from reading the code alone."""
+    result = compare(
+        _defect7_group({"recall@1": 0.99}),
+        _defect7_group({"recall@1": 0.99}, **candidate_override),
+        lower_is_better=set(),
+    )
+    assert result["refused"] is True, f"expected a refusal when {field!r} differs"
+    assert result["mismatched_key"] == expected_receipt_name
+    assert result["reason"]  # non-empty, human-readable
+
+
+@pytest.mark.cpu
+def test_compare_refuse_predicate_does_not_diff_shared_keys_across_batteries() -> None:
+    """MUTATION PROOF, the specific historical defect this predicate exists to close: a
+    `battery_id` mismatch ALONE must refuse even though both sides share the metric name
+    `recall@1` with a plausible-looking value -- diffing shared keys across two
+    different batteries is exactly what let a `quantized_metric` (an in-memory plan's
+    recall@1) get read next to an eval-quantized `rank.recall@1` (the packed artifact's)
+    as though they were interchangeable (MM §4)."""
+    result = compare(
+        _defect7_group({"recall@1": 0.9902}, battery_id="train_holdout"),
+        _defect7_group({"recall@1": 0.9902}, battery_id="eval_holdout"),
+        lower_is_better=set(),
+    )
+    assert result["refused"] is True
+    assert result["mismatched_key"] == "battery_id"
+    assert "metrics" not in result
+
+
+@pytest.mark.cpu
+def test_beats_untrained_eval_gate_name_survives_a_real_pretrain_and_benchmark_run(
+    tmp_path: Path,
+) -> None:
+    """MUTATION PROOF: the g7 §3.2 rename in `scripts/csd-benchmark.py`
+    (`"beats_untrained_eval":` -> `"beats_untrained":`) is proved by a REAL tiny CPU
+    pretrain + benchmark run, not a hand-built receipt -- the rename is a literal string
+    in a dict LITERAL inside the production script, so a stand-in receipt built by hand
+    would just assert its own hard-coded key back at itself (the review named exactly
+    this vacuity in two tests this branch shipped, elsewhere). Reverting the rename
+    makes `rec.gates` carry the OLD `beats_untrained` key again, which collides with a
+    TRAINING receipt's separate `beats_untrained_train` predicate under the same
+    English name: VERIFIED against a scratch mutant copy of this tree with both
+    occurrences of `"beats_untrained_eval":` reverted to `"beats_untrained":`, which
+    fails this assertion."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    pytest.importorskip("pyarrow", reason="train group not installed")
+
+    from cogsyndelta.regions.pretrain import PretrainConfig, pretrain_region
+    from cogsyndelta.regions.text_encoder import TextEncoderConfig
+    from tests.test_benchmark_metrics_v2_receipt import (
+        _build_pairs_parquet,
+        _build_tokenizer,
+    )
+    from tests.test_benchmark_metrics_v2_receipt import (
+        bench as v2_bench,
+    )
+
+    region = "guards7-test"
+    tok_path = tmp_path / "tokenizer.json"
+    shard_path = tmp_path / "pairs.parquet"
+    _build_tokenizer(tok_path, 40)
+    _build_pairs_parquet(shard_path, 40)
+    receipts_dir = tmp_path / "receipts"
+
+    cfg = PretrainConfig(
+        region=region,
+        pair_columns=("anchor", "positive"),
+        shards=[str(shard_path)],
+        steps=2,
+        batch_size=4,
+        holdout_pairs=4,
+        eval_every=2,
+        checkpoint_every=2,
+        max_len=16,
+        seed=3,
+        device="cpu",
+        encoder=TextEncoderConfig(dim=8, depth=1, n_heads=2, max_len=16),
+        tokenizer_path=str(tok_path),
+        out_dir=str(receipts_dir),
+    )
+    pretrain_region(cfg)
+
+    class _Entry:
+        sources: ClassVar = [("pairs.parquet", ("anchor", "positive"), 0)]
+        root = tmp_path
+
+    def fake_regions_spec() -> dict:
+        return {
+            "REGIONS": {},
+            "_shards": lambda *a, **k: [str(shard_path)],
+            "region_spec": lambda name: _Entry(),
+        }
+
+    orig_spec = v2_bench._regions_spec
+    v2_bench._regions_spec = fake_regions_spec
+    try:
+        rec = v2_bench.benchmark_region(region, tmp_path)
+    finally:
+        v2_bench._regions_spec = orig_spec
+
+    assert rec is not None
+    assert "beats_untrained_eval" in rec.gates
+    assert "beats_untrained" not in rec.gates

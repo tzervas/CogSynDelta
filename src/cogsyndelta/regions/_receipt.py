@@ -42,6 +42,20 @@ from typing import Any
 # training-region config dataclasses, with no receipt ever recording the change.
 TRAINER_DEFAULT_FIELDS = ("steps", "batch_size", "lr", "bf16", "max_len")
 
+#: The metric-naming/battery/pooling unification stamp every receipt this project
+#: writes now carries, BESIDE its existing envelope schema (`model-pipeline-receipt/v1`
+#: for eval receipts) or native schema (`csd-pretrain-receipt/v1` for training
+#: receipts) -- envelope/native schema versions are unchanged by this. `v1` (the
+#: absence of this key, on a receipt written before it existed) named metrics with the
+#: mixed, sometimes-ambiguous names this project used to ship (`effective_rank`,
+#: `map`, `precision@10`, an unnamed `drop`); `v2` is the unified table this repo's
+#: `g7-latent-eval-metrics.md` §3.1 specifies -- every renamed field, plus `battery_id`
+#: and `pooling` recorded per metric group so two numbers are never diffed across
+#: batteries or pools by accident (see `g7-latent-eval-metrics.md` §3.3's refuse
+#: predicate). A reader must never infer `v1` vs `v2` from field *names* alone --
+#: `metrics_schema` is the one place that says which table applied.
+METRICS_SCHEMA_V2 = "csd-metrics/v2"
+
 
 def trainer_defaults(cfg: Any) -> dict[str, Any]:
     """Pull :data:`TRAINER_DEFAULT_FIELDS` off `cfg` by name, `None` where absent.
@@ -183,6 +197,13 @@ def write_receipt(
             f"{filename!r} with no code_revision block"
         )
     receipt["code_revision"] = revision
+    # Every receipt this helper writes gets the metrics-schema stamp unconditionally --
+    # same "always overwrite, never merely default" treatment as code_revision above,
+    # so a caller cannot accidentally ship a receipt still claiming the v1 table by
+    # passing in a stale dict. `pretrain_region` and `quantize_text_region` both route
+    # through this one function, so this is the single place that guarantees it rather
+    # than three call sites each remembering to stamp it themselves.
+    receipt["metrics_schema"] = METRICS_SCHEMA_V2
 
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / filename

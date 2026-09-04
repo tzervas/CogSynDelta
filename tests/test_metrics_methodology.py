@@ -3,12 +3,18 @@
 Two things are proven here, not merely described:
 
 1. `docs/design/METRICS-METHODOLOGY.md`'s own `file:line` anchors resolve to real files
-   with enough lines to cover them -- a drift guard. It does NOT check that the prose
-   still matches what is at that line, only that the anchor has not gone stale (a
-   renamed function, a shortened file). It also checks a handful of specific claims the
-   doc is required to state plainly (the quant-vs-eval battery distinction, the
-   untrained baseline, the PTQ-ratio-is-not-a-speed-claim caveat, the
-   anisotropy-is-a-diagnostic-not-a-score caveat, the licence-follows-corpus caveat).
+   with enough lines to cover them -- a drift guard (`test_anchor_resolves`). That check
+   alone does NOT prove the anchor points at the identifier the prose names beside it --
+   a review of this doc found citations where the file:line was real and long enough but
+   landed on a different function or a print statement (a renamed function, an inserted
+   block, and the doc never re-derived). `test_named_anchor_resolves` below is the
+   stricter check: every `` `name()` `` cited immediately beside a `file:line` must have
+   that span actually define or call `name`, re-derived from an AST walk of the real
+   source on every run, not a hand-typed list of the anchors one review happened to catch.
+   It also checks a handful of specific claims the doc is required to state plainly (the
+   quant-vs-eval battery distinction, the untrained baseline, the
+   PTQ-ratio-is-not-a-speed-claim caveat, the anisotropy-is-a-diagnostic-not-a-score
+   caveat, the licence-follows-corpus caveat).
 
 2. `scripts/csd-publish-checkpoint.py`'s `build_card` refuses to print a metric with no
    entry in `METRIC_METHODOLOGY`, and the "How these numbers were produced" section it
@@ -123,6 +129,144 @@ def test_anchor_resolves(path: str, start: int, end: int) -> None:
     assert n >= end, f"{path}:{start}-{end} cited, but the file now has only {n} lines"
 
 
+# A stricter check than `test_anchor_resolves` above: that one only proves a cited anchor
+# has not gone stale (file exists, long enough). It does NOT prove the anchor points at
+# the identifier the prose names beside it -- a review of this doc found 24+ citations of
+# the shape "`some_function()` ... (`path:start-end`)" where the file:line was real and
+# long enough, but landed on a DIFFERENT function or a print statement, because the doc
+# was not updated when the source was refactored. This is the defect class that review
+# caught; `_NAMED_ANCHOR_RE` below re-derives it from the doc + an AST walk of the actual
+# source, rather than re-typing the review's fixed list by hand (which would prove nothing
+# about *future* drift the same way `test_anchor_resolves`'s own `n >= end` alone does not).
+_NAMED_ANCHOR_RE = re.compile(
+    r"`([A-Za-z_][A-Za-z0-9_.]*)\(\)`[^`]{0,40}"
+    r"`((?:src|scripts)/[A-Za-z0-9_./-]+\.py):(\d+)(?:-(\d+))?`"
+)
+
+
+def _named_anchors() -> list[tuple[str, str, int, int]]:
+    """Every `` `name()` `` immediately (within 40 chars, no intervening backtick-quoted
+    span) followed by a `file:line` anchor -- i.e. every place the doc claims "this
+    citation is where `name` is defined/called", specifically enough to check."""
+    text = DOC.read_text() if DOC.is_file() else ""
+    out: list[tuple[str, str, int, int]] = []
+    for m in _NAMED_ANCHOR_RE.finditer(text):
+        name, path, start_s, end_s = m.group(1), m.group(2), m.group(3), m.group(4)
+        start = int(start_s)
+        out.append((name, path, start, int(end_s) if end_s else start))
+    return out
+
+
+def test_doc_cites_a_realistic_number_of_named_anchors() -> None:
+    """Guards `_named_anchors` itself the same way `test_doc_cites_a_realistic_number_of_
+    anchors` guards `_anchors`: if the `` `name()` `` + adjacent-anchor convention drifts,
+    this format-drift check catches `test_named_anchor_resolves` passing vacuously on zero
+    parametrized cases, rather than that test silently stopping enforcement."""
+    assert len(_named_anchors()) > 30
+
+
+def _defs_in_source(source: str) -> dict[str, list[tuple[int, int]]]:
+    """name -> [(lineno, end_lineno), ...] for every function/class def in `source`,
+    functions also indexed under `ClassName.method_name` for a qualified citation like
+    `` `BenchmarkResult.flat()` ``."""
+    import ast
+
+    tree = ast.parse(source)
+    out: dict[str, list[tuple[int, int]]] = {}
+
+    class _Visitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.stack: list[str] = []
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            out.setdefault(node.name, []).append((node.lineno, node.end_lineno or node.lineno))
+            self.stack.append(node.name)
+            self.generic_visit(node)
+            self.stack.pop()
+
+        def _visit_func(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+            out.setdefault(node.name, []).append((node.lineno, node.end_lineno or node.lineno))
+            if self.stack:
+                qualified = f"{self.stack[-1]}.{node.name}"
+                out.setdefault(qualified, []).append((node.lineno, node.end_lineno or node.lineno))
+            self.generic_visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            self._visit_func(node)
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            self._visit_func(node)
+
+    _Visitor().visit(tree)
+    return out
+
+
+def _named_anchor_ok(
+    name: str, defs: dict[str, list[tuple[int, int]]], lines: list[str], start: int, end: int
+) -> bool:
+    """True iff `[start, end]` either contains the def of `name` (or its unqualified
+    tail, e.g. `flat` for `BenchmarkResult.flat`) or, for a name only imported into this
+    file, contains a line that calls it (`name(`)."""
+    short = name.rsplit(".", 1)[-1]
+    candidates = defs.get(name) or defs.get(short) or []
+    if any(d0 <= start <= d1 or d0 <= end <= d1 for d0, d1 in candidates):
+        return True
+    window = "\n".join(lines[max(0, start - 1) : end])
+    return f"{short}(" in window
+
+
+@pytest.mark.parametrize("name,path,start,end", _named_anchors())
+def test_named_anchor_resolves(name: str, path: str, start: int, end: int) -> None:
+    """The anchor must land on the def of `name` (or, for a name that is only imported
+    into `path` -- e.g. `mean_reciprocal_rank()` re-exported from `eval/metrics.py` and
+    called inside `eval/benchmark.py` -- on a line within `[start, end]` that actually
+    calls it). A citation that merely points at a long-enough file (what
+    `test_anchor_resolves` checks) is not enough: `csd-benchmark.py:358,522` was a real,
+    long-enough file:line pair that printed an f-string, not the `uses_its_dimensions`
+    gate the doc named beside it -- the actual gate was at 453 and 632."""
+    p = ROOT / path
+    defs = _defs_in_source(p.read_text())
+    lines = p.read_text().splitlines()
+    assert _named_anchor_ok(name, defs, lines, start, end), (
+        f"`{name}()` cited at {path}:{start}-{end}, but that span neither defines "
+        f"{name.rsplit('.', 1)[-1]!r} nor calls it"
+    )
+
+
+def test_named_anchor_resolves_is_not_vacuous_stubbed_source() -> None:
+    """Mutation proof for `test_named_anchor_resolves`, exercising the SAME
+    `_named_anchor_ok` the real test calls (not a re-typed copy that could silently drift
+    from it) against a throwaway fixture -- never the real doc or the real
+    `scripts/csd-benchmark.py`. Cites the wrong function's line range for a name, exactly
+    the shape of the real defect this test class was written to catch (a citation
+    pointing at an f-string print statement while claiming to be the `uses_its_dimensions`
+    gate), and confirms the check fails. Without this, `test_named_anchor_resolves` could
+    be passing only because every anchor in the current doc happens to be correct today --
+    the same silent-pass risk `test_stubbed_methodology_map_fails_the_card_build` below
+    guards against for the card-build enforcement."""
+    fixture_source = (
+        "def uses_its_dimensions_gate(x):\n"
+        "    return x > 0.05\n"
+        "\n"
+        "\n"
+        "def unrelated_print(x):\n"
+        "    print(f'{x:.1%}')\n"
+    )
+    defs = _defs_in_source(fixture_source)
+    lines = fixture_source.splitlines()
+
+    # Sanity: the fixture itself resolves correctly when cited at its OWN lines --
+    # otherwise a broken fixture could make the mutation below pass for the wrong reason.
+    own_start, own_end = defs["uses_its_dimensions_gate"][0]
+    assert _named_anchor_ok("uses_its_dimensions_gate", defs, lines, own_start, own_end)
+
+    # The mutation: cite `unrelated_print`'s lines for `uses_its_dimensions_gate`.
+    wrong_start, wrong_end = defs["unrelated_print"][0]
+    assert not _named_anchor_ok("uses_its_dimensions_gate", defs, lines, wrong_start, wrong_end), (
+        "mutation proof is broken: a wrong-function citation passed _named_anchor_ok"
+    )
+
+
 def test_doc_states_the_quant_vs_eval_battery_distinction() -> None:
     """The exact confusion this project was already bitten by: `quantized_metric` (the
     quantize stage) and `rank.*` (the eval/eval-quantized receipts) come from different
@@ -167,6 +311,134 @@ def test_doc_flags_the_three_effective_rank_definitions() -> None:
     assert "participation_ratio" in text
     assert "participation-ratio" in text.lower() or "participation ratio" in text.lower()
     assert "entropy" in text.lower()
+
+
+# =====================================================================================
+# csd-metrics/v2: schema stamp, refuse predicate, retire list, deprecation map,
+# anisotropy naming caveat, the W1 PR-vs-entropy sign disagreement, the dual-harness
+# principle, and the standing statements. Source: g7-latent-eval-metrics.md (2026-09-04).
+# =====================================================================================
+
+
+def test_doc_stamps_the_v2_schema() -> None:
+    text = DOC.read_text()
+    assert "csd-metrics/v2" in text
+    assert "metrics_schema" in text
+
+
+def test_doc_reproduces_the_full_refuse_predicate() -> None:
+    """Every axis the g7 spec's §3.3 refuse-function checks, reproduced (not merely
+    referenced) so a reader does not have to cross into a session-scratchpad file to see
+    what it requires."""
+    text = DOC.read_text()
+    for axis in (
+        "same metrics_schema",
+        "same corpus.fingerprint",
+        "same battery_id",
+        "same k",
+        "same pooling",
+        "same checkpoint sha256",
+        "same region",
+        "same code_revision.git_sha",
+        "same seed",
+    ):
+        assert axis in text, f"refuse predicate missing axis: {axis!r}"
+    # the battery_id enum itself, not just the word "battery_id"
+    for battery in (
+        "train_holdout",
+        "eval_holdout",
+        "eval_quantized_holdout",
+        "quant_plan",
+        "beir_fiqa_corpus",
+        "beir_fiqa_split",
+    ):
+        assert battery in text, f"refuse predicate missing battery_id member: {battery!r}"
+
+
+def test_doc_states_the_schema_falsifiers() -> None:
+    """The three concrete ways the v2 patch itself would be theatre -- pre-registered
+    before any implementation, per the spec's own falsification discipline."""
+    text = DOC.read_text()
+    assert "schema falsifiers" in text.lower()
+    assert "repr.effective_rank_pr" in text  # the forbidden name, named explicitly
+
+
+def test_doc_licenses_the_plan_vs_artifact_sameness_special_case() -> None:
+    """MM §4's one explicitly licensed cross-battery_id comparison must survive into v2's
+    refuse predicate as a named special case, not get swept up by "never compare across
+    battery_id"."""
+    text = DOC.read_text()
+    assert "assert_sameness" in text
+    assert "quant.plan_recall@1" in text
+    assert "quant.artifact_recall@1" in text
+    assert "violat" in text.lower() and "mm §4" in text.lower()
+
+
+def test_doc_states_the_retire_list_with_reasons() -> None:
+    text = DOC.read_text()
+    assert "retire list" in text.lower()
+    for retired in ("rank.map", "rank.precision@10"):
+        assert retired in text
+    assert "forbid the name" in text.lower()  # bare "effective_rank"
+    assert "uses_its_dimensions" in text
+    assert "repr.effective_rank_entropy_ratio" in text
+
+
+def test_doc_carries_the_v1_to_v2_deprecation_map() -> None:
+    text = DOC.read_text()
+    assert "deprecation map" in text.lower()
+    for v1_name, v2_name in (
+        ("token_aware.final_block_rank.pooled_pr_rank", "token.pooled_pr_rank"),
+        ("token_aware.final_block_rank.token_global_pr_rank", "token.global_pr_rank"),
+        ("quantized_metric", "quant.plan_recall@1"),
+        ("compression_ratio", "quant.compression_ratio"),
+    ):
+        assert v1_name in text, f"deprecation map missing v1 name {v1_name!r}"
+        assert v2_name in text, f"deprecation map missing v2 name {v2_name!r}"
+
+
+def test_doc_states_the_anisotropy_naming_caveat() -> None:
+    """CSD's repr.anisotropy is NAMED after these papers but measures a different
+    surface (pooled holdout vs. token-in-corpus) -- never compare the numbers."""
+    text = DOC.read_text()
+    assert "Ethayarajh" in text
+    assert "Godey" in text
+    assert "LoopFormer" in text
+    assert "do not compare" in text.lower()
+
+
+def test_doc_shows_the_w1_pr_vs_entropy_sign_disagreement() -> None:
+    """The concrete table: PR ratios below 1.0, entropy ratios above 1.0, on the same
+    four production regions, with the down-weights-tail / up-weights-tail explanation
+    for why the two are expected to disagree rather than being a bug."""
+    text = DOC.read_text()
+    for region in ("code", "compress", "retrieve", "vl_latent"):
+        assert region in text
+    assert "0.66" in text and "1.84" in text
+    assert "down-weight" in text.lower()
+    assert "up-weight" in text.lower()
+
+
+def test_doc_states_the_dual_harness_principle() -> None:
+    text = DOC.read_text()
+    assert "source of truth for gates" in text.lower()
+    assert "detail.external" in text
+    assert "never" in text.lower() and "alias" in text.lower()
+    assert "csd-eval-bridge" in text or "model-matrix" in text
+
+
+def test_doc_states_the_standing_statements() -> None:
+    """The four standing statements the operator named: PTQ ratio is storage not
+    latency; anisotropy is a diagnostic not a score; per-token only for token-mappable
+    surfaces; the latent metrics are logged-only pending a pre-registered study."""
+    text = DOC.read_text()
+    assert "standing statements" in text.lower()
+    assert "payload/storage ratio" in text
+    assert "token-mappable" in text.lower()
+    for field in ("loop.acc@k", "loop.kl_succ_mean", "probe.{acc_ling,acc_ctrl,sel}", "route."):
+        assert field in text, f"standing statements missing latent field {field!r}"
+    assert "logged-only" in text.lower() or "logged only" in text.lower()
+    assert "pre-registered validation study" in text.lower() or "pre-registered" in text.lower()
 
 
 # =====================================================================================
@@ -243,12 +515,16 @@ def test_card_metric_keys_matches_known_sections(tmp_path: Path) -> None:
     _plan, train_path, eval_path, quant_path = _build_full_plan(tmp_path)
     train_receipt = json.loads(train_path.read_text())
     eval_receipt = json.loads(eval_path.read_text())
-    quant_receipt = json.loads(quant_path.read_text())
+    # `_card_metric_keys` assumes its `quant_receipt` argument has already been
+    # normalised (see its own docstring) -- `build_plan` (the real caller) always
+    # does this before calling it; mirror that here rather than handing it the raw
+    # v1-shaped fixture `make_quant_receipt` writes to disk.
+    quant_receipt = mod.normalize_quant_receipt_v1(json.loads(quant_path.read_text()))
     keys = set(mod._card_metric_keys(train_receipt, eval_receipt, quant_receipt))
     assert {"recall@1", "recall@10"} <= keys  # held_out / untrained_baseline / beats_untrained
     assert {"beats_untrained", "not_anisotropic", "uses_its_dimensions"} <= keys  # eval gates
     assert {"anisotropy", "effective_rank_ratio"} <= keys  # eval representation
-    assert {"compression_ratio", "stored_bytes"} <= keys  # quant
+    assert {"quant.compression_ratio", "stored_bytes"} <= keys  # quant
 
 
 def test_methodology_provenance_fields_present(tmp_path: Path) -> None:

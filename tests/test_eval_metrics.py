@@ -22,6 +22,12 @@ from cogsyndelta.eval import (
     spearman_correlation,
     token_weighted_perplexity,
 )
+from cogsyndelta.eval.metrics import (
+    METRIC_ALIASES_V1,
+    MetricGroup,
+    MetricIdentity,
+    assert_sameness,
+)
 
 
 @pytest.mark.cpu
@@ -107,6 +113,29 @@ def test_representation_std_detects_collapse() -> None:
         representation_std(torch.randn(1, 16))
 
 
+def _identity(**overrides: object) -> MetricIdentity:
+    """A baseline `MetricIdentity` every field of which matches its own defaults --
+    tests mutate exactly one field at a time off this so a refusal can be pinned to it."""
+    base: dict[str, object] = {
+        "metrics_schema": "csd-metrics/v2",
+        "corpus_fingerprint": "fp-code-holdout-abc123",
+        "fingerprint_scheme": "csd-corpus-fp/v2",
+        "battery_id": "eval_holdout",
+        "k": None,
+        "pooling": "pooled_both",
+        "checkpoint_sha256": "127adeba58e39a1a0211e185adad74586d08b9fd0bdda8e2da4f5614f49ad8e1",
+        "region": "code",
+        "git_sha": "a7694090903664bc256b4b96d998b37cacd316cf",
+        "seed": 0,
+    }
+    base.update(overrides)
+    return MetricIdentity(**base)  # type: ignore[arg-type]
+
+
+def _group(values: dict[str, float], **identity_overrides: object) -> MetricGroup:
+    return MetricGroup(identity=_identity(**identity_overrides), values=values)
+
+
 @pytest.mark.cpu
 def test_compare_names_regressions_instead_of_averaging_them_away() -> None:
     """A change that improves one metric while degrading another is not a win.
@@ -115,10 +144,11 @@ def test_compare_names_regressions_instead_of_averaging_them_away() -> None:
     quality regression gets shipped as an efficiency gain.
     """
     result = compare(
-        {"perplexity": 30.0, "recall@1": 0.60},
-        {"perplexity": 28.0, "recall@1": 0.55},
+        _group({"perplexity": 30.0, "recall@1": 0.60}),
+        _group({"perplexity": 28.0, "recall@1": 0.55}),
         lower_is_better={"perplexity"},
     )
+    assert result["refused"] is False
     assert result["regressions"] == ["recall@1"]
     assert "regressed" in str(result["verdict"])
     assert result["metrics"]["perplexity"]["improved"] is True
@@ -128,12 +158,185 @@ def test_compare_names_regressions_instead_of_averaging_them_away() -> None:
 @pytest.mark.cpu
 def test_compare_reports_a_clean_win() -> None:
     result = compare(
-        {"perplexity": 30.0, "recall@1": 0.60},
-        {"perplexity": 28.0, "recall@1": 0.65},
+        _group({"perplexity": 30.0, "recall@1": 0.60}),
+        _group({"perplexity": 28.0, "recall@1": 0.65}),
         lower_is_better={"perplexity"},
     )
+    assert result["refused"] is False
     assert result["regressions"] == []
     assert result["verdict"] == "no regression"
+
+
+@pytest.mark.cpu
+def test_compare_matching_identity_with_k_none_on_both_sides_is_not_refused() -> None:
+    """`k` is `None` for a metric with no `@k` (e.g. `mrr`). `None == None` must not, on
+    its own, be read as a mismatch -- this is the explicit case the spec calls out."""
+    result = compare(
+        _group({"mrr": 0.90}, k=None),
+        _group({"mrr": 0.95}, k=None),
+        lower_is_better=set(),
+    )
+    assert result["refused"] is False
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("field", "candidate_override", "expected_receipt_name"),
+    [
+        ("metrics_schema", {"metrics_schema": "csd-metrics/v1"}, "metrics_schema"),
+        ("corpus_fingerprint", {"corpus_fingerprint": "fp-different"}, "corpus.fingerprint"),
+        (
+            "fingerprint_scheme",
+            {"fingerprint_scheme": "csd-corpus-fp/v1"},
+            "corpus.fingerprint_scheme",
+        ),
+        ("battery_id", {"battery_id": "eval_quantized_holdout"}, "battery_id"),
+        ("k", {"k": 10}, "k"),
+        ("pooling", {"pooling": "anchor"}, "pooling"),
+        (
+            "checkpoint_sha256",
+            {"checkpoint_sha256": "deadbeef" * 8},
+            "artifacts.checkpoint_sha256",
+        ),
+        ("region", {"region": "retrieve"}, "region / producer.component"),
+        ("git_sha", {"git_sha": "0" * 40}, "code_revision.git_sha"),
+        ("seed", {"seed": 1}, "seed"),
+    ],
+)
+def test_compare_refuses_on_each_identity_key_independently(
+    field: str, candidate_override: dict[str, object], expected_receipt_name: str
+) -> None:
+    """MUTATION PROOF target: one test per identity key, each changing exactly ONE field
+    off an otherwise-matching pair. If the refuse-predicate silently dropped a key (a
+    field listed in `MetricIdentity` but never checked), the matching test for THAT field
+    would pass with `refused: False` -- this is deliberately one test per key rather than
+    a single loop-and-assert, so a broken single key fails its own test, not the whole
+    suite as one undifferentiated failure.
+    """
+    result = compare(
+        _group({"recall@1": 0.99}),
+        _group({"recall@1": 0.99}, **candidate_override),
+        lower_is_better=set(),
+    )
+    assert result["refused"] is True, f"expected a refusal when {field!r} differs"
+    assert result["mismatched_key"] == expected_receipt_name
+    assert result["reason"]  # non-empty, human-readable
+
+
+@pytest.mark.cpu
+def test_compare_names_the_first_mismatching_key_in_identity_order_not_alphabetical() -> None:
+    """When several identity fields differ at once, the refusal names the FIRST one in
+    `MetricIdentity`'s declared field order. `git_sha` sorts before `metrics_schema`
+    alphabetically but `metrics_schema` is checked first -- this pins the check order
+    against a future refactor that iterates the fields in a different sequence."""
+    result = compare(
+        _group({"recall@1": 0.99}),
+        _group({"recall@1": 0.99}, metrics_schema="csd-metrics/v1", git_sha="0" * 40),
+        lower_is_better=set(),
+    )
+    assert result["mismatched_key"] == "metrics_schema"
+
+
+@pytest.mark.cpu
+def test_compare_refuses_rather_than_diffing_shared_keys_across_batteries() -> None:
+    """The v1 defect this replaces: a battery_id mismatch alone (e.g. a training
+    `held_out.*` battery vs an eval `rank.*` battery) must refuse even though both sides
+    happen to share the metric name `recall@1` and a plausible-looking value -- diffing
+    shared keys across two different batteries is exactly what let a plan-vs-artifact
+    quantized_metric get misread as comparable to an eval-quantized rank.recall@1
+    (MM §4)."""
+    result = compare(
+        _group({"recall@1": 0.9902}, battery_id="train_holdout"),
+        _group({"recall@1": 0.9902}, battery_id="eval_holdout"),
+        lower_is_better=set(),
+    )
+    assert result["refused"] is True
+    assert result["mismatched_key"] == "battery_id"
+    assert "metrics" not in result
+
+
+@pytest.mark.cpu
+def test_assert_sameness_passes_the_real_map_equals_mrr_identity() -> None:
+    """Grounded in a real receipt: `code-b1280-s1-7bc2699-20260904`'s eval-quantized
+    receipt records `rank.map == rank.mrr == 0.9911115169525146` exactly, the single-
+    relevant-item identity MM §3.4 documents."""
+    assert_sameness("map==mrr", 0.9911115169525146, 0.9911115169525146)
+
+
+@pytest.mark.cpu
+def test_assert_sameness_passes_the_real_precision_equals_recall_over_k_identity() -> None:
+    """Same receipt: `rank.precision@10 == 0.0994140625 == rank.recall@10 / 10
+    (0.994140625 / 10)`."""
+    assert_sameness("p@10==r@10/10", 0.0994140625, 0.994140625 / 10)
+
+
+@pytest.mark.cpu
+def test_assert_sameness_passes_the_real_plan_vs_artifact_recall_pair() -> None:
+    """Grounded in the real quant + eval-quantized receipt pair for the same checkpoint
+    sha (`127adeba...`): quant.plan_recall@1 (`quantized_metric` in the v1 quant receipt)
+    and quant.artifact_recall@1 (`rank.recall@1` in the v1 eval-quantized receipt) agreed
+    exactly, `0.98828125`. This is the pair MM §4 explicitly says the refuse-function must
+    NOT reject -- and it does not, because this goes through `assert_sameness()`, never
+    `compare()`."""
+    sha = "127adeba58e39a1a0211e185adad74586d08b9fd0bdda8e2da4f5614f49ad8e1"
+    assert_sameness(
+        "quant.plan_recall@1 vs quant.artifact_recall@1",
+        0.98828125,
+        0.98828125,
+        baseline_checkpoint_sha256=sha,
+        candidate_checkpoint_sha256=sha,
+    )
+
+
+@pytest.mark.cpu
+def test_assert_sameness_rejects_a_checkpoint_sha_mismatch_even_if_values_agree() -> None:
+    """Two numbers that happen to be numerically equal are NOT a legitimate sameness pair
+    if they were measured against different checkpoints -- MM §4's pairing is "on the same
+    sha", not "on any two receipts with equal recall@1"."""
+    with pytest.raises(ValueError, match="checkpoint sha differs"):
+        assert_sameness(
+            "quant.plan_recall@1 vs quant.artifact_recall@1",
+            0.98828125,
+            0.98828125,
+            baseline_checkpoint_sha256="a" * 64,
+            candidate_checkpoint_sha256="b" * 64,
+        )
+
+
+@pytest.mark.cpu
+def test_assert_sameness_fails_when_the_identity_no_longer_holds() -> None:
+    """MUTATION PROOF: this is the case the guard exists to catch -- a pairing that was
+    supposed to be an identity but has drifted. Using the real `code` region's fp32 vs
+    quantized MRR (`0.9922266602516174` vs `0.9911115169525146`) as the "drifted" values:
+    these are NOT the blessed map==mrr pair (that compares within ONE receipt), so
+    asserting sameness between them must fail."""
+    with pytest.raises(ValueError, match="sameness guard failed"):
+        assert_sameness("fp32 mrr vs quantized mrr", 0.9922266602516174, 0.9911115169525146)
+
+
+@pytest.mark.cpu
+def test_assert_sameness_tolerance_is_configurable_and_still_a_real_check() -> None:
+    assert_sameness("within tolerance", 1.0, 1.0 + 1e-9)
+    with pytest.raises(ValueError, match="sameness guard failed"):
+        assert_sameness("within tolerance", 1.0, 1.1, tolerance=1e-6)
+    assert_sameness("within tolerance", 1.0, 1.1, tolerance=0.2)
+
+
+@pytest.mark.cpu
+def test_metric_aliases_v1_map_the_examples_the_spec_names() -> None:
+    """The three v1 names the unification-rules memo names explicitly by name (§3.1/§4),
+    resolving to the v2 canonical dotted names this module and `cogsyndelta.eval.benchmark`
+    now write."""
+    assert METRIC_ALIASES_V1["effective_rank"] == "repr.effective_rank_entropy"
+    assert METRIC_ALIASES_V1["emb_std"] == "repr.emb_std_anchor"
+    assert METRIC_ALIASES_V1["quantized_metric"] == "quant.plan_recall@1"
+
+
+@pytest.mark.cpu
+def test_metric_aliases_v1_never_aliases_the_forbidden_effective_rank_pr_name() -> None:
+    """`repr.effective_rank_pr` must never be invented -- it is not a valid v2 target for
+    anything, so it must not appear anywhere in the alias table's values."""
+    assert "repr.effective_rank_pr" not in METRIC_ALIASES_V1.values()
 
 
 @pytest.mark.cpu
