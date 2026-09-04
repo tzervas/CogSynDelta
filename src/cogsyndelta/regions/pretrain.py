@@ -1253,6 +1253,12 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         ``checkpoint_sha256`` is that file's content hash, so a reader is not trusting
         the path alone.
     """
+    # Genuinely the FIRST thing this stage does (matches `torch.manual_seed` below, which
+    # is itself the function's first statement) -- a matrix harness classifying receipts
+    # by "started before this stage's own sentinel, decided after" (the matrix-harness
+    # DESIGN's C2 receipt-selection rule) needs the stage's actual start, not `recorded`
+    # below, which is written after the full training loop and every eval pass have run.
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     torch.manual_seed(cfg.seed)
     device = _resolve_device(cfg.device)
     tok = Tokenizer.from_file(cfg.tokenizer_path)
@@ -1536,11 +1542,25 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     # or truncated on disk after the receipt was written no longer passes as a match.
     checkpoint_sha256 = sha256_file(final_ckpt)
 
+    corpus_fingerprint = _corpus_content_fingerprint(cfg)
     receipt: dict[str, Any] = {
         "schema": "csd-pretrain-receipt/v1",
+        # A shape predicate a matrix harness can match on directly (train/eval/quant/
+        # eval-quantized), instead of inferring the receipt's kind from which fields
+        # happen to be present -- see `cogsyndelta.pipeline.receipt.Receipt.kind`, which
+        # every OTHER stage's envelope carries this same value through.
+        "kind": "train",
+        "started_utc": started_utc,
         "region": cfg.region,
         "recorded": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "method": "symmetric InfoNCE over in-batch negatives",
+        # Mirrors `corpus.fingerprint` below at the top level, so every receipt kind
+        # (train/eval/quant/eval-quantized) names the corpus fingerprint at the SAME
+        # path -- `scripts/csd-quantize.py`'s quant receipt already does this (see its
+        # `corpus_fingerprint` field); a matrix harness computing a variant's identity
+        # (region + code sha + corpus fingerprint) then reads one path regardless of
+        # which stage's receipt it is holding.
+        "corpus_fingerprint": corpus_fingerprint,
         "corpus": {
             "shards": [Path(s).name for s in cfg.shards],
             # EVERY source, not just the primary. The old value covered `cfg.shards`
@@ -1548,7 +1568,7 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
             # on -- so gooaq's 400,000 rows and NQ's 100,231 could have been swapped out
             # entirely under a matching fingerprint. `csd-quantize.py` hard-fails on this
             # value, so the check was load-bearing and nearly blind at the same time.
-            "fingerprint": _corpus_content_fingerprint(cfg),
+            "fingerprint": corpus_fingerprint,
             # Names the rule, so a rule change reads as one instead of as corpus drift.
             "fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
             "pair_columns": list(cfg.pair_columns),

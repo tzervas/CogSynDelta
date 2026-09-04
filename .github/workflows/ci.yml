@@ -55,10 +55,14 @@ jobs:
       # `uvx` default resolves to the job image's system python3, which is
       # older than the project floor (3.12) and cannot parse PEP 695 syntax
       # (e.g. `def f[T](...)`), failing with a bogus "Expected '('" error.
+      # `scripts/csd-benchmark.py` is listed explicitly: [tool.mypy] excludes `scripts/`,
+      # but mypy's `exclude` filters directory crawling, not command-line paths, so this
+      # file really is checked. It writes the eval receipts the matrix pipeline binds and
+      # publishes on; the rest of the scripts tree stays excluded on purpose (L1).
       - name: Type check with mypy
         run: >
           uvx --python 3.12 --from mypy==${{ env.MYPY_VERSION }} --with types-PyYAML
-          mypy src/
+          mypy src/ scripts/csd-benchmark.py
 
   shell-yaml-lint:
     name: Shell & YAML Lint

@@ -1,0 +1,379 @@
+# CSD's first train -> test -> quantize -> test matrix.
+#
+# Consumed by `tzervas/model-matrix` (a separate repo -- see
+# `tooling-lives-in-its-own-repo`; not built here). This file is CSD's half of the
+# contract: the config schema, the stage commands, and every measured number this repo
+# can honestly provide today. Schema, identifier scheme, budget-key rules and gate
+# semantics are `program/matrix/README.md`'s § references to
+# `/akula-data/session-backup-staging/matrix-harness/DESIGN.v2.md` (the ratified spec);
+# this file does not repeat that reasoning, only its result.
+#
+# STATUS (see docs/design/MATRIX-PIPELINE.md for how to read/run this):
+#   - `stages.test-quant.enabled` is now `true`: A6 (`csd-benchmark.py --quantized
+#     --quant-receipt`) and A7 (`--train-receipt` on both scripts) are implemented and
+#     tested on `feat/matrix-config`, so the artifact IS re-scored and the pipeline runs
+#     `train, test, quantize, test-quant, collect, publish, verify`. `collect.requires`
+#     moved to `[test-quant]` in the same change -- leaving it on `[quantize]` would let
+#     collect gather a cell before its published artifact had been scored, which is the
+#     footgun DESIGN.v2 §5.1's labelled interim PTQ column existed to avoid. That interim
+#     column (`quantize:$.quantized_metric`, "quant plan, in-memory; artifact not
+#     re-scored") is no longer the matrix's PTQ number; `test-quant`'s receipt is.
+#   - PREREQUISITE BEFORE LAUNCH satisfied: `run.code.sha` below now pins PR #13's merge
+#     commit (`b7e8ff58d3b5`, main), which carries the `--quantized` / `--quant-receipt` /
+#     `--train-receipt` flags the command templates in this file already pass. It
+#     previously pinned an older `main` with none of those flags -- every test-quant (and
+#     every A7 `--train-receipt`) argv would have been an unrecognised-argument exit 2 on
+#     the host. `model-matrix validate` and `plan` were re-run clean against the new pin.
+#   - Every `budgets` entry not sourced from a real `report_peak()` measurement is
+#     `null` (H4's convention): the harness's wave 0 probes those before launching any
+#     full cell. This is deliberately a LARGER probe set than a naive first draft would
+#     carry -- see DESIGN.v2 §11.1/§11.2 for the reasoning and the resulting wave plan.
+
+schema: model-matrix/v2
+
+run:
+  id: csd-m1-20260904
+  project: cogsyndelta
+  code:
+    repo: /home/kang/code/personal/tzervas/CogSynDelta
+    sha: b7e8ff58d3b50b7068d3577e9dcedafe24f6ee0d # main, 2026-09-03 -- PR #13 merged: csd-benchmark.py --quantized/--quant-receipt/--train-receipt land; NOT feat/vl-jepa
+  state_root: /akula-data/csd/matrix
+  finals_root: /akula-data/csd/finals # must be inside retention.prune_roots (loader-enforced)
+  events_dir: /akula-data/csd/events
+  evidence_dir: docs/design/evidence
+
+hosts:
+  akula-prime:
+    gpu_index: 0
+    total_mib: 23028
+    foreign_floor_mib: 1100 # live desktop measured ~980-1054 MiB tonight; 1100 leaves ~50-120 MiB margin
+    cwd: /home/kang/code/personal/tzervas/CogSynDelta
+    python: /home/kang/code/personal/tzervas/CogSynDelta/.venv/bin/python
+    pythonpath: /home/kang/code/personal/tzervas/CogSynDelta/src
+    state_root: /akula-data/csd/matrix
+    roles: [train, eval, quantize]
+  gpu5080:
+    gpu_index: 0
+    total_mib: 16303
+    foreign_floor_mib: 0 # no desktop session on this host
+    cwd: /home/tzervas/CogSynDelta
+    python: /home/tzervas/CogSynDelta/.venv/bin/python
+    pythonpath: /home/tzervas/CogSynDelta/src
+    state_root: /bulk/csd-train-state/matrix
+    local_view: /mnt/bulk/csd-train-state/matrix # NFS 4.2 mount on akula-prime; collect reads from here
+    roles: [train, eval, quantize]
+  # gpu-1080ti: excluded -- the fleet's pinned torch cannot run there (get_arch_list floors
+  # at sm_75; the VM's driver caps CUDA 12.2); its role is inference/RAG, not fp32 training.
+
+gpu_pack:
+  ledger: /akula-data/csd/vram-budgets.json
+  registry: /akula-data/csd/gpu-admitted.json
+  receipts: /akula-data/csd/receipts
+  margin_mib: 1024
+  probe_first: true
+
+corpus:
+  fingerprint_probe: "{python} scripts/csd-train-all.py --regions {region} --print-corpus-fingerprint --dry-run"
+
+stages:
+  train:
+    kind: train
+    gpu: true
+    receipt_kind: train
+    receipt: "receipts/{region}-2*.json"
+    gate: "$.beats_untrained.*"
+    complete_on_gate_fail: true
+  # DECLARED BUT UNREFERENCED, deliberately (C1/M3). No `pipeline:` below names this
+  # stage and no region declares a `finetune:` command template, because the CSD-side
+  # adapter it needs does not exist yet: DESIGN.v2 §6.4's A4
+  # (`--init-from-checkpoint` on the training entry point, plus the
+  # `finetune: {parent_variant, parent_sha256, parent_metric_on_child_split, ...}`
+  # receipt block §6.3 requires). The stage definition stays so the receipt/gate
+  # contract A4 must satisfy is written down where the harness will read it; the
+  # PIPELINE that would run it is added in the same change that adds the command.
+  finetune:
+    kind: train
+    gpu: true
+    receipt_kind: train
+    receipt: "receipts/{region}-2*.json"
+    gate: "$.finetune.beats_parent"
+    complete_on_gate_fail: true
+  test:
+    kind: eval
+    gpu: true
+    receipt_kind: eval
+    # `-eval-2*` (the UTC stamp's leading digit), NOT `-eval-*`: the looser glob also
+    # matched `cogsyndelta-{region}-eval-quantized-<stamp>.json`, so the fp32 stage's
+    # own pattern claimed the quantized stage's receipts too. The harness does not
+    # currently select by this glob -- `model_matrix.receipts.select_receipt` globs
+    # `*.json` and filters on `kind_of` -- but a pattern that is wrong on paper is a
+    # trap for the first reader (or tool) that does trust it.
+    receipt: "receipts/cogsyndelta-{region}-eval-2*.json"
+    gate: "$.gates.*"
+    bound_to: train
+    complete_on_gate_fail: true
+    requires: [train]
+  quantize:
+    kind: quantize
+    gpu: true
+    receipt_kind: quant
+    receipt: "receipts/{region}-quant-*.json"
+    gate: "$.within_budget"
+    bound_to: train
+    complete_on_gate_fail: true
+    requires: [test]
+  test-quant:
+    kind: eval
+    gpu: true
+    receipt_kind: eval-quant
+    # `receipt_kind: eval-quant` above and CSD's `kind="eval-quantized"` are NOT a
+    # mismatch (H3/L2): the harness classifies on `provenance.eval_target == "quantized"`
+    # (`model_matrix.receipts.kind_of`), never on the receipt's own `kind` string, so an
+    # `eval-quantized` receipt classifies as `eval-quant` here. The glob below matches
+    # what `Receipt.write()` really names the file (it builds the filename from `kind`);
+    # DESIGN.v2 §6.2's `evalq` spelling is the stale side and is not what to match.
+    receipt: "receipts/cogsyndelta-{region}-eval-quantized-*.json"
+    gate: "$.gates.*"
+    bound_to: quantize
+    complete_on_gate_fail: true
+    requires: [quantize]
+    enabled: true # A6 landed on this branch: the packed artifact is re-scored, not assumed
+  collect:
+    kind: collect
+    gpu: false
+    # MUST name the last stage that scores the artifact (M2). While `test-quant` was
+    # disabled this read `[quantize]`; enabling test-quant without moving this would let
+    # collect -- and therefore publish -- gather a cell whose .ptq.pt had never been
+    # opened, which is exactly the gap A6 exists to close.
+    requires: [test-quant]
+  publish:
+    kind: publish
+    gpu: false
+    requires: [collect]
+  verify:
+    kind: verify
+    gpu: false
+    requires: [publish]
+
+pipeline:
+  base: [train, test, quantize, test-quant, collect, publish, verify]
+  # `finetune: [finetune, test, quantize, ...]` is NOT declared yet (C1). It made the
+  # whole config unloadable: `stages.test.requires: [train]` is global, the finetune
+  # pipeline contains `finetune` rather than `train`, and `validate_requires` is
+  # fail-closed --
+  #   INVALID: stage 'test' in pipeline 'finetune' requires 'train', which is not an
+  #   enabled stage in that pipeline
+  # -- so `model-matrix validate` and `plan` both exited 1 and no wave was ever printed.
+  # The harness rule is right; the pipeline was declared before the stage it needs could
+  # run (see the `finetune` stage's own comment: A4 is unimplemented, M3 -- there is no
+  # finetune command template either). Relaxing `test.requires` to accommodate it would
+  # weaken the guard that keeps `test` bound to a training stage in the BASE pipeline,
+  # which is the one this matrix actually runs. When A4 lands, this pipeline comes back
+  # with an eval stage of its own (`test-ft`, `requires: [finetune]`, `bound_to:
+  # finetune`) rather than by loosening `test`.
+
+identifier:
+  pattern: "{region}-{axes}-{sha7}-{date}"
+  axes_sep: "-"
+
+regions:
+  defaults:
+    steps: 4000
+    max_len: 96
+    shard_limit: 2 # script default; today's receipts show 1 shard for compress/retrieve/reason, 4 for code -- open question, see MATRIX-PIPELINE.md
+    tolerance: 0.01
+    aggressive_bits: 3
+    max_bits: 8
+    hosts: [gpu5080, akula-prime]
+    env: {PYTHONPATH: "{pythonpath}"}
+    commands:
+      train: >-
+        {python} scripts/csd-train-all.py --regions {region} --steps {steps} --batch {batch}
+        --max-len {max_len} --shard-limit {shard_limit} --seed {seed} --state {state}
+      test: "{python} scripts/csd-benchmark.py --regions {region} --state {state} --train-receipt {train_receipt}"
+      quantize: >-
+        {python} scripts/csd-quantize.py --regions {region} --state {state} --train-receipt {train_receipt}
+        --tolerance {tolerance} --aggressive-bits {aggressive_bits} --max-bits {max_bits}
+      test-quant: >-
+        {python} scripts/csd-benchmark.py --regions {region} --state {state} --quantized {quantized_path}
+        --quant-receipt {quant_receipt} --train-receipt {train_receipt}
+      # NOT RENDERABLE UNDER TODAY'S HARNESS CONTEXT, and that is a tracked gap, not an
+      # accident (H4). `model_matrix.cli._build_plan_fn` injects `python`, `pythonpath`,
+      # `state`, `train_receipt`, `eval_receipt`, `quant_receipt` and `quantized_path` on
+      # top of the cell's own vars -- `hub_repo`, `hub_branch` and `base_ref` are none of
+      # those, so `render_template` raises `unresolved key 'hub_repo'`. It does not abort
+      # a run today (`cmd_run` launches only `gpu: true` stages) and it does not abort
+      # `plan` (which renders nothing), but it WILL the moment publish is driven from the
+      # harness. Two things have to land, in either order:
+      #   - harness round 4 injects {hub_repo, hub_branch, base_ref, variant_id} into the
+      #     publish context; `publish.repo_pattern` and `publish.base_ref` below already
+      #     carry the values it would compute them from;
+      #   - CSD's A2: `scripts/csd-publish-checkpoint.py` on this branch accepts
+      #     --region/--receipt/--eval-receipt/--quant-receipt/--repo/--dry-run and NOT
+      #     --revision/--base-ref, so cutting a branch from `variants/base` (DESIGN.v2
+      #     §4.2, the fix for a branch inheriting main's files) is unimplemented.
+      # The template names the contract both must satisfy rather than being trimmed to
+      # what runs today, which would silently drop the base-ref requirement H1 exists for.
+      # `tests/test_matrix_config.py` pins the exact unresolved key set so it cannot grow
+      # unnoticed.
+      publish: >-
+        {python} scripts/csd-publish-checkpoint.py --region {region} --repo {hub_repo}
+        --receipt {train_receipt} --eval-receipt {eval_receipt} --quant-receipt {quant_receipt}
+        --revision {hub_branch} --base-ref {base_ref}
+    primary_metric: "train:$.held_out.recall@1"
+    references: [untrained]
+    eval_key:
+      [
+        "train:$.corpus.fingerprint",
+        "train:$.config.holdout_pairs",
+        "train:$.config.steps",
+        "train:$.config.max_len",
+      ]
+    gates_read:
+      beats_untrained: "train:$.beats_untrained.recall@1"
+      eval_pass: "test:$.gates.*"
+      quant_budget: "quantize:$.within_budget"
+    axis_short: {batch: b, seed: s, terms: tok, chunk: c}
+    variance_axes: [seed] # a seed change also resamples the holdout split (build_splits uses cfg.seed for both) -- declared, not hidden
+    budget_axes: [batch]
+    # REQUIRED whenever budget_axes is narrower than the region's full axis set (C2):
+    # `model_matrix.config.validate_region_budgets` refuses the region outright without
+    # this claim, and every region inheriting these defaults (code, compress, retrieve,
+    # reason) declares axes {batch, seed} while budgeting on batch alone. Stating it once
+    # here rather than four times is the point of `defaults`; `memory` narrows a different
+    # way and carries its own copy of this sentence, because the shallow merge means an
+    # overriding region must restate both keys together.
+    budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
+
+  code:
+    axes: {batch: [512, 1280], seed: [0, 1]}
+    # batch=1280/seed=0 is today's production baseline (held_out.recall@1=0.9863, sha
+    # 9df6526, corpus.fingerprint e493273b...); batch=512 and seed=1 are unrun. Neither
+    # fp32 VRAM budget below is report_peak-sourced (H4) -- both probe.
+    budgets:
+      "batch=512": {mib: null, source: probe}
+      "batch=1280": {mib: null, source: probe}
+
+  compress:
+    axes: {batch: [512, 1280], seed: [0, 1]}
+    # batch=1280/seed=0 baseline: held_out.recall@1=0.7754, sha 9df6526.
+    budgets:
+      "batch=512": {mib: null, source: probe}
+      "batch=1280": {mib: null, source: probe}
+
+  retrieve:
+    axes: {batch: [512, 1280], seed: [0, 1]}
+    # batch=1280/seed=0 baseline: held_out.recall@1=0.7559, sha 9df6526.
+    budgets:
+      "batch=512": {mib: null, source: probe}
+      "batch=1280": {mib: null, source: probe}
+
+  reason:
+    max_len: 256
+    axes: {batch: [256, 512], seed: [0, 1]}
+    # batch=512/seed=0 baseline: held_out.recall@1=0.1152, sha 0026a3d (reason OOM'd at
+    # batch 1280/max_len 256 on the 3090 Ti -- 640 MiB short of 22 GiB [V]; batch=256 is
+    # the unrun axis value, not a re-test of the 1280 cell that never completed).
+    budgets:
+      "batch=256": {mib: null, source: probe}
+      "batch=512": {mib: null, source: probe}
+    hosts: [akula-prime, gpu5080]
+
+  memory:
+    # THE FULL COMMAND MAP IS REPEATED HERE ON PURPOSE (C4). `regions.defaults` is merged
+    # into a region with a SHALLOW `dict.update` (`model_matrix.config._merge_region`), so
+    # declaring only `train` here REPLACED the whole defaults map: memory cells came out
+    # with `command_templates == {"train": ...}` and the harness renders a missing stage as
+    # the empty string (`command_templates.get(stage_name, "")`) -- an empty argv for
+    # test/quantize/test-quant/publish on the one region this matrix calls today's
+    # production cell. A deep merge in the harness is a SEPARATE change (its round 4); this
+    # config is written to work correctly under both, which is why the four inherited
+    # entries below are byte-identical to `regions.defaults.commands` rather than
+    # paraphrased. `tests/test_matrix_config.py` enforces that equality, so a future edit
+    # to the defaults that is not mirrored here fails rather than silently diverging.
+    # Only `train` genuinely differs: memory trains through its own module entry point
+    # (`cogsyndelta.regions.memory`), not `scripts/csd-train-all.py`.
+    commands:
+      train: >-
+        {python} -m cogsyndelta.regions.memory --steps {steps} --batch-size {batch} --lr {lr}
+        --max-len {max_len} --seed {seed} --token-loss-weight {token_w} --decorr-weight {decorr_w}
+        --token-loss-chunk {chunk} --eval-split dev --out-dir {state}/receipts
+      test: "{python} scripts/csd-benchmark.py --regions {region} --state {state} --train-receipt {train_receipt}"
+      quantize: >-
+        {python} scripts/csd-quantize.py --regions {region} --state {state} --train-receipt {train_receipt}
+        --tolerance {tolerance} --aggressive-bits {aggressive_bits} --max-bits {max_bits}
+      test-quant: >-
+        {python} scripts/csd-benchmark.py --regions {region} --state {state} --quantized {quantized_path}
+        --quant-receipt {quant_receipt} --train-receipt {train_receipt}
+      publish: >-
+        {python} scripts/csd-publish-checkpoint.py --region {region} --repo {hub_repo}
+        --receipt {train_receipt} --eval-receipt {eval_receipt} --quant-receipt {quant_receipt}
+        --revision {hub_branch} --base-ref {base_ref}
+    derive: {lr: "3e-4 * (batch / 256) ** 0.5"}
+    axes:
+      batch: [512, 1280]
+      # QUOTED DELIBERATELY (C3). Bare `off`/`on` are YAML 1.1 booleans: PyYAML's
+      # safe_load turns these axis LABELS into False/True, while every `budgets:` key
+      # below is a string parsed as `terms=off`/`terms=on`. The harness matches a cell
+      # to a budget by `str(label)` (config.py canonical_budget_key), so `str(False)`
+      # is "False" and NO memory cell ever matched a budget entry -- all five silently
+      # resolved to BudgetEntry(mib=None, source="probe"), including the one cell whose
+      # peak was actually measured. Any future boolean-looking axis label (`on`, `off`,
+      # `yes`, `no`, `y`, `n`, `true`, `false`) must be quoted the same way; the guard
+      # is tests/test_matrix_config.py.
+      terms: {"off": {token_w: 0.0, decorr_w: 0.0}, "on": {token_w: 0.1, decorr_w: 0.1}}
+      chunk: [512, 2048]
+      seed: [0]
+    exclude:
+      - {batch: 1280, chunk: 2048} # raw peak measured 22,120 MiB -- does not fit the 3090 Ti
+      - {terms: "off", chunk: 2048} # dead when the token loss is off: identical argv to (off, 512)
+    budget_axes: [batch, terms, chunk]
+    budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
+    budgets:
+      # b1280/tokon/c512 is TODAY's V2 production cell (369351bf): held_out.recall@1=0.8535,
+      # ptq_recall@1(plan)=0.8516 at 9.79x (memory-20260903T184441Z.json,
+      # memory-quant-20260903T203342Z.json). b512/tokon/c512 is V1 (d96be64b):
+      # held_out.recall@1=0.8145 -> PTQ 0.8086 at 9.60x. Both already published on
+      # tzervas/cogsyndelta-region-memory as ad hoc pilot branches (H1's repair, tracked
+      # separately -- see MATRIX-PIPELINE.md), so a matrix run of these two EXACT cells
+      # would collide with pre-matrix history; the harness's variant identity (region +
+      # code sha + corpus fingerprint) makes that an explicit refusal, not a silent
+      # overwrite (see DESIGN.v2 C4/G2).
+      "batch=512,terms=on,chunk=512": {mib: 11700, source: report_peak} # peak_reserved 11,678 MiB measured
+      "batch=512,terms=on,chunk=2048": {mib: null, source: probe}
+      "batch=512,terms=off,chunk=512": {mib: null, source: probe}
+      "batch=1280,terms=on,chunk=512": {mib: null, source: probe} # today's V2 cell; re-source via report_peak before relying on it
+      "batch=1280,terms=off,chunk=512": {mib: null, source: probe}
+    hosts: [akula-prime, gpu5080] # the packer keeps >~15 GiB cells off the 5080 by arithmetic, not by this list
+    followup:
+      - {axis: seed, values: [1], select: best_by_primary_metric, among: gate_complete}
+    primary_metric: "train:$.held_out.recall@1"
+    references: [untrained, bm25]
+    gates_read:
+      beats_untrained: "train:$.beats_untrained.recall@1"
+      w4_gates: "train:$.gates.passed" # measured false today: gates (c)/(e) fail as the receipt computes them -- OD-17's call, not this config's
+      eval_pass: "test:$.gates.*"
+      quant_budget: "quantize:$.within_budget"
+    extra_columns:
+      full_pool_r10: "train:$.retrieval.full_pool.trained.recall@10"
+      full_pool_mrr: "train:$.retrieval.full_pool.trained.mrr"
+      graded_spearman: "train:$.graded_held_out.spearman"
+
+publish:
+  repo_pattern: "tzervas/cogsyndelta-region-{region}"
+  base_ref: "variants/base"
+  branch: "{variant_id}"
+  tags: {fp32: "{variant_id}--fp32", ptq: "{variant_id}--ptq"}
+  private: true
+  promote_main: manual # runner prints the promotion it would make; `model-matrix promote` executes it
+  main_rule: best_primary_metric_all_gates_pass
+
+retention:
+  working_set: [unfinished, keep, current_final]
+  prune_order: [step_checkpoints, token_cache, remote_copies, fp32_final, ptq_final]
+  prune_roots: [/akula-data/csd/matrix, /mnt/bulk/csd-train-state/matrix, /akula-data/csd/finals]
+  finals_per_region: 1
+
+emit:
+  unit_prefix: mm
+  foreign_floor_mib: 1100

@@ -82,6 +82,56 @@ fi
 CI_VENV="${ROOT}/.venv-ci"
 export UV_PROJECT_ENVIRONMENT="${CI_VENV}"
 
+# --- isolation: never touch the tracked uv.lock either -------------------------------
+# HAZARD (measured 2026-09-03): CI_VENV above isolates the *venv*, but `uv sync`
+# (without --frozen/--locked) also RE-RESOLVES and rewrites `uv.lock` whenever its
+# resolution differs from what's on disk -- and it always reads/writes
+# `<project-root>/uv.lock` next to whichever pyproject.toml it discovers, a completely
+# separate concern from which venv UV_PROJECT_ENVIRONMENT points the *install* at. The
+# --cpu branch below passes --no-sources, which drops the [tool.uv.sources] cu128 pin so
+# the resolver picks CPU torch/torchvision wheels instead of the GPU ones already
+# locked -- a real, expected difference, not a resolver bug -- and with ROOT as the
+# project root that rewrite landed in the TRACKED uv.lock every run (measured 195
+# insertions / 394 deletions).
+#
+# Why not `--frozen`/`--locked` against the real uv.lock instead of moving the project
+# root: poc-ci.yml's header already covers this -- the tracked lock pins CUDA torch, so
+# --frozen would install CUDA wheels while claiming to run the CPU gate. That skips
+# resolution entirely rather than skipping only the WRITE, so it isn't an option here;
+# the --cpu run genuinely needs to re-resolve.
+#
+# Chosen fix: give the resolve/lock step its own disposable project directory, the same
+# shape of fix as CI_VENV above (an isolated *target* the hazardous operation cannot
+# escape), not a save-and-restore around a write this script still performs. `uv sync
+# --project <dir>` reads and writes `<dir>/uv.lock`, never ROOT's, regardless of what
+# UV_PROJECT_ENVIRONMENT points the resulting venv at. Each run, ci_lock_sync():
+#   - wipes and recreates CI_LOCK_PROJECT from a plain COPY -- not a symlink -- of
+#     pyproject.toml, uv.lock, README.md, .python-version and src/ (the full set a
+#     resolve+build needs; src/ is a build input, not the venv target, so this is not
+#     the shared-venv hazard above). A symlinked src/ would let the build backend's
+#     stray writes (e.g. egg-info) land back in the real tree; ~1.4 MB, the copy is
+#     sub-second, so there is no real cost to copying instead.
+#   - seeds CI_LOCK_PROJECT/uv.lock from the CURRENT tracked uv.lock, so the resolver
+#     starts from the real pin set (fast, minimal-diff resolve) instead of solving cold
+#     every run
+#   - runs `uv sync --project CI_LOCK_PROJECT ...`; UV_PROJECT_ENVIRONMENT is unchanged,
+#     so the venv this installs into is still the same isolated .venv-ci
+# This makes writing the tracked lock structurally impossible -- no code path here opens
+# ROOT/uv.lock for writing -- rather than merely restoring it afterward. The default
+# (non --cpu) sync below goes through the same helper even though it is not the measured
+# offender, so both modes share one guarantee instead of one being fixed and the other
+# merely assumed safe.
+CI_LOCK_PROJECT="${ROOT}/.venv-ci-project"
+
+ci_lock_sync() {
+    rm -rf "${CI_LOCK_PROJECT:?}"
+    mkdir -p "${CI_LOCK_PROJECT}/src"
+    cp "${ROOT}/pyproject.toml" "${ROOT}/uv.lock" "${ROOT}/README.md" "${CI_LOCK_PROJECT}/"
+    cp "${ROOT}/.python-version" "${CI_LOCK_PROJECT}/.python-version"
+    cp -r "${ROOT}/src/." "${CI_LOCK_PROJECT}/src/"
+    uv sync --project "${CI_LOCK_PROJECT}" "$@"
+}
+
 # --- guard: belt-and-braces, independent of the isolation above ---------------------
 # The isolation above should make this dead code. It stays in case a future edit to
 # this script drops the unconditional export above (e.g. "helpfully" changes it back to
@@ -115,12 +165,12 @@ echo "== python ${PYTHON_VERSION} + venv (${UV_PROJECT_ENVIRONMENT}) =="
 uv python install "${PYTHON_VERSION}"
 if [[ "${CPU_SYNC}" -eq 1 ]]; then
     echo "sync: CPU torch (CI Test/poc-ci wheels)"
-    uv sync --group dev --no-sources \
+    ci_lock_sync --group dev --no-sources \
         --extra-index-url https://download.pytorch.org/whl/cpu \
         --index-strategy unsafe-best-match
 else
     echo "sync: project lock (desktop CUDA torch from pyproject)"
-    uv sync --group dev
+    ci_lock_sync --group dev
 fi
 
 uv run --no-sync python - <<'PY'
@@ -152,7 +202,17 @@ run "ruff format" uvx "ruff@${RUFF_VERSION}" format --check \
     src/ tests/ benchmarks/ scripts/ examples/
 # Project venv already has mypy + types-PyYAML (same as CI after uv tool install --with).
 # uvx --with is an uvx flag, not a mypy flag.
-run "mypy src/" uv run --no-sync mypy src/
+#
+# `scripts/csd-benchmark.py` is named EXPLICITLY even though [tool.mypy] excludes
+# `scripts/` (L1). mypy's `exclude` filters directory crawling, not paths given on the
+# command line -- verified by planting a deliberate `return "not an int"` in this file
+# and watching `mypy --config-file pyproject.toml scripts/csd-benchmark.py` report it --
+# so this really does typecheck. The rest of the scripts tree stays excluded on purpose
+# (shell wrappers, one-off tools, no annotations); this one file writes the receipts the
+# matrix pipeline binds and publishes on, so it is worth the same gate `src/` gets.
+# Adding it caught a real mismatch on the first run: `Receipt.artifacts` was annotated
+# `dict[str, str]` while both eval paths wrote nested `source_*_receipt` records.
+run "mypy src/ + benchmark script" uv run --no-sync mypy src/ scripts/csd-benchmark.py
 
 # Quality Score Check (ci.yml) — stdlib only, --no-project.
 run "quality >=90" uv run --no-project python scripts/quality_control.py src/ --fail-under 90

@@ -1,0 +1,45 @@
+# Worked example (DESIGN.v2 §6.4): does turning the token-aware terms ON, applied LATE
+# via a short fine-tune from a control-arm parent trained WITHOUT them, reproduce the
+# ~+3.9-point held-out recall@1 effect W4's from-scratch A/B measured between
+# terms-on and terms-off? This is a matrix PROBE, not a roadmap verdict -- its result is
+# read against the W4 gates by the operator (OD-17), not decided by this file.
+#
+# NOT YET RUNNABLE (same reason as templates/finetune.yaml): needs adapter A4
+# (`--init-from-checkpoint`), not on `main` yet. This is a fully worked EXAMPLE of the
+# shape once it lands, not a config anyone should point `model-matrix run` at today.
+#
+# Parent: the memory control arm at batch=1280, terms=off, chunk=512, seed=0, trained
+# from scratch under the base matrix (program/matrix/csd-matrix.yaml's `memory` block,
+# axis label `b1280-tokoff-c512-s0`). Delta: terms on, 1000 steps, lr scaled to 0.3x.
+
+schema: model-matrix/v2
+
+run:
+  id: csd-memory-terms-finetune-{date}
+  project: cogsyndelta
+  code: {repo: /home/kang/code/personal/tzervas/CogSynDelta, sha: "{40-hex-sha}"}
+  state_root: /akula-data/csd/matrix
+  finals_root: /akula-data/csd/finals
+  events_dir: /akula-data/csd/events
+  evidence_dir: docs/design/evidence
+
+# hosts / gpu_pack / corpus / stages / pipeline / identifier: as in
+# program/matrix/csd-matrix.yaml -- omitted here for brevity; this file's point is the
+# `regions.memory.finetune` block below, not a second copy of the shared scaffolding.
+
+regions:
+  memory:
+    # ... the base memory block from program/matrix/csd-matrix.yaml ...
+    finetune:
+      name: terms
+      from:
+        variant: memory-b1280-tokoff-c512-s0-f48fd8a-20260904-c{corpus8} # the control arm's variant_id, once the base matrix has run it
+      steps: 1000
+      lr_scale: 0.3
+      objective_delta:
+        token_w: 0.1
+        decorr_w: 0.1
+      corpus_delta: null # same corpus as the parent -- beats_parent is a clean re-eval, no split mismatch (H7)
+
+pipeline:
+  finetune: [finetune, test, quantize, test-quant, collect, publish, verify]

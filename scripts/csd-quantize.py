@@ -52,9 +52,25 @@ def _latest_receipt(state: Path, region: str) -> tuple[Path, dict]:
 
 
 def quantize_text_region(
-    region: str, state: Path, tolerance: float, aggressive: int, max_bits: int
+    region: str,
+    state: Path,
+    tolerance: float,
+    aggressive: int,
+    max_bits: int,
+    train_receipt_path: Path | None = None,
 ) -> dict:
-    """Run sensitivity-driven PTQ on one trained text region."""
+    """Run sensitivity-driven PTQ on one trained text region.
+
+    Args:
+        train_receipt_path: the training receipt to quantize FROM, as an explicit path.
+            When given, this is used instead of ``state``'s latest-glob (see
+            `_latest_receipt`) -- a matrix harness running many cells against one shared
+            `--state` root must not let this script pick "whichever training receipt is
+            newest" out from under it; the harness already knows exactly which cell's
+            receipt this quantize stage belongs to; and a human re-running by hand in
+            the same `--state` directory gets the same guarantee. ``None`` preserves the
+            prior latest-glob behaviour for a single-cell, single-region invocation.
+    """
     from tokenizers import Tokenizer
 
     from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
@@ -63,7 +79,12 @@ def quantize_text_region(
     from cogsyndelta.regions.pretrain import PretrainConfig, build_splits, evaluate
     from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
 
-    receipt_path, receipt = _latest_receipt(state, region)
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    if train_receipt_path is not None:
+        receipt_path = train_receipt_path
+        receipt = json.loads(train_receipt_path.read_text())
+    else:
+        receipt_path, receipt = _latest_receipt(state, region)
     spec = _load_regions_spec()
     entry = spec["region_spec"](region)
     sources = entry.sources
@@ -199,6 +220,11 @@ def quantize_text_region(
     print(f"    packed artifact -> {quantized_path} ({quantized_sha256[:12]}...)", flush=True)
 
     return {
+        # Shape predicate a matrix harness matches on directly -- see
+        # `cogsyndelta.pipeline.receipt.Receipt.kind` and `regions/pretrain.py`'s
+        # `pretrain_region`, which stamps the train-side "train" alongside this.
+        "kind": "quant",
+        "started_utc": started_utc,
         "region": region,
         "recorded_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "method": "sensitivity-greedy-mixed-width",
@@ -263,7 +289,22 @@ def main() -> int:
     )
     ap.add_argument("--aggressive-bits", type=int, default=3)
     ap.add_argument("--max-bits", type=int, default=8)
+    ap.add_argument(
+        "--train-receipt",
+        default=None,
+        help="explicit training receipt to quantize from (single-region only); bypasses "
+        "the --state latest-glob so a caller running many cells against one shared "
+        "--state root names its own cell's receipt rather than picking up whichever is "
+        "newest",
+    )
     args = ap.parse_args()
+    if args.train_receipt is not None and "," in args.regions:
+        print(
+            "--train-receipt names one receipt for one region; pass a single --regions "
+            "value with it",
+            file=sys.stderr,
+        )
+        return 2
 
     state = Path(args.state)
     out_dir = state / "receipts"
@@ -278,7 +319,12 @@ def main() -> int:
         print(f"\n=== {region}", flush=True)
         try:
             rec = quantize_text_region(
-                region, state, args.tolerance, args.aggressive_bits, args.max_bits
+                region,
+                state,
+                args.tolerance,
+                args.aggressive_bits,
+                args.max_bits,
+                train_receipt_path=Path(args.train_receipt) if args.train_receipt else None,
             )
         except Exception as exc:
             print(f"    FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)

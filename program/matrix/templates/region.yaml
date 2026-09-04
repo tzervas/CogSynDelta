@@ -1,0 +1,76 @@
+# One region block for `program/matrix/csd-matrix.yaml`, every field commented. Copy the
+# whole block under `regions:`, rename the key, and delete what you do not override from
+# `regions.defaults`. See `program/matrix/csd-matrix.yaml` for two real filled examples
+# (a plain text region -- `code` -- and a region with its own `commands` and derived
+# vars -- `memory`).
+
+region-name: # the key IS the region name; must match what csd-train-all.py's REGIONS
+  # (or, for memory, cogsyndelta.regions.memory) actually trains
+
+  # --- axes: the matrix dimensions this region varies -----------------------------
+  axes:
+    batch: [512, 1280] # a plain list -> each value renders into {batch} in commands
+    seed: [0, 1]
+    # A dict form names each label's own variable overrides (used by `memory`'s
+    # `terms` axis, which is not a single scalar):
+    # terms: {off: {token_w: 0.0, decorr_w: 0.0}, on: {token_w: 0.1, decorr_w: 0.1}}
+
+  axis_short: {batch: b, seed: s} # prefix used in the rendered cell_id, e.g. "b512-s0"
+
+  exclude: [] # list of {axis: value, ...} dicts; a cell matching ALL keys of any entry is skipped
+  # - {batch: 1280, terms: on}   # e.g.: this combination does not fit the card
+
+  derive: {} # {var: "python-expression over other vars"}, evaluated with a RESTRICTED
+  # evaluator (arithmetic + named vars only, no calls, no attribute access)
+  # lr: "3e-4 * (batch / 256) ** 0.5"
+
+  # --- budgets: H2's exhaustive-key rule, H4's provenance convention --------------
+  # budget_axes: the axes this region's peak VRAM actually depends on. Defaults to
+  # EVERY declared axis; narrowing it below that is a claim and needs budget_axes_why.
+  budget_axes: [batch]
+  # budget_axes_why: "seed changes init and sampling order only, not activation shapes"
+
+  # budgets: one key per FULL budget_axes tuple (order-insensitive), value is
+  # {mib, source}. `source: report_peak` means the number came from a real
+  # `gpu_budget.report_peak()` line for THIS exact axis combination -- anything else
+  # (nvidia-smi by eye, a number from a different step count or region) is
+  # `source: probe`, which the loader treats identically to `mib: null`: the cell goes
+  # to the harness's wave-0 probe rather than trusting a guess.
+  budgets:
+    "batch=512": {mib: null, source: probe}
+    "batch=1280": {mib: null, source: probe}
+
+  # --- variance vs designed comparison (N1) ---------------------------------------
+  # Axes whose difference across cells is noise (a resample), not a comparison the
+  # matrix should print a delta for. `seed` almost always belongs here: CSD's
+  # `build_splits` uses cfg.seed for BOTH weight init and the holdout draw, so two
+  # cells differing only in seed are scored on different eval sets.
+  variance_axes: [seed]
+
+  # --- what each region's train command needs beyond the shared defaults ---------
+  # hosts: [akula-prime]                    # override regions.defaults.hosts if this
+  #                                          # region cannot run everywhere (VRAM, corpus mount)
+  # commands: {train: "..."}                # override only the stages that differ;
+  #                                          # unset stages inherit regions.defaults.commands
+  # steps: 4000                             # any regions.defaults scalar can be overridden here
+
+  # --- what a row in the comparison table reads -----------------------------------
+  primary_metric: "train:$.held_out.recall@1" # <stage>:$.<jsonpath into that stage's receipt>
+  references: [untrained] # add "bm25" for a region with a lexical reference (see memory)
+  eval_key: # cells with a DIFFERENT tuple here are never compared in one table (G10)
+    [
+      "train:$.corpus.fingerprint",
+      "train:$.config.holdout_pairs",
+      "train:$.config.steps",
+      "train:$.config.max_len",
+    ]
+  gates_read: # label -> pointer; every gate here must resolve or the stage is `failed`
+    beats_untrained: "train:$.beats_untrained.recall@1"
+    eval_pass: "test:$.gates.*"
+    quant_budget: "quantize:$.within_budget"
+  extra_columns: {} # optional: label -> pointer, appended to the table verbatim
+  # full_pool_r10: "train:$.retrieval.full_pool.trained.recall@10"
+
+  # --- optional: this region's own follow-up cells (run after the base matrix) ---
+  followup: []
+  # - {axis: seed, values: [1], select: best_by_primary_metric, among: gate_complete}
