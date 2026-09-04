@@ -33,9 +33,45 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from cogsyndelta.regions._receipt import capture_code_revision
+from cogsyndelta.regions._receipt import METRICS_SCHEMA_V2, capture_code_revision
 
 SCHEMA = "model-pipeline-receipt/v1"
+
+#: Re-exported for callers that only import this module -- the envelope schema above
+#: (`SCHEMA`) is unchanged by the metrics-naming unification; this is the SEPARATE
+#: stamp naming which metric-name/battery/pooling table applies (g7-latent-eval-metrics
+#: §3.3). See `cogsyndelta.regions._receipt.METRICS_SCHEMA_V2` for the full rationale --
+#: defined there, once, so `regions._receipt.write_receipt` (which stamps train and
+#: quant receipts) and this envelope (which stamps eval/eval-quantized receipts) never
+#: disagree on the string.
+METRICS_SCHEMA = METRICS_SCHEMA_V2
+
+#: A receipt read back with no `metrics_schema` at all predates the stamp -- every
+#: receipt on disk before this change. Distinguishing that from "explicitly v2" is
+#: what lets a `compare()` (g7 §3.3's refuse predicate) tell a genuinely old-shaped
+#: number apart from one this envelope has already renamed on read (see
+#: `_QUANT_METRIC_ALIASES_V1` below): the ALIASED name is v2-shaped, but the receipt
+#: that produced it was not stamped v2, so a caller diffing it against a real v2
+#: receipt still needs to know that.
+METRICS_SCHEMA_V1_LEGACY = "csd-metrics/v1"
+
+#: v1 -> v2 aliases for the quant-receipt fields this lane owns (g7 §3.1: `quant.plan_recall@1`
+#: WAS `quantized_metric`, `quant.compression_ratio` WAS `compression_ratio`,
+#: `quant.drop_recall@1` WAS the bare `drop`). A quant receipt this project writes NOW
+#: (`scripts/csd-quantize.py`) uses the v2 names directly; this table is for a
+#: v1-shaped quant receipt already on disk (or a v1-shaped raw dict a caller still
+#: hands this module) so it can be normalised to v2 field names before anything reads
+#: it by name. `scripts/csd-publish-checkpoint.py` -- a consumer, not a producer --
+#: imports this to normalise a loaded quant receipt before looking up
+#: `METRIC_METHODOLOGY`. Scoped to the fields this lane's files produce; the project
+#: does not yet have one shared, all-battery `METRIC_ALIASES_V1` covering the
+#: train-receipt gate/battery renames another lane owns -- see
+#: `scripts/csd-publish-checkpoint.py`'s own note where it reads those.
+QUANT_METRIC_ALIASES_V1: dict[str, str] = {
+    "quantized_metric": "quant.plan_recall@1",
+    "compression_ratio": "quant.compression_ratio",
+    "drop": "quant.drop_recall@1",
+}
 
 # Stages a pipeline may report. Open by convention rather than enforced, because a new
 # architecture may have a stage nobody anticipated; the reader groups by whatever it finds.
@@ -86,6 +122,16 @@ class Receipt:
     seconds: float = 0.0
     device: str = ""
     schema: str = SCHEMA
+    metrics_schema: str = METRICS_SCHEMA
+    """Which metric-name/battery/pooling table `metrics` was written under -- SEPARATE
+    from `schema` above (the envelope shape) and unrelated to it: `schema` can stay
+    `model-pipeline-receipt/v1` forever while `metrics_schema` moves from v1 to v2,
+    because the rename is about field NAMES inside `metrics`/`gates`, not the envelope
+    around them. Defaults to the current table (`METRICS_SCHEMA`) for a receipt this
+    class constructs fresh; `adapt()` sets it to `METRICS_SCHEMA_V1_LEGACY` instead when
+    reading a receipt that predates this field, so a reader can still refuse to compare
+    two numbers whose schema disagrees even after `adapt()` has renamed the legacy one's
+    keys (see `_QUANT_METRIC_ALIASES_V1`)."""
     kind: str = ""
     """A shape predicate finer than `stage`: e.g. `stage="eval"` covers both an fp32 pass
     (`kind="eval"`) and a quantized-artifact pass (`kind="eval-quantized"`) -- same stage,
@@ -168,6 +214,11 @@ class Receipt:
                 f"write a {self.kind or self.stage!r} receipt with no code_revision block"
             )
         self.code_revision = dict(revision)
+        # Same "always overwrite" treatment as code_revision above -- a Receipt built
+        # from `adapt()` on an old receipt and re-written (not a production path today,
+        # but the invariant should hold regardless) must not silently re-persist a
+        # stale metrics_schema.
+        self.metrics_schema = METRICS_SCHEMA
 
         out_dir.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
@@ -215,23 +266,42 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             # `write()`'s own filename fallback.
             kind=raw.get("kind") or raw.get("stage", "unknown"),
             code_revision=raw.get("code_revision", {}),
+            # Absent means this receipt predates the stamp -- v1's mixed names, not v2's
+            # table (g7 §3.3). Never default a missing stamp to the CURRENT table: that
+            # would let a genuinely-old receipt's numbers silently pass a same-schema
+            # compare() against a real v2 receipt.
+            metrics_schema=raw.get("metrics_schema") or METRICS_SCHEMA_V1_LEGACY,
         )
 
     component = raw.get("region")
     if not component:
         return None
 
-    # Quantization receipts: no schema key, identified by their own fields.
-    if "compression_ratio" in raw and "quantized_metric" in raw:
+    # Quantization receipts: no schema key, identified by their own fields -- EITHER
+    # the v1 raw names (`quantized_metric`, `compression_ratio`) or the v2 ones
+    # (`quant.plan_recall@1`, `quant.compression_ratio`; `scripts/csd-quantize.py`
+    # writes v2 names now). The envelope's OWN internal metric keys below (`metric`,
+    # `compression_ratio`, `drop`, `stored_mb`) stay generic and unprefixed regardless
+    # of which raw shape was read -- they are this architecture-agnostic reader's own
+    # naming, not a copy of CSD's receipt field names (a ternary model's quant receipt
+    # would have neither `quantized_metric` nor `quant.plan_recall@1`, and still needs
+    # to land in the same three generic buckets a dashboard can plot without knowing
+    # what produced them).
+    is_v1_quant = "compression_ratio" in raw and "quantized_metric" in raw
+    is_v2_quant = "quant.compression_ratio" in raw and "quant.plan_recall@1" in raw
+    if is_v1_quant or is_v2_quant:
+        metric = raw.get("quant.plan_recall@1", raw.get("quantized_metric"))
+        ratio = raw.get("quant.compression_ratio", raw.get("compression_ratio"))
+        drop = raw.get("quant.drop_recall@1", raw.get("drop"))
         return Receipt(
             producer=Producer("cogsyndelta", component, "dense-transformer"),
             stage="quantize",
             kind=raw.get("kind") or "quant",
             metrics={
-                "metric": _num(raw.get("quantized_metric")) or 0.0,
-                "compression_ratio": _num(raw.get("compression_ratio")) or 0.0,
+                "metric": _num(metric) or 0.0,
+                "compression_ratio": _num(ratio) or 0.0,
                 "stored_mb": (_num(raw.get("stored_bytes")) or 0.0) / 1e6,
-                "drop": _num(raw.get("drop")) or 0.0,
+                "drop": _num(drop) or 0.0,
             },
             baseline={"metric": _num(raw.get("fp32_metric_recomputed")) or 0.0},
             gates={"within_budget": bool(raw.get("within_budget"))},
@@ -244,6 +314,8 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             started_utc=raw.get("recorded_utc", ""),
             device=raw.get("device", ""),
             code_revision=raw.get("code_revision", {}),
+            metrics_schema=raw.get("metrics_schema")
+            or (METRICS_SCHEMA if is_v2_quant else METRICS_SCHEMA_V1_LEGACY),
         )
 
     # Pretrain receipts, text and visual. Both carry held_out + untrained_baseline; the
@@ -269,7 +341,13 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             kind=raw.get("kind") or "train",
             metrics={k: v for k, v in ((k, _num(v)) for k, v in held.items()) if v is not None},
             baseline={k: v for k, v in ((k, _num(v)) for k, v in base.items()) if v is not None},
-            gates=dict(raw.get("beats_untrained") or {}),
+            # `beats_untrained_train` is the g7 §3.2 rename of this same gate/context
+            # field (two predicates shared one name across train vs. eval receipts;
+            # train's own is `_beats_untrained_gate`, MM §1). That rename is written by
+            # `regions/pretrain.py`, outside this lane's files -- read defensively, the
+            # new key first, so this reader keeps working whichever name a given
+            # receipt on disk carries, without importing that module.
+            gates=dict(raw.get("beats_untrained_train") or raw.get("beats_untrained") or {}),
             artifacts={
                 "checkpoint": str(raw.get("checkpoint", "")),
                 # Only present on receipts written after R9 (checkpoint fingerprinting);
@@ -287,6 +365,7 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             seconds=float(raw.get("seconds") or raw.get("elapsed_s") or 0.0),
             device=raw.get("device", ""),
             code_revision=raw.get("code_revision", {}),
+            metrics_schema=raw.get("metrics_schema") or METRICS_SCHEMA_V1_LEGACY,
         )
     return None
 
