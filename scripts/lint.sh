@@ -3,8 +3,8 @@
 # pydocstyle, conventional-commit) over the whole repo and fail on any finding.
 #
 # This is the single command CI and the pre-push hook both defer to (see
-# .github/workflows/ci.yml and scripts/ci_local.sh --pre-commit) so local and CI
-# results never drift.
+# .github/workflows/ci.yml and scripts/ci_local.sh, which runs this by default) so
+# local and CI results never drift.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
