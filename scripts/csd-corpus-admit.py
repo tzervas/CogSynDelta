@@ -8,28 +8,40 @@ name, and prints five checks: licence tier vs. the region's already-declared tie
 provenance-group share against CORPUS-CONTRACT.md's B1 (<= 0.40 post-admission),
 `verification_status == VERIFIED`, (check 4) a second, independent read of the full
 catalogue row's own structural refusal signals, and (check 5) whether `provenance.json`'s
-own `admission.constants` block (once the factory writes one) agrees with this tool's
-pinned policy constants. It does not touch CORPUS-CONTRACT.md, csd-regions.json,
+own `admission` block (`policy_version` and `constants`, once the factory writes one)
+agrees with this tool's pinned policy constants. It does not touch CORPUS-CONTRACT.md,
+csd-regions.json,
 or any region's fetch list -- admitting a dataset for real is a human/agent action taken
 after reading this tool's output, same discipline as csd-corpus-expand.py's structural
 REFUSE gate (no override flag) but advisory rather than fetch-blocking, because this tool
 runs after the fetch, not during it.
 
-TASK A COORDINATION (round-2 review, closing B4 + the non-blocking items on the CSD side)
-As of this fix, `dataset_factory.admission` (the factory repo) has NOT yet landed TASK A:
-`FULL_CONTENT_GRANT_SCOPES`/`FORBIDDEN_REDISTRIBUTE_FLAGS`/the enrichment-marker regex are
-transcribed here from the factory's `admission.py` AS IT STANDS TODAY (verified by reading
-that module directly, same discipline as the licence-tier table below); the
-`provenance_red_flags_resolution` rule and `policy_version`/`admission.constants` block are
-transcribed from this task's own specification of what TASK A defines, because the
-factory has not committed either yet. `check_policy_constants_drift` (check 5) is written
-to be forward-compatible: it PASSES with a note when `provenance.json` carries no
-`admission` block at all (every real provenance.json fetched before TASK A lands, which is
-all of them today), and only FAILs once a real drift is observable -- a present-but-
-disagreeing `admission.constants` block. The day TASK A lands, re-verify
-`ADAPTER_POLICY_CONSTANTS` and `tests/fixtures/dataset-factory-policy.json` against the
-factory's real committed values (`policy_version` in particular, invented here as
-"2026-09-03-r3" pending that commit) and update both together.
+TASK A COORDINATION (round-3 review, closing check 5's structural-drift defect)
+`ADAPTER_POLICY_CONSTANTS` below is TRANSCRIBED VERBATIM from a live read of
+`dataset_factory.admission.admission_constants()` AT THE FACTORY REPO'S CURRENT HEAD
+COMMIT (`git archive HEAD -- src` into a scratch checkout, then imported directly -- not
+the working tree, which as of this fix carries an UNCOMMITTED, in-progress edit on a
+different task that nests `ADMISSION_POLICY_VERSION` inside the constants dict; that
+edit's own docstring calls the current, committed, sibling-key shape read here "TASK A"
+too, so this tool deliberately mirrors what TASK A has actually SHIPPED, not what it has
+open in a working tree this tool does not control and cannot pin against reliably). Same
+key names, same key set as `admission_constants()`'s committed return value; `policy_version`
+is compared SEPARATELY against the record's top-level `admission.policy_version` (both
+independently, by `check_policy_constants_drift`) rather than folded into the constants
+dict -- the "or agree a normalised subset" alternative the round-3 review offered,
+deliberately chosen over chasing the in-flight edit. `tests/fixtures/dataset-factory-
+policy.json` is regenerated the same way (see that file's sibling comment in the test
+suite for the exact command); `test_pinned_fixture_matches_live_factory_output_when_available`
+re-imports the real factory module directly (skips gracefully when the sibling
+`dataset-factory` checkout is not present) and checks this tool's pinned constants are a
+SUBSET that still agrees value-for-value with whatever the factory currently computes --
+loose enough to tolerate the factory ADDING a constant this tool does not yet track (e.g.
+finishing the in-flight nesting edit above), strict enough to fail the moment a value this
+tool DOES pin, or `ADMISSION_POLICY_VERSION` itself, changes under it. `check_policy_
+constants_drift` (check 5) stays forward-compatible: it PASSES with a note when
+`provenance.json` carries no `admission` block at all (a provenance.json fetched before
+the factory started emitting one), and only FAILs once a real drift is observable -- a
+present-but-disagreeing `admission.policy_version` and/or `admission.constants`.
 
 WHY THE LICENCE-TIER TABLE IS DUPLICATED HERE, NOT IMPORTED
 scripts/csd-publish-checkpoint.py's LICENCE_TIER is the source of truth for what a region
@@ -146,36 +158,74 @@ ENRICHMENT_NONE_ADMISSIBLE_MARKER = "NONE ADMISSIBLE"
 
 # A `provenance_red_flags` entry counts as UNRESOLVED unless
 # `provenance_red_flags_resolution` (a list of {"flag": <exact red-flag text>, "resolved":
-# bool, ...}) carries an entry for that exact flag text with resolved=True. This is the
-# rule TASK A defines on the factory side; the shape (`flag` + `resolved` keys) is this
-# tool's own transcription of that rule pending the factory's actual commit -- see
-# `_unresolved_red_flags`'s docstring and the module docstring's TASK A COORDINATION note.
+# bool, ...}) carries an entry for that exact flag text with resolved=True. This mirrors
+# `dataset_factory.admission.unresolved_red_flags`/`red_flag_resolution_matches` (already
+# committed on the factory side) exactly -- prose documentation only, not itself part of
+# the pinned drift-check dict below (the factory's `admission_constants()` expresses the
+# same rule as the two booleans `RED_FLAGS_BLOCK_ADMISSION`/`RED_FLAG_RESOLVED_MARKER`
+# inside `ADAPTER_POLICY_CONSTANTS`, not as a prose string) -- see `_unresolved_red_flags`.
 RED_FLAG_RESOLUTION_RULE = (
     "a provenance_red_flags entry is unresolved unless provenance_red_flags_resolution "
     "carries an entry for it with resolved=true"
 )
 
-# Pinned by tests/fixtures/dataset-factory-policy.json: `policy_version` identifies which
-# revision of the shared admission policy this tool was built against. TASK A (factory
-# repo, dataset_factory/admission.py) has not landed as of this tool's B4 fix -- there is
-# no real `policy_version` to read yet, so this is this tool's OWN declared version,
-# pending reconciliation the day the factory starts emitting `admission.constants` into
-# provenance.json (see `check_policy_constants_drift`). Bump it, and the fixture, together
-# whenever any constant in this block changes.
-POLICY_VERSION = "2026-09-03-r3"
+# `dataset_factory.catalogue.GRANT_SCOPE_CLASSES` transcribed verbatim -- the full closed
+# vocabulary `grant_scope` may take, of which `FULL_CONTENT_GRANT_SCOPES` above is the
+# admissible subset. Not read by any check in this tool (checks 4/5 only need the
+# admissible subset and the raw value for its error message) -- pinned here purely so it
+# is part of the `ADAPTER_POLICY_CONSTANTS` drift comparison, since it is part of the
+# factory's own `admission_constants()` output.
+GRANT_SCOPE_CLASSES: frozenset[str] = frozenset(
+    {
+        "whole_corpus",
+        "whole_corpus (heterogeneous per file)",
+        "metadata_only",
+        "code_only",
+        "database_rights_only",
+        "unstated",
+    }
+)
 
-# The full set of pinned policy constants, in the same shape the factory is expected to
-# write into provenance.json under `admission.constants` (round-2 review, non-blocking
-# item: "the factory writes an `admission` block into provenance.json ... and the CSD
-# adapter pins the same constants in a fixture test that fails when they drift"). Read by
-# `check_policy_constants_drift` and by `test_adapter_policy_constants_match_fixture`.
+# `dataset_factory.admission.ADMISSION_POLICY_VERSION` transcribed verbatim from the
+# factory repo's HEAD commit (see the module docstring's TASK A COORDINATION note).
+# Compared SEPARATELY against `provenance.json`'s top-level `admission.policy_version` by
+# `check_policy_constants_drift` -- a normalised-subset agreement with the factory's
+# committed `admission_decision()` shape (`policy_version` as a sibling of `constants`,
+# not nested inside it), deliberately chosen over pinning against an in-flight, uncommitted
+# edit to a dict this tool does not own.
+POLICY_VERSION = "2026-09-03.r3"
+
+# The full set of pinned policy constants, TRANSCRIBED VERBATIM (same keys, same values)
+# from a live read of `dataset_factory.admission.admission_constants()` at the factory
+# repo's HEAD commit -- not hand-typed to agree with this tool's own prior guess, which is
+# what let the two sides disagree on both vocabulary and version string with nothing able
+# to detect it (round-3 review, finding 1). `tests/fixtures/dataset-factory-policy.json`
+# is regenerated the same way; `test_adapter_policy_constants_match_pinned_fixture` pins
+# this dict against that fixture, and
+# `test_pinned_fixture_matches_live_factory_output_when_available` pins it against the
+# real factory module directly (as a subset -- see that test's docstring) when the sibling
+# checkout is present. Constants with no direct gate in this tool (`ADMISSIBLE_VERDICTS`,
+# `REQUIRED_VERIFICATION_STATUS`, `EVAL_ONLY_TAG`, `NC_VERDICT`, `REDISTRIBUTE_NC_FLAG`,
+# `RED_FLAGS_BLOCK_ADMISSION`, `RED_FLAG_RESOLVED_MARKER`, `SCHEMA_DEFECTS_BLOCK_ADMISSION`,
+# `REQUIRE_LICENCE_TEXT`) are still pinned here even though checks 1-3 apply their own
+# separately-maintained REGION_TIER/VERDICT_TIER tables covering related ground -- this
+# dict's only job is to detect drift against `admission.constants`, not to be this tool's
+# own source of gating logic for those fields.
 ADAPTER_POLICY_CONSTANTS: dict[str, Any] = {
-    "policy_version": POLICY_VERSION,
-    "full_content_grant_scopes": sorted(FULL_CONTENT_GRANT_SCOPES),
-    "forbidden_redistribute_flags": sorted(FORBIDDEN_REDISTRIBUTE_FLAGS),
-    "red_flag_resolution_rule": RED_FLAG_RESOLUTION_RULE,
-    "enrichment_refusal_marker_pattern": ENRICHMENT_REFUSAL_MARKER_RE.pattern,
-    "enrichment_none_admissible_marker": ENRICHMENT_NONE_ADMISSIBLE_MARKER,
+    "ADMISSIBLE_VERDICTS": sorted({"PERMISSIVE_OK", "ATTRIBUTION", "SHARE_ALIKE", "NC"}),
+    "REQUIRED_VERIFICATION_STATUS": "VERIFIED",
+    "EVAL_ONLY_TAG": "EVAL-ONLY",
+    "NC_VERDICT": "NC",
+    "REDISTRIBUTE_NC_FLAG": "nc",
+    "FULL_CONTENT_GRANT_SCOPES": sorted(FULL_CONTENT_GRANT_SCOPES),
+    "FORBIDDEN_REDISTRIBUTE_FLAGS": sorted(FORBIDDEN_REDISTRIBUTE_FLAGS),
+    "RED_FLAGS_BLOCK_ADMISSION": True,
+    "RED_FLAG_RESOLVED_MARKER": True,
+    "SCHEMA_DEFECTS_BLOCK_ADMISSION": True,
+    "REQUIRE_LICENCE_TEXT": True,
+    "ENRICHMENT_REFUSAL_MARKER_RE": ENRICHMENT_REFUSAL_MARKER_RE.pattern,
+    "ENRICHMENT_NONE_ADMISSIBLE_MARKER": ENRICHMENT_NONE_ADMISSIBLE_MARKER,
+    "GRANT_SCOPE_CLASSES": sorted(GRANT_SCOPE_CLASSES),
 }
 
 DEFAULT_CATALOGUE_PATH = (
@@ -455,27 +505,30 @@ def check_catalogue_structural_refusals(
 
 
 def check_policy_constants_drift(provenance: dict[str, Any]) -> CheckResult:
-    """Check 5: `provenance.json`'s own `admission.constants` block (once the factory
-    writes one -- see the module docstring's TASK A COORDINATION note) must agree with
-    this tool's pinned ADAPTER_POLICY_CONSTANTS exactly. A drift here means the factory
+    """Check 5: `provenance.json`'s own `admission` block -- both the top-level
+    `policy_version` AND the `constants` sub-object -- must agree with this tool's pinned
+    `POLICY_VERSION`/`ADAPTER_POLICY_CONSTANTS` exactly. A drift here means the factory
     and this second-look tool are silently applying two different policies to the same
     admission decision -- exactly the split-brain B4 found, but caught automatically
     instead of by the next round of manual review.
 
+    Checked independently (not as one combined dict) so a mismatch on ONLY the version
+    string or ONLY the constants body is reported precisely -- e.g. a `provenance.json`
+    written under a bumped `ADMISSION_POLICY_VERSION` whose `constants` body happens not
+    to have changed yet still reports the version mismatch specifically, not folded into
+    one opaque "the dicts disagree" message.
+
     Forward-compatible on purpose: a `provenance.json` with no `admission` block at all
-    (every real one fetched before TASK A lands, which is all of them as of this fix)
-    PASSES with a note that the check is not yet applicable -- it does not retroactively
-    refuse every dataset already on disk for lacking a field the factory did not emit yet.
-    Once the factory starts writing the block, an ABSENT block would instead mean the
-    factory silently stopped -- but that transition is TASK A's to make and re-verify
-    against, not something this tool can distinguish today.
+    (a provenance.json fetched before the factory started emitting one) PASSES with a note
+    that the check is not yet applicable -- it does not retroactively refuse a dataset
+    already on disk for lacking a field the factory did not emit at fetch time.
     """
     if "admission" not in provenance:
         return CheckResult(
             "policy_constants_drift",
             True,
-            "provenance.json carries no `admission` block (factory has not yet started "
-            "emitting one, pending TASK A) -- drift check not yet applicable",
+            "provenance.json carries no `admission` block (fetched before the factory "
+            "started emitting one) -- drift check not yet applicable",
         )
     admission_block = provenance.get("admission")
     if not isinstance(admission_block, dict):
@@ -491,18 +544,25 @@ def check_policy_constants_drift(provenance: dict[str, Any]) -> CheckResult:
             False,
             "provenance.json carries an `admission` block but no `constants` sub-object",
         )
-    if constants != ADAPTER_POLICY_CONSTANTS:
-        return CheckResult(
-            "policy_constants_drift",
-            False,
-            f"provenance admission.constants={constants!r} disagrees with this tool's "
-            f"own ADAPTER_POLICY_CONSTANTS={ADAPTER_POLICY_CONSTANTS!r}",
+    mismatches: list[str] = []
+    provenance_policy_version = admission_block.get("policy_version")
+    if provenance_policy_version != POLICY_VERSION:
+        mismatches.append(
+            f"admission.policy_version={provenance_policy_version!r} disagrees with this "
+            f"tool's own POLICY_VERSION={POLICY_VERSION!r}"
         )
+    if constants != ADAPTER_POLICY_CONSTANTS:
+        mismatches.append(
+            f"admission.constants={constants!r} disagrees with this tool's own "
+            f"ADAPTER_POLICY_CONSTANTS={ADAPTER_POLICY_CONSTANTS!r}"
+        )
+    if mismatches:
+        return CheckResult("policy_constants_drift", False, "; ".join(mismatches))
     return CheckResult(
         "policy_constants_drift",
         True,
-        f"provenance admission.constants matches this tool's policy exactly "
-        f"(policy_version={ADAPTER_POLICY_CONSTANTS['policy_version']!r})",
+        f"provenance admission.policy_version and admission.constants both match this "
+        f"tool's pinned policy exactly (policy_version={POLICY_VERSION!r})",
     )
 
 

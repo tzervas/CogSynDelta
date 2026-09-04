@@ -1,13 +1,36 @@
 {
-  "policy_version": "2026-09-03-r3",
-  "full_content_grant_scopes": [
-    "whole_corpus",
-    "whole_corpus (heterogeneous per file)"
-  ],
-  "forbidden_redistribute_flags": [
-    "nd"
-  ],
-  "red_flag_resolution_rule": "a provenance_red_flags entry is unresolved unless provenance_red_flags_resolution carries an entry for it with resolved=true",
-  "enrichment_refusal_marker_pattern": "\\bREFUSE[SD]?\\b",
-  "enrichment_none_admissible_marker": "NONE ADMISSIBLE"
+  "constants": {
+    "ADMISSIBLE_VERDICTS": [
+      "ATTRIBUTION",
+      "NC",
+      "PERMISSIVE_OK",
+      "SHARE_ALIKE"
+    ],
+    "ENRICHMENT_NONE_ADMISSIBLE_MARKER": "NONE ADMISSIBLE",
+    "ENRICHMENT_REFUSAL_MARKER_RE": "\\bREFUSE[SD]?\\b",
+    "EVAL_ONLY_TAG": "EVAL-ONLY",
+    "FORBIDDEN_REDISTRIBUTE_FLAGS": [
+      "nd"
+    ],
+    "FULL_CONTENT_GRANT_SCOPES": [
+      "whole_corpus",
+      "whole_corpus (heterogeneous per file)"
+    ],
+    "GRANT_SCOPE_CLASSES": [
+      "code_only",
+      "database_rights_only",
+      "metadata_only",
+      "unstated",
+      "whole_corpus",
+      "whole_corpus (heterogeneous per file)"
+    ],
+    "NC_VERDICT": "NC",
+    "REDISTRIBUTE_NC_FLAG": "nc",
+    "RED_FLAGS_BLOCK_ADMISSION": true,
+    "RED_FLAG_RESOLVED_MARKER": true,
+    "REQUIRED_VERIFICATION_STATUS": "VERIFIED",
+    "REQUIRE_LICENCE_TEXT": true,
+    "SCHEMA_DEFECTS_BLOCK_ADMISSION": true
+  },
+  "policy_version": "2026-09-03.r3"
 }
