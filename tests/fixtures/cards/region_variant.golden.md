@@ -149,6 +149,7 @@ git checkout (none recorded)
 uv sync --group dev
 ```
 
+<!-- exec -->
 ```python
 import torch
 from cogsyndelta.regions.text_encoder import TextEncoder  # or the region's own loader
@@ -157,6 +158,7 @@ state = torch.load("final.pt", map_location="cpu", weights_only=True)
 # verify: sha256(final.pt) == "20f37e64607e9ca73e98a873012f43bafac8ee33fdb00de9d1d5551ee4f4f54d"
 ```
 
+<!-- exec -->
 ```python
 from cogsyndelta.quant.ptq import load_packed_artifact, unpack_state_dict
 

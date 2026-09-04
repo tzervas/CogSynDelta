@@ -228,6 +228,11 @@ checkpoints/
 # with the default out_dir puts a 64 MB blob per region straight into git status.
 *-checkpoints/
 *.pt
+# Exception: tiny (~2 KB), deterministic, INTENTIONALLY committed checkpoints the model-
+# card test suite exercises against (tests/test_cards_usage_snippets.py's exec'd usage
+# snippets, tests/test_cards_export.py) -- not a real trained artifact, so the blanket
+# *.pt rule above must not swallow it.
+!tests/fixtures/cards/*.pt
 
 # Local receipts directory -- the secret audit found receipts/compress-20260902T153612Z.json
 # untracked and unignored here, unlike the checkpoint directories above.
