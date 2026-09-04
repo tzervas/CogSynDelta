@@ -3,12 +3,18 @@
 Two things are proven here, not merely described:
 
 1. `docs/design/METRICS-METHODOLOGY.md`'s own `file:line` anchors resolve to real files
-   with enough lines to cover them -- a drift guard. It does NOT check that the prose
-   still matches what is at that line, only that the anchor has not gone stale (a
-   renamed function, a shortened file). It also checks a handful of specific claims the
-   doc is required to state plainly (the quant-vs-eval battery distinction, the
-   untrained baseline, the PTQ-ratio-is-not-a-speed-claim caveat, the
-   anisotropy-is-a-diagnostic-not-a-score caveat, the licence-follows-corpus caveat).
+   with enough lines to cover them -- a drift guard (`test_anchor_resolves`). That check
+   alone does NOT prove the anchor points at the identifier the prose names beside it --
+   a review of this doc found citations where the file:line was real and long enough but
+   landed on a different function or a print statement (a renamed function, an inserted
+   block, and the doc never re-derived). `test_named_anchor_resolves` below is the
+   stricter check: every `` `name()` `` cited immediately beside a `file:line` must have
+   that span actually define or call `name`, re-derived from an AST walk of the real
+   source on every run, not a hand-typed list of the anchors one review happened to catch.
+   It also checks a handful of specific claims the doc is required to state plainly (the
+   quant-vs-eval battery distinction, the untrained baseline, the
+   PTQ-ratio-is-not-a-speed-claim caveat, the anisotropy-is-a-diagnostic-not-a-score
+   caveat, the licence-follows-corpus caveat).
 
 2. `scripts/csd-publish-checkpoint.py`'s `build_card` refuses to print a metric with no
    entry in `METRIC_METHODOLOGY`, and the "How these numbers were produced" section it
@@ -121,6 +127,144 @@ def test_anchor_resolves(path: str, start: int, end: int) -> None:
     assert p.is_file(), f"{path} (cited at line {start}) no longer exists"
     n = len(p.read_text().splitlines())
     assert n >= end, f"{path}:{start}-{end} cited, but the file now has only {n} lines"
+
+
+# A stricter check than `test_anchor_resolves` above: that one only proves a cited anchor
+# has not gone stale (file exists, long enough). It does NOT prove the anchor points at
+# the identifier the prose names beside it -- a review of this doc found 24+ citations of
+# the shape "`some_function()` ... (`path:start-end`)" where the file:line was real and
+# long enough, but landed on a DIFFERENT function or a print statement, because the doc
+# was not updated when the source was refactored. This is the defect class that review
+# caught; `_NAMED_ANCHOR_RE` below re-derives it from the doc + an AST walk of the actual
+# source, rather than re-typing the review's fixed list by hand (which would prove nothing
+# about *future* drift the same way `test_anchor_resolves`'s own `n >= end` alone does not).
+_NAMED_ANCHOR_RE = re.compile(
+    r"`([A-Za-z_][A-Za-z0-9_.]*)\(\)`[^`]{0,40}"
+    r"`((?:src|scripts)/[A-Za-z0-9_./-]+\.py):(\d+)(?:-(\d+))?`"
+)
+
+
+def _named_anchors() -> list[tuple[str, str, int, int]]:
+    """Every `` `name()` `` immediately (within 40 chars, no intervening backtick-quoted
+    span) followed by a `file:line` anchor -- i.e. every place the doc claims "this
+    citation is where `name` is defined/called", specifically enough to check."""
+    text = DOC.read_text() if DOC.is_file() else ""
+    out: list[tuple[str, str, int, int]] = []
+    for m in _NAMED_ANCHOR_RE.finditer(text):
+        name, path, start_s, end_s = m.group(1), m.group(2), m.group(3), m.group(4)
+        start = int(start_s)
+        out.append((name, path, start, int(end_s) if end_s else start))
+    return out
+
+
+def test_doc_cites_a_realistic_number_of_named_anchors() -> None:
+    """Guards `_named_anchors` itself the same way `test_doc_cites_a_realistic_number_of_
+    anchors` guards `_anchors`: if the `` `name()` `` + adjacent-anchor convention drifts,
+    this format-drift check catches `test_named_anchor_resolves` passing vacuously on zero
+    parametrized cases, rather than that test silently stopping enforcement."""
+    assert len(_named_anchors()) > 30
+
+
+def _defs_in_source(source: str) -> dict[str, list[tuple[int, int]]]:
+    """name -> [(lineno, end_lineno), ...] for every function/class def in `source`,
+    functions also indexed under `ClassName.method_name` for a qualified citation like
+    `` `BenchmarkResult.flat()` ``."""
+    import ast
+
+    tree = ast.parse(source)
+    out: dict[str, list[tuple[int, int]]] = {}
+
+    class _Visitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.stack: list[str] = []
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            out.setdefault(node.name, []).append((node.lineno, node.end_lineno or node.lineno))
+            self.stack.append(node.name)
+            self.generic_visit(node)
+            self.stack.pop()
+
+        def _visit_func(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+            out.setdefault(node.name, []).append((node.lineno, node.end_lineno or node.lineno))
+            if self.stack:
+                qualified = f"{self.stack[-1]}.{node.name}"
+                out.setdefault(qualified, []).append((node.lineno, node.end_lineno or node.lineno))
+            self.generic_visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            self._visit_func(node)
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            self._visit_func(node)
+
+    _Visitor().visit(tree)
+    return out
+
+
+def _named_anchor_ok(
+    name: str, defs: dict[str, list[tuple[int, int]]], lines: list[str], start: int, end: int
+) -> bool:
+    """True iff `[start, end]` either contains the def of `name` (or its unqualified
+    tail, e.g. `flat` for `BenchmarkResult.flat`) or, for a name only imported into this
+    file, contains a line that calls it (`name(`)."""
+    short = name.rsplit(".", 1)[-1]
+    candidates = defs.get(name) or defs.get(short) or []
+    if any(d0 <= start <= d1 or d0 <= end <= d1 for d0, d1 in candidates):
+        return True
+    window = "\n".join(lines[max(0, start - 1) : end])
+    return f"{short}(" in window
+
+
+@pytest.mark.parametrize("name,path,start,end", _named_anchors())
+def test_named_anchor_resolves(name: str, path: str, start: int, end: int) -> None:
+    """The anchor must land on the def of `name` (or, for a name that is only imported
+    into `path` -- e.g. `mean_reciprocal_rank()` re-exported from `eval/metrics.py` and
+    called inside `eval/benchmark.py` -- on a line within `[start, end]` that actually
+    calls it). A citation that merely points at a long-enough file (what
+    `test_anchor_resolves` checks) is not enough: `csd-benchmark.py:358,522` was a real,
+    long-enough file:line pair that printed an f-string, not the `uses_its_dimensions`
+    gate the doc named beside it -- the actual gate was at 453 and 632."""
+    p = ROOT / path
+    defs = _defs_in_source(p.read_text())
+    lines = p.read_text().splitlines()
+    assert _named_anchor_ok(name, defs, lines, start, end), (
+        f"`{name}()` cited at {path}:{start}-{end}, but that span neither defines "
+        f"{name.rsplit('.', 1)[-1]!r} nor calls it"
+    )
+
+
+def test_named_anchor_resolves_is_not_vacuous_stubbed_source() -> None:
+    """Mutation proof for `test_named_anchor_resolves`, exercising the SAME
+    `_named_anchor_ok` the real test calls (not a re-typed copy that could silently drift
+    from it) against a throwaway fixture -- never the real doc or the real
+    `scripts/csd-benchmark.py`. Cites the wrong function's line range for a name, exactly
+    the shape of the real defect this test class was written to catch (a citation
+    pointing at an f-string print statement while claiming to be the `uses_its_dimensions`
+    gate), and confirms the check fails. Without this, `test_named_anchor_resolves` could
+    be passing only because every anchor in the current doc happens to be correct today --
+    the same silent-pass risk `test_stubbed_methodology_map_fails_the_card_build` below
+    guards against for the card-build enforcement."""
+    fixture_source = (
+        "def uses_its_dimensions_gate(x):\n"
+        "    return x > 0.05\n"
+        "\n"
+        "\n"
+        "def unrelated_print(x):\n"
+        "    print(f'{x:.1%}')\n"
+    )
+    defs = _defs_in_source(fixture_source)
+    lines = fixture_source.splitlines()
+
+    # Sanity: the fixture itself resolves correctly when cited at its OWN lines --
+    # otherwise a broken fixture could make the mutation below pass for the wrong reason.
+    own_start, own_end = defs["uses_its_dimensions_gate"][0]
+    assert _named_anchor_ok("uses_its_dimensions_gate", defs, lines, own_start, own_end)
+
+    # The mutation: cite `unrelated_print`'s lines for `uses_its_dimensions_gate`.
+    wrong_start, wrong_end = defs["unrelated_print"][0]
+    assert not _named_anchor_ok("uses_its_dimensions_gate", defs, lines, wrong_start, wrong_end), (
+        "mutation proof is broken: a wrong-function citation passed _named_anchor_ok"
+    )
 
 
 def test_doc_states_the_quant_vs_eval_battery_distinction() -> None:
