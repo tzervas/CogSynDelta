@@ -1,7 +1,6 @@
 name: CI/CD Pipeline
 
-# Manual only — no push/pull_request CI triggers
-on:
+"on":
   push:
     branches:
       - main
@@ -29,89 +28,129 @@ jobs:
     name: Lint & Format Check
     runs-on: [self-hosted, linux, x64, podman]
     steps:
-    - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-    - name: Verify uv (baked into job image)
-      run: |
-        # uv is baked into the job image (fleet-ci-base), so nothing is installed
-        # here: no network dependency, and no tar extraction -- which is what forced
-        # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
-        # must fail loudly and name the image, not silently skip the step.
-        command -v uv >/dev/null 2>&1 || {
-          echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
-        uv --version
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
-    # uvx: no project Python / torch. Same pins as local scripts/ci_local.sh.
-    - name: Ruff lint check
-      run: uvx ruff@${{ env.RUFF_VERSION }} check src/ tests/ benchmarks/ scripts/ examples/
+      # uvx: no project Python / torch. Same pins as local scripts/ci_local.sh.
+      - name: Ruff lint check
+        run: uvx ruff@${{ env.RUFF_VERSION }} check src/ tests/ benchmarks/ scripts/ examples/
 
-    - name: Ruff format check
-      run: uvx ruff@${{ env.RUFF_VERSION }} format --check src/ tests/ benchmarks/ scripts/ examples/
+      - name: Ruff format check
+        run: uvx ruff@${{ env.RUFF_VERSION }} format --check src/ tests/ benchmarks/ scripts/ examples/
 
-    - name: Set up Python 3.12
-      run: uv python install 3.12
+      - name: Set up Python 3.12
+        run: uv python install 3.12
 
-    # Pinned to 3.12: mypy's parser runs under whichever interpreter invokes
-    # it, regardless of --python-version / [tool.mypy] target. The bare
-    # `uvx` default resolves to the job image's system python3, which is
-    # older than the project floor (3.12) and cannot parse PEP 695 syntax
-    # (e.g. `def f[T](...)`), failing with a bogus "Expected '('" error.
-    - name: Type check with mypy
-      run: >
-        uvx --python 3.12 --from mypy==${{ env.MYPY_VERSION }} --with types-PyYAML
-        mypy src/
+      # Pinned to 3.12: mypy's parser runs under whichever interpreter invokes
+      # it, regardless of --python-version / [tool.mypy] target. The bare
+      # `uvx` default resolves to the job image's system python3, which is
+      # older than the project floor (3.12) and cannot parse PEP 695 syntax
+      # (e.g. `def f[T](...)`), failing with a bogus "Expected '('" error.
+      # `scripts/csd-benchmark.py` is listed explicitly: [tool.mypy] excludes `scripts/`,
+      # but mypy's `exclude` filters directory crawling, not command-line paths, so this
+      # file really is checked. It writes the eval receipts the matrix pipeline binds and
+      # publishes on; the rest of the scripts tree stays excluded on purpose (L1).
+      - name: Type check with mypy
+        run: >
+          uvx --python 3.12 --from mypy==${{ env.MYPY_VERSION }} --with types-PyYAML
+          mypy src/ scripts/csd-benchmark.py
 
-  pre-commit:
-    name: Pre-commit Checks
-    # Not a required merge check. The mypy hook pulls torch and starves the
-    # homelab queue; ruff+mypy jobs already cover the same surface on PRs.
-    if: github.event_name != 'pull_request'
+  shell-yaml-lint:
+    name: Shell & YAML Lint
+    # Lightweight, torch-free lint pass: shellcheck and yamllint run via
+    # `uvx pre-commit run <hook>`, an ephemeral tool env with no project sync.
+    # Kept as its own job (rather than folded into lint-gate below) so a shell
+    # or YAML mistake fails fast without waiting on lint-gate's full `uv run`
+    # project sync, which pulls the cu128 torch env.
     runs-on: [self-hosted, linux, x64, podman]
     steps:
-    - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-    - name: Verify uv (baked into job image)
-      run: |
-        # uv is baked into the job image (fleet-ci-base), so nothing is installed
-        # here: no network dependency, and no tar extraction -- which is what forced
-        # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
-        # must fail loudly and name the image, not silently skip the step.
-        command -v uv >/dev/null 2>&1 || {
-          echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
-        uv --version
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
-    - name: Run pre-commit on all files
-      run: uvx pre-commit run --all-files
+      # Run just the shellcheck and yamllint hooks via uvx (ephemeral tool env, no
+      # project sync needed) -- deliberately not the full `pre-commit run --all-files`
+      # used by the lint-gate job below, since that also runs the torch-carrying
+      # mypy hook and needs the full project env synced first.
+      - name: shellcheck (every *.sh and bash-shebang file)
+        run: uvx pre-commit run shellcheck --all-files
+
+      - name: yamllint
+        run: uvx pre-commit run yamllint --all-files
+
+  lint-gate:
+    name: Lint gate (scripts/lint.sh)
+    # Runs on pull_request too, not just push: this is the actual gate the repo's
+    # own docs (scripts/lint.sh's header, docs/DEVELOPMENT_STANDARDS.md) already
+    # claim CI enforces on every PR -- it wasn't, before this job. Cost note: this
+    # goes through `uv run` (scripts/lint.sh), so it syncs the full project env
+    # (cu128 torch included) before pre-commit even starts, unlike the lighter
+    # `uvx pre-commit run <hook>` calls in shell-yaml-lint above, which skip that
+    # sync entirely. If that turns out to starve the homelab runner queue on PRs,
+    # the fix is a warm/shared uv cache on the runner, not skipping this job.
+    runs-on: [self-hosted, linux, x64, podman]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
+
+      - name: Run scripts/lint.sh
+        run: bash scripts/lint.sh
 
   quality:
     name: Quality Score Check
     runs-on: [self-hosted, linux, x64, podman]
     steps:
-    - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-    - name: Verify uv (baked into job image)
-      run: |
-        # uv is baked into the job image (fleet-ci-base), so nothing is installed
-        # here: no network dependency, and no tar extraction -- which is what forced
-        # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
-        # must fail loudly and name the image, not silently skip the step.
-        command -v uv >/dev/null 2>&1 || {
-          echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
-        uv --version
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
-    - name: Set up Python 3.12
-      run: uv python install 3.12
+      - name: Set up Python 3.12
+        run: uv python install 3.12
 
-    # Stdlib only, still pinned to 3.12: quality_control.py parses source
-    # with ast.parse under whatever interpreter runs it. The job image's
-    # bare python3 is older than the project floor (3.12) and cannot parse
-    # PEP 695 syntax, which quality_control.py reports as a syntax error
-    # (docked -5, dropping the score below --fail-under 90).
-    # --no-project: this script has no third-party deps, so skip syncing
-    # the full project (and its CPU/GPU torch extras) just to get a 3.12
-    # interpreter on PATH.
-    - name: Run quality checks (90+ required)
-      run: uv run --python 3.12 --no-project python3 scripts/quality_control.py src/ --fail-under 90
+      # Stdlib only, still pinned to 3.12: quality_control.py parses source
+      # with ast.parse under whatever interpreter runs it. The job image's
+      # bare python3 is older than the project floor (3.12) and cannot parse
+      # PEP 695 syntax, which quality_control.py reports as a syntax error
+      # (docked -5, dropping the score below --fail-under 90).
+      # --no-project: this script has no third-party deps, so skip syncing
+      # the full project (and its CPU/GPU torch extras) just to get a 3.12
+      # interpreter on PATH.
+      - name: Run quality checks (90+ required)
+        run: uv run --python 3.12 --no-project python3 scripts/quality_control.py src/ --fail-under 90
 
   test:
     name: Test on Python 3.12
@@ -119,50 +158,50 @@ jobs:
     timeout-minutes: 25
 
     steps:
-    - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-    - name: Verify uv (baked into job image)
-      run: |
-        # uv is baked into the job image (fleet-ci-base), so nothing is installed
-        # here: no network dependency, and no tar extraction -- which is what forced
-        # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
-        # must fail loudly and name the image, not silently skip the step.
-        command -v uv >/dev/null 2>&1 || {
-          echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
-        uv --version
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
-    - name: Set up Python 3.12
-      run: uv python install 3.12
+      - name: Set up Python 3.12
+        run: uv python install 3.12
 
-    - name: Install dependencies with CPU-only PyTorch
-      run: |
-        set -euo pipefail
-        # Isolate from ~/.cache/uv — concurrent homelab jobs racing torch wheel
-        # extract fail with "No such file or directory" on libtorch_global_deps.so.
-        export UV_CACHE_DIR="${RUNNER_TEMP:-/tmp}/uv-cache-${GITHUB_RUN_ID:-$$}"
-        mkdir -p "$UV_CACHE_DIR"
-        # Use --no-sources to bypass pyproject.toml torch source (cu128)
-        # Use --index-strategy unsafe-best-match to allow packages from all indexes
-        # --group train: pyarrow + tokenizers, both pure CPU wheels (no CUDA
-        # pull — verified locally: this exact sync leaves torch on the +cpu
-        # build with cuda_available=False). Without this group, ~85 guard
-        # tests across tests/test_corpus.py, test_guards_can_fail.py and
-        # others hit `pytest.importorskip("pyarrow" / "tokenizers", reason=
-        # "train group not installed")` and silently skip in CI on every run.
-        uv sync --group dev --group train --no-sources --no-compile-bytecode --link-mode copy \
-          --extra-index-url https://download.pytorch.org/whl/cpu \
-          --index-strategy unsafe-best-match
+      - name: Install dependencies with CPU-only PyTorch
+        run: |
+          set -euo pipefail
+          # Isolate from ~/.cache/uv — concurrent homelab jobs racing torch wheel
+          # extract fail with "No such file or directory" on libtorch_global_deps.so.
+          export UV_CACHE_DIR="${RUNNER_TEMP:-/tmp}/uv-cache-${GITHUB_RUN_ID:-$$}"
+          mkdir -p "$UV_CACHE_DIR"
+          # Use --no-sources to bypass pyproject.toml torch source (cu128)
+          # Use --index-strategy unsafe-best-match to allow packages from all indexes
+          # --group train: pyarrow + tokenizers, both pure CPU wheels (no CUDA
+          # pull — verified locally: this exact sync leaves torch on the +cpu
+          # build with cuda_available=False). Without this group, ~85 guard
+          # tests across tests/test_corpus.py, test_guards_can_fail.py and
+          # others hit `pytest.importorskip("pyarrow" / "tokenizers", reason=
+          # "train group not installed")` and silently skip in CI on every run.
+          uv sync --group dev --group train --no-sources --no-compile-bytecode --link-mode copy \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
 
-    - name: Run tests with pytest
-      run: |
-        # -rs: print a summary line for every skip, so a skip (e.g. a
-        # dependency group silently not installed) is visible in the log
-        # instead of vanishing into the passed/failed counts.
-        uv run --no-sync pytest tests/ -q -rs --tb=short --cov=cogsyndelta --cov-report=xml --cov-report=term
+      - name: Run tests with pytest
+        run: |
+          # -rs: print a summary line for every skip, so a skip (e.g. a
+          # dependency group silently not installed) is visible in the log
+          # instead of vanishing into the passed/failed counts.
+          uv run --no-sync pytest tests/ -q -rs --tb=short --cov=cogsyndelta --cov-report=xml --cov-report=term
 
-    # Codecov action is not mirrored on data.forgejo.org; cloning it
-    # aborted the whole job before pytest. Coverage XML stays in the
-    # workspace. Do not re-add uses: codecov/* until the mirror exists.
+      # Codecov action is not mirrored on data.forgejo.org; cloning it
+      # aborted the whole job before pytest. Coverage XML stays in the
+      # workspace. Do not re-add uses: codecov/* until the mirror exists.
 
   # CodeQL removed - requires Code Scanning to be enabled in repo settings
   # Enable at: Settings > Security > Code scanning > Set up code scanning
@@ -174,31 +213,51 @@ jobs:
     needs: [test]
 
     steps:
-    - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-    - name: Verify uv (baked into job image)
-      run: |
-        # uv is baked into the job image (fleet-ci-base), so nothing is installed
-        # here: no network dependency, and no tar extraction -- which is what forced
-        # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
-        # must fail loudly and name the image, not silently skip the step.
-        command -v uv >/dev/null 2>&1 || {
-          echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
-        uv --version
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
-    - name: Set up Python 3.12
-      run: uv python install 3.12
+      - name: Set up Python 3.12
+        run: uv python install 3.12
 
-    - name: Build package
-      run: uv build
+      - name: Build package
+        run: uv build
 
-    - name: Check package
-      run: |
-        uv tool install twine
-        uv tool run twine check dist/*
+      - name: Check package
+        run: |
+          uv tool install twine
+          uv tool run twine check dist/*
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: dist
-        path: dist/
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        # The artifact endpoint is derived from Forgejo's ROOT_URL
+        # (https://git.vectorweight.com/), which DNS resolves to 192.168.1.170:443 -- an
+        # address job containers cannot reach. Measured from a container with the
+        # runner's exact options:
+        #     container -> 192.168.1.170:443   REFUSED
+        #     container -> 172.32.0.1:3080     OPEN
+        #     homelab   -> 192.168.1.170:443   OPEN
+        # so the upload fails with ECONNREFUSED and a 500, and takes the whole job with
+        # it. This is the same wall that forced registering the runner against
+        # http://172.32.0.1:3080; the artifact path reaches it by a different route.
+        #
+        # continue-on-error because this artifact is the built dist/ -- a convenience
+        # copy of what `uv build` + `twine check` already verified above, not a gate.
+        # Failing a build job because a convenience artifact could not be stored trains
+        # people to ignore a red build, which costs more than the artifact is worth.
+        #
+        # The real fix is routing/publishing so containers can reach the TLS edge. That
+        # is a fleet change, not a workflow change, and widening the host firewall to the
+        # edge just to store an artifact would trade a real boundary for a convenience.
+        continue-on-error: true
+        with:
+          name: dist
+          path: dist/

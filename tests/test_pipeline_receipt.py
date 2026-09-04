@@ -216,3 +216,101 @@ def test_prometheus_skips_non_numeric_metrics() -> None:
     assert 'metric="good"' in text
     assert 'metric="flag"' not in text
     assert 'metric="note"' not in text
+
+
+# --------------------------------------------------------------------- code provenance
+#
+# H1. Training and quantization receipts have carried a `code_revision` block since
+# `regions/_receipt.write_receipt` existed -- that helper REFUSES to write without one.
+# Eval receipts, which go through `Receipt.write` instead, carried none, so the matrix
+# harness's G5b gate ("receipt code_revision.git_sha == run.code.sha and dirty == false")
+# could not fire on the `eval-quantized` receipt whose entire purpose is to prove a
+# published artifact was scored by known code. These tests pin both halves: the stamp,
+# and the refusal when the capture mechanism is broken.
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_write_stamps_code_revision_from_the_same_helper_training_receipts_use() -> None:
+    """The block must be real -- this checkout's actual sha -- and must reach the file,
+    not just the in-memory object."""
+    import tempfile
+
+    from cogsyndelta.regions._receipt import capture_code_revision
+
+    rec = Receipt(
+        producer=Producer("cogsyndelta", "memory", "dense-transformer"),
+        stage="eval",
+        kind="eval-quantized",
+        metrics={"rank.recall@1": 0.85},
+        provenance={"eval_target": "quantized"},
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        path = rec.write(Path(tmp))
+        on_disk = json.loads(path.read_text())
+
+    assert set(rec.code_revision) == {"git_sha", "dirty", "branch", "describe"}
+    assert on_disk["code_revision"] == rec.code_revision
+    # Not a fabricated block: it agrees with what the helper reports for this tree.
+    assert rec.code_revision["git_sha"] == capture_code_revision(_REPO_ROOT)["git_sha"]
+    assert rec.code_revision["git_sha"] != "unknown"
+    assert isinstance(rec.code_revision["dirty"], bool)
+
+
+def test_a_stamped_eval_quant_receipt_satisfies_the_harness_g5b_shape() -> None:
+    """G5b reads `code_revision.git_sha` and `code_revision.dirty` off the receipt after
+    the harness's own `adapt` (which copies unknown top-level keys through). Assert the
+    two fields it needs are present and typed, on the exact receipt kind it gates."""
+    import tempfile
+
+    rec = Receipt(
+        producer=Producer("cogsyndelta", "memory", "dense-transformer"),
+        stage="eval",
+        kind="eval-quantized",
+        provenance={"eval_target": "quantized"},
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = json.loads(rec.write(Path(tmp)).read_text())
+
+    assert isinstance(raw["code_revision"]["git_sha"], str)
+    assert isinstance(raw["code_revision"]["dirty"], bool)
+
+
+def test_write_refuses_when_the_capture_mechanism_returns_nothing(tmp_path: Path) -> None:
+    """MUTATION. The real `capture_code_revision` never returns falsy -- it degrades to
+    an honest "unknown" block -- so a falsy return means capture itself is broken. The
+    receipt must not reach disk: this is the same fail-closed contract
+    `regions/_receipt.write_receipt` has had all along."""
+    import pytest
+
+    rec = Receipt(producer=Producer("cogsyndelta", "memory"), stage="eval", kind="eval")
+    out_dir = tmp_path / "receipts"
+
+    with pytest.raises(RuntimeError, match="code_revision"):
+        rec.write(out_dir, capture=lambda repo_root: None)
+
+    assert not out_dir.exists() or list(out_dir.iterdir()) == []
+    assert rec.code_revision == {}
+
+
+def test_write_refuses_on_an_empty_capture_too(tmp_path: Path) -> None:
+    """`{}` is exactly as falsy as `None`, and exactly as broken."""
+    import pytest
+
+    rec = Receipt(producer=Producer("cogsyndelta", "memory"), stage="eval", kind="eval")
+    with pytest.raises(RuntimeError, match="code_revision"):
+        rec.write(tmp_path / "receipts", capture=lambda repo_root: {})
+
+
+def test_a_receipt_without_code_revision_fails_the_gate_that_needs_it() -> None:
+    """MUTATION, from the reader's side: reproduce the pre-fix payload (no
+    `code_revision` key at all) and assert the G5b-shaped check cannot be satisfied --
+    which is what "the gate could not fire" meant in practice."""
+    import tempfile
+
+    rec = Receipt(producer=Producer("cogsyndelta", "memory"), stage="eval", kind="eval")
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = json.loads(rec.write(Path(tmp)).read_text())
+    del raw["code_revision"]
+
+    assert raw.get("code_revision", {}).get("git_sha") is None

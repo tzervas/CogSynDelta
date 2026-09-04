@@ -1,36 +1,75 @@
-# Documentation Generation Workflow
-# Auto-generates API documentation using pdoc and deploys to GitHub Pages
-
+# Documentation Publish Workflow
+#
+# HISTORY / WHY THIS CHANGED (2026-09-03)
+# This used to build a pdoc + hand-assembled `_site/` and deploy it via
+# `actions/configure-pages@v5`, `actions/upload-pages-artifact@v3`, `actions/deploy-
+# pages@v4` to GitHub Pages. This repo runs on self-hosted Forgejo
+# (git.vectorweight.com), which resolves bare action names against data.forgejo.org --
+# none of those three actions exist there, so every run failed at setup (confirmed: run
+# 4294). There is also no GitHub Pages on Forgejo. Operator instruction: deploy docs to
+# the self-hosted Forgejo wiki instead.
+#
+# The old `build` job's pdoc/API-doc generation had exactly one consumer: the Pages
+# deploy this replaces. Nothing else in the repo links to the generated `_site/` (no
+# README badge, no other workflow, no doc cross-reference) -- verified by grep across
+# `docs/`, `README.md`, and `.github/workflows/`. It is not carried forward here; the
+# closest replacement already exists as a mirrored page, `docs/API_REFERENCE.md`
+# (manually maintained), which the `wiki` job below publishes like every other doc.
+#
+# NEW DESIGN: one job, `wiki`, push-to-main only. It clones the wiki repository
+# (`<repo>.wiki.git`), runs the committed `scripts/docs_to_wiki.py` (mirrors every
+# markdown file under `docs/` into wiki pages -- see that script's module docstring for
+# the page-naming and link-rewriting rules), and commits + pushes only if something
+# changed. The trigger's `paths` filter is narrowed accordingly: `src/cogsyndelta/**`
+# changes no longer trigger this workflow now that pdoc generation is gone, and
+# `README.md`/`CHANGELOG.md`/`ROADMAP.md`/`AGENTS.md` are dropped too -- none of them
+# live under `docs/`, so a change to them alone does not change anything this job mirrors.
+#
+# TOKEN ASSUMPTION (unproven until the first real run): `${{ secrets.GITHUB_TOKEN }}` is
+# Forgejo Actions' own per-run token; other workflows in this repo already send it as
+# `GH_TOKEN`/`GITHUB_TOKEN` to `gh`/API calls (close-issues-on-main.yml,
+# reopen-issues-closed-off-main.yml, release.yml), which only works if it carries
+# repository write scope -- so the assumption already has indirect precedent here, but
+# writing to `<repo>.wiki.git` specifically (a distinct git repository, not the API) is
+# untested. If the push in "Commit and push wiki changes" below is refused
+# (403/permission denied), add a repository secret `WIKI_TOKEN` (a token for a user with
+# write access to this repo -- e.g. an app/bot account's PAT) via Settings -> Actions ->
+# Secrets; the `${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}` fallback below then
+# picks it up with no further workflow change.
 name: Documentation
 
-on:
+# No workflow_dispatch: the single job below only ever runs `if: github.event_name ==
+# 'push' && github.ref == 'refs/heads/main'` (spec'd that way -- push-to-main only), so a
+# manual-trigger entry point here would just dispatch a run whose one job always skips.
+# That is worse than not offering the button.
+"on":
   push:
     branches: [main]
     paths:
       - "docs/**"
-      - "src/cogsyndelta/**"
-      - "README.md"
-      - "CHANGELOG.md"
-      - "ROADMAP.md"
-      - "AGENTS.md"
+      - "scripts/docs_to_wiki.py"
       - ".github/workflows/docs.yml"
-  workflow_dispatch:
 
+# contents: write is required for the wiki push -- the wiki is part of the repository
+# (same scope `secrets.GITHUB_TOKEN` needs), not a separate permission. The old
+# `pages: write` / `id-token: write` pair (OIDC for actions/deploy-pages) has no
+# replacement: there is no Pages deploy left in this workflow.
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
+# One wiki-publish run at a time, queued rather than cancelled: two runs racing a `git
+# clone` + `git push` against the same `<repo>.wiki.git` could otherwise interleave into
+# a rejected (non-fast-forward) push or, worse, a lost update. `cancel-in-progress:
+# false` makes a second push-to-main during an in-flight run wait its turn instead of
+# aborting the first one mid-`git push`.
 concurrency:
-  group: docs-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
-env:
-  UV_VERSION: "0.9.21"
+  group: docs-wiki-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build Documentation
+  wiki:
+    name: Publish docs to the Forgejo wiki
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 20
 
@@ -39,137 +78,50 @@ jobs:
 
       - name: Verify uv (baked into job image)
         run: |
-          # uv is baked into the job image (fleet-ci-base), so nothing is installed
-          # here: no network dependency, and no tar extraction -- which is what forced
-          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
-          # must fail loudly and name the image, not silently skip the step.
           command -v uv >/dev/null 2>&1 || {
             echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
           uv --version
+          python3 --version && git --version
 
-      - name: Set up Python 3.12
-        run: uv python install 3.12
-
-      - name: Install dependencies (CPU torch)
+      - name: Clone the wiki repository
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          # Docs do not need CUDA. --no-sources bypasses pyproject cu128.
-          # Do not set UV_COMPILE_BYTECODE; uv treats a set var as --compile-bytecode.
-          uv sync --group dev --group docs --no-sources --no-compile-bytecode --link-mode copy \
-            --extra-index-url https://download.pytorch.org/whl/cpu \
-            --index-strategy unsafe-best-match
+          set -euo pipefail
+          runner_tmp="${RUNNER_TEMP:-/tmp}"
+          wiki_dir="$runner_tmp/wiki"
+          wiki_url="${{ github.server_url }}/${{ github.repository }}.wiki.git"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$WIKI_TOKEN" | base64 -w0)"
+          if ! git -c http.extraheader="$auth" clone --depth 1 "$wiki_url" "$wiki_dir"; then
+            echo "wiki repository not initialized yet -- starting it fresh"
+            rm -rf "${wiki_dir:?}"
+            git init -q "$wiki_dir"
+            git -C "$wiki_dir" remote add origin "$wiki_url"
+          fi
+          echo "WIKI_DIR=$wiki_dir" >>"$GITHUB_ENV"
 
-      - name: Install pdoc
-        run: uv tool install pdoc
+      - name: Sync docs/ into the wiki checkout
+        # 12-char short sha, matching the commit-message convention below and the
+        # sibling wiki-push pattern (Mycelium's publish-docs.yml: "${GITHUB_SHA::12}").
+        run: python3 scripts/docs_to_wiki.py --docs-dir docs --out "$WIKI_DIR" --sha "${GITHUB_SHA:0:12}"
 
-      - name: Generate API documentation
+      - name: Commit and push wiki changes
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p _site/api
-
-          # Generate API docs with pdoc
-          uv tool run pdoc \
-            --docformat google \
-            --output-directory _site/api \
-            src/cogsyndelta
-
-      - name: Copy manual documentation
-        run: |
-          # Copy markdown docs
-          cp -r docs/* _site/ 2>/dev/null || true
-          cp README.md _site/
-          cp CHANGELOG.md _site/
-          cp ROADMAP.md _site/
-          cp AGENTS.md _site/
-
-          # Create index page
-          cat > _site/index.html << 'EOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="utf-8">
-            <title>CogSynDelta Documentation</title>
-            <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
-              h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
-              ul { list-style-type: none; padding: 0; }
-              li { margin: 10px 0; }
-              a { color: #0066cc; text-decoration: none; }
-              a:hover { text-decoration: underline; }
-              .section { margin: 30px 0; }
-            </style>
-          </head>
-          <body>
-            <h1>🧠 CogSynDelta Documentation</h1>
-            <p>PCN-VAE-GAN Hybrid Self-Improving AI System</p>
-
-            <div class="section">
-              <h2>📚 Guides</h2>
-              <ul>
-                <li><a href="README.html">README - Getting Started</a></li>
-                <li><a href="INSTALL.html">Installation Guide</a></li>
-                <li><a href="ROADMAP.html">Project Roadmap</a></li>
-                <li><a href="CHANGELOG.html">Changelog</a></li>
-              </ul>
-            </div>
-
-            <div class="section">
-              <h2>🔧 Development</h2>
-              <ul>
-                <li><a href="CONTRIBUTING.html">Contributing Guide</a></li>
-                <li><a href="DEVELOPMENT_STANDARDS.html">Development Standards</a></li>
-                <li><a href="AGENTS.html">AI Agent Guidelines</a></li>
-                <li><a href="BRANCHING_STRATEGY.html">Branching Strategy</a></li>
-              </ul>
-            </div>
-
-            <div class="section">
-              <h2>🏗️ Architecture</h2>
-              <ul>
-                <li><a href="ARCHITECTURE.html">System Architecture</a></li>
-                <li><a href="adr/">Architecture Decision Records</a></li>
-                <li><a href="API_REFERENCE.html">API Reference (Manual)</a></li>
-              </ul>
-            </div>
-
-            <div class="section">
-              <h2>📖 API Documentation</h2>
-              <ul>
-                <li><a href="api/cogsyndelta.html">cogsyndelta (auto-generated)</a></li>
-              </ul>
-            </div>
-          </body>
-          </html>
-          EOF
-
-      - name: Convert Markdown to HTML
-        run: |
-          uv tool install markdown
-
-          for md in _site/*.md; do
-            if [ -f "$md" ]; then
-              html="${md%.md}.html"
-              echo "Converting $md to $html"
-              uv tool run python -m markdown "$md" > "$html" || true
-            fi
-          done
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: '_site'
-
-  deploy:
-    name: Deploy to GitHub Pages
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: [self-hosted, linux, x64, podman]
-    needs: build
-
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          set -euo pipefail
+          cd "$WIKI_DIR"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "wiki already up to date -- nothing to commit"
+            exit 0
+          fi
+          short_sha="${GITHUB_SHA:0:12}"
+          git -c user.name="csd-docs-bot" -c user.email="noreply@vectorweight.com" \
+            commit -q -m "docs: sync from main ${short_sha}"
+          # Push to "origin" by name -- its URL was already set in "Clone the wiki
+          # repository" (either by `git clone` or the fallback `git remote add`), so it
+          # does not need to be rebuilt here.
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$WIKI_TOKEN" | base64 -w0)"
+          git -c http.extraheader="$auth" push origin HEAD:master || \
+            git -c http.extraheader="$auth" push origin HEAD:main

@@ -140,7 +140,8 @@ ROLES: dict[str, type] = {
 
 def _resolve_region_role() -> None:
     """Late-bind CognitiveRegion so contracts.region and contracts.components can import
-    each other's names without a cycle."""
+    each other's names without a cycle.
+    """
     from cogsyndelta.contracts.region import CognitiveRegion
 
     ROLES["region"] = CognitiveRegion

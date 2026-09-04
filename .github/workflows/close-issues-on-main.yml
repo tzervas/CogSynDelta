@@ -3,7 +3,7 @@
 # Epics close only when a main-bound PR includes Closes #<epic>.
 name: close-issues-on-main
 
-on:
+"on":
   pull_request:
     types: [closed]
     branches: [main, master]
@@ -26,14 +26,16 @@ permissions:
 jobs:
   close-linked:
     name: Close issues for main merge
-    # Meta workflow: GitHub-hosted is correct (issue API only; no product build).
-    runs-on: ubuntu-latest
+    # GitHub-only meta workflow (gh CLI + GITHUB_TOKEN, issue API). Forgejo has no
+    # ubuntu-latest runner, so route to the fleet and skip immediately below.
+    runs-on: [self-hosted, linux, x64, podman]
     if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.merged == true &&
-       (github.event.pull_request.base.ref == 'main' ||
-        github.event.pull_request.base.ref == 'master'))
+      github.server_url == 'https://github.com' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.merged == true &&
+        (github.event.pull_request.base.ref == 'main' ||
+         github.event.pull_request.base.ref == 'master')))
     steps:
       - uses: actions/checkout@v7
       - name: Ensure gh

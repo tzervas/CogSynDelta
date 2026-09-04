@@ -10,6 +10,18 @@ embedding space that has collapsed into a narrow cone, because rotating or crush
 vector together leaves the ordering intact. Anisotropy, alignment, uniformity and effective
 rank are what make that visible, and they have to be measured on the same held-out pairs
 the ranking numbers came from or they describe a different model.
+
+TWO EVAL TARGETS, ONE BATTERY, TWO RECEIPT KINDS
+The default pass (`kind="eval"`) scores the fp32 checkpoint a training receipt names.
+`--quantized PATH` scores a PACKED artifact instead -- `cogsyndelta.quant.ptq`'s
+`load_packed_artifact` + `unpack_state_dict` rebuild a plain fp32 state dict from the
+sub-byte codes, loaded into the same model class, run through the identical battery. That
+receipt gets a distinct `kind` (`"eval-quantized"`) and binds to BOTH the packed file's own
+sha256 (computed from the bytes this process actually opened, not trusted from a receipt)
+and the fp32 parent checkpoint's sha256 (read from the training receipt, which
+`scripts/csd-quantize.py` already verified against the checkpoint on disk when it built the
+artifact) -- so "the quantized number" and "the fp32 number" are provably about the same
+weights before and after packing, not two runs that happen to share a region name.
 """
 
 from __future__ import annotations
@@ -25,7 +37,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from cogsyndelta.eval.benchmark import benchmark_embeddings, profile_latency
+from cogsyndelta.eval.benchmark import BenchmarkResult, benchmark_embeddings, profile_latency
 from cogsyndelta.pipeline.receipt import Producer, Receipt
 
 STATE = Path("/akula-data/csd")
@@ -39,20 +51,130 @@ def _regions_spec() -> dict:
     return {"REGIONS": mod.REGIONS, "_shards": mod._shards, "region_spec": mod.region_spec}
 
 
-def benchmark_region(region: str, state: Path) -> Receipt | None:
+class AmbiguousTrainReceiptError(RuntimeError):
+    """More than one training receipt matches, and nothing said which one to use."""
+
+
+def _find_train_receipt(
+    region: str, state: Path, train_receipt_path: Path | None = None
+) -> Path | None:
+    """Resolve the training receipt for `region`.
+
+    An explicit `train_receipt_path` (A7: a caller running many cells against one shared
+    `--state` root names its own cell's receipt) is trusted outright and must exist --
+    the whole point of the explicit path is that this function stops guessing. An
+    explicit path therefore WINS over a newer sibling in the same directory; DESIGN.v2
+    §6.1 names that case specifically and `tests/test_benchmark_train_receipt_binding.py`
+    pins it.
+
+    With no explicit path and exactly one candidate, that candidate is used -- a bare
+    `--regions foo` against a fresh state root is unaffected. With no explicit path and
+    SEVERAL candidates this REFUSES and lists them (M1). The old behaviour was
+    `sorted(...)[-1]`: the lexicographically last name, which for a `%Y%m%dT%H%M%SZ`
+    stamp is the newest file, chosen silently. In a shared `--state` root -- the exact
+    situation A7 exists for, and the one a human running these scripts by hand is
+    already in -- that binds the eval to whichever run happened to finish most recently,
+    and the receipt records the resulting number as if it had been asked for. Live on
+    this fleet tonight: `--state /akula-data/csd --regions memory` picks the V1 receipt,
+    while the V2 receipt this branch's tests treat as production lives under a different
+    state root entirely.
+
+    Returns `None` when nothing matches, same as the original behaviour: the caller
+    prints "no training receipt" and skips the region.
+    """
+    if train_receipt_path is not None:
+        if not train_receipt_path.is_file():
+            raise FileNotFoundError(f"--train-receipt {train_receipt_path} does not exist")
+        return train_receipt_path
+    receipts = sorted(state.glob(f"receipts/{region}-2*.json"))
+    if not receipts:
+        return None
+    if len(receipts) > 1:
+        listed = "\n  ".join(str(path) for path in receipts)
+        raise AmbiguousTrainReceiptError(
+            f"{len(receipts)} training receipts match region {region!r} under "
+            f"{state}/receipts and no --train-receipt was given:\n  {listed}\n"
+            "Pass --train-receipt PATH to name the one this eval is about."
+        )
+    return receipts[0]
+
+
+class UnboundTrainReceiptError(RuntimeError):
+    """A training receipt names a checkpoint but records no sha256 for it."""
+
+
+def expected_checkpoint_sha256(
+    train_receipt: dict, receipt_path: Path, *, allow_unbound: bool = False
+) -> str | None:
+    """The fp32 checkpoint sha this receipt binds to, or a refusal (H2/M4).
+
+    TWO PLACES, NOT ONE. Training receipts written by `regions/pretrain.py` record
+    `checkpoint_sha256` at the TOP LEVEL; the same receipt read back through
+    `cogsyndelta.pipeline.receipt.adapt` -- and through the matrix harness's own
+    `receipts.adapt`, which folds the legacy top-level field into `artifacts` for
+    receipt SELECTION -- carries it at `artifacts.checkpoint_sha256`. This function
+    previously read only the top-level key, with `or None` behind it, so an
+    envelope-shaped receipt (the shape A6 itself writes, and the shape anything
+    downstream of `adapt` hands back) silently skipped the checkpoint hash check
+    entirely: the guard did not fail, it did not run.
+
+    REFUSAL RATHER THAN SKIP when neither key is present (M4). `or None` also treated
+    "" and a missing key as "no check needed", which is right for a genuinely pre-R9
+    receipt and wrong for everything else -- and the two are indistinguishable from
+    inside this function. Making the caller say so explicitly, with
+    `--allow-unbound-train-receipt`, is the difference between a documented exception
+    and a hole: an eval whose receipt cannot be tied to the bytes it measured produces
+    a number bound to a mutable path, which is exactly what
+    `scripts/csd-publish-checkpoint.py` refuses to publish and what DESIGN.v2 §4.4's
+    verify step 2 compares against the Hub's own LFS sha.
+
+    Raises:
+        ValueError: the two locations disagree -- the receipt describes two different
+            checkpoints and there is no safe way to pick one.
+        UnboundTrainReceiptError: neither location carries a sha and `allow_unbound`
+            is false.
+    """
+    top = str(train_receipt.get("checkpoint_sha256") or "")
+    nested = str((train_receipt.get("artifacts") or {}).get("checkpoint_sha256") or "")
+    if top and nested and top != nested:
+        raise ValueError(
+            f"{receipt_path}: checkpoint_sha256 {top} at the top level disagrees with "
+            f"artifacts.checkpoint_sha256 {nested} -- the receipt describes two "
+            "different checkpoints"
+        )
+    sha = top or nested
+    if sha:
+        return sha
+    if allow_unbound:
+        print(
+            f"    WARNING: {receipt_path} records no checkpoint_sha256; the checkpoint "
+            "is loaded UNVERIFIED (--allow-unbound-train-receipt)",
+            flush=True,
+        )
+        return None
+    raise UnboundTrainReceiptError(
+        f"{receipt_path} records no checkpoint_sha256 at the top level or under "
+        "artifacts -- the eval could not be bound to the bytes it measures. Pass "
+        "--allow-unbound-train-receipt to score it anyway (pre-R9 receipts predate "
+        "checkpoint fingerprinting)."
+    )
+
+
+def _region_eval_context(region: str, train_receipt: dict) -> tuple:
+    """Everything a battery pass needs BEFORE it touches a checkpoint: the region's
+    `PretrainConfig`, the held-out split, a tokenizer and the device -- rebuilt from the
+    training receipt exactly as `scripts/csd-quantize.py`'s `quantize_text_region` does,
+    for the identical reason (see that function's own comments): re-globbing the corpus
+    instead of trusting the receipt's own recorded shard names would silently widen it,
+    changing the holdout, voiding the untrained-baseline comparison the caller's `gates`
+    block performs. Shared between the fp32 and quantized eval paths so that comparison
+    is provably against the SAME split either way.
+    """
     from tokenizers import Tokenizer
 
     from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
-    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
-    from cogsyndelta.regions.pretrain import PretrainConfig, _tokenize, build_splits
-    from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
-
-    receipts = sorted(state.glob(f"receipts/{region}-2*.json"))
-    if not receipts:
-        print(f"    no training receipt for {region}", flush=True)
-        return None
-    train_receipt_path = receipts[-1]
-    train_receipt = json.loads(train_receipt_path.read_text())
+    from cogsyndelta.regions.pretrain import PretrainConfig, build_splits
+    from cogsyndelta.regions.text_encoder import TextEncoderConfig
 
     spec = _regions_spec()
     entry = spec["region_spec"](region)
@@ -64,15 +186,6 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
     # root `run_region` trained against or this silently globs zero shards for `reason`.
     resolved = [(spec["_shards"](g, entry.root), tuple(c), cap) for g, c, cap in sources]
 
-    # Select by the shard NAMES the receipt records, not by re-globbing -- same rule as
-    # csd-quantize.py's quantize_text_region, and for the same reason: a glob returns
-    # whatever is on disk now, training may have used a --shard-limit subset, and
-    # `or resolved[0][0]` here used to silently fall back to re-globbing the WHOLE corpus
-    # the moment a single receipt-recorded name failed to match (a stale receipt, a
-    # partial corpus refresh, ...). That produced a fresh holdout from a different corpus
-    # than training used, then compared it against the receipt's untrained-baseline gate
-    # as if it were the same split. REFUSE instead: a name mismatch means the comparison
-    # below would be void, not that a bigger corpus is an acceptable substitute.
     wanted = train_receipt.get("corpus", {}).get("shards", [])
     if wanted:
         by_name = {Path(p).name: p for p in resolved[0][0]}
@@ -85,11 +198,6 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
     else:
         primary = resolved[0][0]
 
-    # The fingerprint is the contract, same as csd-quantize.py: if the corpus is not the
-    # one training used, the untrained-baseline comparison this receipt's `gates` block
-    # performs below is void, so stop rather than report. Rebuilt from the glob, not from
-    # the receipt's own `extra_sources` -- see fingerprint_corpus's caller in
-    # csd-quantize.py for why that would be a tautology.
     cfg_d = train_receipt["config"]
     extra_sources = [{"shards": s, "columns": list(c), "limit": cap} for s, c, cap in resolved[1:]]
     fingerprint = fingerprint_corpus(
@@ -117,24 +225,18 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tok = Tokenizer.from_file(cfg.tokenizer_path)
-    model = TextEncoder(enc, name=region).to(device).eval()
-    # load_checkpoint: `train_receipt["checkpoint"]` is a path read out of a receipt
-    # JSON on the NFS-exported receipts tree (rw, no_root_squash) -- anyone who can write
-    # there can name an arbitrary file, so this load must not execute arbitrary pickle
-    # bytecode (load_checkpoint hardcodes weights_only=True internally -- there is no
-    # argument here that could turn it off) and must refuse a file that does not hash to
-    # what the SAME receipt already recorded (expected_sha256) -- both BEFORE torch.load
-    # ever opens it. Older receipts (pre-R9) have no checkpoint_sha256; `or None` skips
-    # the hash check for those.
-    ckpt_sha_out: list[str] = []
-    ck = load_checkpoint(
-        train_receipt["checkpoint"],
-        expected_sha256=train_receipt.get("checkpoint_sha256") or None,
-        map_location=device,
-        sha256_out=ckpt_sha_out,
-    )
-    model.load_state_dict(ck["model"])
-    checkpoint_sha256 = ckpt_sha_out[0]
+    return cfg, enc, holdout, tok, device
+
+
+def _run_battery(
+    model: torch.nn.Module, tok, holdout: list, cfg, device: torch.device, stored_bytes: int
+) -> BenchmarkResult:
+    """The one battery every eval receipt reports, run against whatever `model` is --
+    fp32 or the dequantized reconstruction of a packed artifact. Identical code path for
+    both is the point: a difference between the two receipts is then a fact about the
+    weights, never an artefact of measuring them two different ways.
+    """
+    from cogsyndelta.regions.pretrain import _tokenize
 
     with torch.no_grad():
         a_ids, a_mask = _tokenize(tok, [a for a, _ in holdout], cfg.max_len, device)
@@ -147,22 +249,17 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
     lat = profile_latency(lambda: model(batch, mask), warmup=5, runs=40, device=str(device))
 
     params = sum(p.numel() for p in model.parameters())
-    # Prefer the quantized size when one exists: what ships is what should be divided by.
-    stored = params * 4
-    quant = sorted(state.glob(f"receipts/{region}-quant-*.json"))
-    quantized = False
-    if quant:
-        stored = int(json.loads(quant[-1].read_text())["stored_bytes"])
-        quantized = True
+    return benchmark_embeddings(anchors, positives, params, stored_bytes, lat)
 
-    res = benchmark_embeddings(anchors, positives, params, stored, lat)
+
+def _print_battery(res: BenchmarkResult, *, size_note: str) -> None:
     r, e, rep = res.ranking, res.efficiency, res.representation
     print(
         f"    rank  r@1={r['recall@1']:.4f} ndcg@10={r['ndcg@10']:.4f} map={r['map']:.4f}",
         flush=True,
     )
     print(
-        f"    eff   {e['stored_mb']:.1f}MB{' (quantized)' if quantized else ' (fp32)'}  "
+        f"    eff   {e['stored_mb']:.1f}MB ({size_note})  "
         f"p50={e.get('latency_p50_ms', 0):.2f}ms p99={e.get('latency_p99_ms', 0):.2f}ms  "
         f"{e.get('throughput_per_s', 0):.0f}/s",
         flush=True,
@@ -179,9 +276,78 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
         flush=True,
     )
 
+
+def benchmark_region(
+    region: str,
+    state: Path,
+    train_receipt_path: Path | None = None,
+    *,
+    allow_unbound_train_receipt: bool = False,
+) -> Receipt | None:
+    """The fp32 pass: score the checkpoint `region`'s training receipt names."""
+    from cogsyndelta.quant.ptq import fp32_reference_bytes
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
+    from cogsyndelta.regions.text_encoder import TextEncoder
+
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    t0 = time.time()
+
+    resolved_path = _find_train_receipt(region, state, train_receipt_path)
+    if resolved_path is None:
+        print(f"    no training receipt for {region}", flush=True)
+        return None
+    train_receipt = json.loads(resolved_path.read_text())
+
+    cfg, enc, holdout, tok, device = _region_eval_context(region, train_receipt)
+    model = TextEncoder(enc, name=region).to(device).eval()
+    # load_checkpoint: `train_receipt["checkpoint"]` is a path read out of a receipt
+    # JSON on the NFS-exported receipts tree (rw, no_root_squash) -- anyone who can write
+    # there can name an arbitrary file, so this load must not execute arbitrary pickle
+    # bytecode (load_checkpoint hardcodes weights_only=True internally -- there is no
+    # argument here that could turn it off) and must refuse a file that does not hash to
+    # what the SAME receipt already recorded (expected_sha256) -- both BEFORE torch.load
+    # ever opens it. `expected_checkpoint_sha256` reads BOTH places a receipt can carry
+    # that hash and refuses outright when neither has one (H2/M4); it is the only source
+    # of `expected_sha256` here precisely so the skip cannot happen by omission.
+    ckpt_sha_out: list[str] = []
+    ck = load_checkpoint(
+        train_receipt["checkpoint"],
+        expected_sha256=expected_checkpoint_sha256(
+            train_receipt, resolved_path, allow_unbound=allow_unbound_train_receipt
+        ),
+        map_location=device,
+        sha256_out=ckpt_sha_out,
+    )
+    model.load_state_dict(ck["model"])
+    checkpoint_sha256 = ckpt_sha_out[0]
+
+    # The fp32 model's OWN weight bytes -- never a quantized artifact's, and never the
+    # checkpoint FILE's `stat().st_size` either. A resumable training checkpoint also
+    # carries the Adam optimizer's momentum and variance buffers (`opt.state_dict()`,
+    # see `regions/pretrain.py`'s checkpoint dict) -- routinely ~2x the weights
+    # themselves -- so the file's size is not "the fp32 model", it is "the fp32 model
+    # plus training bookkeeping that never ships". `fp32_reference_bytes` is the exact
+    # function `cogsyndelta.quant.ptq.build_plan` uses for `QuantPlan.fp32_bytes`, the
+    # denominator of a quant receipt's `compression_ratio` -- calling it here, on the
+    # SAME `model` this pass just loaded, is what makes this receipt's `eff.stored_mb`
+    # divide into `benchmark_region_quantized`'s `packed_stored_bytes` at the same
+    # ratio the quantizer itself measured, rather than a second, incompatible number
+    # that happens to also be called "fp32 size" (N5). This receipt's `kind` is "eval"
+    # and its `provenance.eval_target` is "fp32"; a reader dividing this receipt's
+    # `capability_per_mb` by anything but this figure would be comparing capability
+    # against the wrong artifact. The quantized number belongs solely to
+    # `benchmark_region_quantized`'s "eval-quantized" receipt, which measures
+    # `packed_stored_bytes` on the artifact it actually opened.
+    stored = fp32_reference_bytes(model)
+
+    res = _run_battery(model, tok, holdout, cfg, device, stored)
+    r, e, rep = res.ranking, res.efficiency, res.representation
+    _print_battery(res, size_note="fp32")
+
     return Receipt(
         producer=Producer("cogsyndelta", region, "dense-transformer"),
         stage="eval",
+        kind="eval",
         metrics=res.flat(),
         baseline={"rank.recall@1": train_receipt["untrained_baseline"]["recall@1"]},
         gates={
@@ -200,13 +366,177 @@ def benchmark_region(region: str, state: Path) -> Receipt | None:
             # checkpoint it was measured on, not merely the mutable path both name.
             "checkpoint_sha256": checkpoint_sha256,
             "source_training_receipt": {
-                "path": str(train_receipt_path),
-                "sha256": sha256_file(train_receipt_path),
+                "path": str(resolved_path),
+                "sha256": sha256_file(resolved_path),
             },
         },
-        provenance={"holdout_pairs": len(holdout), "quantized_size": quantized},
+        provenance={
+            "holdout_pairs": len(holdout),
+            "eval_target": "fp32",
+            # See the `stored` comment above: this is `fp32_reference_bytes`'s
+            # definition, the same one `compression_ratio`'s denominator uses -- never
+            # a checkpoint file's raw `stat().st_size`, which includes optimizer state.
+            "stored_bytes_definition": "weights-only",
+        },
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
-        started_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        started_utc=started_utc,
+        seconds=time.time() - t0,
+        device=str(device),
+    )
+
+
+def benchmark_region_quantized(
+    region: str,
+    state: Path,
+    quantized_path: Path,
+    quant_receipt_path: Path | None = None,
+    train_receipt_path: Path | None = None,
+    *,
+    allow_unbound_train_receipt: bool = False,
+) -> Receipt:
+    """The quantized pass (A6, closing C1): score the PACKED artifact, not the plan.
+
+    `csd-quantize.py`'s own `quantized_metric` is measured on the in-memory model with
+    the quantization plan applied, BEFORE `save_packed_artifact` ever writes a file (see
+    that script's module docstring) -- a real number, but about the plan, not about the
+    bytes that get published. This function is what closes that gap: it opens the actual
+    `.ptq.pt` file, unpacks it into a real `TextEncoder`, and runs the identical battery
+    `benchmark_region` runs on the fp32 checkpoint, so the two receipts are comparable by
+    construction rather than by two different measurement procedures agreeing by luck.
+
+    Raises:
+        ValueError: the packed file's own sha256 does not match what `quant_receipt_path`
+            (when given) recorded, or that receipt's fp32 parent sha disagrees with the
+            training receipt's -- either means the files on disk are not the ones the
+            receipts describe, and scoring them would produce a number bound to nothing.
+    """
+    from cogsyndelta.quant.ptq import (
+        load_packed_artifact,
+        packed_stored_bytes,
+        packed_width_histogram,
+        unpack_state_dict,
+    )
+    from cogsyndelta.regions._checkpoint import sha256_file
+    from cogsyndelta.regions.text_encoder import TextEncoder
+
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    t0 = time.time()
+
+    quant_receipt: dict | None = None
+    quant_receipt_final: Path | None = quant_receipt_path
+    if quant_receipt_path is not None:
+        quant_receipt = json.loads(quant_receipt_path.read_text())
+
+    # Resolve the training receipt: an explicit --train-receipt wins; failing that, the
+    # quant receipt already names the exact training receipt it was built from (A7's
+    # `source_training_receipt`, never a second glob against a value that already came
+    # from one); failing THAT, fall back to the state-root latest-glob (single-cell use).
+    resolved_train_path = train_receipt_path
+    if resolved_train_path is None and quant_receipt is not None:
+        src = quant_receipt.get("artifacts", {}).get("source_training_receipt", {}).get("path")
+        if src:
+            resolved_train_path = Path(src)
+    train_receipt_path_final = _find_train_receipt(region, state, resolved_train_path)
+    if train_receipt_path_final is None:
+        raise FileNotFoundError(
+            f"no training receipt found for {region!r} under {state}/receipts; pass "
+            "--train-receipt explicitly"
+        )
+    train_receipt = json.loads(train_receipt_path_final.read_text())
+
+    cfg, enc, holdout, tok, device = _region_eval_context(region, train_receipt)
+
+    quantized_path = Path(quantized_path)
+    packed = load_packed_artifact(quantized_path)
+    # The sha of the bytes THIS process actually opened -- never trusted from a receipt,
+    # per `save_packed_artifact`'s own contract (see quant/ptq.py's module docstring):
+    # this is what makes the binding below a fact about what was loaded, not an assumption.
+    quantized_sha256 = sha256_file(quantized_path)
+    if quant_receipt is not None:
+        receipt_sha = quant_receipt.get("artifacts", {}).get("quantized_sha256")
+        if receipt_sha and receipt_sha != quantized_sha256:
+            raise ValueError(
+                f"{quantized_path}: sha256 {quantized_sha256} does not match "
+                f"--quant-receipt's recorded quantized_sha256 {receipt_sha} -- the file "
+                "on disk is not the one that receipt describes"
+            )
+
+    # Same two-location read and same refusal as the fp32 path (H2/M4). `allow_unbound`
+    # is widened by a quant receipt that carries the fp32 parent sha itself: the eval is
+    # then still BOUND -- to the quantizer's own record of the checkpoint it packed --
+    # rather than unbound, and refusing would reject a provably-linked chain.
+    qc_sha = ""
+    if quant_receipt is not None:
+        qc_sha = str(quant_receipt.get("artifacts", {}).get("checkpoint_sha256") or "")
+    checkpoint_sha256 = (
+        expected_checkpoint_sha256(
+            train_receipt,
+            train_receipt_path_final,
+            allow_unbound=allow_unbound_train_receipt or bool(qc_sha),
+        )
+        or ""
+    )
+    if quant_receipt is not None:
+        if qc_sha and checkpoint_sha256 and qc_sha != checkpoint_sha256:
+            raise ValueError(
+                f"--quant-receipt's fp32 parent sha256 {qc_sha} disagrees with "
+                f"--train-receipt's checkpoint_sha256 {checkpoint_sha256} -- they do not "
+                "describe the same fp32 checkpoint"
+            )
+        checkpoint_sha256 = checkpoint_sha256 or qc_sha or ""
+
+    model = TextEncoder(enc, name=region).to(device)
+    model.load_state_dict(unpack_state_dict(packed))
+    model = model.eval()
+
+    stored = packed_stored_bytes(packed)
+    res = _run_battery(model, tok, holdout, cfg, device, stored)
+    r, e, rep = res.ranking, res.efficiency, res.representation
+    _print_battery(res, size_note="quantized artifact")
+
+    artifacts = {
+        "checkpoint": train_receipt.get("checkpoint", ""),
+        "checkpoint_sha256": checkpoint_sha256,
+        "quantized_path": str(quantized_path),
+        "quantized_sha256": quantized_sha256,
+        "source_training_receipt": {
+            "path": str(train_receipt_path_final),
+            "sha256": sha256_file(train_receipt_path_final),
+        },
+    }
+    if quant_receipt_final is not None:
+        artifacts["source_quant_receipt"] = {
+            "path": str(quant_receipt_final),
+            "sha256": sha256_file(quant_receipt_final),
+        }
+
+    return Receipt(
+        producer=Producer("cogsyndelta", region, "dense-transformer"),
+        stage="eval",
+        kind="eval-quantized",
+        metrics=res.flat(),
+        baseline={"rank.recall@1": train_receipt["untrained_baseline"]["recall@1"]},
+        gates={
+            "beats_untrained": r["recall@1"] > train_receipt["untrained_baseline"]["recall@1"],
+            "not_anisotropic": rep["anisotropy"] < 0.9,
+            "uses_its_dimensions": rep["effective_rank_ratio"] > 0.05,
+        },
+        artifacts=artifacts,
+        provenance={
+            "holdout_pairs": len(holdout),
+            "quantized_size": True,
+            "eval_target": "quantized",
+            "width_histogram": packed_width_histogram(packed),
+            # `packed_stored_bytes` counts packed codes/scale/zero for quantized
+            # tensors and 4 bytes/element for the fp32-kept ones it stores verbatim --
+            # weights only, same as the fp32 pass's `fp32_reference_bytes` (see
+            # `benchmark_region`'s `stored` comment). The two receipts' `eff.stored_mb`
+            # are comparable by this shared definition, not by coincidence.
+            "stored_bytes_definition": "weights-only",
+        },
+        detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
+        started_utc=started_utc,
+        seconds=time.time() - t0,
         device=str(device),
     )
 
@@ -215,14 +545,63 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--regions", default="code,compress,retrieve")
     ap.add_argument("--state", default=str(STATE))
+    ap.add_argument(
+        "--train-receipt",
+        default=None,
+        help="explicit training receipt to evaluate from (single-region only); bypasses "
+        "the --state latest-glob",
+    )
+    ap.add_argument(
+        "--allow-unbound-train-receipt",
+        action="store_true",
+        help="score a training receipt that records no checkpoint_sha256 in either "
+        "location (top level or artifacts). The checkpoint is then loaded UNVERIFIED: "
+        "the resulting metric is bound to a mutable path, not to bytes. Only for "
+        "pre-R9 receipts, which predate checkpoint fingerprinting.",
+    )
+    ap.add_argument(
+        "--quantized",
+        default=None,
+        help="score this packed artifact (a csd-quantize.py final.ptq.pt) instead of the "
+        "fp32 checkpoint; writes a kind=eval-quantized receipt (single-region only)",
+    )
+    ap.add_argument(
+        "--quant-receipt",
+        default=None,
+        help="the quant receipt final.ptq.pt was built from; binds and cross-checks the "
+        "quantized and fp32-parent sha256 (only meaningful with --quantized)",
+    )
     args = ap.parse_args()
     state = Path(args.state)
+    regions = [r.strip() for r in args.regions.split(",") if r.strip()]
+
+    if args.quantized is not None and len(regions) != 1:
+        print("--quantized names one artifact for one region; pass a single --regions value")
+        return 2
+    if args.quant_receipt is not None and args.quantized is None:
+        print("--quant-receipt is only meaningful together with --quantized")
+        return 2
 
     failures = []
-    for region in [r.strip() for r in args.regions.split(",") if r.strip()]:
+    for region in regions:
         print(f"\n=== {region}", flush=True)
         try:
-            rec = benchmark_region(region, state)
+            if args.quantized is not None:
+                rec: Receipt | None = benchmark_region_quantized(
+                    region,
+                    state,
+                    Path(args.quantized),
+                    quant_receipt_path=Path(args.quant_receipt) if args.quant_receipt else None,
+                    train_receipt_path=Path(args.train_receipt) if args.train_receipt else None,
+                    allow_unbound_train_receipt=args.allow_unbound_train_receipt,
+                )
+            else:
+                rec = benchmark_region(
+                    region,
+                    state,
+                    train_receipt_path=Path(args.train_receipt) if args.train_receipt else None,
+                    allow_unbound_train_receipt=args.allow_unbound_train_receipt,
+                )
         except Exception as exc:
             print(f"    FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
             failures.append(region)
