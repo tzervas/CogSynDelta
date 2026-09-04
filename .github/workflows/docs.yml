@@ -72,33 +72,16 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 20
-    # actions/checkout is a JS action; the self-hosted podman runner's bare host has no
-    # node on PATH for it to run under. node:24-bookworm is the same base sibling repos
-    # use for this exact reason (e.g. dataset-factory's .forgejo/workflows/ci.yml).
-    container:
-      image: docker.io/library/node:24-bookworm
 
     steps:
       - uses: actions/checkout@v7
 
-      # node:24-bookworm (buildpack-deps-based) is not fleet-ci-base -- it is not
-      # guaranteed to carry python3 or git, so install-if-missing here rather than
-      # assert-and-fail (the fleet-ci-base convention elsewhere in this repo, which
-      # applies to a tool that image bakes in on purpose). docs_to_wiki.py is
-      # stdlib-only: no pip install needed once python3 itself is present.
-      - name: Ensure python3 and git are available
+      - name: Verify uv (baked into job image)
         run: |
-          set -euo pipefail
-          missing=""
-          command -v python3 >/dev/null 2>&1 || missing="$missing python3"
-          command -v git >/dev/null 2>&1 || missing="$missing git"
-          if [ -n "$missing" ]; then
-            apt-get update -qq
-            # shellcheck disable=SC2086  # $missing is a deliberate word-split package list
-            apt-get install -y --no-install-recommends $missing
-          fi
-          python3 --version
-          git --version
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
+          python3 --version && git --version
 
       - name: Clone the wiki repository
         env:
