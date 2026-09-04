@@ -15,7 +15,9 @@ from a tiny CPU pretrain + quantize + benchmark run (same fixture shape as
 - `provenance.metric_groups`: one entry per `rank`/`eff`/`repr` family, each carrying
   `battery_id` (`eval_holdout` for `kind="eval"`, `eval_quantized_holdout` for
   `kind="eval-quantized"` -- never the same value, even though both run the identical
-  code path), `pooling`, and `seed`.
+  code path), `pooling`, and `seed`. A `kind="eval-quantized"` receipt carries a fourth
+  `quant` entry for `quant.artifact_recall@1`, identical to its `rank` entry since the
+  field is `rank.recall@1` verbatim, not an independent measurement.
 """
 
 from __future__ import annotations
@@ -205,6 +207,27 @@ def test_quantized_receipt_carries_quant_artifact_recall_alias(
 
     assert "quant.artifact_recall@1" in rec.metrics
     assert rec.metrics["quant.artifact_recall@1"] == rec.metrics["rank.recall@1"]
+
+
+def test_quantized_receipt_declares_provenance_for_the_quant_artifact_alias(
+    tmp_path: Path, trained_receipt: dict
+) -> None:
+    """`quant.artifact_recall@1` is the one v2 metric this receipt writes that crosses
+    battery families by design (it IS `rank.recall@1`, MM §12.8's sameness special
+    case) -- it must still carry its own `provenance.metric_groups` entry, not be a
+    `metrics` key with no declared `battery_id`/`pooling`/`seed` a `MetricIdentity`
+    (MM §14) could be built from. Same three values as the `rank` group it mirrors,
+    since it is not an independent measurement."""
+    quant_rec = quant.quantize_text_region(
+        "benchv2-test", tmp_path, tolerance=1.0, aggressive=3, max_bits=8
+    )
+    rec = bench.benchmark_region_quantized(
+        "benchv2-test", tmp_path, Path(quant_rec["artifacts"]["quantized_path"])
+    )
+
+    groups = rec.provenance["metric_groups"]
+    assert "quant" in groups, "quant.artifact_recall@1 has no provenance.metric_groups entry"
+    assert groups["quant"] == groups["rank"]
 
 
 # ============================================================================= mutation proof

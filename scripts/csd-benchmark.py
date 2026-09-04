@@ -647,7 +647,22 @@ def benchmark_region_quantized(
             # fp32 pass, but a DIFFERENT battery: this one scores the packed artifact
             # read off disk, not the in-memory fp32 checkpoint (g7 §3.3's closed
             # `battery_id` set names both separately for exactly this reason).
-            "metric_groups": _metric_groups("eval_quantized_holdout", cfg.seed),
+            "metric_groups": {
+                **_metric_groups("eval_quantized_holdout", cfg.seed),
+                # `quant.artifact_recall@1` above is `rank.recall@1` verbatim (MM
+                # §12.8's plan-vs-artifact sameness special-case, g7 §3.3) -- not an
+                # independent measurement, so it shares the `rank` group's
+                # battery_id/pooling/seed rather than inventing its own. Without this
+                # entry, a caller building a `MetricIdentity` (MM §14) for
+                # `quant.artifact_recall@1` off THIS receipt has no
+                # battery_id/pooling/seed to read, even though the field is on
+                # `metrics`.
+                "quant": {
+                    "battery_id": "eval_quantized_holdout",
+                    "pooling": "matched",
+                    "seed": cfg.seed,
+                },
+            },
         },
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
         started_utc=started_utc,
