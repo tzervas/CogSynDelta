@@ -30,7 +30,8 @@ encoder. If gradient reached the encoder the probe would be fine-tuning, and the
 would measure the probe's capacity rather than the representation's quality.
 
 IN-DOMAIN AND TRANSFER
-Pretraining is on tiny-imagenet (100k images, natively 64x64 RGB, no resampling). The
+Pretraining source is caller-provided (VLPretrainConfig.train_shards); as of 2026-09-04
+(W7v-cfg) this harness is corpus-agnostic and no longer defaults to tiny-imagenet. The
 probe runs twice: on tiny-imagenet's held-out valid split, and on cifar100, a different
 dataset with different classes. The second number is the one that says whether the
 representation generalises rather than memorises -- the same reason `retrieve` is scored
