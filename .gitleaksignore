@@ -37,3 +37,7 @@
 27b0e4d4f0f949764693c6996fdd14d0d6acfef2:docs/design/evidence/w1-token-rank-2026-09-02/results.json:generic-api-key:350
 # docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:590 -- same tokenizer load line, different evidence run
 27b0e4d4f0f949764693c6996fdd14d0d6acfef2:docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:generic-api-key:590
+# tests/test_cards_tables.py:258 — MetricRow(key="eff.latency_p50_ms") is a metric-name fixture,
+# not a credential; gitleaks generic-api-key false positive in commit 5fc9960a (history keeps the
+# original line, so the inline gitleaks:allow on the later commit does not cover this fingerprint).
+5fc9960a7e17f2cf65310d764d657278742dd3c8:tests/test_cards_tables.py:generic-api-key:258
