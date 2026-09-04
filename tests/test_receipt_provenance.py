@@ -84,7 +84,12 @@ def test_capture_code_revision_falls_back_when_git_is_unavailable(
 
     revision = capture_code_revision(tmp_path)
 
-    assert revision == {"git_sha": "unknown", "dirty": True, "branch": "unknown"}
+    assert revision == {
+        "git_sha": "unknown",
+        "dirty": True,
+        "branch": "unknown",
+        "describe": "unknown",
+    }
 
 
 def test_capture_code_revision_forces_dirty_true_when_git_commands_fail() -> None:
@@ -93,7 +98,12 @@ def test_capture_code_revision_forces_dirty_true_when_git_commands_fail() -> Non
     clean report."""
     revision = capture_code_revision(Path("/"))
 
-    assert revision == {"git_sha": "unknown", "dirty": True, "branch": "unknown"}
+    assert revision == {
+        "git_sha": "unknown",
+        "dirty": True,
+        "branch": "unknown",
+        "describe": "unknown",
+    }
 
 
 def test_capture_code_revision_ignores_an_ambient_git_dir_pointing_elsewhere(
@@ -125,7 +135,12 @@ def test_capture_code_revision_ignores_an_ambient_git_dir_pointing_elsewhere(
 
     revision = capture_code_revision(tmp_path)
 
-    assert revision == {"git_sha": "unknown", "dirty": True, "branch": "unknown"}
+    assert revision == {
+        "git_sha": "unknown",
+        "dirty": True,
+        "branch": "unknown",
+        "describe": "unknown",
+    }
 
 
 def test_write_receipt_stamps_code_revision_and_writes_the_file(tmp_path: Path) -> None:
@@ -136,7 +151,7 @@ def test_write_receipt_stamps_code_revision_and_writes_the_file(tmp_path: Path) 
     assert path.is_file()
     assert receipt["receipt_path"] == str(path)
     assert "code_revision" in receipt
-    assert set(receipt["code_revision"]) == {"git_sha", "dirty", "branch"}
+    assert set(receipt["code_revision"]) == {"git_sha", "dirty", "branch", "describe"}
     import json
 
     on_disk = json.loads(path.read_text())

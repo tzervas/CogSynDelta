@@ -28,9 +28,12 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+from cogsyndelta.regions._receipt import capture_code_revision
 
 SCHEMA = "model-pipeline-receipt/v1"
 
@@ -90,6 +93,16 @@ class Receipt:
     produces from this field -- so renaming `kind` silently breaks receipt selection in
     the matrix even though classification would still work.
     """
+    code_revision: dict[str, Any] = field(default_factory=dict)
+    """What code produced these numbers: `git_sha`, `dirty`, `branch`, `describe`.
+
+    Stamped by `write()` from `cogsyndelta.regions._receipt.capture_code_revision` -- the
+    SAME helper every training and quantization receipt already routes through -- so one
+    reader can compare an eval receipt's revision against a training receipt's without
+    knowing which producer wrote which. Empty only on a receipt read back from disk that
+    predates this field (`adapt` passes through whatever it finds, including nothing); a
+    receipt this class WRITES always has it, because `write()` refuses otherwise.
+    """
 
     @property
     def passed(self) -> bool:
@@ -101,13 +114,47 @@ class Receipt:
         """
         return bool(self.gates) and all(self.gates.values())
 
-    def write(self, out_dir: Path) -> Path:
+    def write(
+        self,
+        out_dir: Path,
+        *,
+        capture: Callable[[Path | None], dict[str, Any] | None] = capture_code_revision,
+    ) -> Path:
         """Write to ``{out_dir}/{project}-{component}-{kind or stage}-{timestamp}.json``.
 
         Uses `kind` when set (so `eval` and `eval-quantized` land under distinguishable
         filenames and can never glob-collide) and falls back to `stage` otherwise --
         every receipt written before `kind` existed named the file this same way.
+
+        STAMPS `code_revision` FIRST, AND REFUSES TO WRITE WITHOUT IT. Training and
+        quantization receipts have gone through `regions/_receipt.write_receipt` -- which
+        raises rather than let a receipt reach disk with no provenance block -- since that
+        helper existed; eval receipts, written through this method, carried none at all.
+        The consequence was not cosmetic: the matrix harness's G5b gate is
+        "`code_revision.git_sha` equals the run's code sha and `dirty` is false", and it
+        could not fire on the one receipt kind (`eval-quantized`) whose entire purpose is
+        to prove a published artifact was scored by known code. A metric with no
+        attributable code behind it is a number, not evidence.
+
+        The refusal is fail-closed for the same reason `write_receipt`'s is: the real
+        `capture_code_revision` never returns falsy (it degrades to an honest "unknown"
+        block instead), so a falsy return means the capture MECHANISM is broken, and a
+        receipt silently missing its provenance is worse than one that fails loudly --
+        nothing downstream checks for the gap, so the first sign of it would be an
+        operator staring at a green run they can no longer place against a commit.
+
+        Args:
+            capture: injection seam for the test that proves the refusal fires. Production
+                callers never pass it.
         """
+        revision = capture(None)
+        if not revision:
+            raise RuntimeError(
+                "Receipt.write: code_revision capture returned nothing -- refusing to "
+                f"write a {self.kind or self.stage!r} receipt with no code_revision block"
+            )
+        self.code_revision = dict(revision)
+
         out_dir.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
         p = self.producer
@@ -153,6 +200,7 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             # eval receipts) is trusted; one that did not falls back to `stage`, matching
             # `write()`'s own filename fallback.
             kind=raw.get("kind") or raw.get("stage", "unknown"),
+            code_revision=raw.get("code_revision", {}),
         )
 
     component = raw.get("region")
@@ -181,6 +229,7 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             },
             started_utc=raw.get("recorded_utc", ""),
             device=raw.get("device", ""),
+            code_revision=raw.get("code_revision", {}),
         )
 
     # Pretrain receipts, text and visual. Both carry held_out + untrained_baseline; the
@@ -223,6 +272,7 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             started_utc=raw.get("started_utc") or raw.get("recorded", ""),
             seconds=float(raw.get("seconds") or raw.get("elapsed_s") or 0.0),
             device=raw.get("device", ""),
+            code_revision=raw.get("code_revision", {}),
         )
     return None
 
