@@ -7,6 +7,16 @@ every anchor and fails the build if the cited file no longer has that many lines
 drift guard, not a proof the prose still matches, so re-read the anchor before trusting an old
 copy of this file.
 
+**Schema stamp: `metrics_schema: "csd-metrics/v2"`** (§14). Sections 1-11 below describe the
+receipt field names this project's code writes **today** -- unchanged by this patch, and still
+ground truth for what is actually on disk. Sections 12-19 are the `csd-metrics/v2` layer: the
+canonical name each of those v1 fields maps to, a refuse-function a harness must apply before
+comparing two numbers, a retire list, and the standing statements a card or harness must not
+contradict. **v2 is a naming and comparison-discipline layer over the same measurements, not a
+code rewrite** -- a v1 field name in a receipt is not wrong, and nothing in §§12-19 licenses
+inventing a new receipt field this project's code does not yet write. Source: `g7-latent-eval-
+metrics.md` (2026-09-04), read from `/akula-data/session-backup-staging/tools/grok-jobs/`.
+
 **Why this document exists.** A published model card prints numbers like `recall@1: 0.99`,
 `anisotropy: 0.02`, `compression_ratio: 9.83x`. None of those names are standardized across the
 field: "recall@1" can mean top-1 accuracy against a 512-item closed pool or against a
@@ -39,7 +49,15 @@ instances of it legitimately, **(f)** known caveats.
 9. [Definitional collision: three different "effective rank"s](#9-definitional-collision-three-different-effective-ranks)
 10. [How to compare two numbers legitimately](#10-how-to-compare-two-numbers-legitimately)
 11. [Project-wide caveats](#11-project-wide-caveats)
-12. [Field index](#field-index)
+12. [`csd-metrics/v2` canonical field names](#12-csd-metricsv2-canonical-field-names)
+13. [Retire list (`csd-metrics/v2` §3.2)](#13-retire-list-csd-metricsv2-32)
+14. [Schema stamp and refuse predicate](#14-schema-stamp-and-refuse-predicate)
+15. [v1 -> v2 deprecation map](#15-v1---v2-deprecation-map)
+16. [The anisotropy naming caveat](#16-the-anisotropy-naming-caveat)
+17. [W1: participation-ratio and entropy rank disagree in sign](#17-w1-participation-ratio-and-entropy-rank-disagree-in-sign)
+18. [The dual-harness principle](#18-the-dual-harness-principle)
+19. [Standing statements](#19-standing-statements)
+20. [Field index](#field-index)
 
 ---
 
@@ -1186,6 +1204,574 @@ legitimate "before vs. after" comparison.
 
 ---
 
+## 12. `csd-metrics/v2` canonical field names
+
+One canonical receipt-field name per formula. Where a v2 name differs from what this
+project's code writes today, that is a **rename this document licenses for a future harness
+patch**, not a claim the field exists under the new name yet -- check §15 before assuming a
+name below is on disk.
+
+### 12.1 `repr.effective_rank_entropy`
+
+- **Formula** (Roy & Vetterli, EUSIPCO 2007, Def. 1 + Property 1; logs base *e*, `0 log 0 :=
+  0`):
+
+  ```python
+  sv = svdvals(embeddings - mean(embeddings, dim=0))    # linear spectrum
+  p = sv / sum(sv)
+  effective_rank_entropy = exp(-sum(p_i * log(p_i) for p_i in p if p_i > 0))
+  ```
+
+- **Pool:** `pooled_both` (anchors + positives concatenated), subsample 2048 seed 0.
+- **`battery_id`:** `eval_holdout` / `eval_quantized_holdout`.
+- **Unit:** scalar, `[1, dim]`.
+- **Citation:** Roy & Vetterli, EUSIPCO 2007, Poznan, Def. 1 + Property 1.
+- **Why this metric:** this is the project's own comparable prior (the existing "8.7 of 128"
+  figure, §3.12) -- it up-weights the spectral tail, catching a "many small directions" style
+  of under-use that participation ratio (§12.2) is comparatively insensitive to.
+- **Why this battery:** `pooled_both` is the eval battery's existing anisotropy/alignment
+  pool (§3.9-§3.11); reusing it means one receipt's representation-geometry fields all
+  describe one fixed set of vectors rather than four different subsamples.
+- **Falsifies:** `gate.uses_its_dimensions` -- an encoder nominally wide but effectively
+  narrow (§3.12(f)).
+- **Comparison rule:** same embedding dimension, same pool, same subsample regime (§10). Do
+  **not** compare against `token.pooled_entropy_rank` / `token.global_entropy_rank` (§12.2) --
+  same formula, different pool (both-sides-pooled-and-subsampled here vs. anchor-only-full-
+  surface there), not interchangeable numbers (§9, carried forward unchanged under v2).
+- **Sameness special-case:** none.
+
+**Do not invent `repr.effective_rank_pr`.** `participation_ratio()` (the pooled,
+default-subsampled PR function) is exercised only by
+`tests/test_pr_effective_rank_w1_alignment.py`; no production receipt writer calls it. A card
+or receipt field with this name would have no code behind it.
+
+### 12.2 `token.pooled_pr_rank` / `token.global_pr_rank` / `token.pooled_entropy_rank` / `token.global_entropy_rank`
+
+- **Formula, PR pair** (participation ratio, **never** subsampled, `<2` real rows -> `nan`;
+  Chun, Canatar, Chung, Lee, arXiv:2509.26560 v1, §2.2 `gamma_0`):
+
+  ```python
+  s = svdvals(X - mean_rows(X))
+  pr_rank = (sum(s_i ** 2 for s_i in s)) ** 2 / sum(s_i ** 4 for s_i in s)
+  ```
+
+- **Formula, entropy pair:** identical to §12.1's `effective_rank_entropy`, called with
+  `sample=` the surface's own full size (subsampling disabled).
+- **Pool:** `token.pooled_*` = `anchor_pooled` (mean-pooled anchor side of the holdout, one
+  vector per item). `token.global_*` = `anchor_token_global` (every real, non-padding token
+  position of the anchor side, batch-flattened into one `[n_tokens, dim]` matrix).
+- **`battery_id`:** `train_holdout` -- W4/W1's own harness, not the wider eval battery.
+- **Unit:** scalar, `[1, n_pool_items]` upper-bounded.
+- **Citation:** W1 (`docs/design/evidence/w1-token-rank-2026-09-02/`) / W4
+  (`src/cogsyndelta/regions/pretrain.py:_final_block_rank_stats`); PR finite-sample-bias
+  caveat per Chun et al. 2025.
+- **Why these metrics:** `token.global_pr_rank / token.pooled_pr_rank` is W4's `e_retrain_gate`
+  numerator/denominator -- the check for whether a token-aware objective moved the
+  token-global surface's structure relative to the pooled one. The entropy pair is recorded
+  **beside** the PR pair on every receipt, never instead of it, because the two disagree in
+  sign on this project's own regions (§17).
+- **Why this battery:** `_final_block_rank_stats` is a byte-for-byte transplant of W1's own
+  pre-committed measurement function (`pr_effective_rank()`, no subsampling, `nan` below 2
+  rows) so a retrain gate reads the **same** measurement W1 took, not a same-shaped one that
+  quietly diverges under a different subsampling regime.
+- **Falsifies:** `e_retrain_gate`'s PR-rank clause. **Measured not discriminating at the
+  harness's current 50-step smoke count** -- the control arm, with both token-aware terms at
+  `0.0`, already clears `token_global_pr_rank >= 2.0 * pooled_pr_rank` on its own at `2.0191x`
+  (§17, `docs/design/evidence/w4-control-arm-2026-09-03/`). A `passed: True` on this clause at
+  50 steps does not by itself distinguish "the objective worked" from "the objective was never
+  turned on."
+- **Comparison rule:** `pr_*` against `pr_*` or `entropy_*` against `entropy_*` only, never one
+  against the other, and never as a cross-function ratio (§9). Same region, holdout size,
+  corpus fingerprint side.
+- **Sameness special-case:** none across the PR/entropy pair; ordinary §3.3 refuse-predicate
+  rules apply within one family.
+
+### 12.3 `repr.anisotropy`
+
+- **Formula** (mean off-diagonal cosine similarity, float64, after L2 normalisation):
+
+  ```python
+  x = normalize(embeddings.double(), dim=-1)     # optionally subsampled, seed 0
+  sim = x @ x.T
+  anisotropy = mean(sim[i, j] for i != j)
+  ```
+
+- **Pool:** `pooled_both`, subsample 2048 seed 0.
+- **`battery_id`:** `eval_holdout` / `eval_quantized_holdout`.
+- **Unit:** `[0, 1]` (float64 cosine mean).
+- **Citation -- named, with a mismatch to flag, see §16:** Ethayarajh, EMNLP 2019, §3.4/§4.1
+  (arXiv:1909.00512); Godey et al., 2024, §3.1 (arXiv:2401.12143); LoopFormer §4.3.
+- **Why this metric:** catches an unstructured-cone collapse that a ranking score alone can
+  hide -- `rank.recall@1` can read fine while the space has quietly narrowed.
+- **Why this battery:** the same pool alignment/uniformity/effective-rank-entropy read, so one
+  receipt's four representation-geometry numbers describe one fixed set of vectors.
+- **Falsifies:** `gate.not_anisotropic` (`< 0.9`) -- a collapse tripwire, **not** a "lower is
+  better" ranking rule (§19.2).
+- **Comparison rule:** same holdout size and subsampling seed. **Never** compared numerically
+  to a number from Ethayarajh/Godey/LoopFordmer or another project's per-token anisotropy --
+  see §16 in full before citing this field beside a paper's own figure.
+- **Sameness special-case:** none.
+
+### 12.4 `repr.alignment` / `repr.uniformity`
+
+- **Formula** (Wang & Isola, ICML 2020, arXiv:2005.10242; alpha=2, t=2):
+
+  ```python
+  alignment  = mean(||f(x_i) - f(y_i)||^2)                       # matched pairs, lower better
+  uniformity = log(mean(exp(-2 * ||f(x_i) - f(x_j)||^2) for i != j))   # pooled, lower better
+  ```
+
+- **Pool:** `matched` (alignment: anchor row `i` against positive row `i`); `pooled_both`
+  (uniformity: same pool as anisotropy).
+- **`battery_id`:** `eval_holdout` / `eval_quantized_holdout`.
+- **Unit:** alignment `>= 0`; uniformity a log-potential, more negative is more spread.
+- **Citation:** Wang & Isola, ICML 2020, Theorem 1, §4.1.
+- **Why this metric:** established contrastive-geometry pair; g7 spec L4 -- either alone is
+  gameable (collapse yields near-perfect alignment; a random, unstructured cloud yields good
+  uniformity), so this project reports them jointly by rule, never singly.
+- **Why this battery:** matched pairs (alignment) and `pooled_both` (uniformity) come from the
+  identical holdout the anisotropy/effective-rank-entropy fields use.
+- **Falsifies:** high `rank.recall@1` from a cone (good alignment, bad uniformity) or from an
+  unstructured cloud (good uniformity, bad alignment) -- reading either number alone as
+  "healthy" is the exact failure mode this pair exists to catch.
+- **Comparison rule:** same rule as §12.3.
+- **Sameness special-case:** none.
+
+### 12.5 `repr.emb_std_anchor`
+
+- **Formula:** `embeddings.std(dim=0).mean()` -- mean per-feature standard deviation across
+  the batch dimension.
+- **Pool:** anchors only, held-out split.
+- **`battery_id`:** `train_holdout`.
+- **Unit:** scalar, embedding-space units.
+- **Citation:** none external -- this project's own collapse signal.
+- **Why this metric:** the cheapest full-collapse check in the pipeline -- near zero means
+  every input maps to nearly the same vector -- computed inline inside `evaluate()` /
+  `evaluate_graded()` before the wider eval battery's SVD-based fields ever run.
+- **Why this battery:** it is free (already computed as a side effect of the training
+  receipt's own held-out pass); no reason to defer a full-collapse check to the separate eval
+  battery.
+- **Falsifies:** a receipt reporting `gate.beats_untrained_train: True` while
+  `repr.emb_std_anchor` sits at its untrained-baseline floor -- a ranking win a healthy encoder
+  cannot legitimately produce alongside a collapsed anchor side.
+- **Comparison rule:** same side (anchor, not pooled), same split, same region (§2.3(f),
+  unchanged under v2). Not comparable to `repr.anisotropy`/`repr.alignment`/`repr.uniformity`
+  (different pool: anchor-only here vs. pooled-both there).
+- **Sameness special-case:** none.
+
+### 12.6 `rank.recall@k` / `rank.mrr` / `rank.ndcg@10` (closed pool)
+
+- **Formula:** §2.1/§2.2/§3.3's single-relevant `recall_at_k` / `mean_reciprocal_rank` /
+  `ndcg_at_k` -- with exactly one relevant item, ndcg reduces to `mean(1[rank<=k] /
+  log2(rank+1))`. Named after Wang et al. 2013 Def. 1, but this is the **degenerate
+  single-relevant special case**, not the multi-relevant TREC/BEIR formula (§12.7).
+- **Pool:** `biencoder_holdout`, size `rank.candidates` (project default 512).
+- **`battery_id`:** `eval_holdout` / `eval_quantized_holdout`.
+- **Unit:** `[0, 1]`.
+- **Citation:** Wang et al. 2013, arXiv:1304.6480, Def. 1 (formula shape only -- see the
+  degenerate-case note above).
+- **Why this metric:** the headline closed-pool ranking triad every card prints -- recall@1/@10
+  for "did the model find its positive," `mrr`/`ndcg@10` for rank-position sensitivity that
+  recall alone cannot show.
+- **Why this battery:** encodes the whole holdout as one closed candidate pool, identical in
+  shape to §2's `held_out.*` construction -- which is why `rank.recall@1` (eval battery) is
+  numerically identical to `held_out.recall@1` (train battery) for the same checkpoint (a
+  verified receipt pair, §10).
+- **Falsifies:** `gate.beats_untrained_eval`.
+- **Comparison rule:** same `k`, same pool size, same fingerprint+scheme, same checkpoint sha
+  (§10, in full).
+- **Sameness special-case:** `rank.recall@1` (eval battery) vs. `held_out.recall@1` (train
+  battery) is a legitimate sameness guard **only** on the same sha/holdout. Never compared to
+  `beir.recall@k` (§12.7 -- different pool and multi-relevant formula) or to
+  `quant.plan_recall@1`/`quant.artifact_recall@1` (§12.8) except through §14's
+  `assert_sameness` special case.
+
+### 12.7 `beir.ndcg@10` / `beir.recall@k` / `beir.mrr`
+
+- **Formula, ndcg:** canonical TREC/BEIR nDCG (multi-relevant), Wang et al. 2013 Def. 1:
+
+  ```python
+  DCG@k  = sum(G(rel_i) / log2(i + 1) for i in 1..k)
+  IDCG@k = DCG@k of the ideal ranking of the qrels
+  nDCG@k = DCG@k / IDCG@k          # 0 if IDCG == 0
+  ```
+
+- **Formula, recall/mrr:** this project's `rank_metrics` (§7.2) -- each query's best-scoring
+  gold index kept, every other gold masked to `-inf`, then §2's `recall_at_k` /
+  `mean_reciprocal_rank` reused exactly (not an approximation -- no other gold can outrank the
+  best one).
+- **Pool:** `fiqa_corpus` (57,638 passages, the real task, W4's headline pool) or
+  `fiqa_split` (in-split only, easier, never the headline number).
+- **`battery_id`:** `beir_fiqa_corpus` / `beir_fiqa_split`.
+- **Unit:** `[0, 1]`.
+- **Citation:** Thakur et al., BEIR, NeurIPS 2021 Datasets, arXiv:2104.08663 v4, §3.3.
+- **Why this metric:** the one battery in this project that ranks against the full external
+  corpus with a genuine lexical (BM25) baseline, not a closed in-holdout pool whose only floor
+  is a random init.
+- **Why this battery:** the `memory` region's W4 gates read from here specifically because a
+  512-item closed pool cannot show whether a region beats word-counting on a real 57,638-
+  document retrieval task; FiQA judges ~2.6 passages relevant per question, multi-relevant
+  unlike every closed-pool battery in §2/§3.
+- **Falsifies:** W4 gates `b_full_pool_thresholds`, `c_beats_bm25`, `d_beats_random_init`
+  (§7.4).
+- **Comparison rule:** same pool mode (`corpus` vs. `split`), same split (`dev`/`test`, never
+  `train` -- ranking `train` measures memorisation, §7.1(f)).
+- **Sameness special-case:** none across `beir.*` and `rank.*` -- same field-family names
+  (`recall@k`, `mrr`), disjoint pool and relevance shape (§7.2(f), unchanged under v2).
+- **CRITICAL -- never alias:** `beir.ndcg@10` is **not implemented** in CSD today (§1.1's
+  gap). A card that prints it before the adapter (§18) exists is printing a field with no
+  producer. When it ships, it must **never** be written to `metrics["rank.ndcg@10"]` -- that
+  would collide with the closed-pool number under one key (§13's "do not retire
+  `rank.ndcg@10`" rule exists for exactly this reason).
+
+### 12.8 `quant.plan_recall@1` / `quant.artifact_recall@1` / `quant.drop_recall@1` / `quant.compression_ratio`
+
+- **Formula:** all four `recall@1` figures are §2's `recall_at_k(k=1)`, on §2's training
+  held-out battery. `plan_recall@1` = today's `quantized_metric` (in-memory, `apply_plan()`
+  applied, before any file is written). `artifact_recall@1` = `rank.recall@1` from a `kind:
+  "eval-quantized"` receipt (the actual packed `.ptq.pt` file read back off disk, unpacked to
+  fp32). `drop_recall@1 = fp32_metric_recomputed - plan_recall@1` (plan side) or the
+  fp32-eval-vs-eval-quantized delta (artifact side) -- always **one named metric, one battery**
+  (MM §4-5), never a unitless "drop." `compression_ratio = fp32_bytes / max(1, stored_bytes)`.
+- **Pool:** §2's held-out split, in-memory (plan) vs. the same holdout via the unpacked
+  artifact (artifact side).
+- **`battery_id`:** `quant_plan` / `eval_quantized_holdout`.
+- **Unit:** `recall@1` figures `[0, 1]`; `compression_ratio` a unitless multiplier.
+- **Citation:** none external -- this project's own PTQ pipeline (`src/cogsyndelta/quant/
+  ptq.py`).
+- **Why these metrics:** `plan_recall@1` is cheap (in-memory, before a file is written) and
+  drives the greedy sensitivity search during quantization; `artifact_recall@1` is the only
+  number reflecting the bytes actually published -- the plan-vs-artifact gap this project has
+  already been bitten by once (§4).
+- **Why this battery:** `quant_plan` reuses §2's `eval_fn` for search speed (a single
+  `recall@1`, nothing wider); `eval_quantized_holdout` reruns the **full** eval battery
+  (`rank.*`/`repr.*`/`eff.*`) against the loaded packed artifact, because a compression ratio
+  alone says nothing about `eff.latency_*` or `repr.anisotropy` movement under quantization.
+- **Falsifies:** `within_budget` (`drop <= tolerance`), measured on the plan -- a `True` here
+  can still diverge from the published bytes, which is exactly what an independent
+  `artifact_recall@1` reading catches.
+- **Comparison rule:** `quant.compression_ratio` is a payload/storage ratio, never a latency
+  claim (§19.1).
+- **Sameness special-case (the one explicitly licensed cross-`battery_id` comparison, MM §4):**
+  `quant.plan_recall@1` vs. `quant.artifact_recall@1` on the **identical checkpoint sha and
+  holdout** is a legitimate `assert_sameness` check. Refusing this comparison violates MM §4
+  (§14's schema-falsifier #2) -- "never compare across `battery_id`" is stricter than MM
+  actually requires and must not be over-applied here.
+
+### 12.9 `gate.beats_untrained_train` / `gate.beats_untrained_eval`
+
+- **Formula:**
+
+  ```text
+  gate.beats_untrained_train = baseline_sane AND final[m] > max(baseline[m], chance[m]) + 0.01
+  gate.beats_untrained_eval  = rank.recall@1 > untrained_baseline.recall@1        # no margin
+  ```
+
+- **Pool / `battery_id`:** `train_holdout` (train form, §1) / `eval_holdout` +
+  `eval_quantized_holdout` (eval form, §3.13).
+- **Unit:** boolean.
+- **Citation:** none external -- both are this project's own gates.
+- **Why two canonical names:** §3.13(f) already flags that the **train** and **eval** receipts
+  use the same English field name (`beats_untrained`) for two different predicates -- one
+  margined and preconditioned on `baseline_sane`, one a bare inequality. v2 gives each its own
+  name specifically so a reader cannot conflate a `passed: True` under one with the other by
+  field name alone.
+- **Falsifies:** §1's `_beats_untrained_gate` (train form) / §3.13's unmargined check (eval
+  form), respectively.
+- **Comparison rule:** never compare a `gate.beats_untrained_train` boolean to a
+  `gate.beats_untrained_eval` boolean as if they tested the same thing.
+- **Sameness special-case:** none.
+
+---
+
+## 13. Retire list (`csd-metrics/v2` §3.2)
+
+- **`rank.map` on the 512-pair closed pool -- retire as an independently displayed column.**
+  Single relevant item per query means MAP = MRR by construction (§3.4, `benchmark.py:58-70`).
+  Keep it only as a **sameness guard** (`map == mrr`). On FiQA (§12.7) MAP and MRR genuinely
+  diverge -- there, both names are legitimate under the `beir.` prefix, not `rank.`.
+- **`rank.precision@10` on that pool -- retire as an independently displayed column.**
+  `precision@10 == recall@10 / 10` exactly with one positive (§3.5). Keep only as a sameness
+  guard (`p@10 == r@10/10`).
+- **Bare `effective_rank` -- forbid the name.** Three formulas exist in this codebase
+  (§9/§12.1/§12.2); entropy-effective-rank and participation-ratio rank **disagree in sign** on
+  this project's own production regions (PR ratios `0.66x-1.30x` vs. entropy ratios
+  `1.16x-1.84x`, §17). A field, card cell, or design-doc sentence that says "effective rank"
+  without saying which formula is not naming a measurement.
+- **`repr.anisotropy < 0.9` as a discriminating admission test -- retire from gates, keep
+  recording.** Untrained W1 pooled mean-pairwise cosine sits at `0.84-0.98`; trained text sits
+  at `0.015-0.123` (W1). Do not ship a tighter or looser bound on this field without a study.
+- **Rename `uses_its_dimensions` to `repr.effective_rank_entropy_ratio`.** The `0.05` floor is
+  slack, not a tight bound -- W1's own production regions sit at `~0.45-0.51`
+  (`csd-benchmark.py:358`).
+- **A single `beats_untrained` spanning train and eval -- retire.** Split into
+  `gate.beats_untrained_train` / `gate.beats_untrained_eval` (§12.9).
+- **Untrained CKA on seed-0 twins -- never a baseline.** W1's cross-region CKA is `1.0` **by
+  construction** when regions share `seed=0` and an identical config; it says the twins are
+  literally the same weights, not that anything was measured.
+
+**Reject or retire -- latent-reasoning candidates (g7 §2.3), for context, not native to any
+receipt above:**
+
+| Candidate | Verdict | Reason |
+|---|---|---|
+| Mean successive KL (`loop.kl_succ_mean`) as a quality ranking | Reject as gate | Established only as Huginn's early-exit heuristic (§19.4), not as evidence of reasoning quality. |
+| `tau = 5e-4` copied onto CSD | Reject | Huginn's exit threshold is tuned for a 65,536-way readout; not portable onto a 2-/10-way toy without re-derivation. |
+| Tokens/s as the reasoning-efficiency headline | Reject for latent loops | Depth/thoughts is the right unit for a recurrent latent core, not sequence length. |
+| Mutual information between layers | Reject | Kornblith Sec. 4: an invertible network makes MI equal to `H(input)` regardless of what the layers do. |
+| A blended "quality score" | Reject | `compare()` names regressions per-field and refuses a blend by design (`metrics.py:675-706`). |
+| Coconut extra sequence slots as CSD's `K` | Reject | KV grows with thoughts (Coconut is horizontal); CSD's latent loop is vertical, no sequence growth. |
+| Control-task accuracy alone, or alignment/uniformity alone | Reject as ranking | Selectivity and joint geometry are the point (§12.4, Hewitt & Liang). |
+| `g6-switch-toy/` as an `acc(K)` host | Reject | The routing-load-balance toy has no `K` -- not a latent-reasoning metric. |
+
+---
+
+## 14. Schema stamp and refuse predicate
+
+```text
+metrics_schema: "csd-metrics/v2"
+# v1 = today's mixed names (effective_rank, map, precision@10, unitless drop)
+# v2 = table in §12; aliases for v1 names allowed in a deprecation map (§15), not in gates
+```
+
+A harness **refuses** to `compare()` two numbers unless **all** of the following hold --
+reproduced from `g7-latent-eval-metrics.md` §3.3, which is itself §10 of this document plus a
+`battery_id` and a `pooling` axis:
+
+```text
+same metrics_schema
+same corpus.fingerprint AND fingerprint_scheme
+same battery_id  in {
+  train_holdout, eval_holdout, eval_quantized_holdout,
+  train_graded, train_token_rank,
+  quant_plan,
+  beir_fiqa_corpus, beir_fiqa_split,
+  mteb_<task>,            # future adapter; never alias into rank.*
+  latent_loop             # future; not a native battery today
+}
+same k                       # for @k metrics; else None == None
+same pooling  in {
+  anchor, matched, pooled_both,
+  anchor_pooled, anchor_token_global, graded_left,
+  fiqa_corpus, fiqa_split
+}
+same checkpoint sha256   (or a documented successor via train-receipt binding)
+same region / producer.component          # this doc's §10 item 1
+same code_revision.git_sha                # this doc's §10 item 6
+same seed                                 # this doc's §10 item 7
+```
+
+Implement this as a **function**, not a comment -- the existing `compare()`
+(`src/cogsyndelta/eval/metrics.py:675-706`) diffs only shared keys today and does not check
+schema, fingerprint, `battery_id`, pooling, or sha. Shipping v2 names without this predicate
+re-creates the exact plan-vs-artifact misread §4 already documents once.
+
+**Special case, not a generic `compare()`:** `assert_sameness` for `map == mrr`, `p@10 ==
+r@10/10` (§13), `held_out.recall@1` vs. `rank.recall@1` on the same sha (§10 item 3), and
+`quant.plan_recall@1` vs. `quant.artifact_recall@1` on the same sha/holdout (§12.8). These
+*cross* `battery_id` by design. If a refuse-function rejects the last pair, it has violated MM
+§4 -- see the schema falsifiers below.
+
+`train_holdout` and `eval_holdout` reconstruct the **same split** (fingerprint-gated
+`build_splits`) via different code paths. A harness may compare the two `recall@1`s as a
+sameness guard; it may **not** compare `held_out.emb_std` to `repr.anisotropy` (different
+pools -- anchor-only vs. pooled-both, §12.5).
+
+**Schema falsifiers -- write these down before the `csd-metrics/v2` patch ships, and check
+them against the first real patch, not only against this design:**
+
+1. If two receipts with different `battery_id` still delta a shared `"recall@1"` after the
+   patch -> the refuse-function is theatre -> **stop**.
+2. If `quant.plan_recall@1` vs. `quant.artifact_recall@1` on the same sha/holdout is refused ->
+   the predicate over-copied "never compare across battery_id" past the one case MM §4
+   explicitly licenses.
+3. If `repr.effective_rank_pr` appears as a written field anywhere -> the patch implemented the
+   old parent design's table, not what §12.1 actually says (that name is forbidden -- §12.1's
+   "do not invent" note).
+
+---
+
+## 15. v1 -> v2 deprecation map
+
+| v1 field (written today) | receipt `kind` | v2 canonical name | note |
+|---|---|---|---|
+| `repr.effective_rank` | eval, eval-quantized | `repr.effective_rank_entropy` | same formula (§9/§12.1), name now says which one |
+| `repr.effective_rank_ratio` | eval, eval-quantized | `repr.effective_rank_entropy_ratio` | rename of the `uses_its_dimensions` ratio (§13) |
+| `token_aware.final_block_rank.pooled_pr_rank` | train | `token.pooled_pr_rank` | §12.2 |
+| `token_aware.final_block_rank.token_global_pr_rank` | train | `token.global_pr_rank` | §12.2 |
+| `token_aware.final_block_rank.pooled_entropy_rank` | train | `token.pooled_entropy_rank` | §12.2 |
+| `token_aware.final_block_rank.token_global_entropy_rank` | train | `token.global_entropy_rank` | §12.2 |
+| `quantized_metric` | quant | `quant.plan_recall@1` | §12.8 |
+| `rank.recall@1` (read specifically for a plan-vs-artifact delta) | eval-quantized | `quant.artifact_recall@1` | context-dependent -- stays `rank.recall@1` for its own eval purposes; take the `quant.` name only when the comparison in play is the plan-vs-artifact one (§12.8's sameness special-case) |
+| `drop` | quant | `quant.drop_recall@1` | one named metric, one battery (MM §4-5) |
+| `compression_ratio` | quant | `quant.compression_ratio` | §12.8 |
+| `gates.beats_untrained` (train receipt, margined) | train | `gate.beats_untrained_train` | §12.9 |
+| `gates.beats_untrained` (eval receipt, unmargined) | eval, eval-quantized | `gate.beats_untrained_eval` | §12.9 -- same v1 name as the row above, different receipt kind, different predicate |
+| `rank.map` | eval, eval-quantized | *(retired as an independent name)* | keep as sameness guard `map == mrr` only (§13) |
+| `rank.precision@10` | eval, eval-quantized | *(retired as an independent name)* | keep as sameness guard `p@10 == r@10/10` only (§13) |
+| bare "effective rank" (undifferentiated prose) | any | *(forbidden -- name one of `repr.effective_rank_entropy`, `token.pooled_pr_rank`, `token.global_pr_rank`, `token.pooled_entropy_rank`, `token.global_entropy_rank` explicitly)* | §13 |
+
+Fields **not** in this table (`rank.recall@k`, `rank.mrr`, `rank.ndcg@10`, `rank.candidates`,
+`repr.anisotropy`, `repr.alignment`, `repr.uniformity`, `eff.*`, `held_out.*`,
+`untrained_baseline.*`, `graded_held_out.*`, `corpus.*`, `contamination.*`, `code_revision.*`)
+are **already** their own v2 canonical name -- v2 does not rename them, §12's entries for them
+exist to add the missing why/falsifies/comparison-rule columns, not to change the string.
+
+---
+
+## 16. The anisotropy naming caveat
+
+`repr.anisotropy` (§3.9/§12.3) is named after three papers that measure a **different
+surface**: Ethayarajh (EMNLP 2019, §3.4/§4.1, arXiv:1909.00512) and Godey et al. (2024, §3.1,
+arXiv:2401.12143) measure mean cosine similarity over **token embeddings drawn from a full
+pretraining corpus**; LoopFormer §4.3 reuses the same construction for a recurrent core's
+per-layer states. This project's `repr.anisotropy` measures mean cosine similarity over
+**pooled, matched-pair holdout embeddings**, subsampled to at most 2048 rows, seed 0 (§3.9(d)).
+
+**Do not compare CSD's `repr.anisotropy` numerically against a number reported in those
+papers, or against another project's per-token anisotropy figure.** Same citation, same
+underlying "mean off-diagonal cosine" idea, **different surface** -- a pooled-holdout number
+and a token-in-corpus number are not the same measurement even when both are called
+"anisotropy" and both cite the same paper. This is the identical rule §7's BEIR-FiQA module
+states for `recall@k` ("two measurements that happen to share a name"), applied to
+`anisotropy`.
+
+---
+
+## 17. W1: participation-ratio and entropy rank disagree in sign
+
+Measured on this project's own four production text checkpoints
+(`docs/design/evidence/w1-token-rank-2026-09-02/results.json`, `generated_utc`
+2026-09-03T01:34:22Z), token-global vs. pooled surfaces:
+
+| region | PR pooled | PR token | PR ratio | H pooled | H token | H ratio | n_tokens |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `code` | 42.63 | 28.09 | **0.66x** | 114.98 | 138.87 | **1.21x** | 26757 |
+| `compress` | 45.33 | 35.57 | **0.78x** | 126.86 | 147.49 | **1.16x** | 9636 |
+| `retrieve` | 40.71 | 40.65 | **1.00x** | 117.72 | 142.86 | **1.21x** | 5114 |
+| `vl_latent` | 18.07 | 23.54 | **1.30x** | 129.83 | 239.09 | **1.84x** | 32768 |
+
+**Three of four production PR ratios are below 1.0; all four entropy ratios are above 1.0.**
+This is not a bug in either function -- it is what the two formulas are built to weight
+differently:
+
+- **Participation ratio down-weights the tail.** `(sum(s_i^2))^2 / sum(s_i^4)` is dominated by
+  a few large singular values; a token surface with even a slightly heavier tail than its
+  pooled counterpart pulls the PR ratio below 1.
+- **Entropy rank up-weights the tail.** `exp(-sum(p_i * log(p_i)))` gives every nonzero
+  singular value a log-linear contribution; the same token surfaces read as **higher** rank
+  than pooled under this formula on all four regions.
+
+Never compare entropy-rank to PR-rank, including as a ratio of mixed formulas (§9/§12.2's
+comparison rule, restated here because this is the table that makes the disagreement
+concrete). Citation for the PR side's finite-sample-bias caveat: Chun, Canatar, Chung, Lee,
+arXiv:2509.26560 v1, §2.2 -- "CSD applies no bias correction. Unmeasured on W1 surfaces."
+
+**Downstream consequence for the W4 retrain gate.** The aligned harness's control arm (both
+token-aware terms at `0.0`) already clears `token_global_pr_rank >= 2.0 * pooled_pr_rank` at
+50 steps: control `2.0191x`, `token_only` `2.0242x`, `both_on` `2.2412x`
+(`docs/design/evidence/w4-control-arm-2026-09-03/`). The gate does **not discriminate** at this
+step count -- a `passed: True` here is not by itself evidence the token-aware objective moved
+anything (§12.2's falsifies entry, restated).
+
+---
+
+## 18. The dual-harness principle
+
+**Native receipts stay the source of truth for gates.** Industry harnesses (MTEB, BEIR,
+lm-eval, bigcode, HELM, MLPerf) are **adapters** that write **their own** JSON, cross-
+referenced against a native receipt, **never translated into or aliased onto a native field
+name.** Dual-harness remains **design-only today**: no MTEB/BEIR adapter exists in the opened
+CSD tree, and `pyproject.toml`'s core dependencies carry no `mteb`/`beir`/`datasets`/`sklearn`/
+`lm-eval`/`helm` entry.
+
+```text
+                    +- csd-benchmark.py  ->  Receipt (rank.* / repr.* / eff.*)
+checkpoint.pt  --+
+                    +- csd-eval-bridge (separate repo)
+                         +- EncoderProtocol.encode(DataLoader, *, task_metadata, ...)
+                         |     -> ResultCache / BenchmarkResults JSON  (never ModelResult)
+                         +- (later) CsdLM(LM) -> lm-eval / bigcode JSON
+                              only after a coda maps s to p in the simplex Delta^(|V|-1)
+```
+
+**Where the bridge lives -- not inside `tzervas/CogSynDelta`.** Adding MTEB/BEIR/lm-eval as a
+project dependency would be a new heavy dependency in the model repo for what is fundamentally
+a harness concern. Candidates: extend `tzervas/model-matrix` (which already consumes
+`metrics["rank.recall@1"]` and, per its own `DESIGN.md` §1, **must not** import a project
+package), or a thin new `csd-eval-bridge` repo. CogSynDelta keeps `TextEncoder.encode` and its
+own receipts; the bridge depends on CSD as a library, not the reverse. This follows the
+operator's `tooling-lives-in-its-own-repo` rule the same way the matrix harness itself does
+(§P7.3, `program/REMAINING.md`).
+
+**Cross-reference shape (`detail.external`, never `metrics`):**
+
+```json
+{
+  "harness": "mteb",
+  "harness_version": "<pkg version>",
+  "benchmark": "task:FiQA2018",
+  "task": "FiQA2018",
+  "main_metric": "ndcg_at_10",
+  "main_value": 0.0,
+  "result_sha256": "...",
+  "checkpoint_sha256": "...",
+  "corpus_fingerprint": "...",
+  "metrics_schema": "csd-metrics/v2",
+  "pooling": "masked_mean_then_proj",
+  "similarity": "cosine",
+  "max_len": 96,
+  "normalised": true,
+  "battery_id": "mteb_FiQA2018"
+}
+```
+
+Putting an industry nDCG@10 at `metrics["rank.ndcg@10"]` would collide with the closed-pool
+number this project already writes there (§12.7's CRITICAL note). Industry blobs go in
+`detail`, never in `metrics` -- `passed` (a receipt's own top-level gate summary) requires a
+non-empty `gates` block and all entries true; it does not, and must not, read `detail`.
+
+**Cross-reference key** a bridge uses to bind an industry result back to the native
+checkpoint it scored: `(checkpoint_sha256, corpus_fingerprint, metrics_schema, battery_id,
+pooling, k, region, git_sha, seed)` -- the same nine axes §14's refuse predicate checks.
+
+---
+
+## 19. Standing statements
+
+A card, receipt, or design doc must not contradict any of these without a new measurement
+that specifically revisits it:
+
+1. **The PTQ compression ratio is a payload/storage ratio, not a speed or throughput claim.**
+   `quant.compression_ratio` (§12.8/§5.2(f)) says nothing about `eff.latency_*_ms` /
+   `eff.throughput_per_s` on its own -- those are measured separately (§3.8) and are not
+   guaranteed to move proportionally, since sub-byte codes still get unpacked to fp32 before a
+   forward pass runs.
+2. **Anisotropy (and alignment/uniformity/effective-rank) are diagnostics, not scores.**
+   None of `repr.anisotropy`, `repr.alignment`, `repr.uniformity`,
+   `repr.effective_rank_entropy` should be read as "lower/higher is better" in isolation from
+   a ranking metric (`rank.recall@k`/`rank.mrr`) -- they exist to catch a collapsed
+   representation space that a ranking score alone can miss (§11.2, §12.3-§12.5).
+3. **Per-token metrics apply only to token-mappable surfaces.** There is **no** token-mappable
+   composed read-out today: `CausalLM` exists unplugged (`forward` -> logits, an optional CE
+   loss, **no** `generate`, no coda, no adapter). Do not run lm-eval, bigcode-evaluation-
+   harness, or HELM on a region that only emits `[B, D]` latents (g7 §1.2/§1.3). No CSD
+   fingerprint scheme exists for HumanEval/HellaSwag/GSM8K today -- `corpus.fingerprint`
+   (§6.3) is parquet-shard hashing for pair corpora, not a benchmark-item fingerprint.
+4. **The latent-space metrics are logged-only, not gates, until a pre-registered validation
+   study licenses them.** `loop.acc@k`, `loop.kl_succ_mean` (with `readout_id`), `loop.nonmono`
+   (log only), `probe.{acc_ling,acc_ctrl,sel}`, and `route.{aux,aux_coef,H,load.*}` (g7 §2.2)
+   are recorded, never gated on, until that study exists. Never compare `loop.acc@k` to
+   `rank.recall@1` -- different objects entirely (test-time latent-compute accuracy vs. a
+   closed-pool retrieval score). Never compare `route.aux` to a Switch Transformers run that
+   folded in `alpha` without dividing it back out (Fedus, Zoph, Shazeer, JMLR 23(120) 2022,
+   arXiv:2101.03961, eqs. 4-6) -- CSD's own aux helper is unweighted
+   (`N * sum(f_i * P_i)`; `aux_coef` multiplies separately, default `1.0`), so a raw `aux`
+   value from CSD and a raw `aux` value that already folded in `alpha=1e-2` are not the same
+   scale.
+
+---
+
 ## Field index
 
 Receipt field -> section. `kind` is the receipt this field is written into
@@ -1225,3 +1811,21 @@ Receipt field -> section. `kind` is the receipt this field is written into
 | `corpus_fingerprint` (quant receipt, top level) | quant | [§6.3](#63-corpusfingerprint-corpusfingerprint_scheme) |
 | BEIR-FiQA `recall@1`/`recall@10`/`recall@100`/`mrr` | (evidence/gate scripts, not a receipt `kind` above) | [§7.2](#72-rank_metrics-recall1-recall10-recall100-mrr-multi-relevant) |
 | W4 gates `a_beats_both_parents` .. `e_retrain_gate` | (evidence/gate scripts) | [§7.4](#74-the-w4-gates-a_beats_both_parents-e_retrain_gate) |
+
+### `csd-metrics/v2` canonical names (§12) -- not yet written by any receipt unless noted in §15
+
+| v2 canonical field | maps from (v1, if renamed) | section |
+|---|---|---|
+| `repr.effective_rank_entropy` | `repr.effective_rank` | [§12.1](#121-repreffective_rank_entropy) |
+| `token.pooled_pr_rank`, `.global_pr_rank`, `.pooled_entropy_rank`, `.global_entropy_rank` | `token_aware.final_block_rank.*` | [§12.2](#122-tokenpooled_pr_rank--tokenglobal_pr_rank--tokenpooled_entropy_rank--tokenglobal_entropy_rank) |
+| `repr.anisotropy` | (same name) | [§12.3](#123-repranisotropy), [§16](#16-the-anisotropy-naming-caveat) |
+| `repr.alignment`, `repr.uniformity` | (same names) | [§12.4](#124-repralignment--repruniformity) |
+| `repr.emb_std_anchor` | `held_out.emb_std` (train, anchor side) | [§12.5](#125-repremb_std_anchor) |
+| `rank.recall@k`, `rank.mrr`, `rank.ndcg@10` (closed pool) | (same names) | [§12.6](#126-rankrecallk--rankmrr--rankndcg10-closed-pool) |
+| `beir.ndcg@10`, `beir.recall@k`, `beir.mrr` | BEIR-FiQA `recall@k`/`mrr` (§7.2); `ndcg@10` unimplemented | [§12.7](#127-beirndcg10--beirrecallk--beirmrr) |
+| `quant.plan_recall@1`, `.artifact_recall@1`, `.drop_recall@1`, `.compression_ratio` | `quantized_metric`, `rank.recall@1` (eval-quantized), `drop`, `compression_ratio` | [§12.8](#128-quantplan_recall1--quantartifact_recall1--quantdrop_recall1--quantcompression_ratio) |
+| `gate.beats_untrained_train`, `gate.beats_untrained_eval` | `beats_untrained` / `gates.beats_untrained` | [§12.9](#129-gatebeats_untrained_train--gatebeats_untrained_eval) |
+
+See [§15](#15-v1---v2-deprecation-map) for the full v1 -> v2 deprecation map and
+[§14](#14-schema-stamp-and-refuse-predicate) for the `metrics_schema` stamp and refuse
+predicate every comparison across these names must pass.

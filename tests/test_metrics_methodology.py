@@ -170,6 +170,134 @@ def test_doc_flags_the_three_effective_rank_definitions() -> None:
 
 
 # =====================================================================================
+# csd-metrics/v2: schema stamp, refuse predicate, retire list, deprecation map,
+# anisotropy naming caveat, the W1 PR-vs-entropy sign disagreement, the dual-harness
+# principle, and the standing statements. Source: g7-latent-eval-metrics.md (2026-09-04).
+# =====================================================================================
+
+
+def test_doc_stamps_the_v2_schema() -> None:
+    text = DOC.read_text()
+    assert "csd-metrics/v2" in text
+    assert "metrics_schema" in text
+
+
+def test_doc_reproduces_the_full_refuse_predicate() -> None:
+    """Every axis the g7 spec's §3.3 refuse-function checks, reproduced (not merely
+    referenced) so a reader does not have to cross into a session-scratchpad file to see
+    what it requires."""
+    text = DOC.read_text()
+    for axis in (
+        "same metrics_schema",
+        "same corpus.fingerprint",
+        "same battery_id",
+        "same k",
+        "same pooling",
+        "same checkpoint sha256",
+        "same region",
+        "same code_revision.git_sha",
+        "same seed",
+    ):
+        assert axis in text, f"refuse predicate missing axis: {axis!r}"
+    # the battery_id enum itself, not just the word "battery_id"
+    for battery in (
+        "train_holdout",
+        "eval_holdout",
+        "eval_quantized_holdout",
+        "quant_plan",
+        "beir_fiqa_corpus",
+        "beir_fiqa_split",
+    ):
+        assert battery in text, f"refuse predicate missing battery_id member: {battery!r}"
+
+
+def test_doc_states_the_schema_falsifiers() -> None:
+    """The three concrete ways the v2 patch itself would be theatre -- pre-registered
+    before any implementation, per the spec's own falsification discipline."""
+    text = DOC.read_text()
+    assert "schema falsifiers" in text.lower()
+    assert "repr.effective_rank_pr" in text  # the forbidden name, named explicitly
+
+
+def test_doc_licenses_the_plan_vs_artifact_sameness_special_case() -> None:
+    """MM §4's one explicitly licensed cross-battery_id comparison must survive into v2's
+    refuse predicate as a named special case, not get swept up by "never compare across
+    battery_id"."""
+    text = DOC.read_text()
+    assert "assert_sameness" in text
+    assert "quant.plan_recall@1" in text
+    assert "quant.artifact_recall@1" in text
+    assert "violat" in text.lower() and "mm §4" in text.lower()
+
+
+def test_doc_states_the_retire_list_with_reasons() -> None:
+    text = DOC.read_text()
+    assert "retire list" in text.lower()
+    for retired in ("rank.map", "rank.precision@10"):
+        assert retired in text
+    assert "forbid the name" in text.lower()  # bare "effective_rank"
+    assert "uses_its_dimensions" in text
+    assert "repr.effective_rank_entropy_ratio" in text
+
+
+def test_doc_carries_the_v1_to_v2_deprecation_map() -> None:
+    text = DOC.read_text()
+    assert "deprecation map" in text.lower()
+    for v1_name, v2_name in (
+        ("token_aware.final_block_rank.pooled_pr_rank", "token.pooled_pr_rank"),
+        ("token_aware.final_block_rank.token_global_pr_rank", "token.global_pr_rank"),
+        ("quantized_metric", "quant.plan_recall@1"),
+        ("compression_ratio", "quant.compression_ratio"),
+    ):
+        assert v1_name in text, f"deprecation map missing v1 name {v1_name!r}"
+        assert v2_name in text, f"deprecation map missing v2 name {v2_name!r}"
+
+
+def test_doc_states_the_anisotropy_naming_caveat() -> None:
+    """CSD's repr.anisotropy is NAMED after these papers but measures a different
+    surface (pooled holdout vs. token-in-corpus) -- never compare the numbers."""
+    text = DOC.read_text()
+    assert "Ethayarajh" in text
+    assert "Godey" in text
+    assert "LoopFormer" in text
+    assert "do not compare" in text.lower()
+
+
+def test_doc_shows_the_w1_pr_vs_entropy_sign_disagreement() -> None:
+    """The concrete table: PR ratios below 1.0, entropy ratios above 1.0, on the same
+    four production regions, with the down-weights-tail / up-weights-tail explanation
+    for why the two are expected to disagree rather than being a bug."""
+    text = DOC.read_text()
+    for region in ("code", "compress", "retrieve", "vl_latent"):
+        assert region in text
+    assert "0.66" in text and "1.84" in text
+    assert "down-weight" in text.lower()
+    assert "up-weight" in text.lower()
+
+
+def test_doc_states_the_dual_harness_principle() -> None:
+    text = DOC.read_text()
+    assert "source of truth for gates" in text.lower()
+    assert "detail.external" in text
+    assert "never" in text.lower() and "alias" in text.lower()
+    assert "csd-eval-bridge" in text or "model-matrix" in text
+
+
+def test_doc_states_the_standing_statements() -> None:
+    """The four standing statements the operator named: PTQ ratio is storage not
+    latency; anisotropy is a diagnostic not a score; per-token only for token-mappable
+    surfaces; the latent metrics are logged-only pending a pre-registered study."""
+    text = DOC.read_text()
+    assert "standing statements" in text.lower()
+    assert "payload/storage ratio" in text
+    assert "token-mappable" in text.lower()
+    for field in ("loop.acc@k", "loop.kl_succ_mean", "probe.{acc_ling,acc_ctrl,sel}", "route."):
+        assert field in text, f"standing statements missing latent field {field!r}"
+    assert "logged-only" in text.lower() or "logged only" in text.lower()
+    assert "pre-registered validation study" in text.lower() or "pre-registered" in text.lower()
+
+
+# =====================================================================================
 # The card: every printed metric carries a methodology line.
 # =====================================================================================
 
