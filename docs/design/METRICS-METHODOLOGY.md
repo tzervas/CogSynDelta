@@ -201,7 +201,7 @@ fingerprint matching what training recorded (§6) -- never re-globbed or re-samp
 - **(f)** **This is anchor-side-only, not anchor+positive.** §3's representation family
   (`repr.anisotropy`, `repr.effective_rank`, etc.) is computed over `torch.cat([anchors,
   positives])` -- both sides pooled together
-  (`src/cogsyndelta/eval/benchmark.py:392-394`). A `held_out.emb_std` and a `repr.*` number
+  (`src/cogsyndelta/eval/benchmark.py:438`). A `held_out.emb_std` and a `repr.*` number
   from the same receipt pair are not measuring the same set of vectors; do not read one as a
   cross-check of the other.
 
@@ -264,7 +264,7 @@ Not metrics on their own -- gate/context fields. See §1 for `chance`'s formula 
 - **(f)** Divides by **parameter count**, not by anything storage-related -- two encoders with
   identical architectures but very different quantized sizes have the same
   `capability_per_param`. That is deliberate (see the module docstring,
-  `src/cogsyndelta/eval/benchmark.py:22-27`) but easy to misread as an efficiency claim; for a
+  `src/cogsyndelta/eval/benchmark.py:28-33`) but easy to misread as an efficiency claim; for a
   storage-normalised version see `eff.capability_per_mb` (§3.7).
 
 ### 2.7 `token_aware.final_block_rank`
@@ -281,8 +281,8 @@ Not metrics on their own -- gate/context fields. See §1 for `chance`'s formula 
   into one `[n_tokens, dim]` matrix). `pr_*` is participation-ratio rank; `*_entropy_rank` is
   Shannon-entropy rank (§9's formulas).
 - **(c)** `_final_block_rank_stats()`: `src/cogsyndelta/regions/pretrain.py:273-343`. Calls
-  `pr_effective_rank()` (`src/cogsyndelta/eval/benchmark.py:212-254`) for the `pr_*` fields and
-  `effective_rank()` (`src/cogsyndelta/eval/benchmark.py:138-155`) for the `*_entropy_rank`
+  `pr_effective_rank()` (`src/cogsyndelta/eval/benchmark.py:251-293`) for the `pr_*` fields and
+  `effective_rank()` (`src/cogsyndelta/eval/benchmark.py:159-186`) for the `*_entropy_rank`
   fields.
 - **(d)** The **anchor side only** of the held-out split (index 0 of each pair) -- the same
   side W1's own pre-committed harness measured
@@ -307,13 +307,13 @@ Not metrics on their own -- gate/context fields. See §1 for `chance`'s formula 
 ## 3. The eval battery (`kind: eval` / `eval-quantized` receipts)
 
 Produced by `scripts/csd-benchmark.py` via `benchmark_embeddings()`
-(`src/cogsyndelta/eval/benchmark.py:334-401`). This is a **different, wider** battery from §2:
+(`src/cogsyndelta/eval/benchmark.py:373-457`). This is a **different, wider** battery from §2:
 ranking metrics MTEB-family retrieval papers report, efficiency (parameters, size, latency,
 throughput), and representation-health diagnostics that a ranking score alone cannot surface.
 Written as `Receipt(kind="eval" | "eval-quantized", ...)`
 (`src/cogsyndelta/pipeline/receipt.py:58-89`), `metrics` flattened with a family prefix
 (`rank.`, `eff.`, `repr.`) by `BenchmarkResult.flat()`
-(`src/cogsyndelta/eval/benchmark.py:322-331`).
+(`src/cogsyndelta/eval/benchmark.py:361-370`).
 
 **Evaluation set, every field in this section:** the same held-out split §2 uses, rebuilt from
 the training receipt's own recorded config and cross-checked by corpus fingerprint
@@ -329,11 +329,11 @@ in §2 for the same checkpoint (confirmed against a real receipt pair in §10).
 ### 3.1 `rank.recall@1`, `rank.recall@5`, `rank.recall@10`
 
 Same `recall_at_k()` formula and closed-pool semantics as §2.1
-(`src/cogsyndelta/eval/benchmark.py:360-363`), now also at `k=5`. Same caveats.
+(`src/cogsyndelta/eval/benchmark.py:409-411`), now also at `k=5`. Same caveats.
 
 ### 3.2 `rank.mrr`
 
-Same `mean_reciprocal_rank()` as §2.2 (`src/cogsyndelta/eval/benchmark.py:364`).
+Same `mean_reciprocal_rank()` as §2.2 (`src/cogsyndelta/eval/benchmark.py:412`).
 
 ### 3.3 `rank.ndcg@10`
 
@@ -412,7 +412,7 @@ Same `mean_reciprocal_rank()` as §2.2 (`src/cogsyndelta/eval/benchmark.py:364`)
 ### 3.6 `rank.candidates`
 
 Pool size for this battery -- equal to the held-out split size (`a.size(0)`,
-`src/cogsyndelta/eval/benchmark.py:368`), i.e. 512 at this project's default. Not a metric,
+`src/cogsyndelta/eval/benchmark.py:414`), i.e. 512 at this project's default. Not a metric,
 context for reading every `rank.*` figure beside it.
 
 ### 3.7 `eff.parameters`, `eff.stored_mb`, `eff.capability_per_param`, `eff.capability_per_mb`
@@ -440,7 +440,7 @@ context for reading every `rank.*` figure beside it.
 - **(e)** `eff.capability_per_param` is invariant to quantization (same architecture, same
   `recall@1` if quantization did not move it) -- compare it across regions freely once §10's
   rules hold. `eff.capability_per_mb` is the metric that actually moves with quantization
-  (§5) and is the more honest efficiency figure per `src/cogsyndelta/eval/benchmark.py:22-27`
+  (§5) and is the more honest efficiency figure per `src/cogsyndelta/eval/benchmark.py:28-33`
   ("CAPABILITY PER PARAMETER, AND WHY PER-BYTE MATTERS MORE").
 - **(f)** `eff.capability_per_param` between a `kind: "eval"` and a `kind: "eval-quantized"`
   receipt for the same checkpoint will usually be numerically identical (parameter count does
@@ -470,7 +470,7 @@ context for reading every `rank.*` figure beside it.
   document records contention, so a latency figure from a fleet host under load is not
   comparable to one from an idle host even if both name the same GPU.
 - **(f)** `peak_vram_mb` is `0.0` unconditionally on a CPU-only run
-  (`src/cogsyndelta/eval/benchmark.py:309`) -- absence of GPU memory pressure, not a
+  (`src/cogsyndelta/eval/benchmark.py:348`) -- absence of GPU memory pressure, not a
   measurement of zero.
 
 ### 3.9 `repr.anisotropy`
@@ -486,9 +486,9 @@ context for reading every `rank.*` figure beside it.
   anisotropy = mean(sim[i, j] for i != j)         # off-diagonal only
   ```
 
-- **(c)** `src/cogsyndelta/eval/benchmark.py:82-103`.
+- **(c)** `src/cogsyndelta/eval/benchmark.py:88-119`.
 - **(d)** **Both anchors and positives pooled together**: `both = torch.cat([anchors,
-  positives])` (`src/cogsyndelta/eval/benchmark.py:392-394`), then subsampled to at most 2048
+  positives])` (`src/cogsyndelta/eval/benchmark.py:438`), then subsampled to at most 2048
   rows (seed 0) if the pool exceeds that. At this project's 512-pair holdout, `both` has 1024
   rows -- under the 2048 cap, so **no subsampling actually occurs at the project's current
   holdout size**, though the code path exists and would engage on a larger one.
@@ -498,12 +498,14 @@ context for reading every `rank.*` figure beside it.
 - **(f)** **This is a representation-geometry diagnostic, not a quality score.** Higher is not
   better or worse in the abstract: near 0 means unrelated items sit close to orthogonal (a
   healthy, spread-out space); near 1 means the space has collapsed into a narrow cone. The
-  project's own gate treats `>= 0.9` as unhealthy
-  (`not_anisotropic: anisotropy < 0.9`, `scripts/csd-benchmark.py:357,521`), not as "anisotropy
+  project used to gate on `>= 0.9` as unhealthy under the name `not_anisotropic`; that gate is
+  now **demoted to a recorded value, not a written pass/fail field** (`repr.anisotropy` is
+  still measured and printed, the boolean is not) -- `scripts/csd-benchmark.py:450-453`
+  (fp32 pass), `scripts/csd-benchmark.py:630-632` (quantized pass) -- not as "anisotropy
   should be minimised" -- a healthy encoder is not at 0.0 either. Do not rank two models by
   "lower anisotropy is better" without also checking `rank.recall@1` moved the direction you
   expect; anisotropy alone cannot tell you retrieval quality (`src/cogsyndelta/eval/
-  benchmark.py:15-20`).
+  benchmark.py:21-26`).
 
 ### 3.10 `repr.alignment`
 
@@ -517,7 +519,7 @@ context for reading every `rank.*` figure beside it.
   alignment = mean( ||a_i - p_i||_2 ** alpha )        # alpha = 2.0 default
   ```
 
-- **(c)** `src/cogsyndelta/eval/benchmark.py:106-115`.
+- **(c)** `src/cogsyndelta/eval/benchmark.py:122-133`.
 - **(d)** `anchors`, `positives` from the held-out split -- **matched pairs only** (row `i`
   against row `i`), unlike anisotropy's random-pair pool.
 - **(e)** Same rule as §3.9 (holdout size, seed).
@@ -536,12 +538,12 @@ context for reading every `rank.*` figure beside it.
   uniformity = log( mean( exp(-t * sq[i, j]) for i != j ) )    # t = 2.0 default
   ```
 
-- **(c)** `src/cogsyndelta/eval/benchmark.py:118-135`.
+- **(c)** `src/cogsyndelta/eval/benchmark.py:136-156`.
 - **(d)** `both = cat([anchors, positives])`, same pool as anisotropy (§3.9).
 - **(e)** Same rule as §3.9.
 - **(f)** Read `repr.alignment` and `repr.uniformity` **together**, never one without the
   other: "either alone is gameable... a random one has excellent uniformity"
-  (`src/cogsyndelta/eval/benchmark.py:110-111`).
+  (`src/cogsyndelta/eval/benchmark.py:127-128`).
 
 ### 3.12 `repr.effective_rank`, `repr.dimensions`, `repr.effective_rank_ratio`
 
@@ -557,17 +559,17 @@ context for reading every `rank.*` figure beside it.
   `repr.dimensions` is the raw embedding width. `repr.effective_rank_ratio =
   repr.effective_rank / repr.dimensions` -- how much of the available space the encoder
   actually uses.
-- **(c)** `effective_rank()`: `src/cogsyndelta/eval/benchmark.py:138-155`. Called with its
-  **default** `sample=2048` at `src/cogsyndelta/eval/benchmark.py:397,399` (contrast with
+- **(c)** `effective_rank()`: `src/cogsyndelta/eval/benchmark.py:159-186`. Called with its
+  **default** `sample=2048` at `src/cogsyndelta/eval/benchmark.py:445,447` (contrast with
   §2.7, where the same function is called with subsampling disabled).
 - **(d)** `both = cat([anchors, positives])`, same pool as anisotropy/uniformity, subsampled to
   2048 rows if larger (not triggered at the project's current 1024-row pool -- see §3.9).
 - **(e)** Comparable across receipts at the same embedding dimension directly; across
   different dimensions, compare `effective_rank_ratio` instead of the raw rank.
 - **(f)** The project's own gate treats `effective_rank_ratio <= 0.05` as unhealthy
-  (`uses_its_dimensions`, `scripts/csd-benchmark.py:358,522`) -- an encoder nominally 256-d but
+  (`uses_its_dimensions`, `scripts/csd-benchmark.py:453,632`) -- an encoder nominally 256-d but
   effectively 12-d is "paying to store 256"
-  (`src/cogsyndelta/eval/benchmark.py:141-143`). **This is the entropy definition, not the
+  (`src/cogsyndelta/eval/benchmark.py:164-165`). **This is the entropy definition, not the
   participation-ratio one §2.7 reports** -- see §9 before comparing a `repr.effective_rank`
   figure against a `token_aware.final_block_rank.pooled_entropy_rank` figure from the SAME
   receipt; they use the same formula but different pools (both-sides-pooled-and-subsampled
@@ -594,7 +596,7 @@ context for reading every `rank.*` figure beside it.
   uses_its_dimensions = repr.effective_rank_ratio > 0.05
   ```
 
-- **(c)** `scripts/csd-benchmark.py:354-358` (fp32 pass), `scripts/csd-benchmark.py:520-522`
+- **(c)** `scripts/csd-benchmark.py:444-453` (fp32 pass), `scripts/csd-benchmark.py:628-632`
   (quantized pass).
 - **(d)** As named above.
 - **(e)** Booleans, not compared numerically; compare the underlying figures per their own
@@ -951,11 +953,11 @@ naming one pass/fail condition:
 
 | gate | condition | anchor |
 |---|---|---|
-| `a_beats_both_parents` | `memory`'s `recall@1` >= max(`compress`, `retrieve` parents' `recall@1`) AND `memory`'s graded spearman >= `compress`'s | `src/cogsyndelta/eval/beir_fiqa.py:437-466` |
-| `b_full_pool_thresholds` | full-pool `recall@10 > 0.20` AND `mrr > 0.10` | `src/cogsyndelta/eval/beir_fiqa.py:469-486` |
-| `c_beats_bm25` | trained `recall@10` > BM25 `recall@10`, same pool/qrels | `src/cogsyndelta/eval/beir_fiqa.py:489-502` |
-| `d_beats_random_init` | trained `recall@10` > this region's own untrained-encoder `recall@10`, same pool | `src/cogsyndelta/eval/beir_fiqa.py:505-515` |
-| `e_retrain_gate` | `token_global_pr_rank >= 2.0 * pooled_pr_rank` (§2.7/§9) AND no more than 1-point regression against either parent | `src/cogsyndelta/eval/beir_fiqa.py:518-579` |
+| `a_beats_both_parents` | `memory`'s `recall@1` >= max(`compress`, `retrieve` parents' `recall@1`) AND `memory`'s graded spearman >= `compress`'s | `src/cogsyndelta/eval/beir_fiqa.py:612-641` |
+| `b_full_pool_thresholds` | full-pool `recall@10 > 0.20` AND `mrr > 0.10` | `src/cogsyndelta/eval/beir_fiqa.py:644-661` |
+| `c_beats_bm25` | trained `recall@10` > BM25 `recall@10`, same pool/qrels | `src/cogsyndelta/eval/beir_fiqa.py:664-677` |
+| `d_beats_random_init` | trained `recall@10` > this region's own untrained-encoder `recall@10`, same pool | `src/cogsyndelta/eval/beir_fiqa.py:680-690` |
+| `e_retrain_gate` | `token_global_pr_rank >= 2.0 * pooled_pr_rank` (§2.7/§9) AND no more than 1-point regression against either parent | `src/cogsyndelta/eval/beir_fiqa.py:693-760` |
 
 **(f)** `e_retrain_gate`'s rank clause is the one flagged in §2.7(f) as measured
 not-discriminating at 50 steps -- see that caveat before treating a `passed: True` here as
@@ -1121,9 +1123,9 @@ sv = svdvals(x); s2 = sv ** 2
 pr_rank = (sum(s2)) ** 2 / sum(s2 ** 2)
 ```
 
-- **(c)** `effective_rank()`: `src/cogsyndelta/eval/benchmark.py:138-155`.
-  `participation_ratio()`: `src/cogsyndelta/eval/benchmark.py:158-209`. `pr_effective_rank()`:
-  `src/cogsyndelta/eval/benchmark.py:212-254`.
+- **(c)** `effective_rank()`: `src/cogsyndelta/eval/benchmark.py:159-186`.
+  `participation_ratio()`: `src/cogsyndelta/eval/benchmark.py:189-248`. `pr_effective_rank()`:
+  `src/cogsyndelta/eval/benchmark.py:251-293`.
 - **(f)** **Why two formulas exist at all, and why the third exists on top of the second:**
   measured on this project's own four production text checkpoints, participation-ratio rank
   ratios came out **0.66x-1.30x** while entropy rank ratios came out **1.16x-1.84x** for the
@@ -1205,7 +1207,7 @@ legitimate "before vs. after" comparison.
    diagnostics, not quality scores.** See §3.9(f)/§3.10(f)/§3.11(f). None of them should be
    read as "lower/higher is better" in isolation from a ranking metric (`recall@k`/`mrr`) --
    they exist to catch the case where a ranking metric looks fine while the space has
-   quietly collapsed, per `src/cogsyndelta/eval/benchmark.py:15-20`.
+   quietly collapsed, per `src/cogsyndelta/eval/benchmark.py:21-26`.
 3. **A licence tier follows the corpus, not the metric.** `licence_tier()`
    (`scripts/csd-publish-checkpoint.py:263-278`) is derived entirely from
    `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`'s per-region table (section "Decision
@@ -1293,8 +1295,8 @@ one §12.2 reports).
 - **Why this metric:** the raw rank alone is not comparable across two encoders of different
   embedding width; the ratio is (§3.12(e)).
 - **Falsifies:** `gate.uses_its_dimensions` (`effective_rank_entropy_ratio > 0.05`,
-  `scripts/csd-benchmark.py:358,522`, §12.9) -- the `0.05` floor is slack, not a tight bound:
-  W1's own production regions sit at `~0.45-0.51` (`csd-benchmark.py:358`), so a value near the
+  `scripts/csd-benchmark.py:453,632`, §12.9) -- the `0.05` floor is slack, not a tight bound:
+  W1's own production regions sit at `~0.45-0.51` (`csd-benchmark.py:453`), so a value near the
   floor is a genuine "paying to store more than it uses" signal, not measurement noise (§13).
 - **Comparison rule:** same as `repr.effective_rank_entropy` above.
 - **Sameness special-case:** none.
@@ -1486,8 +1488,10 @@ or receipt field with this name would have no code behind it.
 ### 12.8 `quant.plan_recall@1` / `quant.artifact_recall@1` / `quant.drop_recall@1` / `quant.compression_ratio`
 
 - **Formula:** all four `recall@1` figures are §2's `recall_at_k(k=1)`, on §2's training
-  held-out battery. `plan_recall@1` = today's `quantized_metric` (in-memory, `apply_plan()`
-  applied, before any file is written). `artifact_recall@1` = `rank.recall@1` from a `kind:
+  held-out battery. `plan_recall@1` is written directly under that name today
+  (`scripts/csd-quantize.py:270`; v1 name `quantized_metric`, retired -- §15), measured
+  in-memory, `apply_plan()` applied, before any file is written. `artifact_recall@1` =
+  `rank.recall@1` from a `kind:
   "eval-quantized"` receipt (the actual packed `.ptq.pt` file read back off disk, unpacked to
   fp32). `drop_recall@1 = fp32_metric_recomputed - plan_recall@1` (plan side) or the
   fp32-eval-vs-eval-quantized delta (artifact side) -- always **one named metric, one battery**
@@ -1562,7 +1566,7 @@ or receipt field with this name would have no code behind it.
   at `0.015-0.123` (W1). Do not ship a tighter or looser bound on this field without a study.
 - **Rename `uses_its_dimensions` to `repr.effective_rank_entropy_ratio`.** The `0.05` floor is
   slack, not a tight bound -- W1's own production regions sit at `~0.45-0.51`
-  (`csd-benchmark.py:358`).
+  (`csd-benchmark.py:453`).
 - **A single `beats_untrained` spanning train and eval -- retire.** Split into
   `gate.beats_untrained_train` / `gate.beats_untrained_eval` (§12.9).
 - **Untrained CKA on seed-0 twins -- never a baseline.** W1's cross-region CKA is `1.0` **by
@@ -1661,7 +1665,15 @@ them against the first real patch, not only against this design:**
 
 ## 15. v1 -> v2 deprecation map
 
-| v1 field (written today) | receipt `kind` | v2 canonical name | note |
+This maps each v1 (pre-migration) field name to the v2 name that replaced it. "Written
+today" varies by row: `repr.effective_rank`/`.effective_rank_ratio`, `quantized_metric`,
+`drop`, `compression_ratio`, `gates.beats_untrained`, `rank.map` and `rank.precision@10`
+are **fully renamed** -- the v1 name is no longer written by any production receipt, only
+the v2 name in the next column is. The one exception is `rank.recall@1`, whose row's own
+note explains why it stays written under that name for its own eval purposes and only
+takes the `quant.` name in the one plan-vs-artifact comparison §12.8 licenses.
+
+| v1 field (pre-v2 name) | receipt `kind` | v2 canonical name | note |
 |---|---|---|---|
 | `repr.effective_rank` | eval, eval-quantized | `repr.effective_rank_entropy` | same formula (§9/§12.1), name now says which one |
 | `repr.effective_rank_ratio` | eval, eval-quantized | `repr.effective_rank_entropy_ratio` | rename of the `uses_its_dimensions` ratio (§13) |
@@ -1885,8 +1897,12 @@ Receipt field -> section. `kind` is the receipt this field is written into
 A current eval / eval-quantized receipt writes `repr.effective_rank_entropy`,
 `.effective_rank_entropy_ratio`, `repr.anisotropy`, `repr.alignment`, `repr.uniformity`, and
 `repr.emb_std_anchor` (§12.1, §12.3, §12.4, §12.5) under these exact names -- NOT "not yet
-written." The `token.*` (§12.2), `beir.*` (§12.7), and `quant.*` (§12.8, written only by the
-publish script's own read-time normalisation, not by `csd-quantize.py` itself) names remain
+written." `quant.*` (§12.8) is written by production code too, and directly, not through
+the publish script's read-time normalisation: `csd-quantize.py` writes
+`quant.plan_recall@1`, `quant.drop_recall@1`, and `quant.compression_ratio` into the quant
+receipt, and `csd-benchmark.py` writes `quant.artifact_recall@1` into the eval-quantized
+receipt's `metrics` (`scripts/csd-quantize.py:270,271,275`,
+`scripts/csd-benchmark.py:604`). Only `token.*` (§12.2) and `beir.*` (§12.7) remain
 unwritten by any production receipt; check §15 before assuming an unmarked name below is on
 disk for a given battery.
 
