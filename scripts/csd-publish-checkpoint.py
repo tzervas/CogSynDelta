@@ -306,6 +306,49 @@ def load_json(path: Path) -> dict[str, Any]:
     return data
 
 
+# v1 -> v2 field-name aliases for the quant-receipt fields this lane owns
+# (g7-latent-eval-metrics.md §3.1: `quant.plan_recall@1` WAS `quantized_metric`,
+# `quant.compression_ratio` WAS `compression_ratio`, `quant.drop_recall@1` WAS the bare
+# `drop`). Defined locally rather than imported from
+# `cogsyndelta.pipeline.receipt.QUANT_METRIC_ALIASES_V1` (the same table, same
+# values) because importing that module pulls in `cogsyndelta.regions._receipt`,
+# which -- via `cogsyndelta.regions.__init__` -- imports `regions.pretrain` and so
+# `tokenizers`/`pyarrow` (see `tests/test_receipt_provenance.py`'s own docstring on
+# exactly this cost), a price this script's `--help` / licence-refusal / fp32-only
+# paths already go out of their way not to pay (see `_ptq()`'s docstring, a few
+# functions below, for the same principle applied to `torch`). The project does not
+# yet have one shared, all-battery `METRIC_ALIASES_V1` covering the train-receipt
+# gate/battery renames another lane owns (`beats_untrained` -> `beats_untrained_train`,
+# `train_holdout`/`train_graded`/`train_token_rank` battery ids) -- this script reads
+# those defensively, new name first, at the two call sites that touch
+# `train_receipt["beats_untrained"]` (see `build_card`).
+_QUANT_METRIC_ALIASES_V1: dict[str, str] = {
+    "quantized_metric": "quant.plan_recall@1",
+    "compression_ratio": "quant.compression_ratio",
+    "drop": "quant.drop_recall@1",
+}
+
+
+def normalize_quant_receipt_v1(receipt: dict[str, Any]) -> dict[str, Any]:
+    """Return `receipt` with every `_QUANT_METRIC_ALIASES_V1` v1 key ALSO present
+    under its v2 name, so every reader downstream of this call (METRIC_METHODOLOGY
+    lookups, `_card_metric_keys`, `build_card`'s quantization table) can assume v2
+    names unconditionally, whether the receipt on disk was written before or after
+    `scripts/csd-quantize.py` started emitting v2 names directly.
+
+    Copies rather than renames in place: a v1-shaped receipt keeps its v1 keys too
+    (harmless, and `verify_quantized_measurements`/`assert_receipt_bound_to_checkpoint`
+    read other fields on this same dict by name and must keep working unmodified). A
+    receipt already carrying the v2 name for a given field is left alone -- this never
+    overwrites a value the producer actually wrote.
+    """
+    out = dict(receipt)
+    for old, new in _QUANT_METRIC_ALIASES_V1.items():
+        if old in out and new not in out:
+            out[new] = out[old]
+    return out
+
+
 def load_region_config(region: str, regions_path: Path = DEFAULT_REGIONS_CONFIG) -> dict[str, Any]:
     data = load_json(regions_path)
     for r in data.get("regions", []):
@@ -817,10 +860,23 @@ class MetricMethodology(NamedTuple):
     """Short name of the formula -- what METRICS-METHODOLOGY.md's own (b)/(c) sections
     spell out in full."""
     battery: str
-    """Which measurement pass produced it. Two metrics with the same name from a
-    different battery are not comparable -- see METRICS-METHODOLOGY.md §4."""
+    """Which measurement pass produced it, in prose. Two metrics with the same name
+    from a different battery are not comparable -- see METRICS-METHODOLOGY.md §4."""
     source: str
     """The file the formula is implemented in, repo-relative."""
+    battery_id: str = ""
+    """The g7-latent-eval-metrics.md §3.3 canonical battery id (`train_holdout`,
+    `eval_holdout`, `eval_quantized_holdout`, `train_graded`, `train_token_rank`,
+    `quant_plan`, ...) `compare()` requires two numbers to share before diffing them --
+    stricter and machine-checkable where `battery` above is prose for a human reader.
+    Empty for a key that is not itself a comparable measurement (a contamination
+    guard's report field, a config input like `tolerance`) rather than a battery this
+    project runs."""
+    pooling: str = ""
+    """The g7 §3.3 canonical pooling this metric was computed over (`anchor`,
+    `matched`, `pooled_both`, `anchor_pooled`, `anchor_token_global`, `graded_left`,
+    `fiqa_corpus`, `fiqa_split`) -- `compare()` requires this to match too. Empty for
+    the same reason `battery_id` can be empty above."""
 
 
 # Every metric-table row key `build_card` can print, mapped to where its formula and
@@ -834,69 +890,113 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         "size of the closed held-out pool this row's numbers were computed over",
         "training held-out battery",
         "src/cogsyndelta/regions/pretrain.py",
+        battery_id="train_holdout",
+        pooling="matched",
     ),
     "recall@1": MetricMethodology(
         "recall@k (k=1): fraction of queries whose matched positive is the top-scored "
         "candidate in the closed held-out pool",
         "training held-out battery",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
+        pooling="matched",
     ),
     "recall@10": MetricMethodology(
         "recall@k (k=10): fraction of queries whose matched positive is in the top-10 "
         "of the closed held-out pool",
         "training held-out battery",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
+        pooling="matched",
     ),
     "mrr": MetricMethodology(
         "mean reciprocal rank of the matched positive over the closed held-out pool",
         "training held-out battery",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
+        pooling="matched",
     ),
     "emb_std": MetricMethodology(
         "per-feature embedding std, averaged over features, anchor side only (the collapse signal)",
         "training held-out battery",
         "src/cogsyndelta/regions/pretrain.py",
+        battery_id="train_holdout",
+        pooling="anchor",
     ),
     "spearman": MetricMethodology(
         "Spearman rank correlation (Pearson over average ranks) between predicted "
         "cosine similarity and the graded corpus's human score",
         "training held-out battery, graded set",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_graded",
+        pooling="graded_left",
+    ),
+    # `beats_untrained_eval` (g7 §3.2): the RENAME. `beats_untrained` (below, kept for
+    # a receipt on disk before the rename) named the exact same predicate.
+    "beats_untrained_eval": MetricMethodology(
+        "rank.recall@1 (eval battery) > the training receipt's untrained_baseline "
+        "recall@1, unmargined -- a different, simpler predicate than the training "
+        "receipt's own beats_untrained_train gate, which is why g7 gives the two "
+        "separate names instead of sharing 'beats_untrained' across receipt kinds",
+        "eval battery",
+        "scripts/csd-benchmark.py",
+        battery_id="eval_holdout",
+        pooling="matched",
     ),
     "beats_untrained": MetricMethodology(
+        "LEGACY name for beats_untrained_eval (pre-g7 eval receipts); "
         "rank.recall@1 (eval battery) > the training receipt's untrained_baseline "
-        "recall@1, unmargined -- a different, simpler rule than the training receipt's "
-        "own beats_untrained gate of the same name",
-        "eval battery",
+        "recall@1, unmargined",
+        "eval battery (legacy key)",
         "scripts/csd-benchmark.py",
+        battery_id="eval_holdout",
+        pooling="matched",
     ),
     "not_anisotropic": MetricMethodology(
-        "repr.anisotropy < 0.9",
-        "eval battery",
+        "LEGACY: repr.anisotropy < 0.9, on a receipt written before this was DEMOTED "
+        "from a gating admission test to a recorded value only (g7 §3.2 -- no bound "
+        "was ever backed by a study; see repr.anisotropy's own entry for the recorded "
+        "number). A receipt written after the demotion no longer prints this key.",
+        "eval battery (legacy key, no longer a gate)",
         "scripts/csd-benchmark.py",
+        battery_id="eval_holdout",
+        pooling="pooled_both",
     ),
     "uses_its_dimensions": MetricMethodology(
-        "repr.effective_rank_ratio > 0.05",
+        "repr.effective_rank_entropy_ratio > 0.05 -- the 0.05 floor is unchanged; only "
+        "the metric name changed (g7 §3.2: was repr.effective_rank_ratio, renamed to "
+        "disambiguate from the participation-ratio rank ratio a training receipt's "
+        "token_aware.final_block_rank reports, METRICS-METHODOLOGY.md §9)",
         "eval battery",
         "scripts/csd-benchmark.py",
+        battery_id="eval_holdout",
+        pooling="pooled_both",
     ),
     "anisotropy": MetricMethodology(
         "mean cosine similarity between random (off-diagonal) pairs, anchors+positives "
         "pooled -- a representation-geometry diagnostic, NOT a quality score",
         "eval battery",
         "src/cogsyndelta/eval/benchmark.py",
+        battery_id="eval_holdout",
+        pooling="pooled_both",
     ),
     "alignment": MetricMethodology(
         "mean squared distance between MATCHED pairs (Wang & Isola); read only "
         "together with uniformity, never alone",
         "eval battery",
         "src/cogsyndelta/eval/benchmark.py",
+        battery_id="eval_holdout",
+        # NOT pooled_both, unlike the rest of this receipt's representation group --
+        # matched anchor/positive pairs specifically (MM §3.10(d)).
+        pooling="matched",
     ),
     "uniformity": MetricMethodology(
         "log mean Gaussian potential over all pairs (Wang & Isola); read only together "
         "with alignment, never alone",
         "eval battery",
         "src/cogsyndelta/eval/benchmark.py",
+        battery_id="eval_holdout",
+        pooling="pooled_both",
     ),
     "effective_rank": MetricMethodology(
         "Shannon entropy of the normalised singular-value spectrum, exponentiated -- "
@@ -904,22 +1004,44 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         "report under token_aware.final_block_rank (see METRICS-METHODOLOGY.md §9)",
         "eval battery",
         "src/cogsyndelta/eval/benchmark.py",
+        battery_id="eval_holdout",
+        pooling="pooled_both",
     ),
     "dimensions": MetricMethodology(
         "raw embedding width",
         "eval battery",
         "src/cogsyndelta/eval/benchmark.py",
+        battery_id="eval_holdout",
+        pooling="pooled_both",
     ),
-    "effective_rank_ratio": MetricMethodology(
-        "effective_rank / dimensions -- how much of the available space is actually used",
+    # `effective_rank_entropy_ratio` (g7 §3.2): the RENAME (was `effective_rank_ratio`,
+    # kept below for a receipt on disk before the rename).
+    "effective_rank_entropy_ratio": MetricMethodology(
+        "effective_rank / dimensions -- how much of the available space is actually "
+        "used. Renamed from effective_rank_ratio to name which of this project's three "
+        "'effective rank' definitions it is (METRICS-METHODOLOGY.md §9: the entropy "
+        "one, never the participation-ratio one).",
         "eval battery",
         "src/cogsyndelta/eval/benchmark.py",
+        battery_id="eval_holdout",
+        pooling="pooled_both",
     ),
-    # Contamination -- current (multi-channel) receipt shape.
+    "effective_rank_ratio": MetricMethodology(
+        "LEGACY name for effective_rank_entropy_ratio (pre-g7 eval receipts); "
+        "effective_rank / dimensions",
+        "eval battery (legacy key)",
+        "src/cogsyndelta/eval/benchmark.py",
+        battery_id="eval_holdout",
+        pooling="pooled_both",
+    ),
+    # Contamination -- current (multi-channel) receipt shape. Not itself a pooled
+    # retrieval quantity `compare()`'s pooling enum has a slot for; `battery_id` is
+    # recorded (the guard runs against the training holdout) and `pooling` left empty.
     "train_pairs_seen": MetricMethodology(
         "training pairs streamed past the contamination guard",
         "contamination guard",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
     ),
     "train_pairs_removed": MetricMethodology(
         "training rows dropped for colliding with the held-out set on a GATED channel "
@@ -927,29 +1049,34 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         "measured BEFORE this removal",
         "contamination guard",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
     ),
     "eval_pairs": MetricMethodology(
         "size of the held-out set the contamination guard indexed",
         "contamination guard",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
     ),
     "gated_channels": MetricMethodology(
         "which of the six overlap channels cause training-row removal "
         "(pair_exact, pair_content); the rest are reported only",
         "contamination guard",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
     ),
     "channels": MetricMethodology(
         "per-channel overlap counts and fractions -- see METRICS-METHODOLOGY.md §6.2 "
         "for which channels are gated vs. merely reported",
         "contamination guard",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
     ),
     "eval_duplicate_positives": MetricMethodology(
         "held-out pairs sharing a positive with another held-out pair -- caps recall@1 "
         "below 1.0 by construction when nonzero",
         "contamination guard",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
     ),
     # Contamination -- legacy (single-key) receipt shape; still read by this script.
     "train_unique": MetricMethodology(
@@ -957,69 +1084,129 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         "(legacy single-key contamination shape)",
         "contamination guard (legacy)",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
     ),
     "eval_unique": MetricMethodology(
         "unique held-out texts under whitespace/case normalisation "
         "(legacy single-key contamination shape)",
         "contamination guard (legacy)",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
     ),
     "overlap": MetricMethodology(
         "held-out texts also present in training under the same normalisation "
         "(legacy single-key contamination shape)",
         "contamination guard (legacy)",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
     ),
     "eval_fraction_contaminated": MetricMethodology(
         "overlap / eval_unique",
         "contamination guard",
         "src/cogsyndelta/eval/metrics.py",
+        battery_id="train_holdout",
     ),
-    # Quantization.
+    # Quantization. `quant.*` keys are the g7 §3.1 renames this lane owns; the bare
+    # legacy keys (`quantized_metric`, `drop`, `compression_ratio`) are kept so a quant
+    # receipt written before the rename -- normalised to carry BOTH names by
+    # `normalize_quant_receipt_v1` above -- still resolves every key `build_card`
+    # might print, old or new.
     "fp32_metric_recomputed": MetricMethodology(
         "recall@1 measured fresh on the loaded fp32 checkpoint -- the training held-out "
         "battery, NOT the eval battery's rank.recall@1 (see METRICS-METHODOLOGY.md §4)",
         "training held-out battery (quantize stage)",
         "scripts/csd-quantize.py",
+        battery_id="train_holdout",
+        pooling="matched",
     ),
-    "quantized_metric": MetricMethodology(
+    "quant.plan_recall@1": MetricMethodology(
         "recall@1 measured on the IN-MEMORY dequantized plan, before the packed "
         "artifact is ever written to disk -- a claim about the plan, not about the "
-        "published bytes (see METRICS-METHODOLOGY.md §4)",
-        "training held-out battery (quantize stage)",
+        "published bytes (see METRICS-METHODOLOGY.md §4). Compare against "
+        "quant.artifact_recall@1 ONLY as the plan-vs-artifact sameness guard on the "
+        "same checkpoint sha/holdout (g7 §3.3's special case) -- never against rank.* "
+        "or repr.* from the eval battery.",
+        "quant_plan battery (quantize stage)",
         "scripts/csd-quantize.py",
+        battery_id="quant_plan",
+        pooling="matched",
+    ),
+    "quantized_metric": MetricMethodology(
+        "LEGACY name for quant.plan_recall@1 (pre-g7 quant receipts); recall@1 "
+        "measured on the IN-MEMORY dequantized plan, before the packed artifact is "
+        "ever written to disk",
+        "quant_plan battery (quantize stage, legacy key)",
+        "scripts/csd-quantize.py",
+        battery_id="quant_plan",
+        pooling="matched",
+    ),
+    "quant.artifact_recall@1": MetricMethodology(
+        "recall@1 measured on the PACKED artifact read back off disk (kind="
+        "eval-quantized) -- the byte-verified counterpart to quant.plan_recall@1, and "
+        "the only field this receipt shares a comparable formula with across the "
+        "quant_plan / eval_quantized_holdout battery boundary (MM §4)",
+        "eval_quantized_holdout battery",
+        "scripts/csd-benchmark.py",
+        battery_id="eval_quantized_holdout",
+        pooling="matched",
+    ),
+    "quant.drop_recall@1": MetricMethodology(
+        "fp32_metric_recomputed - quant.plan_recall@1, one named metric on one named "
+        "battery (g7 §3.1)",
+        "quant_plan battery (quantize stage)",
+        "scripts/csd-quantize.py",
+        battery_id="quant_plan",
+        pooling="matched",
     ),
     "drop": MetricMethodology(
+        "LEGACY name for quant.drop_recall@1 (pre-g7 quant receipts); "
         "fp32_metric_recomputed - quantized_metric",
-        "training held-out battery (quantize stage)",
+        "quant_plan battery (quantize stage, legacy key)",
         "scripts/csd-quantize.py",
+        battery_id="quant_plan",
+        pooling="matched",
     ),
     "tolerance": MetricMethodology(
         "largest acceptable absolute drop in the task metric -- a configured input, "
         "not a measurement",
         "quantize stage configuration",
         "scripts/csd-quantize.py",
+        battery_id="quant_plan",
     ),
     "within_budget": MetricMethodology(
-        "drop <= tolerance",
-        "training held-out battery (quantize stage)",
+        "quant.drop_recall@1 <= tolerance",
+        "quant_plan battery (quantize stage)",
         "scripts/csd-quantize.py",
+        battery_id="quant_plan",
+        pooling="matched",
     ),
-    "compression_ratio": MetricMethodology(
-        "fp32_bytes / stored_bytes -- a PAYLOAD/STORAGE ratio, NOT a speed or throughput claim",
+    "quant.compression_ratio": MetricMethodology(
+        "fp32_bytes / stored_bytes -- a PAYLOAD/STORAGE ratio, NOT a speed or "
+        "throughput claim (renamed from compression_ratio, g7 §3.1)",
         "quant/ptq.py byte accounting",
         "src/cogsyndelta/quant/ptq.py",
+        battery_id="quant_plan",
+    ),
+    "compression_ratio": MetricMethodology(
+        "LEGACY name for quant.compression_ratio (pre-g7 quant receipts); "
+        "fp32_bytes / stored_bytes -- a PAYLOAD/STORAGE ratio, NOT a speed or "
+        "throughput claim",
+        "quant/ptq.py byte accounting (legacy key)",
+        "src/cogsyndelta/quant/ptq.py",
+        battery_id="quant_plan",
     ),
     "fp32_bytes": MetricMethodology(
         "sum(parameter.numel() * 4) -- weights only, never optimizer or RNG state",
         "quant/ptq.py byte accounting",
         "src/cogsyndelta/quant/ptq.py",
+        battery_id="quant_plan",
     ),
     "stored_bytes": MetricMethodology(
         "packed codes + per-channel scale/zero-point for quantized tensors, plus 4 "
         "bytes/element for fp32-kept tensors",
         "quant/ptq.py byte accounting",
         "src/cogsyndelta/quant/ptq.py",
+        battery_id="quant_plan",
     ),
 }
 
@@ -1034,12 +1221,25 @@ def _card_metric_keys(
     `build_card`'s own `_dict_table` calls one-for-one; keep the two in sync if either
     changes which sections print a table (a test pins this -- see
     `tests/test_metrics_methodology.py`).
+
+    ASSUMES `quant_receipt` (when not `None`) has already been passed through
+    `normalize_quant_receipt_v1` -- every production caller (`build_plan`, which loads
+    it via `load_json` and normalises it before ever calling `build_card` /
+    `_methodology_section` / this function) does. A caller that hands this a raw,
+    un-normalised v1-shaped quant receipt directly will find only its unrenamed keys
+    (`fp32_metric_recomputed`, `tolerance`, `within_budget`, `fp32_bytes`,
+    `stored_bytes`) here, not `quant.plan_recall@1` / `quant.drop_recall@1` /
+    `quant.compression_ratio` -- those three exist in `quant_receipt` only once
+    normalisation has added them.
     """
     keys: dict[str, None] = {}
     for section in (
         train_receipt.get("held_out", {}),
         train_receipt.get("untrained_baseline", {}),
-        train_receipt.get("beats_untrained", {}),
+        # `beats_untrained_train` is the g7 §3.2 rename of this same gate/context dict
+        # (see `beats_untrained_eval`'s own docstring above); read defensively, new
+        # name first, without importing the module that writes it.
+        train_receipt.get("beats_untrained_train") or train_receipt.get("beats_untrained", {}),
     ):
         for k in section:
             keys[k] = None
@@ -1049,17 +1249,22 @@ def _card_metric_keys(
         for k in eval_receipt.get("metrics", {}):
             if k.startswith("repr."):
                 keys[k[len("repr.") :]] = None
+            # `quant.artifact_recall@1` lives in an eval-quantized receipt's `metrics`
+            # (not prefix-stripped like repr.* -- it is already the canonical g7 §3.1
+            # name, not a family-prefixed one this table strips a prefix from).
+            elif k.startswith("quant."):
+                keys[k] = None
     for k in train_receipt.get("contamination", {}):
         if k != "examples":
             keys[k] = None
     if quant_receipt is not None:
         for k in (
             "fp32_metric_recomputed",
-            "quantized_metric",
-            "drop",
+            "quant.plan_recall@1",
+            "quant.drop_recall@1",
             "tolerance",
             "within_budget",
-            "compression_ratio",
+            "quant.compression_ratio",
             "fp32_bytes",
             "stored_bytes",
         ):
@@ -1117,14 +1322,19 @@ def _methodology_section(
         f"Full definitions, formulas, `file:line` anchors and comparison rules for every "
         f"metric below: `{METHODOLOGY_DOC}` in this repository.",
         "",
-        "| metric | definition | battery | source |",
-        "|---|---|---|---|",
+        "| metric | definition | battery | battery_id | pooling | source |",
+        "|---|---|---|---|---|---|",
     ]
     for key in sorted(keys):
         m = METRIC_METHODOLOGY[key]
-        lines.append(f"| `{key}` | {m.definition} | {m.battery} | `{m.source}` |")
+        bid = f"`{m.battery_id}`" if m.battery_id else "_(n/a)_"
+        pooling = f"`{m.pooling}`" if m.pooling else "_(n/a)_"
+        lines.append(
+            f"| `{key}` | {m.definition} | {m.battery} | {bid} | {pooling} | `{m.source}` |"
+        )
     lines += [
         "",
+        f"- **Metrics schema:** `{train_receipt.get('metrics_schema', 'csd-metrics/v1 (not recorded)')}`",
         f"- **Corpus fingerprint:** `{train_receipt.get('corpus', {}).get('fingerprint', '(none recorded)')}`",
         f"- **Seed:** `{train_receipt.get('config', {}).get('seed', '(none recorded)')}`",
         f"- **Code revision:** `{rev}`",
@@ -1182,8 +1392,10 @@ def build_card(
         _dict_table(train_receipt.get("held_out", {})),
         "### untrained_baseline",
         _dict_table(train_receipt.get("untrained_baseline", {})),
-        "### gates (training receipt: beats_untrained)",
-        _dict_table(train_receipt.get("beats_untrained", {})),
+        "### gates (training receipt: beats_untrained_train)",
+        _dict_table(
+            train_receipt.get("beats_untrained_train") or train_receipt.get("beats_untrained", {})
+        ),
     ]
     if eval_receipt is not None:
         parts += [
@@ -1214,11 +1426,11 @@ def build_card(
                     if k
                     in (
                         "fp32_metric_recomputed",
-                        "quantized_metric",
-                        "drop",
+                        "quant.plan_recall@1",
+                        "quant.drop_recall@1",
                         "tolerance",
                         "within_budget",
-                        "compression_ratio",
+                        "quant.compression_ratio",
                         "fp32_bytes",
                         "stored_bytes",
                     )
@@ -1362,6 +1574,8 @@ def build_plan(
     train_receipt = load_json(train_receipt_path)
     eval_receipt = load_json(eval_receipt_path) if eval_receipt_path else None
     quant_receipt = load_json(quant_receipt_path) if quant_receipt_path else None
+    if quant_receipt is not None:
+        quant_receipt = normalize_quant_receipt_v1(quant_receipt)
 
     # --region drives the licence tier and repo name; verify every receipt actually says
     # it's for this region before reading anything else out of them.

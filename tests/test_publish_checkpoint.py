@@ -1531,3 +1531,95 @@ def test_quant_artifact_repo_name_comes_from_the_checkpoint_stem(tmp_path: Path)
     assert "step-8000.ptq.pt" in plan.files
     assert plan.files["step-8000.pt"] == checkpoint
     assert plan.files["step-8000.ptq.pt"] == plan.quantized_path
+
+
+# ================================================================== metrics-v2 (g7 §3.1/§3.3)
+#
+# `normalize_quant_receipt_v1`: a v1-shaped quant receipt on disk (make_quant_receipt's
+# own fixture shape -- `quantized_metric`/`compression_ratio`/`drop`, what
+# scripts/csd-quantize.py wrote before the rename) must resolve every v2 key
+# `METRIC_METHODOLOGY` and `build_card`'s quantization table now look up, without the
+# fixture itself changing -- proving `build_plan`'s normalisation step, not a rewritten
+# fixture, is what makes an old receipt on disk still publishable.
+
+
+def test_normalize_quant_receipt_v1_adds_v2_keys_without_removing_v1_ones() -> None:
+    v1 = {
+        "region": "compress",
+        "quantized_metric": 0.955,
+        "compression_ratio": 9.79,
+        "drop": 0.004,
+        "stored_bytes": 1000,
+    }
+    out = mod.normalize_quant_receipt_v1(v1)
+
+    assert out["quant.plan_recall@1"] == 0.955
+    assert out["quant.compression_ratio"] == 9.79
+    assert out["quant.drop_recall@1"] == 0.004
+    # Original v1 keys untouched -- other readers of this same dict (
+    # verify_quantized_measurements, assert_receipt_bound_to_checkpoint) still work.
+    assert out["quantized_metric"] == 0.955
+    assert out["compression_ratio"] == 9.79
+    assert out["drop"] == 0.004
+    assert v1 == {
+        "region": "compress",
+        "quantized_metric": 0.955,
+        "compression_ratio": 9.79,
+        "drop": 0.004,
+        "stored_bytes": 1000,
+    }, "normalize_quant_receipt_v1 must not mutate its argument"
+
+
+def test_normalize_quant_receipt_v1_never_overwrites_a_real_v2_value() -> None:
+    """A quant receipt that already carries the v2 name (post-rename producer) must
+    keep ITS value even if a legacy key happens to also be present with a different
+    number -- never silently overwritten by the alias."""
+    already_v2 = {
+        "quantized_metric": 0.111,  # a stale/unrelated legacy key, if one existed
+        "quant.plan_recall@1": 0.955,
+    }
+    out = mod.normalize_quant_receipt_v1(already_v2)
+    assert out["quant.plan_recall@1"] == 0.955
+
+
+def test_build_plan_normalises_a_v1_shaped_quant_receipt_on_disk(tmp_path: Path) -> None:
+    """End to end: `make_quant_receipt`'s fixture writes v1 field names (the realistic
+    shape for a receipt already on disk from before this change) and the full
+    `build_plan` -> `build_card` -> `_methodology_section` pipeline must not refuse it."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    raw_on_disk = json.loads(quant_path.read_text())
+    assert "quant.plan_recall@1" not in raw_on_disk, (
+        "fixture must stay v1-shaped on disk, or this test proves nothing"
+    )
+
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+    )
+
+    assert "quant.plan_recall@1" in plan.card
+    assert "quant.compression_ratio" in plan.card
+    section = plan.card.split("## How these numbers were produced", 1)[1]
+    assert "| `quant.plan_recall@1` |" in section
+    assert "`quant_plan`" in section  # battery_id column
+    assert "`matched`" in section  # pooling column
+
+
+def test_stubbed_methodology_map_missing_a_v2_key_fails_the_card_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same mutation proof `tests/test_metrics_methodology.py` runs for
+    `recall@1`, narrowed to a key this lane's rename introduced: dropping
+    `quant.plan_recall@1` from `METRIC_METHODOLOGY` must abort the build and name it,
+    proving the refusal covers renamed keys too, not only the pre-existing ones."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    trimmed = {k: v for k, v in mod.METRIC_METHODOLOGY.items() if k != "quant.plan_recall@1"}
+    monkeypatch.setattr(mod, "METRIC_METHODOLOGY", trimmed)
+
+    with pytest.raises(mod.PublishAbortError, match=re.escape("quant.plan_recall@1")):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
