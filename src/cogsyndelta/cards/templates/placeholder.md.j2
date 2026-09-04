@@ -1,0 +1,48 @@
+---
+{{ card_data }}
+---
+
+# CogSynDelta -- {{ region }} (placeholder)
+
+**weights: none.** This repository holds no trained checkpoint. It exists to reserve
+the name in the `tzervas/cogsyndelta-*` namespace; nothing here should be loaded,
+fine-tuned, or cited as a CogSynDelta region.
+
+## What this name refers to
+
+{{ placeholder_referent }}
+
+## What would have to exist before this repo is populated
+
+1. A trained checkpoint for the region this name refers to, with a training receipt
+   binding it by sha256 (`artifacts.checkpoint_sha256`) -- see `scripts/csd-publish-
+   checkpoint.py`'s "RECEIPTS ARE BOUND TO THE CHECKPOINT" for why an unbound receipt
+   is not sufficient.
+2. An eval receipt re-measuring that checkpoint (`scripts/csd-benchmark.py`), so this
+   card's Evaluation results section is not empty.
+3. A resolved licence tier for the training data behind that checkpoint (see
+   `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`) -- `licence_tier()` in `scripts/csd-
+   publish-checkpoint.py` refuses to publish an unaudited region, and this card
+   inherits that refusal (`region_cfg["licence_tier"]` must be set).
+4. For `vl_latent` specifically: a replacement pretraining corpus. The
+   `zh-plus/tiny-imagenet` checkpoint that exists today is BLOCKING per
+   `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` section 4 and cannot become this card's
+   weights regardless of how well it measures.
+
+## Model overview
+
+| field | value |
+|---|---|
+| type | {{ region_cfg.get("kind", "(not recorded)") }} |
+| weights | none |
+| modality (design intent) | {{ modality }} |
+
+## Licence
+
+{{ licence_line }}
+
+## Provenance
+
+No receipts. This card carries no measured numbers to attest.
+
+Published by `cogsyndelta.cards`. Repo is private.

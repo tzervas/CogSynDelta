@@ -195,6 +195,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 cogsyndelta = ["config/*.yaml", "config/*.json"]
+"cogsyndelta.cards" = ["templates/*.md.j2"]
 
 [tool.ruff]
 line-length = 100

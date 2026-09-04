@@ -1,0 +1,119 @@
+---
+{{ card_data }}
+---
+
+# CogSynDelta -- memory
+
+`{{ region_cfg.get("licence_tier") or "licence: see below" }}` · code revision `{{ code_revision }}` · metrics schema `{{ metrics_schema }}`
+
+One faculty region of the composed CogSynDelta mind -- the region MERGE of `compress`
+and `retrieve` (per `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, Rider 1: a merge
+inherits its most restrictive parent licence). An encoder that maps text input to the
+shared latent stream, **not a chat model and not usable on its own for open-ended
+generation**.
+
+{% if parameters -%}
+**Parameters:** {{ "%.3f"|format(parameters / 1e6) }} M. **Role:** {{ role }}
+{%- else -%}
+**Role:** {{ role }}
+{%- endif %}
+
+## Programme status
+
+{{ od17_status }}
+
+## Key features
+
+- **Faculty, not a general model.** Triggered by: {{ router_trigger }}.
+- **A region MERGE**, not an independently pretrained region -- trains on both
+  `compress`'s SNLI-derived corpus and `retrieve`'s GooAQ/NQ/FiQA corpus.
+- **Every metric is reported beside its untrained baseline** -- see the Evaluation
+  results tables below.
+- **The quantization ratio is a storage ratio, not a speed claim.** See Sizes.
+- **Anisotropy is a representation-geometry diagnostic, not a quality score.**
+- **This region is currently blocked on an operator decision (OD-17)** -- see
+  Programme status above before treating any downstream number as final.
+
+## Model overview
+
+| field | value |
+|---|---|
+| type | {{ region_cfg.get("kind", "(not recorded)") }} |
+| parameters | {{ "%.3f M"|format(parameters / 1e6) if parameters else "(not recorded)" }} |
+| stream_dim | {{ region_cfg.get("stream_dim", "(not recorded)") }} |
+| hidden_dim | {{ region_cfg.get("hidden_dim", "(not recorded)") }} |
+| modality | {{ modality }} |
+| precision | fp32{{ ", csd-ptq-v1 (packed, sub-byte)" if has_quant else "" }} |
+
+## Evaluation results
+
+{{ tables_md }}
+
+{{ footnotes_md }}
+
+- **Metrics schema:** `{{ metrics_schema }}`
+
+## Sizes
+
+{{ sizes_md }}
+
+## How to use
+
+```bash
+git clone https://git.vectorweight.com/tzervas/CogSynDelta.git
+cd CogSynDelta
+git checkout {{ code_revision }}
+uv sync --group dev
+```
+
+```python
+import torch
+from cogsyndelta.regions.text_encoder import TextEncoder  # or the region's own loader
+
+state = torch.load("final.pt", map_location="cpu", weights_only=True)
+# verify: sha256(final.pt) == "{{ checkpoint_sha256 }}"
+```
+
+{% if has_quant -%}
+```python
+from cogsyndelta.quant.ptq import load_packed_artifact, unpack_state_dict
+
+packed = load_packed_artifact("final.ptq.pt")
+state_dict = unpack_state_dict(packed)
+```
+{%- endif %}
+
+Reproduce the numbers on this card:
+
+```bash
+python3 scripts/csd-benchmark.py --region memory --checkpoint final.pt
+```
+
+## Limitations and out-of-scope use
+
+PoC-scale. Blocked on OD-17 -- see Programme status. `visual_pairs: NOT MEASURED`. Not
+evaluated on any corpus outside its own held-out pool.
+
+## Licence
+
+{{ licence_line }}
+
+## Provenance
+
+{{ provenance_md }}
+
+Published by `scripts/csd-publish-checkpoint.py` / `cogsyndelta.cards`. Repo is
+private.
+
+## Citation
+
+```bibtex
+@misc{cogsyndelta-memory,
+  title = {CogSynDelta -- memory region},
+  author = {Zervas, Tyler},
+  year = {2026},
+  note = {code revision {{ code_revision }}; blocked on OD-17}
+}
+```
+
+Contact: see the CogSynDelta repository.

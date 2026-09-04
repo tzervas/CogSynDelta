@@ -1,0 +1,97 @@
+---
+{{ card_data }}
+---
+
+# CogSynDelta
+
+`{{ region_cfg.get("licence_tier") or "licence: see below" }}` · code revision `{{ code_revision }}` · metrics schema `{{ metrics_schema }}`
+
+**Proof-of-concept status.** The composed CogSynDelta mind: a router over the
+individually-pretrained faculty regions (see each region's own model card --
+`tzervas/cogsyndelta-region-*` -- for what it does and how it was measured), sharing
+one latent stream. This is a PoC-scale composition, not a finished product, and not a
+general-purpose chat model.
+
+## Key features
+
+- **Composition of independently pretrained regions**, not a model trained end-to-end
+  from scratch -- see `docs/design/CSD-BRAIN-REGIONS.md` for the region catalogue and
+  `docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` for the interconnect/routing
+  design.
+- **Whole-mind training has not yet run** unless `has_eval`/`has_quant` below say
+  otherwise for this specific card -- most receipts referenced here are per-region.
+- **Licensing is unresolved at the composed level** -- see Licence below; this card
+  states the contradiction rather than inventing a resolution.
+- **Every metric on this card is reported beside its untrained baseline**, exactly as
+  every per-region card is.
+
+## Component licensing (per Rider 1)
+
+Per `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, Rider 1, a composed/merged model
+inherits its most restrictive component's licence. The per-region tiers, where
+audited: `code` MIT, `classify_banking77` MIT, `classify_go_emotions` MIT, `reason`
+MIT, `compress` CC BY-SA 4.0, `retrieve` CC BY-NC-SA 4.0, `memory` CC BY-NC-SA 4.0
+(merge of `compress` + `retrieve`). `vl_latent` is BLOCKING as trained (section 4);
+`residual_mlp` and `stream_vae` have never been through a licence audit. The strictest
+audited tier is CC BY-NC-SA 4.0 -- but see Licence below for why this card does not
+simply print that as the composed model's licence.
+
+## Evaluation results
+
+{{ tables_md }}
+
+{{ footnotes_md }}
+
+- **Metrics schema:** `{{ metrics_schema }}`
+
+{% if not has_eval and not has_quant -%}
+_No composed-model receipts supplied to this card -- the tables above, if any, are
+per-region only. See each region's own card for its measured numbers._
+{%- endif %}
+
+## Sizes
+
+{{ sizes_md }}
+
+## How to use
+
+```bash
+git clone https://git.vectorweight.com/tzervas/CogSynDelta.git
+cd CogSynDelta
+git checkout {{ code_revision }}
+uv sync --group dev
+```
+
+The composed mind is not a single checkpoint download -- see `scripts/csd-train-all.py`
+and `config/mind/csd-regions.json` for how the regions are assembled at run time.
+
+## Limitations and out-of-scope use
+
+PoC-scale composition. Not a general-purpose chat model. Cross-faculty pairing
+(`visual_pairs`, and any other cross-region measurement) is `NOT MEASURED` unless a
+table above says otherwise. The LICENSE contradiction noted above is unresolved as of
+this card; do not treat the printed `license:` tag in the front matter as a final
+determination -- see Licence.
+
+## Licence
+
+{{ licence_line }}
+
+## Provenance
+
+{{ provenance_md }}
+
+Published by `cogsyndelta.cards`. Repo is private.
+
+## Citation
+
+```bibtex
+@misc{cogsyndelta,
+  title = {CogSynDelta},
+  author = {Zervas, Tyler},
+  year = {2026},
+  note = {code revision {{ code_revision }}; PoC status}
+}
+```
+
+Contact: see the CogSynDelta repository.
