@@ -141,6 +141,9 @@ celerybeat.pid
 # Isolated environment scripts/ci_local.sh uses so it never prunes the shared .venv
 # (see the isolation comment in scripts/ci_local.sh for why this exists).
 .venv-ci
+# Disposable project dir scripts/ci_local.sh resolves/locks into so `uv sync --cpu`
+# never rewrites the tracked uv.lock (see the second isolation comment in the script).
+.venv-ci-project
 env/
 venv/
 ENV/
