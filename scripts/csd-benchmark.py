@@ -71,6 +71,67 @@ def _find_train_receipt(
     return receipts[-1] if receipts else None
 
 
+class UnboundTrainReceiptError(RuntimeError):
+    """A training receipt names a checkpoint but records no sha256 for it."""
+
+
+def expected_checkpoint_sha256(
+    train_receipt: dict, receipt_path: Path, *, allow_unbound: bool = False
+) -> str | None:
+    """The fp32 checkpoint sha this receipt binds to, or a refusal (H2/M4).
+
+    TWO PLACES, NOT ONE. Training receipts written by `regions/pretrain.py` record
+    `checkpoint_sha256` at the TOP LEVEL; the same receipt read back through
+    `cogsyndelta.pipeline.receipt.adapt` -- and through the matrix harness's own
+    `receipts.adapt`, which folds the legacy top-level field into `artifacts` for
+    receipt SELECTION -- carries it at `artifacts.checkpoint_sha256`. This function
+    previously read only the top-level key, with `or None` behind it, so an
+    envelope-shaped receipt (the shape A6 itself writes, and the shape anything
+    downstream of `adapt` hands back) silently skipped the checkpoint hash check
+    entirely: the guard did not fail, it did not run.
+
+    REFUSAL RATHER THAN SKIP when neither key is present (M4). `or None` also treated
+    "" and a missing key as "no check needed", which is right for a genuinely pre-R9
+    receipt and wrong for everything else -- and the two are indistinguishable from
+    inside this function. Making the caller say so explicitly, with
+    `--allow-unbound-train-receipt`, is the difference between a documented exception
+    and a hole: an eval whose receipt cannot be tied to the bytes it measured produces
+    a number bound to a mutable path, which is exactly what
+    `scripts/csd-publish-checkpoint.py` refuses to publish and what DESIGN.v2 §4.4's
+    verify step 2 compares against the Hub's own LFS sha.
+
+    Raises:
+        ValueError: the two locations disagree -- the receipt describes two different
+            checkpoints and there is no safe way to pick one.
+        UnboundTrainReceiptError: neither location carries a sha and `allow_unbound`
+            is false.
+    """
+    top = str(train_receipt.get("checkpoint_sha256") or "")
+    nested = str((train_receipt.get("artifacts") or {}).get("checkpoint_sha256") or "")
+    if top and nested and top != nested:
+        raise ValueError(
+            f"{receipt_path}: checkpoint_sha256 {top} at the top level disagrees with "
+            f"artifacts.checkpoint_sha256 {nested} -- the receipt describes two "
+            "different checkpoints"
+        )
+    sha = top or nested
+    if sha:
+        return sha
+    if allow_unbound:
+        print(
+            f"    WARNING: {receipt_path} records no checkpoint_sha256; the checkpoint "
+            "is loaded UNVERIFIED (--allow-unbound-train-receipt)",
+            flush=True,
+        )
+        return None
+    raise UnboundTrainReceiptError(
+        f"{receipt_path} records no checkpoint_sha256 at the top level or under "
+        "artifacts -- the eval could not be bound to the bytes it measures. Pass "
+        "--allow-unbound-train-receipt to score it anyway (pre-R9 receipts predate "
+        "checkpoint fingerprinting)."
+    )
+
+
 def _region_eval_context(region: str, train_receipt: dict) -> tuple:
     """Everything a battery pass needs BEFORE it touches a checkpoint: the region's
     `PretrainConfig`, the held-out split, a tokenizer and the device -- rebuilt from the
@@ -189,7 +250,11 @@ def _print_battery(res: BenchmarkResult, *, size_note: str) -> None:
 
 
 def benchmark_region(
-    region: str, state: Path, train_receipt_path: Path | None = None
+    region: str,
+    state: Path,
+    train_receipt_path: Path | None = None,
+    *,
+    allow_unbound_train_receipt: bool = False,
 ) -> Receipt | None:
     """The fp32 pass: score the checkpoint `region`'s training receipt names."""
     from cogsyndelta.quant.ptq import fp32_reference_bytes
@@ -213,12 +278,15 @@ def benchmark_region(
     # bytecode (load_checkpoint hardcodes weights_only=True internally -- there is no
     # argument here that could turn it off) and must refuse a file that does not hash to
     # what the SAME receipt already recorded (expected_sha256) -- both BEFORE torch.load
-    # ever opens it. Older receipts (pre-R9) have no checkpoint_sha256; `or None` skips
-    # the hash check for those.
+    # ever opens it. `expected_checkpoint_sha256` reads BOTH places a receipt can carry
+    # that hash and refuses outright when neither has one (H2/M4); it is the only source
+    # of `expected_sha256` here precisely so the skip cannot happen by omission.
     ckpt_sha_out: list[str] = []
     ck = load_checkpoint(
         train_receipt["checkpoint"],
-        expected_sha256=train_receipt.get("checkpoint_sha256") or None,
+        expected_sha256=expected_checkpoint_sha256(
+            train_receipt, resolved_path, allow_unbound=allow_unbound_train_receipt
+        ),
         map_location=device,
         sha256_out=ckpt_sha_out,
     )
@@ -295,6 +363,8 @@ def benchmark_region_quantized(
     quantized_path: Path,
     quant_receipt_path: Path | None = None,
     train_receipt_path: Path | None = None,
+    *,
+    allow_unbound_train_receipt: bool = False,
 ) -> Receipt:
     """The quantized pass (A6, closing C1): score the PACKED artifact, not the plan.
 
@@ -363,9 +433,22 @@ def benchmark_region_quantized(
                 "on disk is not the one that receipt describes"
             )
 
-    checkpoint_sha256 = train_receipt.get("checkpoint_sha256", "") or ""
+    # Same two-location read and same refusal as the fp32 path (H2/M4). `allow_unbound`
+    # is widened by a quant receipt that carries the fp32 parent sha itself: the eval is
+    # then still BOUND -- to the quantizer's own record of the checkpoint it packed --
+    # rather than unbound, and refusing would reject a provably-linked chain.
+    qc_sha = ""
     if quant_receipt is not None:
-        qc_sha = quant_receipt.get("artifacts", {}).get("checkpoint_sha256")
+        qc_sha = str(quant_receipt.get("artifacts", {}).get("checkpoint_sha256") or "")
+    checkpoint_sha256 = (
+        expected_checkpoint_sha256(
+            train_receipt,
+            train_receipt_path_final,
+            allow_unbound=allow_unbound_train_receipt or bool(qc_sha),
+        )
+        or ""
+    )
+    if quant_receipt is not None:
         if qc_sha and checkpoint_sha256 and qc_sha != checkpoint_sha256:
             raise ValueError(
                 f"--quant-receipt's fp32 parent sha256 {qc_sha} disagrees with "
@@ -441,6 +524,14 @@ def main() -> int:
         "the --state latest-glob",
     )
     ap.add_argument(
+        "--allow-unbound-train-receipt",
+        action="store_true",
+        help="score a training receipt that records no checkpoint_sha256 in either "
+        "location (top level or artifacts). The checkpoint is then loaded UNVERIFIED: "
+        "the resulting metric is bound to a mutable path, not to bytes. Only for "
+        "pre-R9 receipts, which predate checkpoint fingerprinting.",
+    )
+    ap.add_argument(
         "--quantized",
         default=None,
         help="score this packed artifact (a csd-quantize.py final.ptq.pt) instead of the "
@@ -474,12 +565,14 @@ def main() -> int:
                     Path(args.quantized),
                     quant_receipt_path=Path(args.quant_receipt) if args.quant_receipt else None,
                     train_receipt_path=Path(args.train_receipt) if args.train_receipt else None,
+                    allow_unbound_train_receipt=args.allow_unbound_train_receipt,
                 )
             else:
                 rec = benchmark_region(
                     region,
                     state,
                     train_receipt_path=Path(args.train_receipt) if args.train_receipt else None,
+                    allow_unbound_train_receipt=args.allow_unbound_train_receipt,
                 )
         except Exception as exc:
             print(f"    FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
