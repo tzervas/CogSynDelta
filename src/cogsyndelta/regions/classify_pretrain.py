@@ -301,7 +301,8 @@ def load_classify_rows(
 def _text_key(text: str) -> str:
     """Fingerprint of normalised text, matching `regions/pretrain.py`'s `_pair_key`
     normalisation (whitespace-collapsed, lower-cased) so dedup/contamination behave
-    identically across the two harnesses."""
+    identically across the two harnesses.
+    """
     return hashlib.blake2b(
         " ".join(text.split()).lower().encode("utf-8", "replace"), digest_size=16
     ).hexdigest()

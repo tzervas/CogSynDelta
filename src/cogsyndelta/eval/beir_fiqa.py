@@ -327,7 +327,8 @@ class BM25:
 class EncoderLike(Protocol):
     """Structural type for `encode_texts`/`encoder_rank_metrics`'s `model` -- anything
     shaped like `TextEncoder` (a callable `(ids, mask) -> [N, D]` with train/eval mode),
-    without this module importing `TextEncoder` itself (see the module docstring)."""
+    without this module importing `TextEncoder` itself (see the module docstring).
+    """
 
     training: bool
 
@@ -389,7 +390,8 @@ def encoder_rank_metrics(
 def bm25_metrics(task: RankingTask) -> dict[str, float]:
     """BM25 over `task`'s own pool -- the lexical reference, from the SAME code path
     (`rank_metrics`) the dense encoder is scored through, per this module's own rule
-    against "reporting a win for a loss"."""
+    against "reporting a win for a loss".
+    """
     t0 = time.time()
     metrics = rank_metrics(BM25(task.pool_texts).score_matrix(task.queries), task.gold)
     metrics["index_s"] = round(time.time() - t0, 1)
@@ -489,7 +491,8 @@ def gate_c_beats_bm25(
 ) -> dict[str, Any]:
     """W4 gate (3): `memory` > BM25 on the SAME pool/qrels/code path -- beaten, not
     merely reported alongside ("reporting a win for a loss" is exactly what this file was
-    written to prevent)."""
+    written to prevent).
+    """
     passed = full_pool_trained.get("recall@10", 0.0) > full_pool_bm25.get("recall@10", 0.0)
     return {
         "gate": "c_beats_bm25",
