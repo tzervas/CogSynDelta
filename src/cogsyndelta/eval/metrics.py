@@ -723,7 +723,8 @@ class MetricGroup(TypedDict):
     receipt top level; `corpus.fingerprint`/`.fingerprint_scheme`; `battery_id`; the `k`
     of whichever `@k` metric is being compared, or `None`; `pooling`;
     `artifacts.checkpoint_sha256`; `region`/`producer.component`; `code_revision.git_sha`;
-    `seed`)."""
+    `seed`).
+    """
 
     identity: MetricIdentity
     values: dict[str, float]
@@ -734,7 +735,8 @@ class ComparisonRefusal(TypedDict):
     not the same measurement. `refused` is always `True` on this branch -- present, rather
     than the caller inferring refusal from the absence of a `"metrics"` key, so a caller
     that only checks `"regressions" in result` cannot silently treat a refusal as "no
-    regressions found"."""
+    regressions found".
+    """
 
     refused: bool
     mismatched_key: str
