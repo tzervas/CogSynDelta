@@ -35,7 +35,8 @@ if [[ -f "$CSD/pyproject.toml" ]]; then
     uv pip download -d "$DEST" -r /tmp/csd-wheels.txt >/dev/null || true
   fi
 fi
-ls "$DEST"/*.whl 2>/dev/null | wc -l | awk '{print "csd-wheelhouse: wheels="$1}'
+wheel_count=$(find "$DEST" -maxdepth 1 -name '*.whl' 2>/dev/null | wc -l)
+echo "csd-wheelhouse: wheels=$wheel_count"
 echo "csd-wheelhouse: rsync $REMOTE" >&2
 ssh -o BatchMode=yes gpu5080 'mkdir -p /home/tzervas/akula-harness/pypi-offline'
 rsync -a --include '*.whl' --include '*.tar.gz' --exclude uv-cache --exclude '*' \

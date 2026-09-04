@@ -3,7 +3,7 @@
 # stay open until delivered to trunk.
 name: reopen-issues-closed-off-main
 
-on:
+"on":
   pull_request:
     types: [closed]
   workflow_dispatch:

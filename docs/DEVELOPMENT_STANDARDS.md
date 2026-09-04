@@ -250,18 +250,28 @@ uv run pre-commit install
 uv run pre-commit install --hook-type commit-msg
 ```
 
+Run every hook over the whole repo (same command CI runs) with:
+
+```bash
+scripts/lint.sh
+```
+
 ### Hooks Enabled
 
 1. **Trailing whitespace** - Auto-fixed
 2. **End of file fixer** - Auto-fixed
-3. **YAML/TOML/JSON check** - Syntax validation
+3. **YAML/TOML/JSON check** - Syntax validation (YAML allows multiple documents)
 4. **Large file check** - Prevents accidental large commits
 5. **Merge conflict check** - Blocks conflicted files
 6. **Private key detection** - Security
-7. **Ruff lint** - With auto-fix
-8. **Ruff format** - Code formatting
-9. **Mypy** - Type checking
-10. **Conventional commits** - Commit message validation
+7. **Mixed line ending check** - Normalizes line endings
+8. **Ruff lint** - With auto-fix
+9. **Ruff format** - Code formatting
+10. **Mypy** - Type checking
+11. **Pydocstyle** - Google-style docstring enforcement (`src/`)
+12. **Shellcheck** - Every `*.sh` file and any file with a bash shebang, severity `warning`
+13. **yamllint** - YAML style, config in `.yamllint.yaml`
+14. **Conventional commits** - Commit message validation
 
 ---
 

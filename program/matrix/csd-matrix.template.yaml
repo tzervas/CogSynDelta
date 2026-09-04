@@ -66,13 +66,13 @@ corpus:
   fingerprint_probe: "{python} scripts/csd-train-all.py --regions {region} --print-corpus-fingerprint --dry-run"
 
 stages:
-  train: { kind: train, gpu: true, receipt_kind: train, receipt: "receipts/{region}-2*.json", gate: "$.beats_untrained.*", complete_on_gate_fail: true }
-  test: { kind: eval, gpu: true, receipt_kind: eval, receipt: "receipts/cogsyndelta-{region}-eval-*.json", gate: "$.gates.*", bound_to: train, complete_on_gate_fail: true, requires: [train] }
-  quantize: { kind: quantize, gpu: true, receipt_kind: quant, receipt: "receipts/{region}-quant-*.json", gate: "$.within_budget", bound_to: train, complete_on_gate_fail: true, requires: [test] }
-  test-quant: { kind: eval, gpu: true, receipt_kind: eval-quant, receipt: "receipts/cogsyndelta-{region}-eval-quantized-*.json", gate: "$.gates.*", bound_to: quantize, complete_on_gate_fail: true, requires: [quantize], enabled: false }
-  collect: { kind: collect, gpu: false, requires: [quantize] } # -> [test-quant] once enabled: true above
-  publish: { kind: publish, gpu: false, requires: [collect] }
-  verify: { kind: verify, gpu: false, requires: [publish] }
+  train: {kind: train, gpu: true, receipt_kind: train, receipt: "receipts/{region}-2*.json", gate: "$.beats_untrained.*", complete_on_gate_fail: true}
+  test: {kind: eval, gpu: true, receipt_kind: eval, receipt: "receipts/cogsyndelta-{region}-eval-*.json", gate: "$.gates.*", bound_to: train, complete_on_gate_fail: true, requires: [train]}
+  quantize: {kind: quantize, gpu: true, receipt_kind: quant, receipt: "receipts/{region}-quant-*.json", gate: "$.within_budget", bound_to: train, complete_on_gate_fail: true, requires: [test]}
+  test-quant: {kind: eval, gpu: true, receipt_kind: eval-quant, receipt: "receipts/cogsyndelta-{region}-eval-quantized-*.json", gate: "$.gates.*", bound_to: quantize, complete_on_gate_fail: true, requires: [quantize], enabled: false}
+  collect: {kind: collect, gpu: false, requires: [quantize]} # -> [test-quant] once enabled: true above
+  publish: {kind: publish, gpu: false, requires: [collect]}
+  verify: {kind: verify, gpu: false, requires: [publish]}
 
 pipeline:
   base: [train, test, quantize, test-quant, collect, publish, verify]
@@ -90,7 +90,7 @@ regions:
     aggressive_bits: 3
     max_bits: 8
     hosts: [akula-prime]
-    env: { PYTHONPATH: "{pythonpath}" }
+    env: {PYTHONPATH: "{pythonpath}"}
     commands:
       train: >-
         {python} scripts/csd-train-all.py --regions {region} --steps {steps} --batch {batch}
@@ -113,20 +113,20 @@ regions:
       beats_untrained: "train:$.beats_untrained.recall@1"
       eval_pass: "test:$.gates.*"
       quant_budget: "quantize:$.within_budget"
-    axis_short: { batch: b, seed: s }
+    axis_short: {batch: b, seed: s}
     variance_axes: [seed]
     budget_axes: [batch]
 
   "{region-name}": # one block per region; see program/matrix/templates/region.yaml for a fully-commented block
-    axes: { batch: [512], seed: [0] }
+    axes: {batch: [512], seed: [0]}
     budgets:
-      "batch=512": { mib: null, source: probe }
+      "batch=512": {mib: null, source: probe}
 
 publish:
   repo_pattern: "tzervas/cogsyndelta-region-{region}"
   base_ref: "variants/base"
   branch: "{variant_id}"
-  tags: { fp32: "{variant_id}--fp32", ptq: "{variant_id}--ptq" }
+  tags: {fp32: "{variant_id}--fp32", ptq: "{variant_id}--ptq"}
   private: true
   promote_main: manual
   main_rule: best_primary_metric_all_gates_pass

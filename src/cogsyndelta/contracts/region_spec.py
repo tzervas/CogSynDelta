@@ -107,7 +107,8 @@ class RegionSpec:
 
     def __post_init__(self) -> None:
         """Reject a spec that cannot build: empty name, non-positive dims, or a
-        latent_vae with no latent_dim."""
+        latent_vae with no latent_dim.
+        """
         if not self.name:
             raise ValueError("region name must be non-empty")
         if self.stream_dim <= 0 or self.hidden_dim <= 0:
@@ -135,7 +136,8 @@ class MindSpec:
 
     def __post_init__(self) -> None:
         """Reject duplicate region names, stream-width disagreement, and out-of-range
-        top_k -- all of which are shape errors that would otherwise surface much later."""
+        top_k -- all of which are shape errors that would otherwise surface much later.
+        """
         names = [r.name for r in self.regions]
         dupes = {n for n in names if names.count(n) > 1}
         if dupes:

@@ -17,7 +17,7 @@ schema: model-matrix/v2
 run:
   id: csd-memory-terms-finetune-{date}
   project: cogsyndelta
-  code: { repo: /home/kang/code/personal/tzervas/CogSynDelta, sha: "{40-hex-sha}" }
+  code: {repo: /home/kang/code/personal/tzervas/CogSynDelta, sha: "{40-hex-sha}"}
   state_root: /akula-data/csd/matrix
   finals_root: /akula-data/csd/finals
   events_dir: /akula-data/csd/events

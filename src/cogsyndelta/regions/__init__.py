@@ -81,7 +81,8 @@ _SUBMODULE_OF: dict[str, str] = {
 
 def __getattr__(name: str) -> Any:
     """PEP 562: resolve a public name by importing the ONE submodule that defines it,
-    on first access, rather than every submodule at package-import time."""
+    on first access, rather than every submodule at package-import time.
+    """
     submodule_name = _SUBMODULE_OF.get(name)
     if submodule_name is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -94,5 +95,6 @@ def __getattr__(name: str) -> Any:
 def __dir__() -> list[str]:
     """PEP 562 companion to `__getattr__`: `dir(cogsyndelta.regions)` and tab
     completion should list the public names `__getattr__` resolves, exactly as they
-    would show up if this package still imported everything eagerly."""
+    would show up if this package still imported everything eagerly.
+    """
     return sorted(__all__)

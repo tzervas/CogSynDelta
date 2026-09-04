@@ -10,8 +10,8 @@ This example demonstrates:
 from pathlib import Path
 
 import torch
-import yaml
 import torch.nn.functional as F
+import yaml
 from torchvision import datasets, transforms
 
 from cogsyndelta.core.pcn_vae_gan import PCNVAEGANHybrid

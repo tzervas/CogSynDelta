@@ -5,7 +5,7 @@
 name: Release
 
 # Manual only — no push/pull_request CI triggers
-on:
+"on":
   workflow_dispatch:
     inputs:
       dry_run:

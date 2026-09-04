@@ -25,6 +25,7 @@ set -euo pipefail
 
 # Configuration
 REMOTE_HOST="akula-prime"
+# shellcheck disable=SC2088 # literal tilde: expanded remotely by ssh's shell, not here
 REMOTE_PROJECT_DIR="~/projects/CogSynDelta"
 LOCAL_PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -84,6 +85,9 @@ sync_project() {
     log_info "Syncing project to ${REMOTE_HOST}:${REMOTE_PROJECT_DIR}..."
 
     # Create remote directory if needed
+    # REMOTE_PROJECT_DIR is set locally by this script; client-side expansion
+    # into the remote command is intended.
+    # shellcheck disable=SC2029
     ssh "${REMOTE_HOST}" "mkdir -p ${REMOTE_PROJECT_DIR}"
 
     # Rsync with exclusions

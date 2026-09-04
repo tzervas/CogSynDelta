@@ -15,7 +15,7 @@ region-name: # the key IS the region name; must match what csd-train-all.py's RE
     # `terms` axis, which is not a single scalar):
     # terms: {off: {token_w: 0.0, decorr_w: 0.0}, on: {token_w: 0.1, decorr_w: 0.1}}
 
-  axis_short: { batch: b, seed: s } # prefix used in the rendered cell_id, e.g. "b512-s0"
+  axis_short: {batch: b, seed: s} # prefix used in the rendered cell_id, e.g. "b512-s0"
 
   exclude: [] # list of {axis: value, ...} dicts; a cell matching ALL keys of any entry is skipped
   # - {batch: 1280, terms: on}   # e.g.: this combination does not fit the card
@@ -37,8 +37,8 @@ region-name: # the key IS the region name; must match what csd-train-all.py's RE
   # `source: probe`, which the loader treats identically to `mib: null`: the cell goes
   # to the harness's wave-0 probe rather than trusting a guess.
   budgets:
-    "batch=512": { mib: null, source: probe }
-    "batch=1280": { mib: null, source: probe }
+    "batch=512": {mib: null, source: probe}
+    "batch=1280": {mib: null, source: probe}
 
   # --- variance vs designed comparison (N1) ---------------------------------------
   # Axes whose difference across cells is noise (a resample), not a comparison the

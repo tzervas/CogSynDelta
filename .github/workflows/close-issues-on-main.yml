@@ -3,7 +3,7 @@
 # Epics close only when a main-bound PR includes Closes #<epic>.
 name: close-issues-on-main
 
-on:
+"on":
   pull_request:
     types: [closed]
     branches: [main, master]

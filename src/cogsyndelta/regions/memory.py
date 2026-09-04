@@ -490,7 +490,8 @@ def run_memory_pretrain(
 
     def tokenize(texts: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
         """Bind `tok`/`max_len`/`device_t` into the shape `beir_fiqa.encode_texts`
-        expects: `(texts) -> (ids, mask)`."""
+        expects: `(texts) -> (ids, mask)`.
+        """
         return tokenize_batch(tok, texts, max_len, device_t)
 
     task = beir_fiqa.build_ranking_task(eval_split, pool="corpus", root=eval_root)

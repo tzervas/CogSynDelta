@@ -23,9 +23,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-GRAFANA_URL = os.environ.get("GRAFANA_URL", "https://grafana.vectorweight.com").rstrip(
-    "/"
-)
+GRAFANA_URL = os.environ.get("GRAFANA_URL", "https://grafana.vectorweight.com").rstrip("/")
 VM_UID = "P4169E866C3094E38"
 LOKI_UID = "P8E80F9AEF21F6940"
 JAEGER_UID = "csd-jaeger"
@@ -37,16 +35,10 @@ PLUGIN = "11.4.0"
 OUT_DIR = Path(__file__).resolve().parent / "dashboards"
 REQUIRED_VARS = ("env", "host", "ns", "group", "service")
 
-TAX_SEL = (
-    'env=~"$env", host=~"$host", ns=~"$ns", '
-    'group=~"$group", service=~"$service"'
-)
+TAX_SEL = 'env=~"$env", host=~"$host", ns=~"$ns", group=~"$group", service=~"$service"'
 # Health exporter still emits host=akula-prime; taxonomy uses prime.
 GPU_HOST = 'host=~"$host|akula-$host"'
-LOKI_SEL = (
-    '{env=~"$env", host=~"$host", ns=~"$ns", '
-    'group=~"$group", service=~"$service"}'
-)
+LOKI_SEL = '{env=~"$env", host=~"$host", ns=~"$ns", group=~"$group", service=~"$service"}'
 
 
 def _token() -> str:
@@ -814,7 +806,7 @@ def dash_service_map() -> dict[str, Any]:
         stat(
             5,
             "backends up",
-            f'sum(akula_backend_up{{{GPU_HOST}}}) or vector(0)',
+            f"sum(akula_backend_up{{{GPU_HOST}}}) or vector(0)",
             ds=vm,
             x=8,
             y=4,
@@ -853,7 +845,7 @@ def dash_service_map() -> dict[str, Any]:
             21,
             "service × instance in $group",
             (
-                'sum by (service, instance, host) '
+                "sum by (service, instance, host) "
                 '(up{group=~"$group", env=~"$env", host=~"$host", '
                 'ns=~"$ns", service=~"$service"})'
             ),
@@ -867,10 +859,7 @@ def dash_service_map() -> dict[str, Any]:
         timeseries(
             22,
             "up $group",
-            (
-                'up{group=~"$group", env=~"$env", host=~"$host", '
-                'ns=~"$ns", service=~"$service"}'
-            ),
+            ('up{group=~"$group", env=~"$env", host=~"$host", ns=~"$ns", service=~"$service"}'),
             ds=vm,
             x=12,
             y=30,
@@ -927,7 +916,7 @@ def dash_gpus() -> dict[str, Any]:
         "Series are `akula_gpu_*` (not nvidia_* / DCGM). Host label is "
         "akula-prime or gpu5080 on the exporter; taxonomy host=prime also "
         "matches via akula-$host. 3090 LocalAI must stay loaded. Comfy is "
-        "masked — `akula_backend_up{backend=\"comfy\"}` is shown only as "
+        'masked — `akula_backend_up{backend="comfy"}` is shown only as '
         "the live 0, not an SLO to unmask."
     )
     panels = [
@@ -1432,9 +1421,7 @@ def patch_loki_derived() -> None:
     fields.append(
         {
             "datasourceUid": JAEGER_UID,
-            "matcherRegex": (
-                r"(?:trace_id|traceId|trace-id)[=:\"\s]+([A-Fa-f0-9]{16,32})"
-            ),
+            "matcherRegex": (r"(?:trace_id|traceId|trace-id)[=:\"\s]+([A-Fa-f0-9]{16,32})"),
             "name": "trace_id",
             "url": "",
             "urlDisplayLabel": "Jaeger",
@@ -1525,10 +1512,14 @@ def ensure_playlist(uids: list[str]) -> None:
         None.
     """
     items = [
-        {"type": "dashboard_by_uid", "value": uid, "order": i + 1}
-        for i, uid in enumerate(uids)
+        {"type": "dashboard_by_uid", "value": uid, "order": i + 1} for i, uid in enumerate(uids)
     ]
-    payload = {"name": "CSD-investigate", "interval": "1m", "items": items, "uid": "csd-investigate-pl"}
+    payload = {
+        "name": "CSD-investigate",
+        "interval": "1m",
+        "items": items,
+        "uid": "csd-investigate-pl",
+    }
     code, listing = gf("/api/playlists")
     existing_uid = None
     if code == 200 and isinstance(listing, list):
@@ -1561,7 +1552,7 @@ def ensure_correlations() -> None:
     def has(label: str) -> bool:
         return any(c.get("label") == label for c in existing)
 
-    specs = [
+    specs: list[tuple[str, dict[str, Any]]] = [
         (
             LOKI_UID,
             {

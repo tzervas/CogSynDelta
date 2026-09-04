@@ -31,6 +31,7 @@ esac
 branch="$(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
 protected="${CSD_PROTECTED_BRANCHES:-main staging develop dev}"
 for pat in $protected; do
+  # $pat is meant to glob-match (main, "release-*", ...), not compare literally.
   # shellcheck disable=SC2254
   case "$branch" in
     $pat)

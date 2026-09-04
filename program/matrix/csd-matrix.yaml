@@ -185,7 +185,7 @@ regions:
     aggressive_bits: 3
     max_bits: 8
     hosts: [gpu5080, akula-prime]
-    env: { PYTHONPATH: "{pythonpath}" }
+    env: {PYTHONPATH: "{pythonpath}"}
     commands:
       train: >-
         {python} scripts/csd-train-all.py --regions {region} --steps {steps} --batch {batch}
@@ -233,7 +233,7 @@ regions:
       beats_untrained: "train:$.beats_untrained.recall@1"
       eval_pass: "test:$.gates.*"
       quant_budget: "quantize:$.within_budget"
-    axis_short: { batch: b, seed: s, terms: tok, chunk: c }
+    axis_short: {batch: b, seed: s, terms: tok, chunk: c}
     variance_axes: [seed] # a seed change also resamples the holdout split (build_splits uses cfg.seed for both) -- declared, not hidden
     budget_axes: [batch]
     # REQUIRED whenever budget_axes is narrower than the region's full axis set (C2):
@@ -246,37 +246,37 @@ regions:
     budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
 
   code:
-    axes: { batch: [512, 1280], seed: [0, 1] }
+    axes: {batch: [512, 1280], seed: [0, 1]}
     # batch=1280/seed=0 is today's production baseline (held_out.recall@1=0.9863, sha
     # 9df6526, corpus.fingerprint e493273b...); batch=512 and seed=1 are unrun. Neither
     # fp32 VRAM budget below is report_peak-sourced (H4) -- both probe.
     budgets:
-      "batch=512": { mib: null, source: probe }
-      "batch=1280": { mib: null, source: probe }
+      "batch=512": {mib: null, source: probe}
+      "batch=1280": {mib: null, source: probe}
 
   compress:
-    axes: { batch: [512, 1280], seed: [0, 1] }
+    axes: {batch: [512, 1280], seed: [0, 1]}
     # batch=1280/seed=0 baseline: held_out.recall@1=0.7754, sha 9df6526.
     budgets:
-      "batch=512": { mib: null, source: probe }
-      "batch=1280": { mib: null, source: probe }
+      "batch=512": {mib: null, source: probe}
+      "batch=1280": {mib: null, source: probe}
 
   retrieve:
-    axes: { batch: [512, 1280], seed: [0, 1] }
+    axes: {batch: [512, 1280], seed: [0, 1]}
     # batch=1280/seed=0 baseline: held_out.recall@1=0.7559, sha 9df6526.
     budgets:
-      "batch=512": { mib: null, source: probe }
-      "batch=1280": { mib: null, source: probe }
+      "batch=512": {mib: null, source: probe}
+      "batch=1280": {mib: null, source: probe}
 
   reason:
     max_len: 256
-    axes: { batch: [256, 512], seed: [0, 1] }
+    axes: {batch: [256, 512], seed: [0, 1]}
     # batch=512/seed=0 baseline: held_out.recall@1=0.1152, sha 0026a3d (reason OOM'd at
     # batch 1280/max_len 256 on the 3090 Ti -- 640 MiB short of 22 GiB [V]; batch=256 is
     # the unrun axis value, not a re-test of the 1280 cell that never completed).
     budgets:
-      "batch=256": { mib: null, source: probe }
-      "batch=512": { mib: null, source: probe }
+      "batch=256": {mib: null, source: probe}
+      "batch=512": {mib: null, source: probe}
     hosts: [akula-prime, gpu5080]
 
   memory:
@@ -309,7 +309,7 @@ regions:
         {python} scripts/csd-publish-checkpoint.py --region {region} --repo {hub_repo}
         --receipt {train_receipt} --eval-receipt {eval_receipt} --quant-receipt {quant_receipt}
         --revision {hub_branch} --base-ref {base_ref}
-    derive: { lr: "3e-4 * (batch / 256) ** 0.5" }
+    derive: {lr: "3e-4 * (batch / 256) ** 0.5"}
     axes:
       batch: [512, 1280]
       # QUOTED DELIBERATELY (C3). Bare `off`/`on` are YAML 1.1 booleans: PyYAML's
@@ -321,12 +321,12 @@ regions:
       # peak was actually measured. Any future boolean-looking axis label (`on`, `off`,
       # `yes`, `no`, `y`, `n`, `true`, `false`) must be quoted the same way; the guard
       # is tests/test_matrix_config.py.
-      terms: { "off": { token_w: 0.0, decorr_w: 0.0 }, "on": { token_w: 0.1, decorr_w: 0.1 } }
+      terms: {"off": {token_w: 0.0, decorr_w: 0.0}, "on": {token_w: 0.1, decorr_w: 0.1}}
       chunk: [512, 2048]
       seed: [0]
     exclude:
-      - { batch: 1280, chunk: 2048 } # raw peak measured 22,120 MiB -- does not fit the 3090 Ti
-      - { terms: "off", chunk: 2048 } # dead when the token loss is off: identical argv to (off, 512)
+      - {batch: 1280, chunk: 2048} # raw peak measured 22,120 MiB -- does not fit the 3090 Ti
+      - {terms: "off", chunk: 2048} # dead when the token loss is off: identical argv to (off, 512)
     budget_axes: [batch, terms, chunk]
     budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
     budgets:
@@ -339,14 +339,14 @@ regions:
       # would collide with pre-matrix history; the harness's variant identity (region +
       # code sha + corpus fingerprint) makes that an explicit refusal, not a silent
       # overwrite (see DESIGN.v2 C4/G2).
-      "batch=512,terms=on,chunk=512": { mib: 11700, source: report_peak } # peak_reserved 11,678 MiB measured
-      "batch=512,terms=on,chunk=2048": { mib: null, source: probe }
-      "batch=512,terms=off,chunk=512": { mib: null, source: probe }
-      "batch=1280,terms=on,chunk=512": { mib: null, source: probe } # today's V2 cell; re-source via report_peak before relying on it
-      "batch=1280,terms=off,chunk=512": { mib: null, source: probe }
+      "batch=512,terms=on,chunk=512": {mib: 11700, source: report_peak} # peak_reserved 11,678 MiB measured
+      "batch=512,terms=on,chunk=2048": {mib: null, source: probe}
+      "batch=512,terms=off,chunk=512": {mib: null, source: probe}
+      "batch=1280,terms=on,chunk=512": {mib: null, source: probe} # today's V2 cell; re-source via report_peak before relying on it
+      "batch=1280,terms=off,chunk=512": {mib: null, source: probe}
     hosts: [akula-prime, gpu5080] # the packer keeps >~15 GiB cells off the 5080 by arithmetic, not by this list
     followup:
-      - { axis: seed, values: [1], select: best_by_primary_metric, among: gate_complete }
+      - {axis: seed, values: [1], select: best_by_primary_metric, among: gate_complete}
     primary_metric: "train:$.held_out.recall@1"
     references: [untrained, bm25]
     gates_read:
@@ -363,7 +363,7 @@ publish:
   repo_pattern: "tzervas/cogsyndelta-region-{region}"
   base_ref: "variants/base"
   branch: "{variant_id}"
-  tags: { fp32: "{variant_id}--fp32", ptq: "{variant_id}--ptq" }
+  tags: {fp32: "{variant_id}--fp32", ptq: "{variant_id}--ptq"}
   private: true
   promote_main: manual # runner prints the promotion it would make; `model-matrix promote` executes it
   main_rule: best_primary_metric_all_gates_pass

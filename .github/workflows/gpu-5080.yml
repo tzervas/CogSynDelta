@@ -2,7 +2,7 @@
 # Shares gpu5080.lock with timeshare and with-gpu-5080 (queue, no collision).
 name: gpu-5080
 
-on:
+"on":
   pull_request:
   workflow_dispatch:
   push:
