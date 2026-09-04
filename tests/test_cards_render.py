@@ -318,6 +318,13 @@ def test_renders_the_real_code_receipts() -> None:
     sha = train["code_revision"]["git_sha"]
     assert "{'git_sha'" not in card
     assert f"git checkout {sha}" in card
+    # RETIRED as independently displayed values (METRICS-METHODOLOGY.md Sec 13) --
+    # must not reach the model-index front matter even though the receipt carries them
+    # (rejected review round 1, criterion 3).
+    card_data = ModelCard(card).data
+    model_index_metric_types = {r.metric_type for r in (card_data.eval_results or [])}
+    assert "rank.map" not in model_index_metric_types
+    assert "rank.precision@10" not in model_index_metric_types
 
 
 # =====================================================================================

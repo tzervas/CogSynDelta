@@ -10,6 +10,17 @@ receipt's `held_out`/`untrained_baseline` numbers are read against a 512-item cl
 pool under a different battery (`train_holdout`, not `eval_holdout`; see
 `docs/design/METRICS-METHODOLOGY.md` §4) and are not what a Hub visitor comparing
 models across the site expects "Evaluation results" to mean.
+
+The model-index is not exempt from either rule `cogsyndelta.cards.tables` already
+applies to the human-readable tables: `rank.map`/`rank.precision@10` are RETIRED
+(`docs/design/METRICS-METHODOLOGY.md` Sec 13) as independently displayed values --
+a model-index entry is exactly that, the Hub renders it in the metrics sidebar and on
+leaderboards -- so they are dropped here the same way `build_eval_tables` drops them
+from its rank table, never published as `EvalResult`s. And every OTHER key this
+function is about to publish must have a `METRIC_METHODOLOGY` entry
+(`require_documented`, the same refuse-closed check every table-building function in
+`cogsyndelta.cards.tables` already runs) -- the front matter must not carry a number
+the card's own body would refuse to print.
 """
 
 from __future__ import annotations
@@ -17,6 +28,13 @@ from __future__ import annotations
 from typing import Any
 
 from huggingface_hub import EvalResult, ModelCardData
+
+from cogsyndelta.cards.methodology import (
+    RETIRED_RANK_METRICS,
+    MetricMethodology,
+    methodology_key,
+    require_documented,
+)
 
 PIPELINE_TAG = "feature-extraction"
 """Every region and the composed mind are text (or text+visual) encoders -- see the
@@ -41,6 +59,7 @@ def build_eval_results(
     region: str,
     eval_receipt: dict[str, Any] | None,
     dataset_name: str | None = None,
+    methodology: dict[str, MetricMethodology] | None = None,
 ) -> list[EvalResult]:
     """One `EvalResult` per numeric key in the fp32 eval receipt's `metrics` dict,
     under whatever name that receipt itself carries (v2 canonical, or a v1 name a
@@ -50,27 +69,57 @@ def build_eval_results(
     under their own field names here, exactly as `cogsyndelta.cards.render`'s
     methodology footnote explains for the tables).
 
+    Two keys are dropped before anything else runs: `rank.map` and
+    `rank.precision@10` are RETIRED as independently displayed values (module
+    docstring), so they never become an `EvalResult` here, mirroring
+    `cogsyndelta.cards.tables.build_eval_tables`'s own drop of the same two keys from
+    its rank table -- one page must not publish a retired number in its machine-
+    readable half while suppressing it in its human-readable one. Every remaining key
+    is then checked against `METRIC_METHODOLOGY` via `require_documented` (raises
+    `CardError` naming any key with no documented definition/battery/source) before a
+    single `EvalResult` is built, so the front matter cannot publish a number the
+    card's own tables would refuse to print.
+
     `verified=False` on every result: nothing in this pipeline calls the Hub's
     third-party verification API -- these are self-reported receipts, not
     Hub-verified numbers, and the front matter must not claim otherwise.
+
+    Args:
+        region: the region name, used only to build the default `dataset_name`
+            (`cogsyndelta-<region>-holdout`).
+        eval_receipt: the fp32 eval receipt, or `None` for a card with no eval
+            receipt -- returns `[]` in that case.
+        dataset_name: overrides the eval-results dataset name/type (default:
+            `cogsyndelta-<region>-holdout`).
+        methodology: overrides `METRIC_METHODOLOGY` for this call only -- a test's
+            mutation-proof hook, the same seam `cogsyndelta.cards.tables`'s
+            `build_*` functions expose; production callers leave this `None`.
     """
     if eval_receipt is None:
         return []
     metrics = eval_receipt.get("metrics", {})
     ds_name = dataset_name or f"cogsyndelta-{region}-holdout"
     ds_type = ds_name.lower().replace(" ", "-")
+    numeric_keys = [
+        key
+        for key, value in metrics.items()
+        if not isinstance(value, bool) and isinstance(value, int | float)
+    ]
+    published_keys = [
+        key
+        for key in numeric_keys
+        if not (key.startswith("rank.") and key.split(".", 1)[1] in RETIRED_RANK_METRICS)
+    ]
+    require_documented((methodology_key(k) for k in published_keys), methodology=methodology)
     results: list[EvalResult] = []
-    for key in sorted(metrics):
-        value = metrics[key]
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            continue
+    for key in sorted(published_keys):
         results.append(
             EvalResult(
                 task_type=PIPELINE_TAG,
                 dataset_type=ds_type,
                 dataset_name=ds_name,
                 metric_type=key,
-                metric_value=value,
+                metric_value=metrics[key],
                 metric_name=key,
                 verified=False,
             )
