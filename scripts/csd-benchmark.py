@@ -252,6 +252,89 @@ def _run_battery(
     return benchmark_embeddings(anchors, positives, params, stored_bytes, lat)
 
 
+def _apply_metrics_v2_renames(res: BenchmarkResult) -> None:
+    """Rename `effective_rank_ratio` -> `effective_rank_entropy_ratio` in place
+    (g7-latent-eval-metrics.md §3.2: "Rename `uses_its_dimensions` to
+    `repr.effective_rank_entropy_ratio`" -- the ENTROPY definition, distinguished from
+    the participation-ratio one `token_aware.final_block_rank.*_pr_rank` reports;
+    MM §9). The 0.05 floor is unchanged ("kept as recorded"), only the name.
+
+    Mutates `res.representation` (and so `res.flat()`, which reads it) IN PLACE rather
+    than renaming the field at its source in `cogsyndelta.eval.benchmark.effective_rank`
+    / `BenchmarkResult` -- that module is outside this lane's file scope for this
+    change. Doing the rename here, at the one place this script turns a
+    `BenchmarkResult` into a receipt, keeps `eval/benchmark.py`'s own public dict shape
+    untouched for any other caller while still shipping the v2 name on disk.
+    """
+    if "effective_rank_ratio" in res.representation:
+        res.representation["effective_rank_entropy_ratio"] = res.representation.pop(
+            "effective_rank_ratio"
+        )
+
+
+def _metric_groups(battery_id: str, seed: int) -> dict:
+    """Per-metric-group provenance (g7-latent-eval-metrics.md §3.1/§3.3): every group
+    this receipt's `metrics` dict reports gets its own `battery_id`, `pooling` and
+    `seed`, because `compare()` refuses to diff two numbers unless (among other things)
+    those three agree -- a `rank.recall@1` and a `repr.anisotropy` from the SAME
+    receipt were measured over different pools and must never be treated as
+    interchangeable just because they share a `started_utc`.
+
+    Three groups, matching `BenchmarkResult`'s own three families
+    (`cogsyndelta.eval.benchmark.BenchmarkResult.flat`'s `rank.`/`eff.`/`repr.`
+    prefixes -- that module is outside this lane's file scope, so the grouping here
+    mirrors it rather than reads it back out):
+
+    - `rank.*`: `recall_at_k`/`mean_reciprocal_rank`/`ndcg_at_k`/`average_precision`/
+      `precision_at_k`/`candidates`, MM §3.1-§3.6 -- the closed, single-relevant-item,
+      matched-diagonal pool (`relevant[i] = i`) built from THIS holdout
+      (`benchmark_embeddings`, `src/cogsyndelta/eval/benchmark.py:355-369`).
+    - `eff.*`: MM §3.7/§3.8. Not itself a pooled retrieval quantity, but
+      `capability_per_param`/`capability_per_mb` are `rank.recall@1` divided by a
+      constant (`src/cogsyndelta/eval/benchmark.py:378-379`) -- inherits `rank.*`'s
+      pool/battery/seed rather than invent a "no pooling" value the closed
+      `pooling` enum has no slot for.
+    - `repr.*`: MM §3.9/§3.11/§3.12 -- `anisotropy`/`uniformity`/`effective_rank`/
+      `dimensions`/`effective_rank_entropy_ratio` are computed over
+      `cat([anchors, positives])`, i.e. `pooled_both` (`benchmark_embeddings`,
+      `src/cogsyndelta/eval/benchmark.py:392-399`), subsample seed 0 by default (MM
+      §3.9(e)) -- NOT this battery's corpus/holdout seed, which is why this group
+      records `seed=0` rather than the `seed` argument. CAVEAT, recorded rather than
+      silently glossed: `repr.alignment` alone in this same group is measured on
+      MATCHED pairs, not `pooled_both` (MM §3.10(d)) -- `BenchmarkResult.representation`
+      keeps all four in one dict (`src/cogsyndelta/eval/benchmark.py:392-400`), and
+      splitting `alignment` into its own group is a change to that file, out of this
+      lane's scope; noted under `_notes` so a reader does not assume uniform pooling
+      across every key this group lists.
+
+    Args:
+        battery_id: `"eval_holdout"` for a `kind="eval"` receipt, `"eval_quantized_holdout"`
+            for `kind="eval-quantized"` (g7 §3.3's closed `battery_id` set) -- the two
+            are never the same battery even though they run the identical code path,
+            because one scores the fp32 checkpoint and the other the packed artifact.
+        seed: The corpus/holdout-construction seed this battery's split was rebuilt
+            from (`cfg.seed`, read back from the training receipt) -- what MM §10 item 7
+            calls the seed that "drives the corpus reservoir sample, the shuffle, and
+            the untrained model's initial weights". Applied to the `rank`/`eff` groups;
+            the `repr` group's own subsample seed is fixed at 0 regardless (see above).
+    """
+    return {
+        "rank": {"battery_id": battery_id, "pooling": "matched", "seed": seed},
+        "eff": {"battery_id": battery_id, "pooling": "matched", "seed": seed},
+        "repr": {
+            "battery_id": battery_id,
+            "pooling": "pooled_both",
+            "seed": 0,
+            "_notes": (
+                "repr.alignment is measured on 'matched' pairs (MM §3.10(d)), not "
+                "'pooled_both' like the rest of this group (anisotropy/uniformity/"
+                "effective_rank/dimensions/effective_rank_entropy_ratio, MM §3.9/§3.11/"
+                "§3.12) -- see _metric_groups' docstring in scripts/csd-benchmark.py."
+            ),
+        },
+    }
+
+
 def _print_battery(res: BenchmarkResult, *, size_note: str) -> None:
     r, e, rep = res.ranking, res.efficiency, res.representation
     print(
@@ -266,7 +349,7 @@ def _print_battery(res: BenchmarkResult, *, size_note: str) -> None:
     )
     print(
         f"    repr  anisotropy={rep['anisotropy']:.4f}  eff_rank={rep['effective_rank']:.1f}"
-        f"/{rep['dimensions']:.0f} ({rep['effective_rank_ratio']:.1%})  "
+        f"/{rep['dimensions']:.0f} ({rep['effective_rank_entropy_ratio']:.1%})  "
         f"align={rep['alignment']:.4f} unif={rep['uniformity']:.4f}",
         flush=True,
     )
@@ -341,6 +424,7 @@ def benchmark_region(
     stored = fp32_reference_bytes(model)
 
     res = _run_battery(model, tok, holdout, cfg, device, stored)
+    _apply_metrics_v2_renames(res)
     r, e, rep = res.ranking, res.efficiency, res.representation
     _print_battery(res, size_note="fp32")
 
@@ -351,11 +435,15 @@ def benchmark_region(
         metrics=res.flat(),
         baseline={"rank.recall@1": train_receipt["untrained_baseline"]["recall@1"]},
         gates={
-            "beats_untrained": r["recall@1"] > train_receipt["untrained_baseline"]["recall@1"],
-            # A space where unrelated items sit at cosine 0.9+ is degenerate even when the
-            # ranking metrics look healthy, so it is a gate rather than a note.
-            "not_anisotropic": rep["anisotropy"] < 0.9,
-            "uses_its_dimensions": rep["effective_rank_ratio"] > 0.05,
+            # g7 §3.2: "two names because two predicates" -- this receipt's own
+            # unmargined `rank.recall@1 > untrained_baseline.recall@1` (MM §3.13(f))
+            # is NOT the training receipt's `_beats_untrained_gate` (baseline_sane AND
+            # a +0.01 margin, MM §1); `beats_untrained_train` names that one.
+            "beats_untrained_eval": r["recall@1"] > train_receipt["untrained_baseline"]["recall@1"],
+            # `not_anisotropic` (g7 §3.2): DEMOTED from a gating admission test to a
+            # recorded value -- no new bound without a study; `repr.anisotropy` above
+            # is still recorded in `metrics`, it is simply no longer read as pass/fail.
+            "uses_its_dimensions": rep["effective_rank_entropy_ratio"] > 0.05,
         },
         artifacts={
             "checkpoint": train_receipt["checkpoint"],
@@ -374,9 +462,11 @@ def benchmark_region(
             "holdout_pairs": len(holdout),
             "eval_target": "fp32",
             # See the `stored` comment above: this is `fp32_reference_bytes`'s
-            # definition, the same one `compression_ratio`'s denominator uses -- never
-            # a checkpoint file's raw `stat().st_size`, which includes optimizer state.
+            # definition, the same one `quant.compression_ratio`'s denominator uses --
+            # never a checkpoint file's raw `stat().st_size`, which includes optimizer
+            # state.
             "stored_bytes_definition": "weights-only",
+            "metric_groups": _metric_groups("eval_holdout", cfg.seed),
         },
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
         started_utc=started_utc,
@@ -491,8 +581,20 @@ def benchmark_region_quantized(
 
     stored = packed_stored_bytes(packed)
     res = _run_battery(model, tok, holdout, cfg, device, stored)
+    _apply_metrics_v2_renames(res)
     r, e, rep = res.ranking, res.efficiency, res.representation
     _print_battery(res, size_note="quantized artifact")
+
+    metrics = res.flat()
+    # `quant.artifact_recall@1` (g7 §3.1): the SAME number as `rank.recall@1` above,
+    # under the name the "plan-vs-artifact" sameness guard reads (MM §4's special
+    # case, g7 §3.3: `quant.plan_recall@1` vs `quant.artifact_recall@1` may be
+    # compared ACROSS battery ids by design, on the same sha/holdout, as a check that
+    # the quantizer's in-memory plan and the packed file it wrote agree -- never a
+    # general cross-battery compare). Recorded here, not only implied by `rank.*`, so
+    # a reader of THIS receipt does not have to know csd-quantize.py's field name to
+    # find the number that pairs with it.
+    metrics["quant.artifact_recall@1"] = metrics["rank.recall@1"]
 
     artifacts = {
         "checkpoint": train_receipt.get("checkpoint", ""),
@@ -514,12 +616,13 @@ def benchmark_region_quantized(
         producer=Producer("cogsyndelta", region, "dense-transformer"),
         stage="eval",
         kind="eval-quantized",
-        metrics=res.flat(),
+        metrics=metrics,
         baseline={"rank.recall@1": train_receipt["untrained_baseline"]["recall@1"]},
         gates={
-            "beats_untrained": r["recall@1"] > train_receipt["untrained_baseline"]["recall@1"],
-            "not_anisotropic": rep["anisotropy"] < 0.9,
-            "uses_its_dimensions": rep["effective_rank_ratio"] > 0.05,
+            # See `benchmark_region`'s identical gate for the g7 §3.2 rename rationale
+            # (two predicates, two names) and the `not_anisotropic` demotion.
+            "beats_untrained_eval": r["recall@1"] > train_receipt["untrained_baseline"]["recall@1"],
+            "uses_its_dimensions": rep["effective_rank_entropy_ratio"] > 0.05,
         },
         artifacts=artifacts,
         provenance={
@@ -533,6 +636,11 @@ def benchmark_region_quantized(
             # `benchmark_region`'s `stored` comment). The two receipts' `eff.stored_mb`
             # are comparable by this shared definition, not by coincidence.
             "stored_bytes_definition": "weights-only",
+            # `eval_quantized_holdout`, never `eval_holdout` -- same code path as the
+            # fp32 pass, but a DIFFERENT battery: this one scores the packed artifact
+            # read off disk, not the in-memory fp32 checkpoint (g7 §3.3's closed
+            # `battery_id` set names both separately for exactly this reason).
+            "metric_groups": _metric_groups("eval_quantized_holdout", cfg.seed),
         },
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
         started_utc=started_utc,
