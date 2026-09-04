@@ -123,6 +123,85 @@ def test_renders_train_only_fp32_card(tmp_path: Path) -> None:
     assert "No quant receipt" not in card  # this card never claims that -- own wording
 
 
+# =====================================================================================
+# `code_revision` normalization -- a real receipt's `code_revision` is a dict
+# (`{"git_sha", "dirty", "branch", "describe"}`, see `cogsyndelta.pipeline.receipt.
+# Receipt.code_revision`'s docstring), not a bare string. `render_card` must reduce it
+# to a single checkout-able SHA at every site that prints it, never a Python dict repr
+# -- pasting `git checkout {'git_sha': ...}` is not a command, and `{code revision
+# {'git_sha': ...}}` unbalances BibTeX's braces.
+# =====================================================================================
+
+_REAL_CODE_REVISION: dict[str, object] = {
+    "git_sha": "a7694090903664bc256b4b96d998b37cacd316cf",
+    "dirty": False,
+    "branch": "HEAD",
+    "describe": "a769409",
+}
+
+
+def test_code_revision_dict_shape_normalized_to_bare_sha(tmp_path: Path) -> None:
+    receipts = _full_fixture_receipts(tmp_path)
+    receipts["train"]["code_revision"] = _REAL_CODE_REVISION
+    card = render_card(
+        "region_variant",
+        region="compress",
+        region_cfg=region_cfg(),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+    )
+    sha = _REAL_CODE_REVISION["git_sha"]
+    # never a raw dict repr anywhere on the card (header, provenance, checkout snippet,
+    # bibtex note all interpolate the same `code_revision` value)
+    assert "{'git_sha'" not in card
+    assert f"git checkout {sha}" in card  # a command a reader can actually paste
+    assert f"code revision `{sha}`" in card  # header line
+    assert f"**Code revision:** `{sha}`" in card  # Provenance bullet
+    assert f"code revision {sha}" in card  # bibtex note, unbroken braces
+    # the bibtex block's own braces stay balanced now that the value has none of its own
+    bibtex_start = card.index("```bibtex")
+    bibtex_end = card.index("```", bibtex_start + 1)
+    bibtex_block = card[bibtex_start:bibtex_end]
+    assert bibtex_block.count("{") == bibtex_block.count("}")
+
+
+def test_code_revision_legacy_string_shape_passes_through(tmp_path: Path) -> None:
+    """A receipt written before the dict shape existed (or a test fixture) may still
+    carry a bare string -- that must keep working unchanged."""
+    receipts = _full_fixture_receipts(tmp_path)
+    receipts["train"]["code_revision"] = "deadbeef"
+    card = render_card(
+        "region_variant",
+        region="compress",
+        region_cfg=region_cfg(),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert "git checkout deadbeef" in card
+    assert "{'git_sha'" not in card
+
+
+def test_code_revision_dict_shape_with_no_git_sha_falls_back_to_none_recorded(
+    tmp_path: Path,
+) -> None:
+    """A malformed/legacy dict with no `git_sha` key must not crash or leak a dict
+    repr -- it degrades to the same '(none recorded)' a missing field already gets."""
+    receipts = _full_fixture_receipts(tmp_path)
+    receipts["train"]["code_revision"] = {"dirty": True, "branch": "HEAD"}
+    card = render_card(
+        "region_variant",
+        region="compress",
+        region_cfg=region_cfg(),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert "{'dirty'" not in card
+    assert "(none recorded)" in card
+
+
 def test_renders_memory_kind_with_od17_status(tmp_path: Path) -> None:
     receipts = _full_fixture_receipts(tmp_path, region="memory")
     cfg = region_cfg(licence_tier="cc-by-nc-sa-4.0", licence_why="merge of compress+retrieve")
@@ -233,6 +312,12 @@ def test_renders_the_real_code_receipts() -> None:
     assert "v1 receipt; names mapped to csd-metrics/v2" in card
     # the real training-peak budget for this exact cell is on disk -- MEASURED, not estimated
     assert "training peak" in card
+    # this real train receipt's `code_revision` IS the dict shape
+    # (`{"git_sha", "dirty", "branch", "describe"}`) -- must render as the bare SHA
+    # everywhere, never the Python dict repr (rejected review round 1, criterion 3).
+    sha = train["code_revision"]["git_sha"]
+    assert "{'git_sha'" not in card
+    assert f"git checkout {sha}" in card
 
 
 # =====================================================================================

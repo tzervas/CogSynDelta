@@ -193,6 +193,32 @@ def _sizes_block(sizes: SizeReport) -> str:
     return "\n".join(lines)
 
 
+def _normalize_code_revision(value: Any) -> str | None:
+    """Reduce a receipt's `code_revision` field to a single, checkout-able git SHA
+    string -- the shape every card site that prints it (the header line, the
+    Provenance "Code revision" bullet, the "How to use" `git checkout` snippet, and
+    the BibTeX `note`) actually needs.
+
+    A receipt this project writes today stamps `code_revision` as a dict --
+    `{"git_sha", "dirty", "branch", "describe"}`, see `cogsyndelta.pipeline.receipt.
+    Receipt.code_revision`'s docstring and `cogsyndelta.regions._receipt.
+    capture_code_revision` -- not a bare string. Interpolating that dict into a
+    template unchanged prints its Python repr: `git checkout {'git_sha': ...}` is not
+    a command a reader can paste, and `note = {code revision {'git_sha': ...}}`
+    unbalances BibTeX's braces. Only `git_sha` is guaranteed to be a revision `git
+    checkout` accepts -- `describe` can carry a `-dirty` suffix that is not a valid
+    ref -- so this pulls exactly that key back out.
+
+    A bare string is passed through unchanged (a legacy/test receipt that predates
+    the dict shape, or one already carrying `"unknown"`); `None`/missing/falsy stays
+    `None` so every existing "(none recorded)" fallback below is unaffected.
+    """
+    if isinstance(value, dict):
+        sha = value.get("git_sha")
+        return str(sha) if sha else None
+    return str(value) if value else None
+
+
 def _provenance_block(
     *,
     train_receipt: dict[str, Any] | None,
@@ -364,7 +390,7 @@ def render_card(
         checkpoint_sha256 = train_receipt.get("checkpoint_sha256") or train_receipt.get(
             "artifacts", {}
         ).get("checkpoint_sha256")
-    code_revision = (train_receipt or {}).get("code_revision")
+    code_revision = _normalize_code_revision((train_receipt or {}).get("code_revision"))
 
     provenance_md = _provenance_block(
         train_receipt=train_receipt,
