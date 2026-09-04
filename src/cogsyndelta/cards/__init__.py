@@ -17,10 +17,14 @@ building a markdown string by hand. Submodules:
   into `docs/design/METRICS-METHODOLOGY.md`.
 - `render`: `render_card()`, the one public entry point -- picks the Jinja2 template
   for a card `kind` and calls `ModelCard.from_template`.
+- `export`: `export_safetensors()`, a real `.safetensors` sibling of a torch checkpoint
+  (fp32, weights-only, no pickle) -- what lets the Hub render its safetensors badge
+  beside the pickled `final.pt` primary artifact.
 """
 
 from __future__ import annotations
 
+from cogsyndelta.cards.export import export_safetensors, safetensors_round_trip_matches
 from cogsyndelta.cards.metadata import build_card_data, build_eval_results
 from cogsyndelta.cards.methodology import (
     METHODOLOGY_DOC,
@@ -46,6 +50,8 @@ __all__ = [
     "build_eval_results",
     "build_eval_tables",
     "build_size_report",
+    "export_safetensors",
     "normalize_quant_receipt_v1",
     "render_card",
+    "safetensors_round_trip_matches",
 ]
