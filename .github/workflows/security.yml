@@ -157,6 +157,20 @@ jobs:
         continue-on-error: true
 
   # Python-specific security checks (always runs)
+  #
+  # This job carries no `if:` on event_name, so the steps below -- including the
+  # Bandit gate -- already run the identical command on `push` and `pull_request`.
+  # Verified against task 7026 (push, run 8645/job 19150, commit c91364a, PR #16
+  # merge), which the CI inventory logged as "failed on bandit findings
+  # B105/B311x2/B101x24/B404/B607": the job log shows the report-only call (default
+  # LOW/LOW, non-blocking) printing those 41 pre-existing LOW findings as designed,
+  # then the real gate call (-ll -ii) completing with "No issues identified" (0
+  # medium/high) -- reproduced locally against this same tree, same result. The job
+  # log then cuts off mid the following "Run pip-audit" step with no `##[error]`
+  # anywhere in it, unlike the passing pull_request run for the same PR head
+  # (job 19121, run 8632), whose log runs cleanly to "Job succeeded". That is a
+  # job-level crash after Bandit already passed (runner/network/host contention),
+  # not a Bandit or event-conditional defect -- there is nothing to align here.
   python-security:
     name: Python Security Checks
     runs-on: [self-hosted, linux, x64, podman]
