@@ -65,3 +65,16 @@ Two remain failing: **gate (c) `c_beats_bm25`** (trained full-pool recall@10 0.2
 lexical BM25's 0.4400 on the same pool) and **gate (e) `e_retrain_gate`**, specifically its
 PR-rank clause (ratio 1.2102 vs the required ≥ 2.0; the receipt-regression clause on this
 run passes, at 0.0 worst regression).
+
+## Note (append-only, 2026-09-04, lane D): `csd-metrics/v2` canonical names
+
+`docs/design/METRICS-METHODOLOGY.md` §12 (added 2026-09-04) gives this table's columns
+canonical names: `recall@1` / `graded (spearman)` are `train_holdout` battery fields
+(§12.6/§2.4, `held_out.recall@1` / `graded_held_out.spearman` — unrenamed under v2);
+`full-pool r@10` / `r@100` / `MRR` are `beir.recall@10` / `beir.recall@100` / `beir.mrr`,
+`battery_id: beir_fiqa_corpus` (§12.7); `BM25 r@10` is the same `beir_fiqa_corpus` battery's
+lexical reference point (§7.3), not a separate metric family; `rank ratio` is
+`token.global_pr_rank / token.pooled_pr_rank` (§12.2/§17). None of these numbers change --
+this is a naming pointer only. Do not read this table's `recall@1` as the same measurement as
+`rank.recall@1` in an eval-battery card (§12.6's sameness rule -- same sha/holdout only) or as
+`beir.recall@k` (different pool and relevance shape entirely, §12.7).

@@ -306,3 +306,12 @@ that carries the chunk override, not the code.
   the end of the chunk=512 run.
 - `batch1280-chunk512-nvidia-smi-samples.csv` — the raw `(timestamp, memory.used)`
   samples (0.5s interval) the chunk=512 probe's driver-peak numbers were computed from.
+
+## Note (append-only, 2026-09-04, lane D): `csd-metrics/v2` canonical names
+
+This directory's evidence is VRAM/equivalence-scoped (`_mlm_token_loss`'s memory footprint),
+not a rank-metric measurement -- there is no `pooled_pr_rank`/`token_global_pr_rank`/
+`effective_rank`/`recall@1` figure here to remap under `docs/design/METRICS-METHODOLOGY.md`
+§12's canonical names (added 2026-09-04). For the sibling W4 evidence that IS rank-metric
+scoped, see `docs/design/evidence/w4-control-arm-2026-09-03/README.md` and
+`docs/design/evidence/w4-production-runs-2026-09-03/README.md`'s own v2-naming notes.

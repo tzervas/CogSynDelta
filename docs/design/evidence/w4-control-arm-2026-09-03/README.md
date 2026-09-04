@@ -216,3 +216,15 @@ constant before calling `main()` from a driver script, as this correction's fres
 - **measured**: 2026-09-03, `akula-prime`, RTX 3090 Ti (24 GiB), shared with a concurrent
   quantize job (~1 GiB in use before these runs started; peak usage per arm recorded in
   each summary JSON's `peak_allocated_mib`/`peak_reserved_mib`).
+
+## Note (append-only, 2026-09-04, lane D): `csd-metrics/v2` canonical names
+
+`docs/design/METRICS-METHODOLOGY.md` §12.2/§17 (added 2026-09-04) gives this file's
+`pooled_pr_rank` / `token_global_pr_rank` columns the canonical names `token.pooled_pr_rank` /
+`token.global_pr_rank`, `battery_id: train_holdout`. The three-arm ratio table above (control
+2.0191x, token_only 2.0242x, both_on 2.2412x) is reproduced verbatim in MM §17 and §12.2's
+"falsifies" entry as the standing evidence that `e_retrain_gate`'s `>= 2.0x` clause **does not
+discriminate** at this harness's current 50-step smoke count — nothing above changes as a
+result, this is a naming pointer only. Nothing here licenses reading `token_global_pr_rank`
+against `repr.effective_rank_entropy` (§12.1) as if they were the same statistic; MM §9/§12.2's
+"never compare pr_* to entropy_*" rule applies unchanged.
