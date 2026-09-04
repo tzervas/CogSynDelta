@@ -205,6 +205,20 @@ class CorpusSourceMissingError(RuntimeError):
     """
 
 
+class VisualCorpusUnsetError(RuntimeError):
+    """Raised when `run_vl_region` is asked to train a region whose `VL_REGIONS` entry
+    has no admitted `corpus_source` (OD-4 pending).
+
+    tiny-imagenet was the hardcoded `train`/`probe_eval` glob here until W7v-cfg (g8
+    sector `g8-visual/S02.md`, `g8-visual-faculty-design.md` "OD-4 mix"): `license: []`
+    plus an ImageNet Terms of Access `extra_gated_prompt` (non-commercial; indemnify
+    copies of copyrighted images), 100% of `vl_latent`'s corpus, no clean fraction --
+    `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md:364-411`. Deleting the hardcoded glob and
+    requiring an explicit `corpus_source` is what makes "trained on it by accident"
+    structurally impossible: there is no default left to fall back to.
+    """
+
+
 def _refuse_reserved_shards(region: str, glob_pat: str, shards: list[str]) -> None:
     """Raise :class:`ReservedSourceError` if any resolved shard is under a reserved corpus."""
     for shard in shards:
@@ -580,19 +594,33 @@ def region_spec(name: str) -> RegionEntry:
 # and its own runner rather than being bent into REGIONS.
 VL_REGIONS: dict[str, dict] = {
     "vl_latent": {
-        "train": "vl/tiny-imagenet/data/train-*.parquet",
-        "probe_eval": "vl/tiny-imagenet/data/valid-*.parquet",
+        # OD-4 (g8-visual-faculty-design.md "Operator decisions", row "OD-4 mix"):
+        # tiny-imagenet is 100% BLOCKING as a training source -- `license: []` plus an
+        # ImageNet ToA `extra_gated_prompt` (non-commercial; indemnify copies of
+        # copyrighted images), audited in LICENCE-FOR-OPEN-WEIGHTS.md:364-411, with no
+        # clean fraction to carve out. It is no longer wired below as `train`/
+        # `probe_eval`/`transfer` globs a careless `--regions vl_latent` could hit by
+        # accident. `corpus_source` names the landed, ADMITTED replacement corpus
+        # (recommended: option B, `visual-clean-v1`, ~601.6k images, ingest §5.2) --
+        # None means nothing has been admitted yet, and `run_vl_region` below refuses to
+        # start rather than falling back to any default. Set this (and the `train`/
+        # `probe_eval`/`transfer`/`columns`/`transfer_*` globs it implies) once OD-4
+        # lands; that is a separate, later increment, not this one.
+        "corpus_source": None,
+        "train": None,
+        "probe_eval": None,
         "columns": ("image", "label"),
-        # cifar100 is a DIFFERENT dataset with different classes, so the probe on it
-        # measures whether the representation transfers rather than memorises. Unlike
-        # `retrieve`'s holdout -- which is a uniform sample of an in-mixture pool, NOT an
-        # out-of-domain fiqa split; see the `SourceSpec` comment above and
-        # docs/design/CORPUS-CONTRACT.md Part 3 -- this probe really does train on one
-        # shard (`train`) and evaluate on an entirely separate one (`transfer`), so it is
-        # actually out-of-domain.
-        "transfer": "vl/cifar100/cifar100/test-*.parquet",
+        # cifar100 is Tiny Images (CIFAR-100's parent), also BLOCKING as a train source
+        # (LICENCE-FOR-OPEN-WEIGHTS.md:809-817); the g8 sector's OD-4 recommendation is
+        # to replace it too (Quick Draw / Caltech-256 / EuroSAT test) rather than carry
+        # it forward eval-only by default. Left unset for the same reason `train` is.
+        "transfer": None,
         "transfer_columns": ("img", "fine_label"),
-        "note": "I-JEPA over 64x64 patches; gated on a linear probe, never on loss",
+        "note": (
+            "I-JEPA over composite-shaped (128x128/8/256) patches; gated on a linear "
+            "probe, never on loss. corpus_source is unset pending OD-4 -- see "
+            "run_vl_region's refusal."
+        ),
     },
 }
 
@@ -1164,6 +1192,25 @@ def run_vl_region(
     """
     spec = VL_REGIONS[name]
     print(f"\n=== {name} — {spec['note']}", flush=True)
+
+    # Fails BEFORE any shard resolution: with `corpus_source` unset, `spec["train"]` is
+    # `None`, not a glob a careless `--regions vl_latent` could resolve into
+    # tiny-imagenet by accident -- see `VisualCorpusUnsetError` and OD-4
+    # (g8-visual-faculty-design.md "Operator decisions").
+    corpus_source = spec.get("corpus_source")
+    if not corpus_source:
+        raise VisualCorpusUnsetError(
+            f"region {name!r} has no admitted visual corpus "
+            f"(VL_REGIONS[{name!r}]['corpus_source'] is unset). tiny-imagenet is 100% "
+            f"BLOCKING (missing ImageNet grant; docs/design/"
+            f"LICENCE-FOR-OPEN-WEIGHTS.md:364-411) and is no longer wired as a fallback "
+            f"-- see OD-4 in /akula-data/session-backup-staging/tools/grok-jobs/"
+            f"g8-visual-faculty-design.md ('Operator decisions' table, row 'OD-4 mix'). "
+            f"Land and admit a visual corpus (recommended: option B, visual-clean-v1, "
+            f"~601.6k images, ingest §5.2), then set VL_REGIONS[{name!r}]['corpus_source'] "
+            f"and its 'train'/'probe_eval'/'transfer' globs before training this region. "
+            f"Refusing to start."
+        )
 
     train = _shards(spec["train"])
     probe_eval = _shards(spec["probe_eval"])

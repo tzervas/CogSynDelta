@@ -178,6 +178,10 @@ def test_omitting_seed_flag_still_writes_the_pre_existing_default(
 def test_seed_flag_flows_into_vl_pretrain_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # W7v-cfg's OD-4 gate (VisualCorpusUnsetError) fires before shard resolution unless
+    # a corpus_source is admitted -- irrelevant to what this test actually checks (that
+    # --seed flows into VLPretrainConfig), so name a placeholder to get past it.
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "corpus_source", "test-corpus")
     monkeypatch.setattr(
         mod, "_shards", lambda pattern, root=mod.CORPUS: [str(tmp_path / "shard.parquet")]
     )

@@ -246,7 +246,17 @@ def test_resume_matches_uninterrupted_run(tiny_vl_cfg: VLPretrainConfig, monkeyp
     assert resumed["resumed"] is True
     assert resumed["resumed_from_step"] == 2
 
-    assert resumed["untrained_baseline"] == reference["untrained_baseline"]
+    # Per-key approx, not `==`: identical weights (verified: two fresh constructions
+    # from `torch.manual_seed(cfg.seed)` produce bit-identical parameters) and identical
+    # input (the shared `cache_dir` fixture means both calls read the SAME decoded
+    # `.npy`) still let `model.target_encoder(probe_batch)`'s CPU convolution kernels
+    # pick a different (still numerically correct) reduction order between two separate
+    # process-level calls -- a documented PyTorch CPU-determinism caveat
+    # (pytorch.org/docs/stable/notes/randomness.html), not a resume-path bug: every
+    # OTHER float comparison in this same test (below) already uses `pytest.approx`/
+    # `torch.allclose` rather than bare `==`, for exactly this reason.
+    for key, ref_value in reference["untrained_baseline"].items():
+        assert resumed["untrained_baseline"][key] == pytest.approx(ref_value, abs=1e-5), key
 
     ref_ckpt_dir = Path(reference_cfg.out_dir) / f"{reference_cfg.region}-checkpoints"
     ref_final = torch.load(

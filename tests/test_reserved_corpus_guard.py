@@ -180,7 +180,12 @@ def test_vl_region_run_refuses_to_start_when_resolved_sources_include_a_reserved
     as closed: before this test existed, `run_vl_region` never called
     `_refuse_reserved_shards` at all, so a `VL_REGIONS` glob resolving into `apps` or
     `code_contests` would train silently.
+
+    `corpus_source` is monkeypatched to a placeholder name: W7v-cfg's OD-4 gate
+    (`VisualCorpusUnsetError`) fires BEFORE shard resolution when it is unset, which
+    would otherwise mask the reserved-shard guard this test targets.
     """
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "corpus_source", "test-corpus")
     monkeypatch.setattr(
         mod,
         "_shards",
@@ -195,6 +200,7 @@ def test_vl_region_dry_run_is_unaffected_when_sources_stay_clean(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Negative control: an unreserved resolved shard must not trip the VL guard either."""
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "corpus_source", "test-corpus")
     monkeypatch.setattr(
         mod,
         "_shards",
