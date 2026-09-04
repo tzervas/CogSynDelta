@@ -8,7 +8,7 @@
 # uv.lock pins CUDA torch; do not pass `--frozen` (it would install CUDA).
 name: poc-ci
 
-on:
+"on":
   push:
     branches: [main, develop, 'feat/poc-**']
   pull_request:

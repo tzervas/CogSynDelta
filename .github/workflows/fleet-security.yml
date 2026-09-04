@@ -3,7 +3,7 @@
 # No continue-on-error / missing-tool skip. Homelab CPU already has trivy.
 name: fleet-security
 
-on:
+"on":
   push:
     branches: [main, master, dev, develop]
   pull_request:

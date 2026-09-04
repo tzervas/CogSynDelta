@@ -4,7 +4,7 @@
 # runs-on labels match fleet agent defaults.
 name: fleet-ci
 
-on:
+"on":
   push:
     branches: [main, master, dev, develop]
   pull_request:

@@ -4,7 +4,7 @@
 
 name: GPU Benchmarks
 
-on:
+"on":
   # Manual trigger with benchmark results upload
   workflow_dispatch:
     inputs:
