@@ -16,10 +16,11 @@ permissions:
 jobs:
   reopen:
     name: Reopen issues closed off-main
-    # Meta workflow: GitHub-hosted is correct (no product build). Avoids self-hosted
-    # queue when runners are busy/down; only needs gh + GITHUB_TOKEN.
-    runs-on: ubuntu-latest
+    # GitHub-only meta workflow (gh CLI + GITHUB_TOKEN, issue API). Forgejo has no
+    # ubuntu-latest runner, so route to the fleet and skip immediately below.
+    runs-on: [self-hosted, linux, x64, podman]
     if: >
+      github.server_url == 'https://github.com' &&
       github.event_name == 'pull_request' &&
       github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref != 'main' &&
