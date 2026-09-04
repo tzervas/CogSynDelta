@@ -230,9 +230,26 @@ Measured performance:
 4. Re-review if needed
 5. Merge when approved
 
-## Commit Messages
+## Conventions
 
-Use conventional commits:
+Branch names, commit messages, and PR titles are all validated the same way, by the
+same tool ([commitizen](https://github.com/commitizen-tools/commitizen), pinned to
+`4.18.0`), in three places: the tracked `.githooks/commit-msg` and `.githooks/pre-push`
+hooks (installed automatically — `core.hooksPath` is `.githooks`) and
+`.github/workflows/conventions.yml` in CI. All three enforce identical rules, so a push
+that passes locally passes remotely too.
+
+### Branch naming
+
+```
+<type>/<kebab-case-description>
+```
+
+`<type>` is one of: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `build`,
+`perf`, `style`, `revert`. `refs/heads/main` and `refs/heads/master` can never be
+pushed to directly — this repo is PR-only.
+
+### Commit messages
 
 ```
 type(scope): description
@@ -242,14 +259,8 @@ type(scope): description
 [optional footer]
 ```
 
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation
-- `perf`: Performance improvement
-- `refactor`: Code refactoring
-- `test`: Testing
-- `chore`: Maintenance
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`,
+`chore`. Merge commits and `bump:` commits are accepted as-is.
 
 Examples:
 ```
@@ -260,6 +271,35 @@ Measured on test data with statistical validation.
 
 Closes #123
 ```
+
+`uvx --from commitizen cz commit` is an optional interactive helper that builds a
+conforming message for you; a hand-written message following the format above works
+just as well.
+
+### PR titles
+
+A PR's title must itself be a valid Conventional Commits subject
+(`type(scope): description`) — Forgejo/GitHub use the PR title as the squash-merge
+commit subject, so an unconventional title becomes an unconventional commit on `main`.
+`conventions.yml` validates the title on every `pull_request` event.
+
+### Release flow
+
+Versioning is owned by `[tool.commitizen]` in `pyproject.toml` (the `pep621` version
+provider — it reads and writes `project.version` and
+`src/cogsyndelta/__init__.py:__version__` together) and only ever moves through a PR:
+
+1. On a `chore/release-vX.Y.Z` branch, run:
+   ```bash
+   uvx --from commitizen cz bump --changelog
+   ```
+   This computes the next version from the commits since the last tag, updates the
+   version files and `CHANGELOG.md`, and creates a local `bump:` commit.
+2. Open a PR from that branch to `main`.
+3. Once merged, `.github/workflows/release.yml` notices the version on `main` has
+   moved, tags it (`vX.Y.Z` — tags are the one ref exempt from the branch-PR rule),
+   builds the package, and publishes the Forgejo release with the built artifacts
+   attached.
 
 ## License
 

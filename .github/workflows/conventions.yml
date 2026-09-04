@@ -1,0 +1,86 @@
+# Conventions Workflow
+#
+# WHY THIS EXISTS
+# Enforces the same three rules the tracked local hooks already enforce
+# (.githooks/commit-msg, .githooks/pre-push) so a push made with --no-verify, from a
+# client that never installed the hooks, or through the Forgejo web UI still gets
+# caught: PR titles and commit messages must be Conventional Commits, and branch/tag
+# names must follow the type/kebab-case / semver convention. Every check fails closed --
+# a missing tool or an unresolvable base ref is a failure here, not a silent skip.
+name: Conventions
+
+"on":
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches-ignore: [main]
+
+env:
+  CZ_VERSION: "4.18.0"
+  BRANCH_RE: '^(feat|fix|docs|chore|refactor|test|ci|build|perf|style|revert)/[a-z0-9][a-z0-9._-]*$'
+
+concurrency:
+  group: conventions-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conventions:
+    name: Validate commit / branch / PR-title conventions
+    runs-on: [self-hosted, linux, x64, podman]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
+
+      - name: Validate PR title and head branch name
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          echo "PR title: cz check --message \"\$PR_TITLE\""
+          uvx --from "commitizen==${CZ_VERSION}" cz check --message "$PR_TITLE"
+
+          echo "head branch: $HEAD_REF"
+          if ! [[ "$HEAD_REF" =~ $BRANCH_RE ]]; then
+            echo "head branch '$HEAD_REF' does not match $BRANCH_RE" >&2
+            exit 1
+          fi
+
+      - name: Determine base for commit-range check
+        id: base
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="origin/${{ github.base_ref }}"
+            git fetch --quiet origin "${{ github.base_ref }}"
+          else
+            before="${{ github.event.before }}"
+            null_sha="0000000000000000000000000000000000000000"
+            if [ -n "$before" ] && [ "$before" != "$null_sha" ] && git cat-file -e "$before" 2>/dev/null; then
+              base="$before"
+            else
+              base="origin/main"
+              git fetch --quiet origin main
+            fi
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Validate commit message range
+        env:
+          BASE_REF: ${{ steps.base.outputs.base }}
+        run: |
+          set -euo pipefail
+          echo "cz check --rev-range ${BASE_REF}..HEAD"
+          uvx --from "commitizen==${CZ_VERSION}" cz check --rev-range "${BASE_REF}..HEAD"
