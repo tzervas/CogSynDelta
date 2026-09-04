@@ -308,6 +308,20 @@ for cap in capabilities:
 
 We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
+Before your first commit, install the pre-commit hooks once so formatting,
+ruff, mypy, shellcheck, yamllint, and commit-message checks run locally:
+
+```bash
+uv run pre-commit install
+uv run pre-commit install --hook-type commit-msg
+```
+
+Then run the same lint/format/shellcheck/yamllint gate CI enforces with:
+
+```bash
+./scripts/lint.sh
+```
+
 Key areas:
 - New compute backends (quantum, neuromorphic, photonic)
 - Additional model sections (brain regions)

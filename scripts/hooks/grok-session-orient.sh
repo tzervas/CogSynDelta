@@ -11,6 +11,8 @@ echo_msg "root=$root"
 
 protected="${CSD_PROTECTED_BRANCHES:-main staging develop dev}"
 is_protected=0
+# Word-splitting $protected on spaces is the point: it's a space-separated
+# list of branch-name patterns to iterate over, not a single value.
 # shellcheck disable=SC2086
 for pat in $protected; do
   # shellcheck disable=SC2254
