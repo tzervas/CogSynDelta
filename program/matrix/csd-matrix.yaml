@@ -186,6 +186,25 @@ regions:
       test-quant: >-
         {python} scripts/csd-benchmark.py --regions {region} --state {state} --quantized {quantized_path}
         --quant-receipt {quant_receipt} --train-receipt {train_receipt}
+      # NOT RENDERABLE UNDER TODAY'S HARNESS CONTEXT, and that is a tracked gap, not an
+      # accident (H4). `model_matrix.cli._build_plan_fn` injects `python`, `pythonpath`,
+      # `state`, `train_receipt`, `eval_receipt`, `quant_receipt` and `quantized_path` on
+      # top of the cell's own vars -- `hub_repo`, `hub_branch` and `base_ref` are none of
+      # those, so `render_template` raises `unresolved key 'hub_repo'`. It does not abort
+      # a run today (`cmd_run` launches only `gpu: true` stages) and it does not abort
+      # `plan` (which renders nothing), but it WILL the moment publish is driven from the
+      # harness. Two things have to land, in either order:
+      #   - harness round 4 injects {hub_repo, hub_branch, base_ref, variant_id} into the
+      #     publish context; `publish.repo_pattern` and `publish.base_ref` below already
+      #     carry the values it would compute them from;
+      #   - CSD's A2: `scripts/csd-publish-checkpoint.py` on this branch accepts
+      #     --region/--receipt/--eval-receipt/--quant-receipt/--repo/--dry-run and NOT
+      #     --revision/--base-ref, so cutting a branch from `variants/base` (DESIGN.v2
+      #     §4.2, the fix for a branch inheriting main's files) is unimplemented.
+      # The template names the contract both must satisfy rather than being trimmed to
+      # what runs today, which would silently drop the base-ref requirement H1 exists for.
+      # `tests/test_matrix_config.py` pins the exact unresolved key set so it cannot grow
+      # unnoticed.
       publish: >-
         {python} scripts/csd-publish-checkpoint.py --region {region} --repo {hub_repo}
         --receipt {train_receipt} --eval-receipt {eval_receipt} --quant-receipt {quant_receipt}

@@ -389,3 +389,113 @@ def test_the_collect_coupling_guard_fires_on_the_half_flipped_config() -> None:
     assert _collect_coupling_violation(raw) == (
         "collect.requires is ['quantize'], expected ['test-quant']"
     )
+
+
+# --------------------------------------------------- H4: what the command templates need
+
+# Exactly what `model_matrix.cli._build_plan_fn` puts into the render context on top of
+# the cell's own vars, read off that function (harness `feat/harness`). `train_receipt`,
+# `eval_receipt`, `quant_receipt` and `quantized_path` appear only once the predecessor
+# stage has recorded a receipt, which is the normal case by the time a stage renders.
+HARNESS_INJECTED_KEYS = frozenset(
+    {
+        "python",
+        "pythonpath",
+        "state",
+        "train_receipt",
+        "eval_receipt",
+        "quant_receipt",
+        "quantized_path",
+    }
+)
+
+# Keys the harness does NOT inject today. DESIGN.v2 §4.2/§4.4 needs them for publish and
+# harness round 4 is where they arrive; `publish.repo_pattern` / `publish.base_ref` in
+# this config are what they would be computed from.
+PENDING_HUB_KEYS = frozenset({"hub_repo", "hub_branch", "base_ref", "variant_id"})
+
+# Dropped from a cell's vars by `expand_region_cells`'s own exclusion list, so a template
+# may not reference them even though they are region keys.
+_NOT_CELL_VARS = frozenset(
+    {
+        "axes",
+        "budgets",
+        "budget_axes",
+        "budget_axes_why",
+        "exclude",
+        "derive",
+        "commands",
+        "env",
+        "hosts",
+        "primary_metric",
+        "references",
+        "eval_key",
+        "gates_read",
+        "extra_columns",
+        "axis_short",
+        "variance_axes",
+        "quantized_artifact_metric",
+        "followup",
+        "finetune",
+        "keep",
+        "corpus_fingerprint_pin",
+    }
+)
+
+
+def _cell_var_names(merged: dict[str, Any]) -> set[str]:
+    """Mirror of `expand_region_cells`'s `base_vars` + axis values + `derive` results."""
+    names = {k for k in merged if k not in _NOT_CELL_VARS}
+    names.add("region")
+    names |= set(merged.get("axes", {}))
+    names |= set(merged.get("derive", {}))
+    for spec in merged.get("axes", {}).values():
+        if isinstance(spec, dict):
+            for overrides in spec.values():
+                names |= set(overrides)
+    return names
+
+
+def _placeholders(template: str) -> set[str]:
+    import string
+
+    return {field for _, field, _, _ in string.Formatter().parse(template) if field is not None}
+
+
+def _unresolvable(merged: dict[str, Any], stage: str) -> set[str]:
+    known = _cell_var_names(merged) | HARNESS_INJECTED_KEYS
+    return _placeholders(merged["commands"][stage]) - known
+
+
+def test_every_gpu_stage_template_renders_under_the_live_harness_context() -> None:
+    """H4. train/test/quantize/test-quant are the stages `cmd_run` actually launches;
+    an unresolved key there is a `PlanBuildError` that fails the cell."""
+    for name, merged in _merged_regions(_raw()).items():
+        for stage in ("train", "test", "quantize", "test-quant"):
+            assert _unresolvable(merged, stage) == set(), (
+                f"region {name!r} stage {stage!r} references keys the harness does not "
+                f"inject: {sorted(_unresolvable(merged, stage))}"
+            )
+
+
+def test_publish_needs_exactly_the_four_hub_keys_and_nothing_else() -> None:
+    """H4, pinned rather than waved at: publish is the ONE template that does not render
+    today, and what it is missing is exactly the hub key set harness round 4 will inject.
+    If it ever needs a fifth key, this fails instead of the key silently joining the
+    backlog."""
+    for name, merged in _merged_regions(_raw()).items():
+        missing = _unresolvable(merged, "publish")
+        assert missing <= PENDING_HUB_KEYS, (
+            f"region {name!r} publish template needs {sorted(missing - PENDING_HUB_KEYS)}, "
+            "which no one has committed to injecting"
+        )
+        assert missing == {"hub_repo", "hub_branch", "base_ref"}
+
+
+def test_the_template_key_guard_fires_on_an_uninjected_key() -> None:
+    """MUTATION. Add a placeholder nobody supplies to the train template and assert the
+    checker reports it -- the same shape as publish's real gap."""
+    raw = copy.deepcopy(_raw())
+    raw["regions"]["defaults"]["commands"]["train"] += " --nonsense {no_such_key}"
+    merged = _merged_regions(raw)["code"]
+    assert _unresolvable(merged, "train") == {"no_such_key"}
