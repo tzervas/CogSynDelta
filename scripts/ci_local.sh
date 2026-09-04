@@ -4,12 +4,22 @@
 # Default: OWN venv at .venv-ci (Python 3.12, CUDA torch from pyproject cu128); never
 #          the shared project .venv, and NOT overridable via UV_PROJECT_ENVIRONMENT --
 #          see the isolation comment below for why that has to be unconditional.
-# --cpu:   CI-identical CPU torch (--no-sources + pytorch.org/whl/cpu).
-# --poc:   skip full tests/ (only poc-ci surface + CLI smoke).
-# --pre-commit: also run pre-commit --all-files (CI job, not a required check).
+# --cpu:           CI-identical CPU torch (--no-sources + pytorch.org/whl/cpu).
+# --poc:           skip full tests/ (only poc-ci surface + CLI smoke).
+# --no-pre-commit: skip the lint gate below (default: it runs).
 #
 # Why: ruff S105, quality docstrings, and Python-floor drift landed on GitHub
 # before we ran the same commands locally. This script is the pre-push gate.
+#
+# 2026-09-04: the lint gate (`bash scripts/lint.sh`) now runs BY DEFAULT instead of
+# behind an opt-in `--pre-commit` flag. PR #33 (CI task 7597) landed two pydocstyle
+# D209 violations that the tracked `.githooks/pre-push` hook did not catch: it calls
+# this script with no flags, which used to mean the lint gate never ran locally at
+# all -- silently narrower than CI's "Lint gate (scripts/lint.sh)" job, which
+# .github/workflows/ci.yml lists as a REQUIRED merge context. A required CI check
+# must not be able to pass locally while failing on the server. `--no-pre-commit`
+# stays for a deliberate, fast WIP loop; like `.githooks/pre-push`'s own
+# `--no-verify`, it is documented so it stays visible, not to encourage routine use.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,14 +31,14 @@ PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 
 CPU_SYNC=0
 POC_ONLY=0
-RUN_PRECOMMIT=0
+RUN_PRECOMMIT=1
 for arg in "$@"; do
     case "$arg" in
         --cpu) CPU_SYNC=1 ;;
         --poc) POC_ONLY=1 ;;
-        --pre-commit) RUN_PRECOMMIT=1 ;;
+        --no-pre-commit) RUN_PRECOMMIT=0 ;;
         -h|--help)
-            echo "usage: $0 [--cpu] [--poc] [--pre-commit]"
+            echo "usage: $0 [--cpu] [--poc] [--no-pre-commit]"
             exit 0
             ;;
         *)
@@ -266,7 +276,10 @@ if [[ "${POC_ONLY}" -eq 0 ]]; then
 fi
 
 if [[ "${RUN_PRECOMMIT}" -eq 1 ]]; then
-    run "pre-commit --all-files" uvx pre-commit run --all-files
+    # Exactly CI's "Lint gate (scripts/lint.sh)" job (.github/workflows/ci.yml), a
+    # required merge context -- not a reimplementation of it, so it cannot drift from
+    # what that job actually runs.
+    run "lint gate (scripts/lint.sh)" bash scripts/lint.sh
 fi
 
 echo
