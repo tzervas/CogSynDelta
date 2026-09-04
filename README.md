@@ -316,6 +316,17 @@ uv run pre-commit install
 uv run pre-commit install --hook-type commit-msg
 ```
 
+**If your clone has `core.hooksPath` set to `.githooks`** (`git config --get
+core.hooksPath`; this is the case for clones set up under this project's
+agent-worktree workflow, where hook directories are shared across worktrees),
+the commands above will fail with "Cowardly refusing to install hooks with
+`core.hooksPath` set" — pre-commit refuses to install itself over another
+hooks manager. In that case the tracked `.githooks/pre-commit` (ruff check
+--fix + ruff format + git-secrets on staged Python) and `.githooks/pre-push`
+(the full `scripts/ci_local.sh` gate) are already active on clone and there is
+nothing further to install; skip straight to running `./scripts/lint.sh`
+below. Only run `uv run pre-commit install` if `core.hooksPath` is unset.
+
 Then run the same lint/format/shellcheck/yamllint gate CI enforces with:
 
 ```bash
