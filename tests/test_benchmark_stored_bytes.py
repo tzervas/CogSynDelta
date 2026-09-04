@@ -237,9 +237,9 @@ def test_fp32_receipt_reports_weights_only_bytes_even_with_a_quant_receipt_prese
     assert rec_q.provenance["stored_bytes_definition"] == "weights-only"
 
     matrix_ratio = rec_fp32.metrics["eff.stored_mb"] / rec_q.metrics["eff.stored_mb"]
-    assert matrix_ratio == pytest.approx(quant_receipt["compression_ratio"], rel=1e-6), (
+    assert matrix_ratio == pytest.approx(quant_receipt["quant.compression_ratio"], rel=1e-6), (
         f"fp32/eval-quantized stored_mb ratio ({matrix_ratio!r}) must equal the quant "
-        f"receipt's own compression_ratio ({quant_receipt['compression_ratio']!r}) -- "
+        f"receipt's own quant.compression_ratio ({quant_receipt['quant.compression_ratio']!r}) -- "
         "both receipts must count bytes the same way the quantizer does"
     )
 
@@ -305,6 +305,9 @@ def test_memory_v2_stored_bytes_match_quantizers_own_definition_and_ratio() -> N
         "meant to be smaller than the fp32 model"
     )
 
+    # This fixture is the frozen real 2026-09-03 receipt (v1 field names, no `quant.`
+    # prefix) -- unlike the live-generated receipt above, it predates the metrics-v2
+    # rename and is never regenerated, so it stays read as `compression_ratio`.
     matrix_ratio = fp32_stored_mb / q_stored_mb
     assert matrix_ratio == pytest.approx(quant_receipt["compression_ratio"], rel=1e-6), (
         f"fp32/eval-quantized stored_mb ratio ({matrix_ratio!r}) must equal the quant "

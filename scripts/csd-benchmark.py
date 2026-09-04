@@ -337,8 +337,12 @@ def _metric_groups(battery_id: str, seed: int) -> dict:
 
 def _print_battery(res: BenchmarkResult, *, size_note: str) -> None:
     r, e, rep = res.ranking, res.efficiency, res.representation
+    # `map` is deliberately not printed: metrics-v2 §3.2 retires it as a displayed
+    # column on this closed-pool battery (it is always == `mrr` here -- see
+    # `eval/benchmark.py`'s `benchmark_embeddings` comment) and `res.ranking` no
+    # longer carries a "map" key at all.
     print(
-        f"    rank  r@1={r['recall@1']:.4f} ndcg@10={r['ndcg@10']:.4f} map={r['map']:.4f}",
+        f"    rank  r@1={r['recall@1']:.4f} ndcg@10={r['ndcg@10']:.4f} mrr={r['mrr']:.4f}",
         flush=True,
     )
     print(
@@ -347,8 +351,11 @@ def _print_battery(res: BenchmarkResult, *, size_note: str) -> None:
         f"{e.get('throughput_per_s', 0):.0f}/s",
         flush=True,
     )
+    # `effective_rank` -> `effective_rank_entropy`: metrics-v2 §3.1 canonical name
+    # (`repr.effective_rank_entropy`); `res.representation` carries only the renamed
+    # key (see `eval/benchmark.py`'s `benchmark_embeddings`).
     print(
-        f"    repr  anisotropy={rep['anisotropy']:.4f}  eff_rank={rep['effective_rank']:.1f}"
+        f"    repr  anisotropy={rep['anisotropy']:.4f}  eff_rank={rep['effective_rank_entropy']:.1f}"
         f"/{rep['dimensions']:.0f} ({rep['effective_rank_entropy_ratio']:.1%})  "
         f"align={rep['alignment']:.4f} unif={rep['uniformity']:.4f}",
         flush=True,
