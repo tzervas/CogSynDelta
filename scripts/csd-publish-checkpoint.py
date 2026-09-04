@@ -143,7 +143,10 @@ if _SRC not in sys.path:
 from cogsyndelta.cards.methodology import (  # noqa: E402 -- needs sys.path set above
     METHODOLOGY_DOC,
     METRIC_METHODOLOGY,
+    CardError,
+    methodology_key,
     normalize_quant_receipt_v1,
+    require_documented,
 )
 
 DEFAULT_OWNER = "tzervas"
@@ -859,13 +862,15 @@ def _card_metric_keys(
         for k in eval_receipt.get("gates", {}):
             keys[k] = None
         for k in eval_receipt.get("metrics", {}):
-            if k.startswith("repr."):
-                keys[k[len("repr.") :]] = None
-            # `quant.artifact_recall@1` lives in an eval-quantized receipt's `metrics`
-            # (not prefix-stripped like repr.* -- it is already the canonical g7 §3.1
-            # name, not a family-prefixed one this table strips a prefix from).
-            elif k.startswith("quant."):
-                keys[k] = None
+            # `methodology_key` (cogsyndelta.cards.methodology) is the SAME repr./rank./
+            # eff. prefix-strip `cogsyndelta.cards.tables` uses to key into
+            # METRIC_METHODOLOGY -- this table only ever prints the repr.* family (never
+            # rank./eff.*, which the newer cogsyndelta.cards library prints instead), so
+            # only that prefix is selected here; `quant.artifact_recall@1` is passed
+            # through unstripped (methodology_key leaves quant.* alone -- it is already
+            # the canonical g7 §3.1 name, not a family-prefixed shorthand).
+            if k.startswith("repr.") or k.startswith("quant."):
+                keys[methodology_key(k)] = None
     for k in train_receipt.get("contamination", {}):
         if k != "examples":
             keys[k] = None
@@ -972,14 +977,24 @@ def _methodology_section(
             `METRIC_METHODOLOGY` empty and asserting the card build then fails.
     """
     keys = _card_metric_keys(train_receipt, eval_receipt, quant_receipt)
-    missing = [k for k in keys if k not in METRIC_METHODOLOGY]
-    if missing:
-        raise PublishAbortError(
-            f"card would print metric key(s) {sorted(missing)} with no entry in "
-            "METRIC_METHODOLOGY -- refusing to publish a number with no stated "
-            f"definition/battery/source. Add an entry (and, if it names a new formula, "
-            f"a section to {METHODOLOGY_DOC}) before publishing."
-        )
+    # Delegates the "is every key documented" check itself to
+    # `cogsyndelta.cards.methodology.require_documented` -- the SAME missing-key
+    # computation `cogsyndelta.cards.tables`'s build_* functions call, rather than a
+    # second, hand-rolled `[k for k in keys if k not in METRIC_METHODOLOGY]` that could
+    # silently drift from it. `methodology=METRIC_METHODOLOGY` passes THIS MODULE's own
+    # bound name (imported above, not re-imported here), so a test's
+    # `monkeypatch.setattr(mod, "METRIC_METHODOLOGY", {...})` -- which reassigns that
+    # name in this module's namespace -- is exactly what this lookup sees; passing
+    # `methodology=None` instead would read `cogsyndelta.cards.methodology`'s own
+    # (unpatched) global, defeating that test's monkeypatch entirely (see
+    # `cogsyndelta.cards.methodology`'s own module docstring for why this distinction
+    # matters). `CardError` is translated to this script's own `PublishAbortError`
+    # rather than propagated, so every caller of `build_card`/`build_plan` keeps seeing
+    # one exception type for every refusal this script makes.
+    try:
+        require_documented(keys, methodology=METRIC_METHODOLOGY)
+    except CardError as e:
+        raise PublishAbortError(f"{e} (publishing, not rendering)") from e
     lines = [
         "## How these numbers were produced",
         "",
