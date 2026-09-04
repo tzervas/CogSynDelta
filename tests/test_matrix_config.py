@@ -499,3 +499,74 @@ def test_the_template_key_guard_fires_on_an_uninjected_key() -> None:
     raw["regions"]["defaults"]["commands"]["train"] += " --nonsense {no_such_key}"
     merged = _merged_regions(raw)["code"]
     assert _unresolvable(merged, "train") == {"no_such_key"}
+
+
+# ---------------------------------------- H3/L2: the glob must match the real filename
+
+
+def test_the_test_quant_glob_matches_what_receipt_write_really_names_the_file() -> None:
+    """H3/L2. `receipt_kind: eval-quant` in the config and `kind="eval-quantized"` in
+    this repo are not a mismatch -- the harness classifies on
+    `provenance.eval_target == "quantized"` (`model_matrix.receipts.kind_of`), never on
+    the `kind` string. The FILENAME is what has to agree, because `Receipt.write` builds
+    it from `kind` and the config selects receipts by glob."""
+    import fnmatch
+    import tempfile
+
+    from cogsyndelta.pipeline.receipt import Producer, Receipt
+
+    raw = _raw()
+    glob = raw["stages"]["test-quant"]["receipt"].replace("{region}", "memory")
+    rec = Receipt(
+        producer=Producer("cogsyndelta", "memory", "dense-transformer"),
+        stage="eval",
+        kind="eval-quantized",
+        provenance={"eval_target": "quantized"},
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        written = rec.write(Path(tmp) / "receipts")
+        relative = f"receipts/{written.name}"
+    assert fnmatch.fnmatch(relative, glob), f"{relative!r} does not match {glob!r}"
+
+    # And the two eval globs must be DISJOINT. `receipts/cogsyndelta-{region}-eval-*.json`
+    # -- the fp32 stage's pattern before this commit -- also matched
+    # `...-eval-quantized-<stamp>.json`, so the fp32 stage's declared pattern claimed the
+    # quantized stage's receipts as well. `-eval-2*` (the UTC stamp's leading digit) is
+    # what separates them.
+    fp32_glob = raw["stages"]["test"]["receipt"].replace("{region}", "memory")
+    assert not fnmatch.fnmatch(relative, fp32_glob), (
+        f"the fp32 glob {fp32_glob!r} also matches the quantized receipt {relative!r}"
+    )
+    fp32 = Receipt(
+        producer=Producer("cogsyndelta", "memory", "dense-transformer"),
+        stage="eval",
+        kind="eval",
+        provenance={"eval_target": "fp32"},
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        fp32_written = fp32.write(Path(tmp) / "receipts")
+        fp32_relative = f"receipts/{fp32_written.name}"
+    assert fnmatch.fnmatch(fp32_relative, fp32_glob)
+    assert not fnmatch.fnmatch(fp32_relative, glob)
+
+
+def test_the_glob_guard_fires_when_the_receipt_kind_is_renamed() -> None:
+    """MUTATION. Rename `kind` to DESIGN.v2 §6.2's stale `evalq` spelling and assert the
+    config's glob stops matching -- which is what renaming this field would really cost,
+    even though the harness's own classification would be unaffected."""
+    import fnmatch
+    import tempfile
+
+    from cogsyndelta.pipeline.receipt import Producer, Receipt
+
+    glob = _raw()["stages"]["test-quant"]["receipt"].replace("{region}", "memory")
+    rec = Receipt(
+        producer=Producer("cogsyndelta", "memory", "dense-transformer"),
+        stage="eval",
+        kind="evalq",
+        provenance={"eval_target": "quantized"},
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        written = rec.write(Path(tmp) / "receipts")
+        relative = f"receipts/{written.name}"
+    assert not fnmatch.fnmatch(relative, glob)

@@ -103,7 +103,13 @@ stages:
     kind: eval
     gpu: true
     receipt_kind: eval
-    receipt: "receipts/cogsyndelta-{region}-eval-*.json"
+    # `-eval-2*` (the UTC stamp's leading digit), NOT `-eval-*`: the looser glob also
+    # matched `cogsyndelta-{region}-eval-quantized-<stamp>.json`, so the fp32 stage's
+    # own pattern claimed the quantized stage's receipts too. The harness does not
+    # currently select by this glob -- `model_matrix.receipts.select_receipt` globs
+    # `*.json` and filters on `kind_of` -- but a pattern that is wrong on paper is a
+    # trap for the first reader (or tool) that does trust it.
+    receipt: "receipts/cogsyndelta-{region}-eval-2*.json"
     gate: "$.gates.*"
     bound_to: train
     complete_on_gate_fail: true
@@ -121,7 +127,13 @@ stages:
     kind: eval
     gpu: true
     receipt_kind: eval-quant
-    receipt: "receipts/cogsyndelta-{region}-eval-quantized-*.json" # Receipt.write() filenames from `kind`; kind=eval-quantized
+    # `receipt_kind: eval-quant` above and CSD's `kind="eval-quantized"` are NOT a
+    # mismatch (H3/L2): the harness classifies on `provenance.eval_target == "quantized"`
+    # (`model_matrix.receipts.kind_of`), never on the receipt's own `kind` string, so an
+    # `eval-quantized` receipt classifies as `eval-quant` here. The glob below matches
+    # what `Receipt.write()` really names the file (it builds the filename from `kind`);
+    # DESIGN.v2 §6.2's `evalq` spelling is the stale side and is not what to match.
+    receipt: "receipts/cogsyndelta-{region}-eval-quantized-*.json"
     gate: "$.gates.*"
     bound_to: quantize
     complete_on_gate_fail: true

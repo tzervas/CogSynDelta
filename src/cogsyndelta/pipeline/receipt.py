@@ -80,6 +80,15 @@ class Receipt:
     receipt written before this field existed, or a stage with no finer distinction to
     make); `write()` falls back to `stage` for the filename in that case, so this is
     additive and every existing caller is unaffected.
+
+    The matrix harness does NOT classify on this string. `model_matrix.receipts.kind_of`
+    reads `provenance.eval_target == "quantized"` and reports `eval-quant`, so this
+    project's `"eval-quantized"` and the harness's `receipt_kind: eval-quant` describe the
+    same receipt and neither has to be renamed to match the other (H3/L2). What DOES have
+    to agree is the FILENAME: `program/matrix/csd-matrix.yaml`'s `test-quant.receipt` glob
+    matches `cogsyndelta-{region}-eval-quantized-*.json`, which is what `write()` below
+    produces from this field -- so renaming `kind` silently breaks receipt selection in
+    the matrix even though classification would still work.
     """
 
     @property
