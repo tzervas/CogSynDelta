@@ -261,9 +261,7 @@ class Tools:
         rec.setdefault("evidence", "csd_autodev_forgejo_wait")
         return rec
 
-    def csd_autodev_forgejo_comment(
-        self, repo: str, number: int, body: str
-    ) -> dict[str, Any]:
+    def csd_autodev_forgejo_comment(self, repo: str, number: int, body: str) -> dict[str, Any]:
         """PR comment as autodev. Lab JSON wrap. No OWUI overlay of GitHub."""
         blocked = self._forbid_github(repo, body)
         if blocked:
@@ -279,9 +277,7 @@ class Tools:
         rec.setdefault("evidence", "csd_autodev_forgejo_comment")
         return rec
 
-    def csd_autodev_merge_gate(
-        self, repo: str, sha: str, number: int
-    ) -> dict[str, Any]:
+    def csd_autodev_merge_gate(self, repo: str, sha: str, number: int) -> dict[str, Any]:
         """Merge-when-green gate. Skip or missing runner is not green. Does not merge PR 1."""
         blocked = self._forbid_github(repo, sha)
         if blocked:
@@ -346,9 +342,7 @@ class Tools:
             }
         rec = self._call("POST", "/api/autodev/priority", {"action": act})
         if rec.get("http") == 404:
-            rec = self._call(
-                "POST", "/api/steer", {"autodev_priority": act == "on"}
-            )
+            rec = self._call("POST", "/api/steer", {"autodev_priority": act == "on"})
             rec.setdefault("notes", "priority via POST /api/steer fallback")
         rec.setdefault("evidence", "csd_autodev_priority")
         return rec
