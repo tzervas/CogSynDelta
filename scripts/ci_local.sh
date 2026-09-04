@@ -152,7 +152,17 @@ run "ruff format" uvx "ruff@${RUFF_VERSION}" format --check \
     src/ tests/ benchmarks/ scripts/ examples/
 # Project venv already has mypy + types-PyYAML (same as CI after uv tool install --with).
 # uvx --with is an uvx flag, not a mypy flag.
-run "mypy src/" uv run --no-sync mypy src/
+#
+# `scripts/csd-benchmark.py` is named EXPLICITLY even though [tool.mypy] excludes
+# `scripts/` (L1). mypy's `exclude` filters directory crawling, not paths given on the
+# command line -- verified by planting a deliberate `return "not an int"` in this file
+# and watching `mypy --config-file pyproject.toml scripts/csd-benchmark.py` report it --
+# so this really does typecheck. The rest of the scripts tree stays excluded on purpose
+# (shell wrappers, one-off tools, no annotations); this one file writes the receipts the
+# matrix pipeline binds and publishes on, so it is worth the same gate `src/` gets.
+# Adding it caught a real mismatch on the first run: `Receipt.artifacts` was annotated
+# `dict[str, str]` while both eval paths wrote nested `source_*_receipt` records.
+run "mypy src/ + benchmark script" uv run --no-sync mypy src/ scripts/csd-benchmark.py
 
 # Quality Score Check (ci.yml) — stdlib only, --no-project.
 run "quality >=90" uv run --no-project python scripts/quality_control.py src/ --fail-under 90

@@ -66,7 +66,19 @@ class Receipt:
     """What `metrics` should be read against -- an untrained model, an fp32 reference."""
     gates: dict[str, bool] = field(default_factory=dict)
     """The producer's verdict. A run passes only if every gate is true."""
-    artifacts: dict[str, str] = field(default_factory=dict)
+    artifacts: dict[str, Any] = field(default_factory=dict)
+    """What this stage produced, and the hashes that bind the receipt to those bytes.
+
+    `Any` rather than `str` because two entries are deliberately NESTED records, not
+    scalars: `source_training_receipt` and `source_quant_receipt` are
+    `{"path": ..., "sha256": ...}` pairs, so an eval receipt names the predecessor
+    receipt it read AND the content hash of that receipt, not merely a mutable path.
+    The annotation said `dict[str, str]` while both eval paths had been writing those
+    records all along -- a mismatch nothing caught, because `scripts/` was outside the
+    typechecked surface (L1). Widening the annotation is the honest fix: flattening the
+    records would change a receipt shape that is already on disk, and dropping them
+    would lose the binding.
+    """
     provenance: dict[str, Any] = field(default_factory=dict)
     detail: dict[str, Any] = field(default_factory=dict)
     """Architecture-specific payload. Readers pass it through, they do not parse it."""
