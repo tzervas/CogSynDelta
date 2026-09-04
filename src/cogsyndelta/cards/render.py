@@ -323,7 +323,8 @@ def render_card(
             `scripts/csd-card.py`'s `--repo` are the two callers that resolve one).
 
     Returns:
-        The rendered card as a markdown string (YAML front matter + body).
+        The rendered card as a markdown string (YAML front matter + body), always
+        ending in exactly one trailing newline.
 
     Raises:
         CardError: an undocumented metric, a `metrics_schema` disagreement across the
@@ -451,4 +452,13 @@ def render_card(
     card = ModelCard.from_template(
         card_data, template_path=str(_template_path(kind)), **template_kwargs
     )
-    return str(card)
+    text = str(card)
+    # `jinja2.Template` (what `RepoCard.from_template` renders through) defaults to
+    # `keep_trailing_newline=False`, so it silently drops the single trailing newline
+    # every `templates/*.md.j2` file ends with -- `str(card)` above is missing it even
+    # though the template on disk has it. A file-ending hygiene hook (pre-commit's
+    # end-of-file-fixer, run by `scripts/lint.sh`) requires exactly one, so enforce it
+    # here rather than leaving every caller (and the golden fixture) to re-add it.
+    if not text.endswith("\n"):
+        text += "\n"
+    return text
