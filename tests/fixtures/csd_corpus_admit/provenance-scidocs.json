@@ -36,7 +36,7 @@
       "REQUIRE_LICENCE_TEXT": true,
       "SCHEMA_DEFECTS_BLOCK_ADMISSION": true
     },
-    "decided_at": "2026-09-04T00:35:39Z",
+    "decided_at": "2026-09-04T01:07:54Z",
     "policy_version": "2026-09-03.r3",
     "reasons": []
   },
@@ -94,7 +94,7 @@
   "licence_upstream_verbatim": "Full CC BY 4.0 legal-code text at the repo LICENSE file.",
   "mirror_url": "https://huggingface.co/datasets/BeIR/scidocs",
   "provenance_group": "s2orc",
-  "regenerated_from": "provenance.json.pre-r3",
+  "regenerated_from": "provenance.json.pre-r3.20260904T010754Z",
   "resolved_revision": "acebceec772628c6679d76d6cff30ad517d17f4e",
   "tool_version": "0.1.0",
   "total_bytes": 18777816,
