@@ -911,6 +911,48 @@ proof the token-aware objective helped. `e_retrain_gate` also explicitly does **
 (`src/cogsyndelta/eval/beir_fiqa.py:547-550`) -- recorded as `"not measured; out of scope"`
 in the gate's own output, not silently omitted.
 
+### 7.5 Explicit field names for `beir.*` and `token.*` surfaces (schema v2)
+
+`g7-latent-eval-metrics.md` §3.1 (2026-09-04) assigns canonical, explicitly-named receipt
+fields to two surfaces this section and §2.7/§9 already describe by formula but not, until
+now, by a stamped name distinct from every other prefix in this document.
+
+- **`beir.recall@1` / `beir.recall@10` / `beir.recall@100` / `beir.mrr`** -- exactly §7.2's
+  `rank_metrics()` numbers, renamed under the `beir.` prefix instead of the bare
+  `recall@k`/`mrr` keys that module returns on its own (those bare names are what collide,
+  by spelling only, with §3.1/§3.2's closed-pool `rank.recall@k`/`rank.mrr` -- see §7.2(f)
+  and §10). `to_beir_metrics(pool, metrics)`
+  (`src/cogsyndelta/eval/beir_fiqa.py`) performs the rename and stamps two provenance
+  fields alongside it: `pooling` (`fiqa_corpus` for `pool="corpus"`, `fiqa_split` for
+  `pool="split"`) and `battery_id` (`beir_fiqa_corpus` / `beir_fiqa_split`) -- the fields a
+  schema-v2 comparison must match before treating two numbers as the same measurement
+  (§10). **`beir.ndcg@10` is a documented placeholder, not a number**: TREC-style nDCG
+  over FiQA's multi-relevant qrels is not implemented anywhere in this project today --
+  `rank_metrics()` computes recall@k/MRR only (its own module docstring: "No nDCG"). A
+  separate bridge outside this repository is expected to compute it via `pytrec_eval`
+  against the identical qrels and write it into a receipt's `detail.external`
+  (`g7-latent-eval-metrics.md` §4) -- never into `metrics["rank.ndcg@10"]` (that key
+  already names the closed-pool formula, §3.3) and never fabricated here as a stand-in
+  value.
+- **`token.pooled_pr_rank`, `token.global_pr_rank`, `token.pooled_entropy_rank`,
+  `token.global_entropy_rank`, `token.pr_rank_ratio`** -- explicit names for the five
+  numbers §2.7/§9 already document as `_final_block_rank_stats`'s `pooled_pr_rank`,
+  `token_global_pr_rank`, `pooled_entropy_rank`, `token_global_entropy_rank`, and the W4
+  gate's `token_global_pr_rank / pooled_pr_rank` ratio. `token_rank_surfaces()`
+  (`src/cogsyndelta/eval/beir_fiqa.py`) performs the rename, grouping the pooled pair
+  under `pooling: "anchor_pooled"` and the token-global pair under `pooling:
+  "anchor_token_global"` (both `battery_id: "train_token_rank"`), and computes
+  `token.pr_rank_ratio` through `refuse_cross_family_rank_ratio()` -- a guard that raises
+  rather than divide a `_pr_rank` field by an `_entropy_rank` field or vice versa. This
+  guard is local to this module and does **not** replace the project-wide schema
+  refuse-predicate (§10; `g7-latent-eval-metrics.md` §3.3): that predicate matches
+  `battery_id`/`pooling`/schema/checkpoint-sha, which cannot by itself catch a PR-vs-
+  entropy conflation, because a PR field and an entropy field measured on the identical
+  holdout legitimately share both. `gate_e_retrain_gate`'s `pr_rank_clause` additionally
+  carries `token.pr_rank_ratio` (identical value to its existing `ratio` key) and
+  `token.pr_rank_ratio_formula` beside its long-standing fields, so neither name is a
+  breaking rename of the other.
+
 ---
 
 ## 8. The training objective the metrics are measured relative to
