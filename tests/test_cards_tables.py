@@ -256,8 +256,11 @@ def test_best_column_higher_is_better_default() -> None:
 
 def test_best_column_lower_is_better_for_latency() -> None:
     row = MetricRow(
-        key="eff.latency_p50_ms", variant=5.0, baseline=1.0, comparators={"other": 2.0}
-    )  # gitleaks:allow (metric-key fixture, not a credential)
+        key="eff.latency_p50_ms",
+        variant=5.0,
+        baseline=1.0,
+        comparators={"other": 2.0},  # gitleaks:allow
+    )
     assert _best_column(row) == "baseline"
 
 
