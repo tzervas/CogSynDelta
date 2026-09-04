@@ -17,6 +17,7 @@ same constructed receipt and shown to produce the wrong answer.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -139,3 +140,77 @@ def test_the_cli_exposes_the_waiver_and_threads_it_to_both_eval_paths() -> None:
     assert '"--allow-unbound-train-receipt"' in source
     # Both eval paths -- fp32 and quantized -- must receive it, not just the one.
     assert source.count("allow_unbound_train_receipt=args.allow_unbound_train_receipt") == 2
+
+
+# ------------------------------------------- M1 / DESIGN.v2 §6.1: which receipt, exactly
+
+
+def _write_receipts(state: Path, region: str, *names: str) -> list[Path]:
+    out = []
+    for name in names:
+        path = state / "receipts" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"region": region, "checkpoint_sha256": SHA_A}))
+        out.append(path)
+    return out
+
+
+def test_an_explicit_path_wins_over_a_newer_sibling(tmp_path: Path) -> None:
+    """DESIGN.v2 §6.1 names this case by name and the branch had no test for it: an
+    explicit `--train-receipt` must be used even when a NEWER receipt for the same
+    region sits in the same directory. That is the whole point of the flag."""
+    older, _newer = _write_receipts(
+        tmp_path, "probe", "probe-20260901T000000Z.json", "probe-20260903T235959Z.json"
+    )
+    assert mod._find_train_receipt("probe", tmp_path, older) == older
+
+
+def test_an_explicit_path_that_does_not_exist_is_a_refusal(tmp_path: Path) -> None:
+    """The explicit path stops the guessing; it must not fall back to guessing when it
+    is wrong."""
+    _write_receipts(tmp_path, "probe", "probe-20260901T000000Z.json")
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        mod._find_train_receipt("probe", tmp_path, tmp_path / "no" / "such.json")
+
+
+def test_one_candidate_and_no_explicit_path_still_works(tmp_path: Path) -> None:
+    """A bare `--regions foo` against a state root holding exactly one receipt is
+    unchanged -- the refusal below is about ambiguity, not about the flag being
+    mandatory."""
+    (only,) = _write_receipts(tmp_path, "probe", "probe-20260901T000000Z.json")
+    assert mod._find_train_receipt("probe", tmp_path) == only
+
+
+def test_no_candidates_returns_none(tmp_path: Path) -> None:
+    """`None` means "not found"; the caller prints that and skips the region."""
+    (tmp_path / "receipts").mkdir()
+    assert mod._find_train_receipt("probe", tmp_path) is None
+
+
+def test_several_candidates_and_no_explicit_path_is_a_refusal(tmp_path: Path) -> None:
+    """M1. `sorted(...)[-1]` silently bound the eval to whichever run finished last --
+    in a SHARED `--state` root, which is the situation A7 exists for and the one a
+    human running these scripts by hand is already in."""
+    older, newer = _write_receipts(
+        tmp_path, "probe", "probe-20260901T000000Z.json", "probe-20260903T235959Z.json"
+    )
+    with pytest.raises(mod.AmbiguousTrainReceiptError) as exc:
+        mod._find_train_receipt("probe", tmp_path)
+    message = str(exc.value)
+    # It must LIST them: a refusal that does not say what it refused between leaves the
+    # caller no way to write the flag it is being told to pass.
+    assert str(older) in message
+    assert str(newer) in message
+    assert "--train-receipt" in message
+
+
+def test_the_old_latest_glob_would_have_picked_the_newer_one(tmp_path: Path) -> None:
+    """MUTATION. The pre-fix expression, verbatim, on the same directory: it returns the
+    newer receipt with no indication that a choice was made."""
+    _older, newer = _write_receipts(
+        tmp_path, "probe", "probe-20260901T000000Z.json", "probe-20260903T235959Z.json"
+    )
+    pre_fix = sorted(tmp_path.glob("receipts/probe-2*.json"))[-1]
+    assert pre_fix == newer
+    with pytest.raises(mod.AmbiguousTrainReceiptError):
+        mod._find_train_receipt("probe", tmp_path)

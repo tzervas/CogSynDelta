@@ -51,6 +51,10 @@ def _regions_spec() -> dict:
     return {"REGIONS": mod.REGIONS, "_shards": mod._shards, "region_spec": mod.region_spec}
 
 
+class AmbiguousTrainReceiptError(RuntimeError):
+    """More than one training receipt matches, and nothing said which one to use."""
+
+
 def _find_train_receipt(
     region: str, state: Path, train_receipt_path: Path | None = None
 ) -> Path | None:
@@ -58,17 +62,41 @@ def _find_train_receipt(
 
     An explicit `train_receipt_path` (A7: a caller running many cells against one shared
     `--state` root names its own cell's receipt) is trusted outright and must exist --
-    the whole point of the explicit path is that this function stops guessing. With no
-    explicit path this falls back to the pre-existing latest-glob under `state`, so a
-    bare `--regions foo` invocation is unaffected: `None` means "not found", same as the
-    original behaviour.
+    the whole point of the explicit path is that this function stops guessing. An
+    explicit path therefore WINS over a newer sibling in the same directory; DESIGN.v2
+    §6.1 names that case specifically and `tests/test_benchmark_train_receipt_binding.py`
+    pins it.
+
+    With no explicit path and exactly one candidate, that candidate is used -- a bare
+    `--regions foo` against a fresh state root is unaffected. With no explicit path and
+    SEVERAL candidates this REFUSES and lists them (M1). The old behaviour was
+    `sorted(...)[-1]`: the lexicographically last name, which for a `%Y%m%dT%H%M%SZ`
+    stamp is the newest file, chosen silently. In a shared `--state` root -- the exact
+    situation A7 exists for, and the one a human running these scripts by hand is
+    already in -- that binds the eval to whichever run happened to finish most recently,
+    and the receipt records the resulting number as if it had been asked for. Live on
+    this fleet tonight: `--state /akula-data/csd --regions memory` picks the V1 receipt,
+    while the V2 receipt this branch's tests treat as production lives under a different
+    state root entirely.
+
+    Returns `None` when nothing matches, same as the original behaviour: the caller
+    prints "no training receipt" and skips the region.
     """
     if train_receipt_path is not None:
         if not train_receipt_path.is_file():
             raise FileNotFoundError(f"--train-receipt {train_receipt_path} does not exist")
         return train_receipt_path
     receipts = sorted(state.glob(f"receipts/{region}-2*.json"))
-    return receipts[-1] if receipts else None
+    if not receipts:
+        return None
+    if len(receipts) > 1:
+        listed = "\n  ".join(str(path) for path in receipts)
+        raise AmbiguousTrainReceiptError(
+            f"{len(receipts)} training receipts match region {region!r} under "
+            f"{state}/receipts and no --train-receipt was given:\n  {listed}\n"
+            "Pass --train-receipt PATH to name the one this eval is about."
+        )
+    return receipts[0]
 
 
 class UnboundTrainReceiptError(RuntimeError):
