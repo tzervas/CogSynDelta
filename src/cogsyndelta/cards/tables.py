@@ -153,6 +153,10 @@ def normalize_eval_metrics_v1(metrics: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_eval_gates_v1(gates: dict[str, Any]) -> dict[str, Any]:
+    """`gates` with every `EVAL_GATE_ALIASES_V1` v1 key ALSO present under its v2
+    name (copy, never overwrite -- same discipline as `normalize_eval_metrics_v1` /
+    `normalize_quant_receipt_v1`).
+    """
     out = dict(gates)
     for old, new in EVAL_GATE_ALIASES_V1.items():
         if old in out and new not in out:

@@ -335,6 +335,7 @@ def profile_latency(
     times.sort()
 
     def pct(q: float) -> float:
+        """Nearest-rank percentile `q` in `[0, 1]` of sorted `times` (`0.0` if empty)."""
         if not times:
             return 0.0
         idx = min(len(times) - 1, int(q * len(times)))
