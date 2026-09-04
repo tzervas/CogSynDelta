@@ -159,6 +159,38 @@ def test_every_card_kind_is_reachable_by_name() -> None:
     assert set(CARD_KINDS) == {"region_variant", "region_main", "memory", "placeholder", "composed"}
 
 
+def test_repo_prints_in_header_when_supplied(tmp_path: Path) -> None:
+    receipts = _full_fixture_receipts(tmp_path)
+    card = render_card(
+        "region_variant",
+        region="compress",
+        region_cfg=region_cfg(),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+        repo="tzervas/cogsyndelta-region-compress",
+    )
+    assert "repo `tzervas/cogsyndelta-region-compress`" in card
+
+
+def test_repo_omitted_by_default_is_byte_identical_to_golden(tmp_path: Path) -> None:
+    """Mutation-proof companion to the golden snapshot test: `repo=None` (the
+    default) must render nothing extra -- proven here by comparing the SAME fixture's
+    output with and without an explicit `repo=None`, not merely by omitting the
+    argument (which the golden test already does)."""
+    receipts = _full_fixture_receipts(tmp_path)
+    kwargs = {
+        "region": "compress",
+        "region_cfg": region_cfg(),
+        "receipts": receipts,
+        "files": {},
+        "budgets_root": tmp_path,
+    }
+    default_card = render_card("region_variant", **kwargs)
+    explicit_none_card = render_card("region_variant", repo=None, **kwargs)
+    assert default_card == explicit_none_card
+
+
 def test_unknown_kind_raises_card_error() -> None:
     with pytest.raises(CardError, match="unknown card kind"):
         render_card(

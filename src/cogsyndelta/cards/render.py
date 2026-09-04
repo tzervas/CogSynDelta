@@ -269,6 +269,7 @@ def render_card(
     files: dict[str, dict[str, Any]],
     comparators: dict[str, dict[str, Any]] | None = None,
     budgets_root: Path = DEFAULT_BUDGETS_ROOT,
+    repo: str | None = None,
 ) -> str:
     """Render one model card as markdown (front matter + body).
 
@@ -288,6 +289,12 @@ def render_card(
         budgets_root: passed through to `cogsyndelta.cards.sizes.build_size_report`;
             override only for a test (a `tmp_path` with no budget files, for a
             deterministic "no training peak recorded" result) or an alternate cluster.
+        repo: the Hub `owner/name` this card is destined for, printed in the header
+            line beside the licence/code-revision/metrics-schema summary -- `None`
+            (the default) omits it, leaving every existing render (and the golden
+            snapshot) byte-identical. Never derived here (this library does not decide
+            repo naming -- `scripts/csd-publish-checkpoint.py`'s `default_repo()` and
+            `scripts/csd-card.py`'s `--repo` are the two callers that resolve one).
 
     Returns:
         The rendered card as a markdown string (YAML front matter + body).
@@ -408,6 +415,11 @@ def render_card(
         ),
         # `memory` only (CARD SPEC: "region with the OD-17 status stated").
         "od17_status": region_cfg.get("od17_status", MEMORY_OD17_STATUS_DEFAULT),
+        # Optional, printed in the header line when supplied -- see this function's own
+        # `repo` parameter doc above. `None` renders nothing (every template guards it
+        # with `{% if repo %}`), which is why the golden snapshot (built with no `repo`
+        # argument) is unaffected by this field existing.
+        "repo": repo,
     }
 
     card = ModelCard.from_template(

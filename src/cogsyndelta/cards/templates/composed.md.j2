@@ -4,7 +4,7 @@
 
 # CogSynDelta
 
-`{{ region_cfg.get("licence_tier") or "licence: see below" }}` · code revision `{{ code_revision }}` · metrics schema `{{ metrics_schema }}`
+`{{ region_cfg.get("licence_tier") or "licence: see below" }}` · code revision `{{ code_revision }}` · metrics schema `{{ metrics_schema }}`{% if repo %} · repo `{{ repo }}`{% endif %}
 
 **Proof-of-concept status.** The composed CogSynDelta mind: a router over the
 individually-pretrained faculty regions (see each region's own model card --

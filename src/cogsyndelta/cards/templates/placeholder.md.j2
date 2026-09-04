@@ -4,6 +4,10 @@
 
 # CogSynDelta -- {{ region }} (placeholder)
 
+{% if repo -%}
+`repo {{ repo }}`
+
+{% endif -%}
 **weights: none.** This repository holds no trained checkpoint. It exists to reserve
 the name in the `tzervas/cogsyndelta-*` namespace; nothing here should be loaded,
 fine-tuned, or cited as a CogSynDelta region.

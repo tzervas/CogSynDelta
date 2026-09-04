@@ -4,7 +4,7 @@
 
 # CogSynDelta -- memory
 
-`{{ region_cfg.get("licence_tier") or "licence: see below" }}` · code revision `{{ code_revision }}` · metrics schema `{{ metrics_schema }}`
+`{{ region_cfg.get("licence_tier") or "licence: see below" }}` · code revision `{{ code_revision }}` · metrics schema `{{ metrics_schema }}`{% if repo %} · repo `{{ repo }}`{% endif %}
 
 One faculty region of the composed CogSynDelta mind -- the region MERGE of `compress`
 and `retrieve` (per `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, Rider 1: a merge
@@ -66,6 +66,7 @@ git checkout {{ code_revision }}
 uv sync --group dev
 ```
 
+<!-- exec -->
 ```python
 import torch
 from cogsyndelta.regions.text_encoder import TextEncoder  # or the region's own loader
@@ -75,6 +76,7 @@ state = torch.load("final.pt", map_location="cpu", weights_only=True)
 ```
 
 {% if has_quant -%}
+<!-- exec -->
 ```python
 from cogsyndelta.quant.ptq import load_packed_artifact, unpack_state_dict
 
