@@ -1,103 +1,104 @@
 {
-    "admission": {
-        "admitted": true,
-        "allow_nc": false,
-        "constants": {
-            "ADMISSIBLE_VERDICTS": [
-                "ATTRIBUTION",
-                "NC",
-                "PERMISSIVE_OK",
-                "SHARE_ALIKE"
-            ],
-            "ENRICHMENT_NONE_ADMISSIBLE_MARKER": "NONE ADMISSIBLE",
-            "ENRICHMENT_REFUSAL_MARKER_RE": "\\bREFUSE[SD]?\\b",
-            "EVAL_ONLY_TAG": "EVAL-ONLY",
-            "FORBIDDEN_REDISTRIBUTE_FLAGS": [
-                "nd"
-            ],
-            "FULL_CONTENT_GRANT_SCOPES": [
-                "whole_corpus",
-                "whole_corpus (heterogeneous per file)"
-            ],
-            "GRANT_SCOPE_CLASSES": [
-                "code_only",
-                "database_rights_only",
-                "metadata_only",
-                "unstated",
-                "whole_corpus",
-                "whole_corpus (heterogeneous per file)"
-            ],
-            "NC_VERDICT": "NC",
-            "REDISTRIBUTE_NC_FLAG": "nc",
-            "RED_FLAGS_BLOCK_ADMISSION": true,
-            "RED_FLAG_RESOLVED_MARKER": true,
-            "REQUIRED_VERIFICATION_STATUS": "VERIFIED",
-            "REQUIRE_LICENCE_TEXT": true,
-            "SCHEMA_DEFECTS_BLOCK_ADMISSION": true
-        },
-        "decided_at": "2026-09-04T00:35:39Z",
-        "policy_version": "2026-09-03.r3",
-        "reasons": []
+  "admission": {
+    "admitted": true,
+    "allow_nc": false,
+    "constants": {
+      "ADMISSIBLE_VERDICTS": [
+        "ATTRIBUTION",
+        "NC",
+        "PERMISSIVE_OK",
+        "SHARE_ALIKE"
+      ],
+      "ADMISSION_POLICY_VERSION": "2026-09-03.r3",
+      "ENRICHMENT_NONE_ADMISSIBLE_MARKER": "NONE ADMISSIBLE",
+      "ENRICHMENT_REFUSAL_MARKER_RE": "\\bREFUSE[SD]?\\b",
+      "EVAL_ONLY_TAG": "EVAL-ONLY",
+      "FORBIDDEN_REDISTRIBUTE_FLAGS": [
+        "nd"
+      ],
+      "FULL_CONTENT_GRANT_SCOPES": [
+        "whole_corpus",
+        "whole_corpus (heterogeneous per file)"
+      ],
+      "GRANT_SCOPE_CLASSES": [
+        "code_only",
+        "database_rights_only",
+        "metadata_only",
+        "unstated",
+        "whole_corpus",
+        "whole_corpus (heterogeneous per file)"
+      ],
+      "NC_VERDICT": "NC",
+      "REDISTRIBUTE_NC_FLAG": "nc",
+      "RED_FLAGS_BLOCK_ADMISSION": true,
+      "RED_FLAG_RESOLVED_MARKER": true,
+      "REQUIRED_VERIFICATION_STATUS": "VERIFIED",
+      "REQUIRE_LICENCE_TEXT": true,
+      "SCHEMA_DEFECTS_BLOCK_ADMISSION": true
     },
-    "catalogue_entry": {
-        "caveat": "Same S2ORC lineage as SciFact's corpus half.",
-        "enrichment_licence_result": "CC BY 4.0 attribution propagates",
-        "enrichment_plan": "better as an eval addition than a training source",
-        "faculty": "memory",
-        "grant_scope": "whole_corpus",
-        "provenance_group": "s2orc",
-        "provenance_red_flags": [],
-        "provenance_red_flags_resolution": [],
-        "redistribute": {
-            "attribution": true,
-            "nc": false,
-            "nd": false,
-            "sa": false
-        },
-        "repo_id": "BeIR/scidocs",
-        "schema_defects": [],
-        "usage_tag": null,
-        "why": "Cleanly licensed and cheap to add."
-    },
-    "fetched_at": "2026-09-03T23:01:57Z",
-    "file_count": 4,
-    "file_manifest": [
-        {
-            "bytes": 1566,
-            "path": ".gitattributes",
-            "sha256": "c16b7ce3cc1b9e89f2da9d83012ae183208eaf99ae6c2b138c91ef551fe15861"
-        },
-        {
-            "bytes": 10424,
-            "path": "README.md",
-            "sha256": "d80ea0458d2d6a81f0f857e6f6e5aa423f4dbd1d84511795f19025c84e95b627"
-        },
-        {
-            "bytes": 18673258,
-            "path": "corpus/corpus-00000-of-00001.parquet",
-            "sha256": "e1855cbf47a19e4ff1fc870674c3c441bc5a32a76ecc151851d4452a9aa43a28"
-        },
-        {
-            "bytes": 92568,
-            "path": "queries/queries-00000-of-00001.parquet",
-            "sha256": "f9ad7adff7d396e652789de371f69b5a3adfa8f39e1f37fff728c231e7db3202"
-        }
-    ],
-    "file_manifest_exclusions": [
-        ".cache/huggingface/** (huggingface_hub's own bookkeeping, not dataset content)",
-        "*.lock files that are zero bytes (transient lock markers, not content)"
-    ],
-    "licence_fetch_date": "2026-09-03",
-    "licence_mirror_tag": "cc-by-sa-4.0 (BeIR blanket tag)",
-    "licence_upstream_source": "https://raw.githubusercontent.com/allenai/scidocs/master/LICENSE",
-    "licence_upstream_verbatim": "Full CC BY 4.0 legal-code text at the repo LICENSE file.",
-    "mirror_url": "https://huggingface.co/datasets/BeIR/scidocs",
+    "decided_at": "2026-09-04T00:35:39Z",
+    "policy_version": "2026-09-03.r3",
+    "reasons": []
+  },
+  "catalogue_entry": {
+    "caveat": "Same S2ORC lineage as SciFact's corpus half.",
+    "enrichment_licence_result": "CC BY 4.0 attribution propagates",
+    "enrichment_plan": "better as an eval addition than a training source",
+    "faculty": "memory",
+    "grant_scope": "whole_corpus",
     "provenance_group": "s2orc",
-    "regenerated_from": "provenance.json.pre-r3",
-    "resolved_revision": "acebceec772628c6679d76d6cff30ad517d17f4e",
-    "tool_version": "0.1.0",
-    "total_bytes": 18777816,
-    "upstream_url": "https://raw.githubusercontent.com/allenai/scidocs/master/LICENSE",
-    "verdict": "ATTRIBUTION",
-    "verification_status": "VERIFIED"
+    "provenance_red_flags": [],
+    "provenance_red_flags_resolution": [],
+    "redistribute": {
+      "attribution": true,
+      "nc": false,
+      "nd": false,
+      "sa": false
+    },
+    "repo_id": "BeIR/scidocs",
+    "schema_defects": [],
+    "usage_tag": null,
+    "why": "Cleanly licensed and cheap to add."
+  },
+  "fetched_at": "2026-09-03T23:01:57Z",
+  "file_count": 4,
+  "file_manifest": [
+    {
+      "bytes": 1566,
+      "path": ".gitattributes",
+      "sha256": "c16b7ce3cc1b9e89f2da9d83012ae183208eaf99ae6c2b138c91ef551fe15861"
+    },
+    {
+      "bytes": 10424,
+      "path": "README.md",
+      "sha256": "d80ea0458d2d6a81f0f857e6f6e5aa423f4dbd1d84511795f19025c84e95b627"
+    },
+    {
+      "bytes": 18673258,
+      "path": "corpus/corpus-00000-of-00001.parquet",
+      "sha256": "e1855cbf47a19e4ff1fc870674c3c441bc5a32a76ecc151851d4452a9aa43a28"
+    },
+    {
+      "bytes": 92568,
+      "path": "queries/queries-00000-of-00001.parquet",
+      "sha256": "f9ad7adff7d396e652789de371f69b5a3adfa8f39e1f37fff728c231e7db3202"
+    }
+  ],
+  "file_manifest_exclusions": [
+    ".cache/huggingface/** (huggingface_hub's own bookkeeping, not dataset content)",
+    "*.lock files that are zero bytes (transient lock markers, not content)"
+  ],
+  "licence_fetch_date": "2026-09-03",
+  "licence_mirror_tag": "cc-by-sa-4.0 (BeIR blanket tag)",
+  "licence_upstream_source": "https://raw.githubusercontent.com/allenai/scidocs/master/LICENSE",
+  "licence_upstream_verbatim": "Full CC BY 4.0 legal-code text at the repo LICENSE file.",
+  "mirror_url": "https://huggingface.co/datasets/BeIR/scidocs",
+  "provenance_group": "s2orc",
+  "regenerated_from": "provenance.json.pre-r3",
+  "resolved_revision": "acebceec772628c6679d76d6cff30ad517d17f4e",
+  "tool_version": "0.1.0",
+  "total_bytes": 18777816,
+  "upstream_url": "https://raw.githubusercontent.com/allenai/scidocs/master/LICENSE",
+  "verdict": "ATTRIBUTION",
+  "verification_status": "VERIFIED"
 }
