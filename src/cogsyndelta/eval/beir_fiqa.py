@@ -399,6 +399,181 @@ def bm25_metrics(task: RankingTask) -> dict[str, float]:
 
 
 # ---------------------------------------------------------------------------------------
+# Explicit-named `beir.*` surfaces (g7-latent-eval-metrics.md §3.1; METRICS-METHODOLOGY.md
+# §7.2/§10). `rank_metrics`/`bm25_metrics` above return BARE `recall@k`/`mrr` keys --
+# identical spelling to the closed-pool `rank.recall@k`/`rank.mrr` (§3.1/§3.2 of the
+# methodology doc) despite being a DIFFERENT formula over a DIFFERENT pool (§7.2(f): "Same
+# field names as §2/§3's recall@k/mrr, different formula and different pool"). This
+# function is the one place that stamps this module's own numbers under the `beir.`
+# prefix, with the `pooling`/`battery_id` provenance a schema-v2 reader needs before ever
+# comparing one of these to a `rank.*` figure.
+# ---------------------------------------------------------------------------------------
+
+
+def to_beir_metrics(pool: str, metrics: dict[str, float]) -> dict[str, Any]:
+    """Stamp a `rank_metrics()` / `bm25_metrics()` result under the `beir.` prefix, with
+    its pool provenance.
+
+    Args:
+        pool: `"corpus"` (all 57,638 FiQA passages -- the real task the W4 gates read) or
+            `"split"` (only the passages judged within that split -- easier, in-batch
+            comparison only, never the headline) -- `build_ranking_task`'s own `pool`.
+        metrics: A `rank_metrics()`/`bm25_metrics()` result. Only `mrr` and `recall@*`
+            keys are carried over (`bm25_metrics`'s `index_s` timing field is dropped,
+            not renamed -- it is not a retrieval metric).
+
+    Returns:
+        `beir.recall@1` / `beir.recall@10` / `beir.recall@100` (whichever keys are
+        present) and `beir.mrr`, plus `pooling` (`fiqa_corpus` / `fiqa_split`) and
+        `battery_id` (`beir_fiqa_corpus` / `beir_fiqa_split`) -- the two schema-v2
+        provenance fields a reader needs before comparing this dict's numbers to any
+        other receipt's (METRICS-METHODOLOGY.md §10; g7-latent-eval-metrics.md §3.3).
+
+        `beir.ndcg@10` is deliberately ABSENT: TREC-style nDCG over a multi-relevant pool
+        is not implemented by `rank_metrics` (see this module's own docstring, "No
+        nDCG") -- a separate bridge computes it via `pytrec_eval` into a receipt's
+        `detail.external` (g7-latent-eval-metrics.md §4). This function never fabricates
+        that number as a placeholder value.
+
+    Raises:
+        ValueError: If `pool` is not `"corpus"` or `"split"` -- matching
+            `build_ranking_task`'s own validation rather than silently mislabelling a
+            pool this module never actually ranked against.
+    """
+    if pool not in ("corpus", "split"):
+        raise ValueError(f"pool must be 'corpus' or 'split', got {pool!r}")
+    out: dict[str, Any] = {
+        f"beir.{key}": value
+        for key, value in metrics.items()
+        if key == "mrr" or key.startswith("recall@")
+    }
+    out["pooling"] = "fiqa_corpus" if pool == "corpus" else "fiqa_split"
+    out["battery_id"] = "beir_fiqa_corpus" if pool == "corpus" else "beir_fiqa_split"
+    return out
+
+
+# ---------------------------------------------------------------------------------------
+# Explicit-named `token.*` rank surfaces (g7-latent-eval-metrics.md §3.1;
+# METRICS-METHODOLOGY.md §2.7/§9). `regions/pretrain.py`'s `_final_block_rank_stats`
+# returns bare `pooled_pr_rank` / `token_global_pr_rank` / `pooled_entropy_rank` /
+# `token_global_entropy_rank` keys, embedded in a training receipt under
+# `token_aware.final_block_rank`. This section stamps those same four numbers under
+# their canonical, explicit names -- and REFUSES, structurally, to let a caller ratio a
+# PR-family field against an entropy-family one: §9 measured them disagreeing in SIGN on
+# every one of this project's own production regions (PR ratios 0.66x-1.30x, entropy
+# ratios 1.16x-1.84x -- W1 `results.json`), so a ratio that mixes the two formulas is not
+# a measurement of either.
+# ---------------------------------------------------------------------------------------
+
+
+def refuse_cross_family_rank_ratio(
+    numerator_name: str, numerator: float, denominator_name: str, denominator: float
+) -> float:
+    """Divide two named rank surfaces, refusing unless both are the SAME rank family.
+
+    `numerator_name`/`denominator_name` must both end in `_pr_rank` (participation-ratio
+    rank) or both end in `_entropy_rank` (Shannon-entropy rank) -- the two suffixes
+    `token_rank_surfaces` below always produces. This is THIS module's own guard against
+    the one conflation METRICS-METHODOLOGY.md §9 names by name ("never divide one of
+    these by another across functions") -- independent of, and never importing, the
+    project-wide schema refuse-predicate (g7-latent-eval-metrics.md §3.3) that instead
+    guards `battery_id`/`pooling`/schema/checkpoint-sha agreement; that predicate has no
+    way to catch THIS specific mistake, because a PR field and an entropy field measured
+    on the identical holdout legitimately share the same `battery_id`
+    (`train_token_rank`) and the same `pooling` (`anchor_pooled` or
+    `anchor_token_global`) -- the two rank DEFINITIONS are what differ, not the surface
+    they were measured on.
+
+    Args:
+        numerator_name: The canonical field name the numerator was read from, e.g.
+            `"token.global_pr_rank"`.
+        numerator: The numerator's value.
+        denominator_name: The canonical field name the denominator was read from.
+        denominator: The denominator's value.
+
+    Returns:
+        `numerator / denominator`, or `nan` if `denominator` is exactly `0.0` (matching
+        `pr_effective_rank`'s own "`nan`, not a false `0.0`" convention for a
+        degenerate surface -- see METRICS-METHODOLOGY.md §9's `<2` rows rule).
+
+    Raises:
+        ValueError: If the two names are not recognised `_pr_rank`/`_entropy_rank`
+            fields, or are from different families.
+    """
+
+    def _family(name: str) -> str:
+        if name.endswith("_pr_rank"):
+            return "pr"
+        if name.endswith("_entropy_rank"):
+            return "entropy"
+        raise ValueError(
+            f"{name!r} is not a recognised token-rank field (no _pr_rank / _entropy_rank suffix)"
+        )
+
+    numerator_family, denominator_family = _family(numerator_name), _family(denominator_name)
+    if numerator_family != denominator_family:
+        raise ValueError(
+            f"refusing to divide {numerator_name!r} ({numerator_family}-family) by "
+            f"{denominator_name!r} ({denominator_family}-family): PR-rank and "
+            "entropy-rank are different formulas that disagree in SIGN on this "
+            "project's own production regions (METRICS-METHODOLOGY.md §9) -- never "
+            "ratio one against the other"
+        )
+    return (numerator / denominator) if denominator else float("nan")
+
+
+def token_rank_surfaces(final_block_rank: dict[str, float]) -> dict[str, Any]:
+    """Canonical, explicitly-named token-rank surfaces from a `_final_block_rank_stats`-
+    shaped dict (`regions/pretrain.py`; embedded in a training receipt under
+    `token_aware.final_block_rank`).
+
+    Args:
+        final_block_rank: `{"pooled_pr_rank", "pooled_entropy_rank",
+            "token_global_pr_rank", "token_global_entropy_rank", "n_tokens"}` -- exactly
+            the shape `_final_block_rank_stats` returns and `gate_e_retrain_gate` already
+            reads two fields of.
+
+    Returns:
+        `{"pooled": {"pooling": "anchor_pooled", "battery_id": "train_token_rank",
+        "token.pooled_pr_rank": ..., "token.pooled_entropy_rank": ...}, "global":
+        {"pooling": "anchor_token_global", "battery_id": "train_token_rank",
+        "token.global_pr_rank": ..., "token.global_entropy_rank": ...},
+        "token.pr_rank_ratio": ..., "n_tokens": ...}` -- the pooled and token-global
+        surfaces are kept as two separate, separately-tagged groups (never merged into
+        one field) so a schema-v2 reader can tell them apart by `pooling` even before
+        looking at a field name. `token.pr_rank_ratio` is
+        `token.global_pr_rank / token.pooled_pr_rank` -- the EXACT formula
+        `gate_e_retrain_gate`'s `pr_rank_clause` gates on (§4.0/§7.4:
+        `token_global_pr_rank >= 2.0 * pooled_pr_rank`) -- computed through
+        `refuse_cross_family_rank_ratio` so it can never silently become a PR-over-
+        entropy (or entropy-over-PR) ratio instead.
+    """
+    pooled_pr = final_block_rank["pooled_pr_rank"]
+    global_pr = final_block_rank["token_global_pr_rank"]
+    pooled_entropy = final_block_rank["pooled_entropy_rank"]
+    global_entropy = final_block_rank["token_global_entropy_rank"]
+    ratio = refuse_cross_family_rank_ratio(
+        "token.global_pr_rank", global_pr, "token.pooled_pr_rank", pooled_pr
+    )
+    return {
+        "pooled": {
+            "pooling": "anchor_pooled",
+            "battery_id": "train_token_rank",
+            "token.pooled_pr_rank": pooled_pr,
+            "token.pooled_entropy_rank": pooled_entropy,
+        },
+        "global": {
+            "pooling": "anchor_token_global",
+            "battery_id": "train_token_rank",
+            "token.global_pr_rank": global_pr,
+            "token.global_entropy_rank": global_entropy,
+        },
+        "token.pr_rank_ratio": ratio,
+        "n_tokens": final_block_rank["n_tokens"],
+    }
+
+
+# ---------------------------------------------------------------------------------------
 # The five pre-registered W4 gates (docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md, row
 # W4). Pure functions over already-measured numbers -- no I/O, no model, no corpus -- so
 # every one of them is directly constructible-to-fail in a unit test.
@@ -554,6 +729,12 @@ def gate_e_retrain_gate(
         "token_global_pr_rank": token_global_pr_rank,
         "pooled_pr_rank": pooled_pr_rank,
         "ratio": rank_ratio,
+        # Canonical name (g7-latent-eval-metrics.md §3.1): "the W4 gate remains the PR
+        # ratio and must be named `token.pr_rank_ratio`, with its formula" -- same value
+        # as `ratio` above (kept for backward compatibility), stamped under its
+        # schema-v2 field name plus the formula it was computed from.
+        "token.pr_rank_ratio": rank_ratio,
+        "token.pr_rank_ratio_formula": "token_global_pr_rank / pooled_pr_rank",
         "required_ratio": 2.0,
         "passed": bool(rank_ratio >= 2.0),
         "note": _PR_RANK_CLAUSE_NOTE,
