@@ -156,6 +156,8 @@ class Receipt:
         operator staring at a green run they can no longer place against a commit.
 
         Args:
+            out_dir: directory to write into; created if it does not exist. The filename
+                inside it is derived, never passed -- see the format above.
             capture: injection seam for the test that proves the refusal fires. Production
                 callers never pass it.
         """
