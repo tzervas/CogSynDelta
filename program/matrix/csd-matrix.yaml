@@ -180,7 +180,23 @@ regions:
   defaults:
     steps: 4000
     max_len: 96
-    shard_limit: 2 # script default; today's receipts show 1 shard for compress/retrieve/reason, 4 for code -- open question, see MATRIX-PIPELINE.md
+    # RESOLVED (was "open question, see MATRIX-PIPELINE.md"): 2 is the script default
+    # (csd-train-all.py's `--shard-limit`) and is the correct FALLBACK for four of these
+    # five regions -- compress, retrieve and reason each resolve every shard-limit-
+    # sensitive source (an uncapped SourceSpec; a `cap`-ed source like gooaq or
+    # aqua_rat-raw is exempt from shard_limit entirely, see csd-train-all.py's
+    # `run_region`) to exactly ONE file today, so shard_limit=2 already includes it
+    # whole and reproduces each region's cited baseline. `code` is the one region that
+    # needed an explicit override (see its own `shard_limit:` below): its primary
+    # source, codesearchnet-python, is FOUR shard files, so the default of 2 silently
+    # trains on a different (and smaller) corpus than the cited baseline -- measured,
+    # not theoretical: the matrix's first real cell (code, batch=512) inherited this
+    # default and trained on 214,813 pairs at corpus.fingerprint
+    # 6745b766a9e9d5ab798d87116e526416
+    # (/akula-data/csd/matrix/code-b512-s0-6614ec2-20260904/receipts/code-20260904T090702Z.json),
+    # not the cited baseline's 430,931 pairs at e493273b003f5cf9c239db0ac461b993. Every
+    # region's baseline fingerprint/pair-count/receipt is recorded at that region below.
+    shard_limit: 2 # script default; the correct fallback -- see the block comment above
     tolerance: 0.01
     aggressive_bits: 3
     max_bits: 8
@@ -247,23 +263,49 @@ regions:
 
   code:
     axes: {batch: [512, 1280], seed: [0, 1]}
-    # batch=1280/seed=0 is today's production baseline (held_out.recall@1=0.9863, sha
-    # 9df6526, corpus.fingerprint e493273b...); batch=512 and seed=1 are unrun. Neither
-    # fp32 VRAM budget below is report_peak-sourced (H4) -- both probe.
+    # batch=1280/seed=0 is today's production baseline: held_out.recall@1=0.9863, sha
+    # 9df6526, corpus.fingerprint e493273b003f5cf9c239db0ac461b993, 430,931 train pairs
+    # over ALL 4 codesearchnet-python shard files (receipts/code-20260903T115858Z.json,
+    # cited by docs/design/evidence/w4-production-runs-2026-09-03/README.md and
+    # program/REMAINING.md). batch=512 and seed=1 are unrun. Neither fp32 VRAM budget
+    # below is report_peak-sourced (H4) -- both probe.
+    #
+    # shard_limit: 4 overrides regions.defaults' 2 (see that comment) -- REQUIRED here,
+    # not optional: codesearchnet-python is 4 shard files, so shard_limit=2 trains on
+    # HALF the corpus. 4 is written explicitly rather than 0 ("all") so a shard added to
+    # the dataset later cannot silently change what this matrix measures without a
+    # deliberate edit here -- the goal is comparability with the cited baseline, not
+    # "whatever the corpus happens to contain now".
+    shard_limit: 4
     budgets:
       "batch=512": {mib: null, source: probe}
       "batch=1280": {mib: null, source: probe}
 
   compress:
     axes: {batch: [512, 1280], seed: [0, 1]}
-    # batch=1280/seed=0 baseline: held_out.recall@1=0.7754, sha 9df6526.
+    # batch=1280/seed=0 baseline: held_out.recall@1=0.7754 (+ graded spearman 0.7588 on
+    # 1,498 STS-B pairs), sha 9df6526, corpus.fingerprint
+    # 65a9938192b5040beda5e92eb4078dbc, 277,268 train pairs
+    # (receipts/compress-20260903T120818Z.json). all-nli/pair ships exactly ONE shard
+    # file, so `regions.defaults.shard_limit: 2` (or any value >= 1) already includes it
+    # whole -- no override needed to stay comparable to this baseline.
     budgets:
       "batch=512": {mib: null, source: probe}
       "batch=1280": {mib: null, source: probe}
 
   retrieve:
     axes: {batch: [512, 1280], seed: [0, 1]}
-    # batch=1280/seed=0 baseline: held_out.recall@1=0.7559, sha 9df6526.
+    # batch=1280/seed=0 baseline: held_out.recall@1=0.7559, sha 9df6526,
+    # corpus.fingerprint af4bb36f6f5dcacd0bf7f211df6ef63a, 505,166 train pairs
+    # (receipts/retrieve-20260903T121603Z.json). NOTE: `_fingerprint_corpus` omits
+    # extra_sources (P0.10b) and fiqa-pairs (the only source it covers) is ~3% of this
+    # corpus by row count, so a fingerprint match alone is a weak comparability check
+    # here -- the pair count is the stronger signal. shard_limit is a no-op for all
+    # three sources at today's file counts: fiqa-pairs (primary) and natural-questions
+    # are each exactly one shard file, and gooaq carries its own 400,000-row cap
+    # (cap-ed sources are exempt from shard_limit entirely -- csd-train-all.py's
+    # `run_region`). So `regions.defaults.shard_limit: 2` already reproduces this
+    # baseline; no override.
     budgets:
       "batch=512": {mib: null, source: probe}
       "batch=1280": {mib: null, source: probe}
@@ -271,9 +313,14 @@ regions:
   reason:
     max_len: 256
     axes: {batch: [256, 512], seed: [0, 1]}
-    # batch=512/seed=0 baseline: held_out.recall@1=0.1152, sha 0026a3d (reason OOM'd at
-    # batch 1280/max_len 256 on the 3090 Ti -- 640 MiB short of 22 GiB [V]; batch=256 is
-    # the unrun axis value, not a re-test of the 1280 cell that never completed).
+    # batch=512/seed=0 baseline: held_out.recall@1=0.1152, sha 0026a3d,
+    # corpus.fingerprint ca364a92d2c6c5fd259404e0ab6f52a1, 11,811 train pairs
+    # (receipts/reason-20260903T123431Z.json; reason OOM'd at batch 1280/max_len 256 on
+    # the 3090 Ti -- 640 MiB short of 22 GiB [V]; batch=256 is the unrun axis value, not
+    # a re-test of the 1280 cell that never completed). gsm8k-main -- the one uncapped,
+    # shard-limit-sensitive source -- is a single shard file; aqua_rat-raw carries its
+    # own 4,982-row cap and is exempt from shard_limit. So
+    # `regions.defaults.shard_limit: 2` already reproduces this baseline; no override.
     budgets:
       "batch=256": {mib: null, source: probe}
       "batch=512": {mib: null, source: probe}
@@ -331,8 +378,20 @@ regions:
     budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
     budgets:
       # b1280/tokon/c512 is TODAY's V2 production cell (369351bf): held_out.recall@1=0.8535,
+      # corpus.fingerprint 6fc0cf23ff8591ff2241278f82c001d2, 782,959 train pairs (the
+      # union of retrieve's and compress's sources -- DEC-02),
       # ptq_recall@1(plan)=0.8516 at 9.79x (memory-20260903T184441Z.json,
-      # memory-quant-20260903T203342Z.json). b512/tokon/c512 is V1 (d96be64b):
+      # memory-quant-20260903T203342Z.json; also copied at
+      # docs/design/evidence/w4-production-runs-2026-09-03/memory-20260903T184441Z.json,
+      # cited by that dir's README.md). shard_limit does NOT apply to memory: it trains
+      # through `cogsyndelta.regions.memory`, whose corpus assembly (`_shards()` in that
+      # module) globs and takes every matching file, with no `--shard-limit` flag and no
+      # analogous cap on the uncapped sources -- confirmed by grep, not inferred from the
+      # command template's silence. Every source it unions (fiqa-pairs, natural-
+      # questions, all-nli, gooaq) is single-shard or row-capped at today's file counts
+      # (same facts as `compress`/`retrieve` above), so this cell's reproducibility
+      # depends only on those files matching, not on any shard_limit value -- there is
+      # nothing to set here. b512/tokon/c512 is V1 (d96be64b):
       # held_out.recall@1=0.8145 -> PTQ 0.8086 at 9.60x. Both already published on
       # tzervas/cogsyndelta-region-memory as ad hoc pilot branches (H1's repair, tracked
       # separately -- see MATRIX-PIPELINE.md), so a matrix run of these two EXACT cells
