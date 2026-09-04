@@ -1,0 +1,161 @@
+{
+  "catalogue_entry": {
+    "caveat": "~50% of pairs are non-paraphrase by design; not a source of true paraphrase positives on its own. Google's grant does NOT retroactively license raw Quora QQP.",
+    "faculty": "memory",
+    "grant_scope": "whole_corpus",
+    "provenance_group": "paws",
+    "repo_id": "google-research-datasets/paws",
+    "why": "The one bespoke grant in the survey that is unconditional on redistribution and commercial use."
+  },
+  "fetched_at": "2026-09-03T23:02:41Z",
+  "file_count": 27,
+  "file_manifest": [
+    {
+      "bytes": 1,
+      "path": ".cache/huggingface/.gitignore",
+      "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+    },
+    {
+      "bytes": 191,
+      "path": ".cache/huggingface/CACHEDIR.TAG",
+      "sha256": "f6572428f6d5e1575e73a1502895a8731f10757dfbb634909c6e154b849af91d"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/.gitattributes.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 101,
+      "path": ".cache/huggingface/download/.gitattributes.metadata",
+      "sha256": "411960a6cf4a2b461b86396cc996ceebaf676505efff222fcf783beb553e0949"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/README.md.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 98,
+      "path": ".cache/huggingface/download/README.md.metadata",
+      "sha256": "6a177a1402b9e7fa9f9daf3a1102ed1276fe5204d8a8e9ffad870469d23374aa"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/labeled_final/test-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/labeled_final/test-00000-of-00001.parquet.metadata",
+      "sha256": "1e7b520a40eb9b9cee390274e585d8f0e5b70ab948d7b826b6f7212e2883f244"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/labeled_final/train-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/labeled_final/train-00000-of-00001.parquet.metadata",
+      "sha256": "5fed482b74f6ee05d5ffb0e8ac819ed985fc08c63bfc246614407552ba0fc692"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/labeled_final/validation-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/labeled_final/validation-00000-of-00001.parquet.metadata",
+      "sha256": "3d8cf799342d1ec454927dd95033cb99d7a5ed66b8e725f71fdaf7116bb6d257"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/labeled_swap/train-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/labeled_swap/train-00000-of-00001.parquet.metadata",
+      "sha256": "913aba4672b6aa5534c0283b11b48124e36324b6315f449a72164817957b8ddd"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/unlabeled_final/train-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/unlabeled_final/train-00000-of-00001.parquet.metadata",
+      "sha256": "8164aedca9c3e6702bf6408cd1dc8d27e8224176740dbf9fee118989fc35984a"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/unlabeled_final/validation-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/unlabeled_final/validation-00000-of-00001.parquet.metadata",
+      "sha256": "f8fa07e2511bd6757235113849c3c0c33d2a871db648d11b8ee0ec728c885593"
+    },
+    {
+      "bytes": 2196,
+      "path": ".cache/huggingface/trees/161ece9501cf0a11f3e48bd356eaa82de46d6a09.json",
+      "sha256": "d04dde81a0b0d466e08500cba1138898dd09e33cc14f92783a213141a6c1b70d"
+    },
+    {
+      "bytes": 1174,
+      "path": ".gitattributes",
+      "sha256": "40e650854e43f5d4a0efaa68f487161e1226e22bc5480bd0effa0a8dadb5b848"
+    },
+    {
+      "bytes": 9795,
+      "path": "README.md",
+      "sha256": "f281c5c5099f08da86c25f83419eedb01eaafaf0bb29b8eb14036249cfc97e89"
+    },
+    {
+      "bytes": 1235128,
+      "path": "labeled_final/test-00000-of-00001.parquet",
+      "sha256": "ae342ff12bb84b84b95f468abf5db6cb7c7bd578271299fe9c99be75b8132f4d"
+    },
+    {
+      "bytes": 8433884,
+      "path": "labeled_final/train-00000-of-00001.parquet",
+      "sha256": "8dc9ad3e5f30ad9a86b290fe236d528ef23a5751fec9a35d99cbacf68ba277cf"
+    },
+    {
+      "bytes": 1230379,
+      "path": "labeled_final/validation-00000-of-00001.parquet",
+      "sha256": "7760d829453764ba342a6f562809a8ed21c2c3eec3fd9ffa544089f145d42f6d"
+    },
+    {
+      "bytes": 5741756,
+      "path": "labeled_swap/train-00000-of-00001.parquet",
+      "sha256": "21b9b68cd9398f01e6c766a9b12bc9a31cee11a6170a5acc5fa87ba853033a9b"
+    },
+    {
+      "bytes": 110988709,
+      "path": "unlabeled_final/train-00000-of-00001.parquet",
+      "sha256": "c9724b30b187e8e2a6a4372cdefbeead1504d8645cdf0e1886c36b5ba3a68918"
+    },
+    {
+      "bytes": 1655576,
+      "path": "unlabeled_final/validation-00000-of-00001.parquet",
+      "sha256": "438720a7c059d2be528953c6a32f8542098aea02c6697460fc7b2d52c124a798"
+    }
+  ],
+  "licence_fetch_date": "2026-09-03",
+  "licence_mirror_tag": "other",
+  "licence_upstream_source": "https://raw.githubusercontent.com/google-research-datasets/paws/master/LICENSE",
+  "licence_upstream_verbatim": "\"The dataset may be freely used for any purpose, although acknowledgement of Google LLC (\\\"Google\\\") as the data source would be appreciated. The dataset is provided \\\"AS IS\\\" without any warranty, express or implied. Google disclaims all liability for any damages, direct or indirect, resulting from the use of the dataset.\"",
+  "mirror_url": "https://huggingface.co/datasets/google-research-datasets/paws",
+  "provenance_group": "paws",
+  "resolved_revision": "161ece9501cf0a11f3e48bd356eaa82de46d6a09",
+  "tool_version": "0.1.0",
+  "total_bytes": 129299737,
+  "upstream_url": "https://raw.githubusercontent.com/google-research-datasets/paws/master/LICENSE",
+  "verdict": "PERMISSIVE_OK",
+  "verification_status": "VERIFIED"
+}

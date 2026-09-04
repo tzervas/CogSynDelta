@@ -1,0 +1,431 @@
+{
+  "catalogue_entry": {
+    "caveat": "Same blocker as the raw Stack Exchange dump.",
+    "faculty": "memory",
+    "grant_scope": "whole_corpus",
+    "provenance_group": "stackexchange",
+    "repo_id": "BeIR/cqadupstack",
+    "why": "Would be the strongest single lever against GooAQ's concentration; blocked by the attribution mechanics, not by the licence class."
+  },
+  "fetched_at": "2026-09-03T23:02:03Z",
+  "file_count": 81,
+  "file_manifest": [
+    {
+      "bytes": 1,
+      "path": ".cache/huggingface/.gitignore",
+      "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+    },
+    {
+      "bytes": 191,
+      "path": ".cache/huggingface/CACHEDIR.TAG",
+      "sha256": "f6572428f6d5e1575e73a1502895a8731f10757dfbb634909c6e154b849af91d"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/.gitattributes.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 100,
+      "path": ".cache/huggingface/download/.gitattributes.metadata",
+      "sha256": "386e0722ae9fe081857d28df4d04f5aa2ec3c57d40543454163b58f5f76aed05"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/README.md.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 101,
+      "path": ".cache/huggingface/download/README.md.metadata",
+      "sha256": "e14392763fe24bb8dea9968c74cb4511248d8faed4bb29a67b2ec2411325cbe4"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/android/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/android/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "45502d3e4a7b5ce4e07ae2dfb549d01c2b9fc1232fbd8f4d806b3257c315b0fc"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/android/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/android/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "e4ed3c7d78d327f1e483359f1c4a2cca1178db61328b72b0e3a3a2ee97c1eb35"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/english/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/english/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "65c68d5d24b2c8546e9eb57e3fbf65c19ae51f71e8d9dc0c3ca588bf4099f9ad"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/english/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/english/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "630ca98bb469c59e246b6a7d20cad47a42c8259e0efdcc715dbd5b109f62d26a"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/gaming/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/gaming/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "e98a36cf9d5c020f3684b88380810422e5a659fafdcbb14b0470c8846b81d123"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/gaming/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/gaming/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "e2e809c9d431a9065df06eaa77c398a93a093cdbf385e16039559c24dc649712"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/gis/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/gis/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "11459d66af95519466e87dd1664ca1cd94fe5771807dc4342c9f2e142978c056"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/gis/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/gis/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "8e0c614351851bbf578137cadadcc6d10689da8161688dffc4190cf21060b351"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/mathematica/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/mathematica/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "c63f5e4c427c6fb73ac4bccca928162285bc4d9543f36e1a2035720e53b46664"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/mathematica/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/mathematica/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "d5513881bef663016176ede83a9b3e1c026d99a97ca2fe0bc734513985ac2266"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/physics/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/physics/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "3e162c3893ee8cfdf0fccca7a9e55d7136b5bd91596da637eb797dbcb1df50d8"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/physics/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/physics/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "bd4788cc4b7781451bf0aa599d58295dbb659ef47d5ab48f3d5d26085d9f1d0e"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/programmers/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/programmers/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "e9d94ae718e49e426c45974461722515d187efa8978e1dbe039eb9609d13d70a"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/programmers/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/programmers/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "39dbbf137509c2d1833a92ee3a7a36ce7a92e2cff038c385082b25e14f75bb96"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/stats/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/stats/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "dc19b541efe3e60d0eed8e2785404437b99cb3887b1f162f890ed9e2bbbb8718"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/stats/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/stats/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "a1369b660fbd3bd2741119273d32150bb289f595b9f7fe08ec15d6a29b219960"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/tex/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/tex/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "6f682186fd12d9af904fdef2721f1d3324a2781fcd97fa5dfde1b114ed5e593f"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/tex/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/tex/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "e174373f7912daefc4ec7297a01bad16d73edba82856fe758df436a04fe4cc62"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/unix/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/unix/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "32195e1a7ef38b92ecd008c8c3c5fc5a7245b9a33a8e25268b6e6e707aa90f0a"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/unix/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/unix/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "5c75fb1470703e316b0817e1d4a8dc4bde9db3f5342c99ec01de00c06654b7dd"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/webmasters/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 124,
+      "path": ".cache/huggingface/download/webmasters/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "15e1901d674f62c449ed4e260182031f2c13204b5fbaccfae334b1abda3acdb9"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/webmasters/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/webmasters/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "181bdc813d18fdde02e32097b64749177a130d57a0377dd63591891b0227506b"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/wordpress/corpus/corpus-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/wordpress/corpus/corpus-00000-of-00001.parquet.metadata",
+      "sha256": "95be5ad67dc90df082f3642fc73150172cceae2e98c457a01d02f7c0c16aa81a"
+    },
+    {
+      "bytes": 0,
+      "path": ".cache/huggingface/download/wordpress/queries/queries-00000-of-00001.parquet.lock",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 125,
+      "path": ".cache/huggingface/download/wordpress/queries/queries-00000-of-00001.parquet.metadata",
+      "sha256": "2e0c8e95d9b87cfa57ae568a1461fdcbbb6d8abf7621d7227a5c4dbf7183d7c1"
+    },
+    {
+      "bytes": 8056,
+      "path": ".cache/huggingface/trees/e84b7220ce5a4e6c49aeb568983b0ec5a7584c2c.json",
+      "sha256": "76e4912f1aaa73183a9f87ec78f3d99dd68dd1c80ca61394fcdd196386404c16"
+    },
+    {
+      "bytes": 2504,
+      "path": ".gitattributes",
+      "sha256": "9e75dd981de037ec3769f24f790e126bc5a160b6871f510214e68dc70649aeeb"
+    },
+    {
+      "bytes": 9769,
+      "path": "README.md",
+      "sha256": "fed31ba043da3c19d38ee13ed1d92d5a75328b3d169155ded7a4a7d499614fa5"
+    },
+    {
+      "bytes": 8255816,
+      "path": "android/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "bd6a1bcf27e89b8a6794ef0784c4f2d67dcd67b0017ebacad7fa4079d63c4a7c"
+    },
+    {
+      "bytes": 31997,
+      "path": "android/queries/queries-00000-of-00001.parquet",
+      "sha256": "7953481aa6b695c7f44f7d1be37104bb77986b321ddbe9e84315cd34cd929866"
+    },
+    {
+      "bytes": 12417951,
+      "path": "english/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "1b8a14acc4a2e100f1838c33dbe8e928101e4169f7c5976f09b3980fbb078ece"
+    },
+    {
+      "bytes": 68095,
+      "path": "english/queries/queries-00000-of-00001.parquet",
+      "sha256": "350f89d64998c55ac9c76162a4a49ec46495616ad1a639d94cb050d7a1f49271"
+    },
+    {
+      "bytes": 14156689,
+      "path": "gaming/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "ef92a072759e33f928359eb8effe78b8f9974f5f56773d61b644cec6fa9c1809"
+    },
+    {
+      "bytes": 70040,
+      "path": "gaming/queries/queries-00000-of-00001.parquet",
+      "sha256": "f1b84faced354806826860e6a16d93ecf0bd3225841ab2242dcea33d84c935f7"
+    },
+    {
+      "bytes": 21024580,
+      "path": "gis/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "c7c0dfe169177fc99bdb04fd3daf4a353ebe0a67a4810ef9ab3774df14dee55d"
+    },
+    {
+      "bytes": 39653,
+      "path": "gis/queries/queries-00000-of-00001.parquet",
+      "sha256": "a0c06872d505f14615ca96c3c253ea493d22beb42aa1352d766e7f169cd69e6f"
+    },
+    {
+      "bytes": 10765498,
+      "path": "mathematica/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "6442de2833baf2ec332b0ca9120ca5bf98a9a7bf7b8c4ad357a8b3eac1f69bca"
+    },
+    {
+      "bytes": 34583,
+      "path": "mathematica/queries/queries-00000-of-00001.parquet",
+      "sha256": "78ca3ee7dea6097a5472643292576fc86e4671e2dd3976bacc9ae2c72bd0af40"
+    },
+    {
+      "bytes": 18811650,
+      "path": "physics/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "e130a791d68e8ad5217b449737d79ac45e7924f36f3b2658438306ae80c3938b"
+    },
+    {
+      "bytes": 47465,
+      "path": "physics/queries/queries-00000-of-00001.parquet",
+      "sha256": "064a126912aa31acec858fe81bf5ab85e5eb40de339d11b9800d585c7b6b8f7f"
+    },
+    {
+      "bytes": 20111039,
+      "path": "programmers/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "b8eefa212252fe5af6ee72ba530df053740ff30c2c0bea77089f8a9271e94f75"
+    },
+    {
+      "bytes": 41633,
+      "path": "programmers/queries/queries-00000-of-00001.parquet",
+      "sha256": "106ba4777034ccec608a623ac93b5cfad63d89effc64d0528759ea94e276345d"
+    },
+    {
+      "bytes": 25668372,
+      "path": "stats/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "6ab4f4ac6333619ece0b35516789a5a7cb4d94ba621d0d219d13adf5dfaf3d1e"
+    },
+    {
+      "bytes": 30347,
+      "path": "stats/queries/queries-00000-of-00001.parquet",
+      "sha256": "c7c69b410ee260f9121cc4dac4b717e9cb3681d760e95e233d6de9b1eb52e1d9"
+    },
+    {
+      "bytes": 44756206,
+      "path": "tex/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "8a74ec254c98f6f10fbf593612c9eadc94bce735628c6b45a309a8376ba8a012"
+    },
+    {
+      "bytes": 117655,
+      "path": "tex/queries/queries-00000-of-00001.parquet",
+      "sha256": "56cd33284d76af58153f5ad3a21f21bbf8d0a49bc579cb521bea51174cc585bb"
+    },
+    {
+      "bytes": 25746785,
+      "path": "unix/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "7bd20096c9ca2aacf2fe95c0f86660aa174a8c6eccd54240067a09aeabe6c8d1"
+    },
+    {
+      "bytes": 47358,
+      "path": "unix/queries/queries-00000-of-00001.parquet",
+      "sha256": "51032d3c2ed37ad83eae8af36543743dc7b6af2d2dfe7cbd14853bcfdf81ac6c"
+    },
+    {
+      "bytes": 7353229,
+      "path": "webmasters/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "0096d7030a732575e2ba00c4a48e8cf5a934946cc18085066fc29a61444c8125"
+    },
+    {
+      "bytes": 24033,
+      "path": "webmasters/queries/queries-00000-of-00001.parquet",
+      "sha256": "ec7547160ea97cb6e825f6fe34a992511c6f8762b28e2488745124dc88484344"
+    },
+    {
+      "bytes": 27597725,
+      "path": "wordpress/corpus/corpus-00000-of-00001.parquet",
+      "sha256": "718cc2b0561916f0ab949b8142afe79820c17ea6e70717ef44b2d262b6a82794"
+    },
+    {
+      "bytes": 24475,
+      "path": "wordpress/queries/queries-00000-of-00001.parquet",
+      "sha256": "cb712339a39171891ee8037e864f3013d06716ca9069a132fe96f293c9d2e204"
+    }
+  ],
+  "licence_fetch_date": "2026-09-03",
+  "licence_mirror_tag": "cc-by-sa-4.0 (BeIR blanket tag)",
+  "licence_upstream_source": "https://archive.org/details/stackexchange",
+  "licence_upstream_verbatim": "\"All user content contributed to the Stack Exchange network is cc-by-sa 4.0 licensed\" -- with four attribution conditions: visually indicate the source, hyperlink to the original question, display author names, and hyperlink each author name to their profile.",
+  "mirror_url": "https://huggingface.co/datasets/BeIR/cqadupstack",
+  "provenance_group": "stackexchange",
+  "resolved_revision": "e84b7220ce5a4e6c49aeb568983b0ec5a7584c2c",
+  "tool_version": "0.1.0",
+  "total_bytes": 237266590,
+  "upstream_url": "https://archive.org/details/stackexchange",
+  "verdict": "SHARE_ALIKE",
+  "verification_status": "VERIFIED"
+}
