@@ -5,7 +5,6 @@
 # Does NOT claim reindex success — check Qdrant points_count after the worker finishes.
 set -euo pipefail
 
-AKULA="${AKULA_ROOT:-/home/kang/code/personal/tzervas/akula-ai-platform}"
 VAULT="${CSD_VAULT:-/akula-data/obsidian/akula-csd-kb}"
 COLL="${CSD_COLLECTION:-akula-csd-kb}"
 QDRANT="${QDRANT_URL:-http://127.0.0.1:6333}"

@@ -6,7 +6,7 @@
 set -e
 
 # Read stdin for push info
-while read local_ref local_sha remote_ref remote_sha; do
+while read -r _ local_sha _ remote_sha; do
     # Skip delete operations
     if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
         continue

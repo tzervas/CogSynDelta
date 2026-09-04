@@ -25,6 +25,7 @@ set -euo pipefail
 
 # Configuration
 REMOTE_HOST="akula-prime"
+# shellcheck disable=SC2088 # literal tilde: expanded remotely by ssh's shell, not here
 REMOTE_PROJECT_DIR="~/projects/CogSynDelta"
 LOCAL_PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
