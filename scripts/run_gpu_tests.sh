@@ -85,6 +85,9 @@ sync_project() {
     log_info "Syncing project to ${REMOTE_HOST}:${REMOTE_PROJECT_DIR}..."
 
     # Create remote directory if needed
+    # REMOTE_PROJECT_DIR is set locally by this script; client-side expansion
+    # into the remote command is intended.
+    # shellcheck disable=SC2029
     ssh "${REMOTE_HOST}" "mkdir -p ${REMOTE_PROJECT_DIR}"
 
     # Rsync with exclusions

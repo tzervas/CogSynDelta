@@ -6,6 +6,10 @@ QDRANT="${QDRANT_URL:-http://127.0.0.1:6333}"
 COLL="${CSD_COLLECTION:-akula-csd-kb}"
 mkdir -p "$VAULT/Architecture" "$VAULT/Experiments" "$VAULT/Cycles"
 if [[ ! -f "$VAULT/README.md" ]]; then
+  # These lines are markdown body text; the backticks are literal code-span
+  # markup, not command substitution, so they must stay single-quoted
+  # (double-quoting would try to execute them).
+  # shellcheck disable=SC2016
   printf '%s\n' \
     '# akula-csd-kb' \
     '' \

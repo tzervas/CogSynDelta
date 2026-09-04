@@ -33,7 +33,7 @@ echo ""
 # Check examples
 echo "5. Example scripts:"
 for example in examples/*.py; do
-    [ -f "$example" ] && echo "  ✓ $(basename $example)" || echo "  ✗ Missing $example"
+    [ -f "$example" ] && echo "  ✓ $(basename "$example")" || echo "  ✗ Missing $example"
 done
 echo ""
 
