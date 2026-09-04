@@ -280,10 +280,19 @@ def _metric_groups(battery_id: str, seed: int) -> dict:
     receipt were measured over different pools and must never be treated as
     interchangeable just because they share a `started_utc`.
 
-    Three groups, matching `BenchmarkResult`'s own three families
-    (`cogsyndelta.eval.benchmark.BenchmarkResult.flat`'s `rank.`/`eff.`/`repr.`
-    prefixes -- that module is outside this lane's file scope, so the grouping here
-    mirrors it rather than reads it back out):
+    ONE ENTRY PER *POOL*, NOT PER FIELD-NAME PREFIX. `BenchmarkResult.flat()` groups its
+    keys under three prefixes (`rank.`/`eff.`/`repr.`), but two `repr.*` fields are
+    measured over a DIFFERENT pool than the rest of that family (MM §3.10(d), §12.5) --
+    folding them into a bare `"repr"` entry would make a `MetricIdentity` (MM §14) built
+    off that entry read `pooling="pooled_both"` for a field that is actually `anchor`-
+    or `matched`-pooled, exactly the mismeasurement `compare()`'s refuse predicate exists
+    to catch, and a review caught it doing (an earlier review caught the same defect for
+    `quant.artifact_recall@1` and it was fixed by giving IT its own entry -- see the
+    `quant` entry `benchmark_region_quantized` adds below; this follows that shape). A
+    metric whose true pool differs from its prefix family's dominant one gets a key named
+    after its own dotted field name (`"repr.emb_std_anchor"`, `"repr.alignment"`), so a
+    reader/caller can always do `groups.get(full_name, groups[prefix])` and get the right
+    pool either way.
 
     - `rank.*`: `recall_at_k`/`mean_reciprocal_rank`/`ndcg_at_k`/`average_precision`/
       `precision_at_k`/`candidates`, MM §3.1-§3.6 -- the closed, single-relevant-item,
@@ -299,13 +308,14 @@ def _metric_groups(battery_id: str, seed: int) -> dict:
       `cat([anchors, positives])`, i.e. `pooled_both` (`benchmark_embeddings`,
       `src/cogsyndelta/eval/benchmark.py:392-399`), subsample seed 0 by default (MM
       §3.9(e)) -- NOT this battery's corpus/holdout seed, which is why this group
-      records `seed=0` rather than the `seed` argument. CAVEAT, recorded rather than
-      silently glossed: `repr.alignment` alone in this same group is measured on
-      MATCHED pairs, not `pooled_both` (MM §3.10(d)) -- `BenchmarkResult.representation`
-      keeps all four in one dict (`src/cogsyndelta/eval/benchmark.py:392-400`), and
-      splitting `alignment` into its own group is a change to that file, out of this
-      lane's scope; noted under `_notes` so a reader does not assume uniform pooling
-      across every key this group lists.
+      records `seed=0` rather than the `seed` argument.
+    - `repr.emb_std_anchor`: MM §12.5 -- anchors ONLY (`representation_std(a)`,
+      `src/cogsyndelta/eval/benchmark.py:455`), never `pooled_both`. Own entry,
+      `pooling="anchor"`, same `battery_id`/`seed=0` as the `repr` family it is
+      otherwise measured alongside.
+    - `repr.alignment`: MM §3.10(d)/§12.4 -- MATCHED pairs (anchor row `i` against
+      positive row `i`), never `pooled_both`. Own entry, `pooling="matched"`, same
+      `battery_id`/`seed=0` as the `repr` family it is otherwise measured alongside.
 
     Args:
         battery_id: `"eval_holdout"` for a `kind="eval"` receipt, `"eval_quantized_holdout"`
@@ -316,7 +326,7 @@ def _metric_groups(battery_id: str, seed: int) -> dict:
             from (`cfg.seed`, read back from the training receipt) -- what MM §10 item 7
             calls the seed that "drives the corpus reservoir sample, the shuffle, and
             the untrained model's initial weights". Applied to the `rank`/`eff` groups;
-            the `repr` group's own subsample seed is fixed at 0 regardless (see above).
+            every `repr*` group's own subsample seed is fixed at 0 regardless (see above).
     """
     return {
         "rank": {"battery_id": battery_id, "pooling": "matched", "seed": seed},
@@ -325,12 +335,16 @@ def _metric_groups(battery_id: str, seed: int) -> dict:
             "battery_id": battery_id,
             "pooling": "pooled_both",
             "seed": 0,
-            "_notes": (
-                "repr.alignment is measured on 'matched' pairs (MM §3.10(d)), not "
-                "'pooled_both' like the rest of this group (anisotropy/uniformity/"
-                "effective_rank/dimensions/effective_rank_entropy_ratio, MM §3.9/§3.11/"
-                "§3.12) -- see _metric_groups' docstring in scripts/csd-benchmark.py."
-            ),
+        },
+        "repr.emb_std_anchor": {
+            "battery_id": battery_id,
+            "pooling": "anchor",
+            "seed": 0,
+        },
+        "repr.alignment": {
+            "battery_id": battery_id,
+            "pooling": "matched",
+            "seed": 0,
         },
     }
 
