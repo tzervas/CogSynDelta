@@ -66,10 +66,10 @@ concurrency:
 jobs:
   wiki:
     name: Publish docs to the Forgejo wiki
-    # This repo also mirrors to github.com as a read-only backup; that copy has no
-    # wiki target, so this job must never run there -- only on the real Forgejo.
+    # This repo mirrors to github.com as a read-only backup; that copy has no
+    # wiki target, so exclude the GitHub mirror.
     if: >-
-      github.server_url == 'https://git.vectorweight.com' &&
+      github.server_url != 'https://github.com' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/main'
     runs-on: [self-hosted, linux, x64, podman]
