@@ -197,8 +197,8 @@ def quantize_text_region(
         by_width[bits] = by_width.get(bits, 0) + 1
 
     print(
-        f"    quantized recall@1={plan.metric:.4f}  drop={fp32_metric - plan.metric:.4f} "
-        f"(budget {tolerance})",
+        f"    quantized recall@1={plan.metric:.4f}  "
+        f"drop(quant.drop_recall@1)={fp32_metric - plan.metric:.4f} (budget {tolerance})",
         flush=True,
     )
     print(
@@ -259,16 +259,37 @@ def quantize_text_region(
         "max_bits": max_bits,
         "fp32_metric_recomputed": fp32_metric,
         "fp32_metric_receipt": recorded_metric,
-        "quantized_metric": plan.metric,
-        "drop": fp32_metric - plan.metric,
+        # g7-latent-eval-metrics.md §3.1 renames (envelope schema unchanged; see
+        # `metrics_schema` below): `quantized_metric` -> `quant.plan_recall@1`
+        # (measured on the IN-MEMORY plan, before `save_packed_artifact` ever writes a
+        # file -- MM §4); `compression_ratio` -> `quant.compression_ratio` (a
+        # payload/storage ratio, not latency); one named metric ("drop") on one named
+        # battery -> `quant.drop_recall@1`. `fp32_metric_recomputed` / `within_budget` /
+        # `tolerance` / `fp32_bytes` / `stored_bytes` / `width_histogram` are unrenamed --
+        # the spec names only these three.
+        "quant.plan_recall@1": plan.metric,
+        "quant.drop_recall@1": fp32_metric - plan.metric,
         "within_budget": (fp32_metric - plan.metric) <= tolerance,
         "fp32_bytes": plan.fp32_bytes,
         "stored_bytes": plan.stored_bytes,
-        "compression_ratio": plan.ratio,
+        "quant.compression_ratio": plan.ratio,
         "width_histogram": {str(k): v for k, v in sorted(by_width.items())},
         "bits": plan.bits,
         "fp32_tensors": plan.fp32,
         "promotions": plan.promotions,
+        # Per-metric-group provenance (g7 §3.1/§3.3): this receipt reports exactly one
+        # battery -- the quantize stage's in-memory sensitivity/plan pass, which reuses
+        # `regions.pretrain.evaluate()`'s closed held-out pool (the same "matched
+        # single-positive diagonal" pool §2.1/§3.1 of MM describe for `rank.*` /
+        # `held_out.*`) -- so `quant.plan_recall@1` and `quant.drop_recall@1` share one
+        # battery_id/pooling/seed rather than each needing its own. `seed` is the
+        # corpus/holdout-construction seed the training receipt recorded (`cfg.seed`),
+        # NOT a re-randomised one -- `build_splits(cfg)` above rebuilds the identical
+        # split training used from it, which is the entire point of quantizing against
+        # the SAME holdout.
+        "battery_id": "quant_plan",
+        "pooling": "matched",
+        "seed": cfg.seed,
     }
 
 
@@ -345,8 +366,8 @@ def main() -> int:
     )
     for r in results:
         print(
-            f"  {r['region']:<10} {r['compression_ratio']:.2f}x  "
-            f"{r['fp32_metric_recomputed']:.4f} -> {r['quantized_metric']:.4f}  "
+            f"  {r['region']:<10} {r['quant.compression_ratio']:.2f}x  "
+            f"{r['fp32_metric_recomputed']:.4f} -> {r['quant.plan_recall@1']:.4f}  "
             f"{'OK' if r['within_budget'] else 'OVER BUDGET'}",
             flush=True,
         )
