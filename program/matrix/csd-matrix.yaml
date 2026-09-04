@@ -285,6 +285,20 @@ regions:
     budgets:
       "batch=512": {mib: null, source: probe}
       "batch=1280": {mib: null, source: probe}
+    # Model-card metadata for `scripts/csd-card.py` (via `publish.card_command` above)
+    # -- NOT re-derived from the training config, because `licence_tier` in particular
+    # must trace to the SAME audited table `scripts/csd-publish-checkpoint.py`'s
+    # `LICENCE_TIER`/`LICENCE_WHY` already enforce (that script's own `licence_tier()`
+    # is what actually gates a publish; this is a legible restatement for anyone
+    # reading this config, and `tests/test_matrix_config.py` pins the two agreeing).
+    # `datasets`: the HF repo id `csd-train-all.py` actually loads shards from
+    # (`region/code/codesearchnet-python/`), matched to its real upstream --
+    # `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` §"code", "upstream" row.
+    card:
+      language: en
+      tags: [cogsyndelta, "region:code"]
+      licence_tier: mit
+      datasets: ["code-search-net/code_search_net"]
 
   compress:
     axes: {batch: [512, 1280], seed: [0, 1]}
@@ -297,6 +311,13 @@ regions:
     budgets:
       "batch=512": {mib: null, source: probe}
       "batch=1280": {mib: null, source: probe}
+    # datasets: sentence-transformers/all-nli (pair config) -- DEC-02/LICENCE-FOR-OPEN-
+    # WEIGHTS.md §"compress" (§"3. compress" in the repair-cost survey).
+    card:
+      language: en
+      tags: [cogsyndelta, "region:compress"]
+      licence_tier: cc-by-sa-4.0
+      datasets: ["sentence-transformers/all-nli"]
 
   retrieve:
     axes: {batch: [512, 1280], seed: [0, 1]}
@@ -314,6 +335,18 @@ regions:
     budgets:
       "batch=512": {mib: null, source: probe}
       "batch=1280": {mib: null, source: probe}
+    # datasets: the three sources csd-train-all.py actually streams -- fiqa-pairs
+    # (BeIR/fiqa), natural-questions (sentence-transformers' repackage of
+    # google-research-datasets/natural_questions) and gooaq (sentence-transformers'
+    # repackage of allenai/gooaq, the NC-accepted one -- LICENCE-FOR-OPEN-WEIGHTS.md
+    # "Decision 2026-09-02"). Listed as the repo actually TRAINED on, not the
+    # (differently-licensed) original upstream each repackages.
+    card:
+      language: en
+      tags: [cogsyndelta, "region:retrieve"]
+      licence_tier: cc-by-nc-sa-4.0
+      datasets:
+        ["BeIR/fiqa", "sentence-transformers/natural-questions", "sentence-transformers/gooaq"]
 
   reason:
     max_len: 256
@@ -330,6 +363,14 @@ regions:
       "batch=256": {mib: null, source: probe}
       "batch=512": {mib: null, source: probe}
     hosts: [akula-prime, gpu5080]
+    # datasets: gsm8k-main (openai/gsm8k, `main` config) + aqua_rat-raw
+    # (deepmind/aqua_rat, `raw` config) -- LICENCE-FOR-OPEN-WEIGHTS.md's per-source
+    # audit table, both PERMISSIVE_OK.
+    card:
+      language: en
+      tags: [cogsyndelta, "region:reason"]
+      licence_tier: mit
+      datasets: ["openai/gsm8k", "deepmind/aqua_rat"]
 
   memory:
     # THE FULL COMMAND MAP IS REPEATED HERE ON PURPOSE (C4). `regions.defaults` is merged
@@ -422,15 +463,51 @@ regions:
       full_pool_r10: "train:$.retrieval.full_pool.trained.recall@10"
       full_pool_mrr: "train:$.retrieval.full_pool.trained.mrr"
       graded_spearman: "train:$.graded_held_out.spearman"
+    # datasets: the union of compress's and retrieve's own sources (DEC-02, "memory" is
+    # a region MERGE of compress+retrieve -- see docs/design/LICENCE-FOR-OPEN-
+    # WEIGHTS.md, Rider 1: a merge inherits its most restrictive parent licence, hence
+    # cc-by-nc-sa-4.0 here even though all-nli alone is cc-by-sa-4.0).
+    card:
+      language: en
+      tags: [cogsyndelta, "region:memory"]
+      licence_tier: cc-by-nc-sa-4.0
+      datasets:
+        [
+          "sentence-transformers/all-nli",
+          "BeIR/fiqa",
+          "sentence-transformers/natural-questions",
+          "sentence-transformers/gooaq",
+        ]
 
 publish:
   repo_pattern: "tzervas/cogsyndelta-region-{region}"
   base_ref: "variants/base"
   branch: "{variant_id}"
+  # `branch_prefix` NAMES the convention `branch` above already follows in practice
+  # (DESIGN.v2 §4.2: cut every cell's branch from `variants/base`, never from the
+  # repo's default revision) -- it is not yet substituted into `branch` itself (that
+  # stays exactly `"{variant_id}"`, unprefixed, until harness round 4 also injects
+  # `variant_id` -- see PENDING_HUB_KEYS in tests/test_matrix_config.py). Recorded here
+  # so the publish step this config describes and `scripts/csd-card.py`'s own
+  # `--cell`-driven card render (via `card_command` below, run against the SAME cell
+  # after publish, never before) agree on where a variant's branch lives without
+  # either side re-deriving the convention independently.
+  branch_prefix: "variants/"
   tags: {fp32: "{variant_id}--fp32", ptq: "{variant_id}--ptq"}
   private: true
   promote_main: manual # runner prints the promotion it would make; `model-matrix promote` executes it
   main_rule: best_primary_metric_all_gates_pass
+  # `cogsyndelta.cards.render_card` (the template-driven library), NOT the `publish:`
+  # command template's own `csd-publish-checkpoint.py` invocation above (regions.
+  # defaults.commands.publish) -- see scripts/csd-card.py's own module docstring for
+  # why the two are deliberately separate tools with separate card formats. Run AFTER
+  # `publish` (requires the cell's own receipts to already exist on disk, same as
+  # `card` reads); `{hub_repo}`/`{out}` are PENDING the same harness-round-4 injection
+  # `publish` itself is waiting on (PENDING_HUB_KEYS) -- `{cell_dir}` and `{region}`
+  # are cell vars the harness already provides today.
+  card_command: >-
+    {python} scripts/csd-card.py --cell {cell_dir} --kind region_variant --region {region}
+    --repo {hub_repo} --out {out}
 
 retention:
   working_set: [unfinished, keep, current_final]
