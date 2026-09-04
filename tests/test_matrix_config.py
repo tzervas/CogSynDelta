@@ -345,3 +345,47 @@ def test_the_requires_guard_fires_on_the_finetune_pipeline_as_shipped() -> None:
     problems = _requires_violations(raw)
     assert any("pipeline 'finetune' requires 'train'" in p for p in problems), problems
     assert "finetune" not in _merged_regions(raw)["memory"]["commands"]
+
+
+# ------------------------------------------------- M2: test-quant activation coupling
+
+
+def _collect_coupling_violation(raw: dict[str, Any]) -> str | None:
+    """`collect` must require the LAST stage that scored the artifact.
+
+    The harness cannot catch this: with `test-quant` enabled, `quantize` is still an
+    enabled stage in the pipeline, so `validate_requires` is satisfied either way. It is
+    a CSD-side invariant about what "collected" is allowed to mean.
+    """
+    stages = raw["stages"]
+    want = ["test-quant"] if stages["test-quant"].get("enabled", True) else ["quantize"]
+    got = stages["collect"].get("requires")
+    if got != want:
+        return f"collect.requires is {got!r}, expected {want!r}"
+    return None
+
+
+def test_test_quant_is_enabled() -> None:
+    """M2. A6 exists on this branch, so the packed artifact is re-scored rather than
+    represented by `csd-quantize.py`'s in-memory plan metric."""
+    assert _raw()["stages"]["test-quant"].get("enabled", True) is True
+
+
+def test_collect_requires_the_last_stage_that_scored_the_artifact() -> None:
+    """M2's footgun: `test-quant.enabled: true` with `collect.requires: [quantize]`
+    lets collect -- and therefore publish -- gather a cell whose `.ptq.pt` was never
+    opened. The two settings move together or not at all."""
+    assert _collect_coupling_violation(_raw()) is None
+
+
+def test_the_collect_coupling_guard_fires_on_the_half_flipped_config() -> None:
+    """MUTATION. Enable test-quant but leave collect on quantize -- the reviewer's
+    'activation footgun' -- and assert the coupling check reports it while the
+    harness's own `validate_requires` stays silent."""
+    raw = copy.deepcopy(_raw())
+    raw["stages"]["test-quant"]["enabled"] = True
+    raw["stages"]["collect"]["requires"] = ["quantize"]
+    assert _requires_violations(raw) == [], "the harness cannot see this one"
+    assert _collect_coupling_violation(raw) == (
+        "collect.requires is ['quantize'], expected ['test-quant']"
+    )

@@ -9,16 +9,22 @@
 # this file does not repeat that reasoning, only its result.
 #
 # STATUS (see docs/design/MATRIX-PIPELINE.md for how to read/run this):
-#   - `run.code.sha` pins `main` at the commit this file was written against. It has NO
-#     `--quantized`/`--quant-receipt`/`--train-receipt` flags on csd-benchmark.py or
-#     csd-quantize.py -- those adapters (A6, A7) are implemented and tested on
-#     `feat/matrix-config` (this branch), not yet merged. `stages.test-quant.enabled`
-#     is therefore `false`, matching what `main` can actually run; the harness pipeline
-#     runs `train, test, quantize, collect, publish, verify` and the matrix table
-#     carries the labelled interim PTQ column (`quantize:$.quantized_metric`) per §5.1.
-#   - ACTIVATION STEP, once this branch's PR merges to `main`: update `run.code.sha` to
-#     the merge commit, flip `stages.test-quant.enabled` to `true`, and re-run the
-#     preflight (`model-matrix validate`) before launching -- see MATRIX-PIPELINE.md.
+#   - `stages.test-quant.enabled` is now `true`: A6 (`csd-benchmark.py --quantized
+#     --quant-receipt`) and A7 (`--train-receipt` on both scripts) are implemented and
+#     tested on `feat/matrix-config`, so the artifact IS re-scored and the pipeline runs
+#     `train, test, quantize, test-quant, collect, publish, verify`. `collect.requires`
+#     moved to `[test-quant]` in the same change -- leaving it on `[quantize]` would let
+#     collect gather a cell before its published artifact had been scored, which is the
+#     footgun DESIGN.v2 §5.1's labelled interim PTQ column existed to avoid. That interim
+#     column (`quantize:$.quantized_metric`, "quant plan, in-memory; artifact not
+#     re-scored") is no longer the matrix's PTQ number; `test-quant`'s receipt is.
+#   - PREREQUISITE BEFORE LAUNCH, not optional: `run.code.sha` below still pins `main` at
+#     the commit this file was written against, and that commit has NO `--quantized` /
+#     `--quant-receipt` / `--train-receipt` flags. Update it to the merge commit of this
+#     branch's PR and re-run `model-matrix validate` before starting a run -- otherwise
+#     every test-quant (and every A7 `--train-receipt`) argv is an unrecognised-argument
+#     exit 2 on the host. The config is now correct for the code that is about to be
+#     merged; the sha pin is the one line that must follow the merge.
 #   - Every `budgets` entry not sourced from a real `report_peak()` measurement is
 #     `null` (H4's convention): the harness's wave 0 probes those before launching any
 #     full cell. This is deliberately a LARGER probe set than a naive first draft would
@@ -120,11 +126,15 @@ stages:
     bound_to: quantize
     complete_on_gate_fail: true
     requires: [quantize]
-    enabled: false # true once this branch's A6/A7 PR merges to main -- see the header note
+    enabled: true # A6 landed on this branch: the packed artifact is re-scored, not assumed
   collect:
     kind: collect
     gpu: false
-    requires: [quantize] # shifts to test-quant once enabled: true above
+    # MUST name the last stage that scores the artifact (M2). While `test-quant` was
+    # disabled this read `[quantize]`; enabling test-quant without moving this would let
+    # collect -- and therefore publish -- gather a cell whose .ptq.pt had never been
+    # opened, which is exactly the gap A6 exists to close.
+    requires: [test-quant]
   publish:
     kind: publish
     gpu: false
