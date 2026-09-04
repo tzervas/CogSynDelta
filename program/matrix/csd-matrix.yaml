@@ -18,13 +18,12 @@
 #     footgun DESIGN.v2 §5.1's labelled interim PTQ column existed to avoid. That interim
 #     column (`quantize:$.quantized_metric`, "quant plan, in-memory; artifact not
 #     re-scored") is no longer the matrix's PTQ number; `test-quant`'s receipt is.
-#   - PREREQUISITE BEFORE LAUNCH, not optional: `run.code.sha` below still pins `main` at
-#     the commit this file was written against, and that commit has NO `--quantized` /
-#     `--quant-receipt` / `--train-receipt` flags. Update it to the merge commit of this
-#     branch's PR and re-run `model-matrix validate` before starting a run -- otherwise
-#     every test-quant (and every A7 `--train-receipt`) argv is an unrecognised-argument
-#     exit 2 on the host. The config is now correct for the code that is about to be
-#     merged; the sha pin is the one line that must follow the merge.
+#   - PREREQUISITE BEFORE LAUNCH satisfied: `run.code.sha` below now pins PR #13's merge
+#     commit (`b7e8ff58d3b5`, main), which carries the `--quantized` / `--quant-receipt` /
+#     `--train-receipt` flags the command templates in this file already pass. It
+#     previously pinned an older `main` with none of those flags -- every test-quant (and
+#     every A7 `--train-receipt`) argv would have been an unrecognised-argument exit 2 on
+#     the host. `model-matrix validate` and `plan` were re-run clean against the new pin.
 #   - Every `budgets` entry not sourced from a real `report_peak()` measurement is
 #     `null` (H4's convention): the harness's wave 0 probes those before launching any
 #     full cell. This is deliberately a LARGER probe set than a naive first draft would
@@ -37,7 +36,7 @@ run:
   project: cogsyndelta
   code:
     repo: /home/kang/code/personal/tzervas/CogSynDelta
-    sha: f48fd8a07df9024687da2fce01536963371efcb9 # main, 2026-09-03 -- memory licence tier merged (#10); NOT feat/vl-jepa
+    sha: b7e8ff58d3b50b7068d3577e9dcedafe24f6ee0d # main, 2026-09-03 -- PR #13 merged: csd-benchmark.py --quantized/--quant-receipt/--train-receipt land; NOT feat/vl-jepa
   state_root: /akula-data/csd/matrix
   finals_root: /akula-data/csd/finals # must be inside retention.prune_roots (loader-enforced)
   events_dir: /akula-data/csd/events
