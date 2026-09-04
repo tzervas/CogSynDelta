@@ -143,10 +143,7 @@ if _SRC not in sys.path:
 from cogsyndelta.cards.methodology import (  # noqa: E402 -- needs sys.path set above
     METHODOLOGY_DOC,
     METRIC_METHODOLOGY,
-    CardError,
-    methodology_key,
     normalize_quant_receipt_v1,
-    require_documented,
 )
 
 DEFAULT_OWNER = "tzervas"
@@ -654,18 +651,6 @@ def _ptq() -> Any:
     return ptq
 
 
-def _export_safetensors() -> Any:
-    """`cogsyndelta.cards.export.export_safetensors`, imported lazily -- same reasoning
-    as `_ptq()` above: it pulls in torch, and only the `--safetensors` path (and a
-    future publish once this becomes non-opt-in) should pay that cost."""
-    src = str(REPO_ROOT / "src")
-    if src not in sys.path:
-        sys.path.append(src)
-    from cogsyndelta.cards.export import export_safetensors
-
-    return export_safetensors
-
-
 def verify_quantized_measurements(
     quantized: Path, receipt: dict[str, Any]
 ) -> tuple[int, dict[str, int]]:
@@ -874,15 +859,13 @@ def _card_metric_keys(
         for k in eval_receipt.get("gates", {}):
             keys[k] = None
         for k in eval_receipt.get("metrics", {}):
-            # `methodology_key` (cogsyndelta.cards.methodology) is the SAME repr./rank./
-            # eff. prefix-strip `cogsyndelta.cards.tables` uses to key into
-            # METRIC_METHODOLOGY -- this table only ever prints the repr.* family (never
-            # rank./eff.*, which the newer cogsyndelta.cards library prints instead), so
-            # only that prefix is selected here; `quant.artifact_recall@1` is passed
-            # through unstripped (methodology_key leaves quant.* alone -- it is already
-            # the canonical g7 §3.1 name, not a family-prefixed shorthand).
-            if k.startswith("repr.") or k.startswith("quant."):
-                keys[methodology_key(k)] = None
+            if k.startswith("repr."):
+                keys[k[len("repr.") :]] = None
+            # `quant.artifact_recall@1` lives in an eval-quantized receipt's `metrics`
+            # (not prefix-stripped like repr.* -- it is already the canonical g7 §3.1
+            # name, not a family-prefixed one this table strips a prefix from).
+            elif k.startswith("quant."):
+                keys[k] = None
     for k in train_receipt.get("contamination", {}):
         if k != "examples":
             keys[k] = None
@@ -989,24 +972,14 @@ def _methodology_section(
             `METRIC_METHODOLOGY` empty and asserting the card build then fails.
     """
     keys = _card_metric_keys(train_receipt, eval_receipt, quant_receipt)
-    # Delegates the "is every key documented" check itself to
-    # `cogsyndelta.cards.methodology.require_documented` -- the SAME missing-key
-    # computation `cogsyndelta.cards.tables`'s build_* functions call, rather than a
-    # second, hand-rolled `[k for k in keys if k not in METRIC_METHODOLOGY]` that could
-    # silently drift from it. `methodology=METRIC_METHODOLOGY` passes THIS MODULE's own
-    # bound name (imported above, not re-imported here), so a test's
-    # `monkeypatch.setattr(mod, "METRIC_METHODOLOGY", {...})` -- which reassigns that
-    # name in this module's namespace -- is exactly what this lookup sees; passing
-    # `methodology=None` instead would read `cogsyndelta.cards.methodology`'s own
-    # (unpatched) global, defeating that test's monkeypatch entirely (see
-    # `cogsyndelta.cards.methodology`'s own module docstring for why this distinction
-    # matters). `CardError` is translated to this script's own `PublishAbortError`
-    # rather than propagated, so every caller of `build_card`/`build_plan` keeps seeing
-    # one exception type for every refusal this script makes.
-    try:
-        require_documented(keys, methodology=METRIC_METHODOLOGY)
-    except CardError as e:
-        raise PublishAbortError(f"{e} (publishing, not rendering)") from e
+    missing = [k for k in keys if k not in METRIC_METHODOLOGY]
+    if missing:
+        raise PublishAbortError(
+            f"card would print metric key(s) {sorted(missing)} with no entry in "
+            "METRIC_METHODOLOGY -- refusing to publish a number with no stated "
+            f"definition/battery/source. Add an entry (and, if it names a new formula, "
+            f"a section to {METHODOLOGY_DOC}) before publishing."
+        )
     lines = [
         "## How these numbers were produced",
         "",
@@ -1250,14 +1223,6 @@ class Plan:
     re-measured from the file and found to agree with the receipt, and the file added
     to `files` -- never the primary artifact; `checkpoint_path` above stays the one
     required weights file."""
-    safetensors_path: Path | None = None
-    safetensors_sha256: str | None = None
-    """Set only when `--safetensors` was passed: `cogsyndelta.cards.export.
-    export_safetensors(checkpoint_path)`'s own output, hashed the same way
-    `checkpoint_path` is, and added to `files` under the checkpoint's basename with a
-    `.safetensors` suffix -- never the primary artifact; `checkpoint_path` (fp32 `.pt`)
-    stays the one required weights file, exactly as `quantized_path` above is never
-    promoted over it."""
 
 
 def build_plan(
@@ -1267,7 +1232,6 @@ def build_plan(
     eval_receipt_path: Path | None,
     quant_receipt_path: Path | None,
     regions_config: Path = DEFAULT_REGIONS_CONFIG,
-    want_safetensors: bool = False,
 ) -> Plan:
     tier = licence_tier(region)  # fail fast, before touching any file we don't need to
     region_cfg = load_region_config(region, regions_config)
@@ -1389,35 +1353,6 @@ def build_plan(
             )
         files[name_in_repo] = quantized_path
 
-    # OPT-IN (--safetensors), not part of the default plan: `export_safetensors`
-    # requires the checkpoint to actually torch.load() as a state dict, which every
-    # REAL checkpoint this project trains is -- but is not guaranteed of an arbitrary
-    # `--receipt`-named `.pt` file (see checkpoint_path_from_receipt's own containment
-    # docstring: the *path* is verified, never the pickled contents). A caller that
-    # asked for this explicitly gets a fail-closed abort naming why, rather than a
-    # publish that silently omits the file it was told to include.
-    safetensors_path: Path | None = None
-    safetensors_sha256: str | None = None
-    if want_safetensors:
-        export_safetensors_fn = _export_safetensors()
-        try:
-            safetensors_path = export_safetensors_fn(checkpoint)
-        except Exception as e:
-            raise PublishAbortError(
-                f"--safetensors requested but {checkpoint} could not be exported to "
-                f"safetensors ({type(e).__name__}: {e}) -- refusing to publish a plan "
-                "that silently omits the file it was asked to include"
-            ) from e
-        safetensors_sha256 = sha256_of(safetensors_path)
-        name_in_repo = f"{checkpoint.stem}.safetensors"
-        if name_in_repo in files:
-            raise PublishAbortError(
-                f"safetensors export would be uploaded as {name_in_repo!r}, which the "
-                f"plan already maps to {files[name_in_repo]!r} -- refusing to overwrite "
-                "another file's slot in the upload plan"
-            )
-        files[name_in_repo] = safetensors_path
-
     return Plan(
         region=region,
         repo=repo,
@@ -1433,8 +1368,6 @@ def build_plan(
         quantized_sha256=quantized_sha256,
         quantized_stored_bytes=quantized_stored_bytes,
         quantized_width_histogram=quantized_width_histogram,
-        safetensors_path=safetensors_path,
-        safetensors_sha256=safetensors_sha256,
     )
 
 
@@ -1454,11 +1387,6 @@ def print_plan(plan: Plan, dry_run: bool) -> None:
             f"               measured stored_bytes={plan.quantized_stored_bytes} "
             f"widths={plan.quantized_width_histogram}"
         )
-    if plan.safetensors_path is not None:
-        print(
-            f"  safetensors: {plan.safetensors_path} (not primary; {plan.checkpoint_path.name} is)"
-        )
-        print(f"               sha256={plan.safetensors_sha256}")
     print(f"  code_rev:    {plan.code_rev}")
     print("  files:")
     for path_in_repo, item in sorted(plan.files.items()):
@@ -1533,11 +1461,11 @@ def publish(plan: Plan) -> dict[str, list[str]]:
 
     api = HfApi(token=token)
     ensure_private(api, plan.repo, plan.repo_type)
-    extra_shas: dict[str, str] = {}
-    if plan.quantized_path is not None and plan.quantized_sha256 is not None:
-        extra_shas[plan.quantized_path.name] = plan.quantized_sha256
-    if plan.safetensors_path is not None and plan.safetensors_sha256 is not None:
-        extra_shas[plan.safetensors_path.name] = plan.safetensors_sha256
+    extra_shas = (
+        {plan.quantized_path.name: plan.quantized_sha256}
+        if plan.quantized_path is not None and plan.quantized_sha256 is not None
+        else None
+    )
     result = sync_repo(
         api,
         plan.repo,
@@ -1566,14 +1494,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="owner/name; default follows scripts/csd-hf-repos.py's naming convention",
     )
-    ap.add_argument(
-        "--safetensors",
-        action="store_true",
-        help="also export and upload final.safetensors (cogsyndelta.cards.export) "
-        "beside the primary final.pt, so the Hub shows the safetensors badge/model-size "
-        "sidebar. Opt-in: refuses (rather than silently skipping) if the checkpoint "
-        "does not torch.load() as a plain state dict.",
-    )
     ap.add_argument("--dry-run", action="store_true")
     return ap.parse_args(argv)
 
@@ -1582,14 +1502,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     repo = args.repo or default_repo(args.region)
     try:
-        plan = build_plan(
-            args.region,
-            repo,
-            args.receipt,
-            args.eval_receipt,
-            args.quant_receipt,
-            want_safetensors=args.safetensors,
-        )
+        plan = build_plan(args.region, repo, args.receipt, args.eval_receipt, args.quant_receipt)
     except PublishAbortError as e:
         print(f"ABORT: {e}", file=sys.stderr)
         return 2
