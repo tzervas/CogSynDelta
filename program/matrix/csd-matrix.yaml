@@ -36,7 +36,7 @@ run:
   project: cogsyndelta
   code:
     repo: /home/kang/code/personal/tzervas/CogSynDelta
-    sha: b7e8ff58d3b50b7068d3577e9dcedafe24f6ee0d # main, 2026-09-03 -- PR #13 merged: csd-benchmark.py --quantized/--quant-receipt/--train-receipt land; NOT feat/vl-jepa
+    sha: 6614ec2315f5341d1a245c832a892ef8919d7293 # main, 2026-09-04 -- PR #21 merged: --seed flag for train/quantize/benchmark; --quantized/--quant-receipt/--train-receipt flags present
   state_root: /akula-data/csd/matrix
   finals_root: /akula-data/csd/finals # must be inside retention.prune_roots (loader-enforced)
   events_dir: /akula-data/csd/events
