@@ -38,10 +38,6 @@
 # picks it up with no further workflow change.
 name: Documentation
 
-# No workflow_dispatch: the single job below only ever runs `if: github.event_name ==
-# 'push' && github.ref == 'refs/heads/main'` (spec'd that way -- push-to-main only), so a
-# manual-trigger entry point here would just dispatch a run whose one job always skips.
-# That is worse than not offering the button.
 "on":
   push:
     branches: [main]
@@ -49,6 +45,7 @@ name: Documentation
       - "docs/**"
       - "scripts/docs_to_wiki.py"
       - ".github/workflows/docs.yml"
+  workflow_dispatch:
 
 # contents: write is required for the wiki push -- the wiki is part of the repository
 # (same scope `secrets.GITHUB_TOKEN` needs), not a separate permission. The old
@@ -69,7 +66,7 @@ concurrency:
 jobs:
   wiki:
     name: Publish docs to the Forgejo wiki
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 20
 
