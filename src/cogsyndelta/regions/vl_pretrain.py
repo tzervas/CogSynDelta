@@ -55,7 +55,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from cogsyndelta.corpus import stable_cache_tag
-from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig
+from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig, check_checkpoint_grid_compatible
 from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
 from cogsyndelta.regions._receipt import trainer_defaults, write_receipt
 
@@ -486,6 +486,16 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
             )
         print(f"    {cfg.region}: no valid checkpoint in {ckpt_dir} -- starting fresh", flush=True)
     else:
+        # Defense in depth beside `load_resumable`'s fingerprint check above: that check
+        # already refuses a resume whose ENTIRE `jepa` config differs (see
+        # `_resume_fields`), which covers a grid change too, but a dedicated grid check
+        # names the mismatch by grid rather than as an opaque field-by-field diff, and
+        # protects `load_state_dict` below directly if this call site is ever reached a
+        # different way (`checkpoint["config"]` came from a place `load_resumable`
+        # itself never inspects). See `check_checkpoint_grid_compatible`'s docstring for
+        # why `load_state_dict` alone cannot detect this (`pos_embed` is a
+        # non-persistent buffer).
+        check_checkpoint_grid_compatible(resume["config"], cfg.jepa)
         model.load_state_dict(resume["model"])
         opt.load_state_dict(resume["opt"])
         gen.set_state(resume["gen_state"])

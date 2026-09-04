@@ -447,6 +447,63 @@ def sample_masks(
     return torch.stack(ctx_list), torch.stack(tgt_list)
 
 
+def check_checkpoint_grid_compatible(checkpoint_config: dict[str, object], cfg: JEPAConfig) -> None:
+    """Refuse to attach a checkpoint's weights to a differently-gridded config.
+
+    THE SILENT FAILURE THIS CLOSES: `ViTEncoder.pos_embed` is a non-persistent buffer
+    (`register_buffer(..., persistent=False)`), so it is never part of `state_dict()` --
+    and `PatchEmbed`'s `Conv2d` and every `ViTBlock`'s parameters do not depend on
+    `image_size` at all, only on `dim`/`n_heads`/`patch_size`. That means a bare
+    `model.load_state_dict(checkpoint["model"])` SUCCEEDS SILENTLY even when the
+    checkpoint was trained at a different resolution: every persisted tensor lines up
+    shape-for-shape while the freshly-constructed `pos_embed` means something entirely
+    different from the one the checkpoint's weights were trained against (2-D sincos
+    recomputed for the NEW grid, not the checkpoint's). This is the "silent resize
+    masquerade" the W7v sector study (`g8-visual/S02.md` §9, "Pitfalls") names -- the
+    fix here is an explicit pre-check, not a `_decode_split` pixel resize, which would
+    paper over the mismatch rather than refuse it.
+
+    Call this before `load_state_dict`, not instead of it.
+
+    Args:
+        checkpoint_config: The `JEPAConfig` fields recorded on the checkpoint (e.g. a
+            `csd-vl-pretrain-checkpoint/v1` payload's ``"config"`` key --
+            `dataclasses.asdict(jepa_cfg)`).
+        cfg: The config the encoder is about to be (or already was) constructed with.
+
+    Raises:
+        ValueError: `checkpoint_config` is missing `image_size`/`patch_size`, or its
+            implied grid does not match `cfg.grid` -- naming both grids, both patch
+            counts, and both `(image_size, patch_size)` pairs.
+    """
+    ckpt_image_size = checkpoint_config.get("image_size")
+    ckpt_patch_size = checkpoint_config.get("patch_size")
+    if not isinstance(ckpt_image_size, int) or not isinstance(ckpt_patch_size, int):
+        raise ValueError(
+            "checkpoint config is missing an integer image_size/patch_size -- cannot "
+            f"verify its patch grid matches the current config's {cfg.grid}x{cfg.grid} "
+            f"grid ({cfg.n_patches} patches, image_size={cfg.image_size}, "
+            f"patch_size={cfg.patch_size}). checkpoint_config: {checkpoint_config!r}"
+        )
+    if ckpt_patch_size == 0 or ckpt_image_size % ckpt_patch_size != 0:
+        raise ValueError(
+            f"checkpoint config's image_size={ckpt_image_size} is not divisible by its "
+            f"patch_size={ckpt_patch_size} -- cannot compute its grid."
+        )
+    ckpt_grid = ckpt_image_size // ckpt_patch_size
+    if ckpt_grid != cfg.grid:
+        ckpt_n_patches = ckpt_grid * ckpt_grid
+        raise ValueError(
+            f"checkpoint grid {ckpt_grid}x{ckpt_grid} ({ckpt_n_patches} patches, from "
+            f"image_size={ckpt_image_size}, patch_size={ckpt_patch_size}) does not "
+            f"match config grid {cfg.grid}x{cfg.grid} ({cfg.n_patches} patches, from "
+            f"image_size={cfg.image_size}, patch_size={cfg.patch_size}). pos_embed is a "
+            f"non-persistent buffer, so load_state_dict alone would NOT have caught "
+            f"this and would silently attach mismatched-resolution weights under a "
+            f"freshly (and wrongly) positioned pos_embed. Refusing to load."
+        )
+
+
 class IJEPA(nn.Module):
     """Image-JEPA: context encoder, EMA target encoder, and a predictor."""
 
