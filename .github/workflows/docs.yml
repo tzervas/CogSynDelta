@@ -124,7 +124,8 @@ jobs:
           test -d "$WIKI_DIR"
           page_count=$(ls "$WIKI_DIR"/*.md 2>/dev/null | wc -l) || page_count=0
           echo "generated page count: $page_count"
-          git -C "$WIKI_DIR" status --short | head
+          status_lines="$(git -C "$WIKI_DIR" status --short)"
+          printf '%s\n' "$status_lines" | head -n 10
           if [ "$page_count" -lt 20 ]; then
             echo "wiki sync produced too few pages ($page_count < 20) -- failing closed" >&2
             exit 1
