@@ -59,18 +59,27 @@ fi
 #   A. `uv sync --group dev --inexact`  -- stops the pruning, minimal diff. Rejected:
 #      the venv can then accumulate packages this gate never asked for, so it drifts
 #      from a clean install and can hide a missing-dependency bug real CI would catch.
-#   B. Add `--group train` to the sync   -- keeps everything, minimal diff. Rejected:
-#      pyproject.toml already documents the train/dev split as deliberate ("pulling
-#      pyarrow + tokenizers into every lint job costs minutes for nothing"); this
-#      reintroduces exactly that cost on every single push, forever, not just while
-#      training happens to be running.
-#   C. Give this script its OWN project environment (CHOSEN) -- `uv sync --group dev`
-#      keeps pruning exactly as CI's clean-install check requires, but it prunes a venv
-#      nothing else reads from, so the hazard is structurally impossible rather than
-#      merely avoided. Cost is a second venv on disk and a slower first run, which is
-#      cheap next to "silently broke a multi-hour training run."
-# C preserves CI fidelity (A doesn't) and keeps the group split's build-minute savings
-# for the venv that matters (B doesn't), so it is strictly better than A or B here.
+#   B. Add `--group train` to the sync   -- keeps everything, minimal diff. This was
+#      rejected when this script still synced the shared interactive .venv, on the
+#      grounds that pyproject.toml documents the train/dev split as deliberate
+#      ("pulling pyarrow + tokenizers into every lint job costs minutes for nothing")
+#      and that this would reintroduce that cost on every push, forever. That objection
+#      does not survive C below: once this script has its own isolated venv, the
+#      pyproject comment no longer applies to it -- the comment is about CI's lint jobs
+#      (lint, shell-yaml-lint, lint-gate, quality), none of which sync this project's
+#      dependency groups at all, and never was about this gate's venv. ADOPTED, folded
+#      into C: this gate's pytest steps mirror CI's `test` job, which already syncs
+#      `--group dev --group train` every run (.github/workflows/ci.yml:191), so this
+#      venv pays the same, correct cost.
+#   C. Give this script its OWN project environment (CHOSEN) -- `uv sync --group dev
+#      --group train`, matching CI's `test` job (ci.yml:191), keeps pruning to exactly
+#      that set, but prunes a venv nothing else reads from, so the HAZARD above is
+#      structurally impossible rather than merely avoided. Cost is a second venv on
+#      disk and a slower first run, which is cheap next to "silently broke a
+#      multi-hour training run."
+# C preserves CI fidelity (A doesn't) and is what makes B safe rather than costly: an
+# isolated venv can sync CI's exact group set, train included, without the shared-venv
+# mutation hazard the HAZARD paragraph above describes.
 #
 # IMPORTANT: this must be an UNCONDITIONAL override, not `${UV_PROJECT_ENVIRONMENT:-...}`.
 # Confirmed on this host: ~/.config/nushell/env.nu sets `$env.UV_PROJECT_ENVIRONMENT =
@@ -165,12 +174,15 @@ echo "== python ${PYTHON_VERSION} + venv (${UV_PROJECT_ENVIRONMENT}) =="
 uv python install "${PYTHON_VERSION}"
 if [[ "${CPU_SYNC}" -eq 1 ]]; then
     echo "sync: CPU torch (CI Test/poc-ci wheels)"
-    ci_lock_sync --group dev --no-sources \
+    # Groups match CI's `test` job sync line: .github/workflows/ci.yml:191.
+    ci_lock_sync --group dev --group train --no-sources \
         --extra-index-url https://download.pytorch.org/whl/cpu \
         --index-strategy unsafe-best-match
 else
     echo "sync: project lock (desktop CUDA torch from pyproject)"
-    ci_lock_sync --group dev
+    # Same groups as the --cpu branch above: the pytest steps below run either way and
+    # need train's tokenizers/pyarrow (ci.yml:191) to collect, not just import, cleanly.
+    ci_lock_sync --group dev --group train
 fi
 
 uv run --no-sync python - <<'PY'
