@@ -28,11 +28,31 @@ needs_corpus = pytest.mark.skipif(
 )
 
 
+# eval_batch_size was 8 until 2026-09-04. That matched batch_size, but it measured a
+# Binomial(n=8, p) statistic at the corpus/synthetic streams' historically-measured
+# ~0.125 minority-routing rate (see poc/train_route.py's evaluate_route_load
+# docstring): P(zero minority hits in 8 draws) = 0.875**8 ~= 34%. That is not
+# "collapsed load" once in three fair runs -- it is this test's DoD assertion having
+# no safety margin at all, so it flips on any perturbation that moves even one
+# borderline token across the gate's decision boundary: ci_local.sh (the pre-push
+# gate) syncs CUDA torch and lets trained_corpus's DeviceContext.resolve("auto") pick
+# the GPU, while a plain interactive `pytest` run may stay on CPU -- and torch does
+# not promise bit-identical reductions across that difference even at a fixed seed,
+# only run-to-run repeatability on a given device with deterministic algorithms
+# enabled (which this test does not request, since GPU-vs-CPU divergence is the
+# thing being defended against here, not intra-device repeatability).
+#
+# MEASURED (CPU, seed 42, this config, both streams): eval_batch_size=8 gave exactly
+# 0.125/0.875 every run, no variance -- CPU alone is fully deterministic here, so the
+# two historical pre-push failures are consistent with the GPU path, not a code bug.
+# Widening to 64 settles at a stable ~0.34/0.66 (corpus) / ~0.13/0.87 (synthetic),
+# P(zero minority hits) ~= 0.0002 -- see test_eval_batch_size_has_collapse_safety_margin
+# below, which pins this reasoning down as a regression guard.
 def _cpu_train_cfg() -> RouteTrainConfig:
     return RouteTrainConfig(
         steps=24,
         batch_size=8,
-        eval_batch_size=8,
+        eval_batch_size=64,
         hidden_dim=32,
         stream_dim=16,
         latent_dim=4,
@@ -90,6 +110,30 @@ def _assert_dod(result: dict[str, Any]) -> None:
         values = {round(v, 6) for v in load.values()}
         assert values != {0.0, 1.0}, f"{key}={load}"
         assert all(v > 0.0 for v in load.values()), f"{key}={load}"
+
+
+def test_eval_batch_size_has_collapse_safety_margin() -> None:
+    """Regression guard for the 2026-09-04 flake fix (see _cpu_train_cfg's comment).
+
+    A collapsed eval load can mean the aux term failed, or it can mean an eval batch
+    too small to distinguish a real collapse from binomial sampling noise. This pins
+    the second failure mode shut: at the ~0.125 measured minority-routing floor (the
+    lowest nonzero rate seen across the corpus and synthetic streams), the configured
+    eval_batch_size must keep P(an honest run reports zero minority hits) under 1%.
+    0.125 is not re-derived here -- that would mean training a router inside this
+    guard, defeating its purpose as a fast, static check -- it is the floor recorded in
+    poc/train_route.py's evaluate_route_load docstring and reproduced by the probe
+    that motivated this branch.
+    """
+    cfg = _cpu_train_cfg()
+    measured_minority_rate_floor = 0.125
+    p_false_collapse = (1 - measured_minority_rate_floor) ** cfg.eval_batch_size
+    assert p_false_collapse < 0.01, (
+        f"eval_batch_size={cfg.eval_batch_size} gives P(false collapse)="
+        f"{p_false_collapse:.4f} at the measured {measured_minority_rate_floor} "
+        f"minority-routing floor -- too small a sample to tell a real router collapse "
+        f"from binomial noise (see test_train_route_dod_on_corpus's flake history)"
+    )
 
 
 def test_train_route_dod_synthetic_fallback(trained_fallback: dict[str, Any]) -> None:
