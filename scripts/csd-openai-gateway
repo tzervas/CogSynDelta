@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""OpenAI-compatible front for both GPUs. Open WebUI talks here.
+
+3090 LocalAI (tight decode, autodev sticky). 5080 helpers/CUDA in
+parallel when the lock is idle. Mix of llama.cpp / vLLM / bitnet via
+csd-weight-intern pick_runtime. Never dual 14B. Never bind 0.0.0.0 WAN.
+
+  csd-openai-gateway --port 9120
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlparse
+
+ROOT = Path(__file__).resolve().parents[1]
+CAT = json.loads((ROOT / "config/model-router.json").read_text(encoding="utf-8"))
+LOCALAI = os.environ.get("LOCALAI_URL", "http://127.0.0.1:8080")
+BIND = os.environ.get("CSD_GW_BIND", "192.168.1.98")
+ROUTER = ROOT / "scripts/csd-model-router"
+
+
+def key() -> str:
+    return os.environ.get("LOCALAI_API_KEY") or ""
+
+
+def list_models() -> dict:
+    """Union catalog + live LocalAI ids. Marks host + runtime for routing."""
+    data = []
+    seen: set[str] = set()
+    for alias, spec in (CAT.get("aliases") or {}).items():
+        seen.add(alias)
+        data.append(
+            {
+                "id": alias,
+                "object": "model",
+                "owned_by": spec.get("host_pref", ["akula-prime"])[0],
+                "runtime": (spec.get("needs_caps") or ["gguf-infer"])[:2],
+                "parallel_ok": spec.get("latency") == "ok-lan",
+                "pool_ok": bool(spec.get("pool_ok")),
+            }
+        )
+    try:
+        req = urllib.request.Request(
+            f"{LOCALAI}/v1/models",
+            headers={"Authorization": f"Bearer {key()}"} if key() else {},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            live = json.loads(resp.read().decode())
+        for rec in live.get("data") or []:
+            mid = rec.get("id")
+            if mid and mid not in seen:
+                data.append({"id": mid, "object": "model", "owned_by": "akula-prime"})
+    except OSError:
+        pass
+    return {"object": "list", "data": data}
+
+
+def _forward(path: str, raw: bytes, timeout: int = 300) -> tuple[int, bytes]:
+    hdr = {"Content-Type": "application/json"}
+    if key():
+        hdr["Authorization"] = f"Bearer {key()}"
+    req = urllib.request.Request(f"{LOCALAI}{path}", data=raw, headers=hdr, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as exc:  # type: ignore[name-defined]
+        return exc.code, exc.read()
+    except OSError as exc:
+        return 502, json.dumps({"error": str(exc)[:200]}).encode()
+
+
+import urllib.error  # noqa: E402
+
+
+def handle_chat(body: dict) -> tuple[int, bytes]:
+    alias = str(body.get("model") or CAT.get("autodev_default") or "local/code")
+    subprocess.run(
+        [str(ROUTER), "request", "--alias", alias, "--why", "webui", "--noping"],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+    )
+    if os.environ.get("CSD_GW_FORWARD_ONLY") == "1":
+        return _forward("/v1/chat/completions", json.dumps(body).encode())
+    spec = (CAT.get("aliases") or {}).get(alias) or {}
+    if spec.get("host_pref", [""])[0] == "gpu5080" and spec.get("class") == "embed":
+        # Parallel slot: 5080 embed is logical until GGUF exists.
+        if not spec.get("fits_5080"):
+            return 503, json.dumps({"error": "5080 helper not physical"}).encode()
+        return 503, json.dumps({"error": "5080 embed GGUF not loaded (logical park)"}).encode()
+    return _forward("/v1/chat/completions", json.dumps(body).encode())
+
+
+def serve(port: int) -> None:
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, fmt: str, *args: object) -> None:
+            return
+
+        def _send(self, code: int, raw: bytes, ctype: str = "application/json") -> None:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self) -> None:
+            path = urlparse(self.path).path
+            if path in ("/v1/models", "/models"):
+                self._send(200, json.dumps(list_models()).encode())
+                return
+            if path in ("/health", "/"):
+                self._send(200, b'{"ok":true,"gpus":["akula-prime","gpu5080"]}')
+                return
+            self._send(404, b'{"error":"not found"}')
+
+        def do_POST(self) -> None:
+            n = int(self.headers.get("Content-Length") or "0")
+            raw = self.rfile.read(n)
+            path = urlparse(self.path).path
+            if path in ("/v1/chat/completions", "/chat/completions"):
+                try:
+                    body = json.loads(raw.decode() or "{}")
+                except json.JSONDecodeError:
+                    self._send(400, b'{"error":"bad json"}')
+                    return
+                code, out = handle_chat(body if isinstance(body, dict) else {})
+                self._send(code, out)
+                return
+            if path in ("/v1/embeddings", "/embeddings"):
+                self._send(
+                    503,
+                    json.dumps(
+                        {
+                            "error": "5080 embed via intern pool; GGUF not on card yet",
+                            "parallel": "3090 chat can run at the same time",
+                        }
+                    ).encode(),
+                )
+                return
+            self._send(404, b'{"error":"not found"}')
+
+    httpd = ThreadingHTTPServer((BIND, port), H)
+    print(f"csd-openai-gateway http://{BIND}:{port}/v1  (3090+5080 parallel)")
+    httpd.serve_forever()
+
+
+def main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=int(os.environ.get("CSD_GW_PORT", "9120")))
+    args = ap.parse_args()
+    serve(args.port)
+
+
+if __name__ == "__main__":
+    main()

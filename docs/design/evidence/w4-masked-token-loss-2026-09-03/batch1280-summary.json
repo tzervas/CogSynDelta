@@ -1,0 +1,21 @@
+{
+  "probe": "w4-masked-token-loss VRAM probe, batch=1280",
+  "steps": 20,
+  "batch_size": 1280,
+  "max_len": 96,
+  "token_loss_weight": 0.1,
+  "decorr_weight": 0.1,
+  "encoder_config": {
+    "vocab_size": 50257,
+    "dim": 256,
+    "depth": 4,
+    "n_heads": 4,
+    "max_len": 96,
+    "out_dim": null
+  },
+  "fit": false,
+  "wall_elapsed_s_before_oom": 18.47,
+  "oom_error": "CUDA out of memory. Tried to allocate 2.06 GiB. GPU 0 has a total capacity of 22.03 GiB of which 1.50 GiB is free. Including non-PyTorch memory, this process has 19.50 GiB memory in use. Of the allocated memory 19.12 GiB is allocated by PyTorch, and 66.14 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)",
+  "peak_allocated_mib": 19573.9,
+  "peak_reserved_mib": 19640.0
+}

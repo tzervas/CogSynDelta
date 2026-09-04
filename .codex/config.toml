@@ -1,0 +1,61 @@
+# Project Codex layer. Loaded only if this repo is trusted.
+# Do not put openai_base_url / API keys here (Codex ignores provider keys in project config).
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+project_doc_max_bytes = 65536
+project_doc_fallback_filenames = ["GROK.md", "docs/CODEX.md"]
+
+[features]
+hooks = true
+
+[sandbox_workspace_write]
+network_access = false
+writable_roots = [
+  "/akula-data/obsidian/akula-csd-kb",
+  "/akula-data/obsidian/akula-gap-kb",
+]
+
+[mcp_servers.tzervas-dev-kb]
+command = "/home/kang/.local/bin/npx"
+args = ["-y", "obsidian-mcp@2", "serve", "--vault", "tzervas-dev-kb=/home/kang/data/obsidian/tzervas-dev-kb/tzervas-dev-kb"]
+startup_timeout_sec = 45
+
+[mcp_servers.akula-model-kb]
+command = "/home/kang/.local/bin/npx"
+args = ["-y", "obsidian-mcp@2", "serve", "--vault", "akula-model-kb=/akula-data/obsidian/akula-model-kb"]
+startup_timeout_sec = 45
+
+[mcp_servers.akula-csd-obsidian]
+command = "/home/kang/.local/bin/npx"
+args = ["-y", "obsidian-mcp@2", "serve", "--vault", "akula-csd-kb=/akula-data/obsidian/akula-csd-kb"]
+startup_timeout_sec = 45
+
+[mcp_servers.akula-gap-obsidian]
+command = "/home/kang/.local/bin/npx"
+args = ["-y", "obsidian-mcp@2", "serve", "--vault", "akula-gap-kb=/akula-data/obsidian/akula-gap-kb"]
+startup_timeout_sec = 45
+
+[mcp_servers.akula-gap-kb]
+command = "/usr/bin/python3"
+args = ["/home/kang/code/personal/tzervas/akula-ai-platform/scripts/gap_kb_mcp.py"]
+
+[mcp_servers.akula-personas-obsidian]
+command = "/home/kang/.local/bin/npx"
+args = ["-y", "obsidian-mcp@2", "serve", "--vault", "akula-personas=/akula-data/obsidian/akula-personas"]
+startup_timeout_sec = 45
+
+[mcp_servers.akula-personas]
+command = "/usr/bin/python3"
+args = ["/home/kang/code/personal/tzervas/akula-ai-platform/scripts/persona_mcp.py"]
+
+[mcp_servers.akula-context]
+command = "/home/kang/.cargo/bin/context-mcp"
+args = ["--stdio", "--persist", "--storage-path", "/akula-data/stores/context-mcp"]
+startup_timeout_sec = 30
+
+[mcp_servers.cabal-shared-kb]
+command = "/home/kang/.local/bin/npx"
+args = ["-y", "obsidian-mcp@2", "serve", "--vault", "cabal-shared-kb=/akula-data/obsidian/cabal-shared-kb"]
+startup_timeout_sec = 45
+enabled = false

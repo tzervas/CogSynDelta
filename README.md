@@ -1,371 +1,209 @@
-# CogSynDelta: Self-Improving AI System
+# CogSynDelta
 
-<!-- FLEET-BADGES:BEGIN -->
-[![CI](https://github.com/tzervas/CogSynDelta/actions/workflows/fleet-ci.yml/badge.svg?branch=main)](https://github.com/tzervas/CogSynDelta/actions/workflows/fleet-ci.yml?query=branch%3Amain)
-[![Security](https://github.com/tzervas/CogSynDelta/actions/workflows/fleet-security.yml/badge.svg?branch=main)](https://github.com/tzervas/CogSynDelta/actions/workflows/fleet-security.yml?query=branch%3Amain)
-<!-- FLEET-BADGES:END -->
+CogSynDelta (CSD) is a small-and-capable-by-architecture composed mind: specialised
+faculty regions (language, memory, vision, reasoning, ...) trained individually, then
+wired together through a learned interconnect ("white matter") that reasons in a shared
+latent workspace. Regions exchange latents, never discrete tokens, between encoding and
+the final read-out (the latent-space reasoning invariant, DEC-47). The plan is to
+quantize each trained region, then train the composed mind on the quantized regions
+(`docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` §1 decision summary, DEC-01–DEC-10 for
+the region taxonomy, §2.3 DEC-16 for the interconnect module, "What revision 3.4 changes"
+(c) / DEC-56 for the quantize-each-then-train-composed sequencing).
 
-<!-- Dynamic Status Badges (main branch) -->
-[![CI/CD](https://github.com/tzervas/CogSynDelta/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tzervas/CogSynDelta/actions/workflows/ci.yml)
-[![Security](https://github.com/tzervas/CogSynDelta/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/tzervas/CogSynDelta/actions/workflows/security.yml)
-[![codecov](https://codecov.io/gh/tzervas/CogSynDelta/graph/badge.svg?token=CODECOV_TOKEN)](https://codecov.io/gh/tzervas/CogSynDelta)
+## Status (2026-09-04)
 
-<!-- Third-Party Quality & Security Badges -->
-[![CodeClimate Maintainability](https://api.codeclimate.com/v1/badges/REPO_ID/maintainability)](https://codeclimate.com/github/tzervas/CogSynDelta/maintainability)
-[![Snyk Security](https://snyk.io/test/github/tzervas/CogSynDelta/badge.svg)](https://snyk.io/test/github/tzervas/CogSynDelta)
+**Trained, with receipts:**
 
-<!-- Project Info Badges -->
-[![Python](https://img.shields.io/badge/python-3.14+-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.9+-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![CUDA](https://img.shields.io/badge/CUDA-12.8-76B900?logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-toolkit)
-[![uv](https://img.shields.io/badge/uv-0.7+-blueviolet?logo=astral&logoColor=white)](https://docs.astral.sh/uv/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+| region | what it is | measured | source |
+|---|---|---|---|
+| `code` | language centre, code specialisation | recall@1 0.9766 | `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, "What is actually being trained on" (receipt `code-20260902T210830Z.json`) |
+| `compress` | memory faculty, consolidation head | recall@1 0.7070; graded (STS-B) spearman 0.7588 | same table; graded figure from `program/REMAINING.md` P0.9c (receipt `compress-20260903T120818Z.json`) |
+| `retrieve` | memory faculty, retrieval head | recall@1 0.7480 | `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, same table |
+| `reason` | reasoning centre | retrained under the fixed contamination guard; a further re-run against the corrected clean pool is still open | `program/REMAINING.md` P0.11 (receipt `reason-20260903T123431Z.json`) |
 
-<!-- Branch-specific badges (develop) -->
-<details>
-<summary>📊 Develop Branch Status</summary>
+**Memory-region (W4) variants** — `compress` and `retrieve` merged into one hippocampal
+faculty per DEC-02. Four production-configuration runs; none clears all five
+pre-registered gates yet. Best run (batch 1280, chunked token loss): recall@1 0.8535,
+3 of 5 gates passed (a, b, d); gates (c) `c_beats_bm25` and (e) `e_retrain_gate`'s rank
+clause still fail. Source: `docs/design/evidence/w4-production-runs-2026-09-03/README.md`.
 
-[![CI/CD (develop)](https://github.com/tzervas/CogSynDelta/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/tzervas/CogSynDelta/actions/workflows/ci.yml?query=branch%3Adevelop)
-[![Security (develop)](https://github.com/tzervas/CogSynDelta/actions/workflows/security.yml/badge.svg?branch=develop)](https://github.com/tzervas/CogSynDelta/actions/workflows/security.yml?query=branch%3Adevelop)
+**Visual region, pre-receipts for release purposes** — `vl_latent` is trained (probe
+top-1 0.0606) but its entire pretraining corpus (`zh-plus/tiny-imagenet`, ImageNet-derived)
+carries no licence anywhere in its chain and is **BLOCKING** for an open-weights release;
+no subset is clean. Source: `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, `vl_latent` section.
 
-</details>
+**Not trained / not built:**
+- The interconnect ("white matter"). `docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` is
+  a design draft awaiting operator ratification: "Nothing here is applied. No config,
+  script, checkpoint or program file is modified by this document" (file header).
+- Whole-mind training (phase 3). `program/REMAINING.md`, "TRAINING PHASES".
+- Memory-gate overlays as code — row P5′o, status `todo`. `program/REMAINING.md` §P17.
 
-**A brain-inspired self-improving AI system with VL-JEPA, mHC, quantum computing support, and Google ADK compliance.**
+**Next step:** close the correctness debt gating everything downstream before any
+interconnect work starts — `program/REMAINING.md`'s P0 table (P0.1 retrain-with-masking-fix
+is `wip`; "Nothing measured before P0.1 lands is trustworthy" per its SESSION HANDOFF).
 
-## 🌟 Overview
+## How the work is verified
 
-CogSynDelta is a cutting-edge self-improving AI architecture designed for real-world problem-solving. It combines:
+- **Receipts bound by content, not by path.** `scripts/csd-quantize.py` refuses to compare
+  a quantized model against its fp32 parent unless the corpus fingerprint it rebuilds
+  matches the one in the training receipt; `scripts/csd-benchmark.py`'s quantized-eval
+  receipts bind both `artifacts.quantized_sha256` and `artifacts.checkpoint_sha256` to the
+  bytes actually opened (both scripts' module docstrings).
+- **Pre-registered gates.** The W4 memory-region gates were fixed before the batch-1280
+  run that was scored against them: "a document that moves a bar after seeing the number
+  it produced has stopped being a pre-registration" (`docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md`,
+  "What revision 3.5 changes", DEC-68).
+- **Untrained baselines on every run.** Every gate requires beating a measured, not
+  assumed, random-init baseline (`program/REMAINING.md` P0.10f; the untrained-baseline
+  evidence is `docs/design/evidence/w2c-untrained-baselines-2026-09-03/`).
+- **Guards proven to be able to fail.** `tests/test_guards_can_fail.py` constructs the
+  case each guard exists to reject and asserts the guard actually rejects it — written
+  after a contamination guard was found to be vacuous by construction (same hash on both
+  sides) despite passing every prior run (`program/REMAINING.md`, "SESSION HANDOFF" and
+  P0.10 table).
 
-- **PCN-VAE-GAN Hybrid**: Three-phase self-improvement (exploratory, culling, meta-optimization)
-- **VL-JEPA**: Vision-language joint embedding with silent semantic state retention
-- **mHC**: Moderated Hyper Connections for controlled information flow
-- **Intelligent Interconnect**: Specialized submodel for managing communication between brain regions
-- **Self-Improving Agents**: Multi-language code generation (SWE/AIE/SWD/AID)
-- **Memory Persistence**: Dense differential embeddings with 10-100x compression
-- **Quantum Computing**: Extensible backend for quantum/classical hybrid processing *(backlogged - awaiting Python 3.14 ecosystem support)*
-- **Google ADK Compliance**: Standard agent interface with A2A protocol support
-- **Safeguards**: Loop detection, ethical constraints, resource limits
+## Repository map
 
-## 🚀 Quick Start
+Real, present directories only.
 
-```bash
-# Install uv (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+| path | what it is |
+|---|---|
+| `src/cogsyndelta/regions/` | per-faculty training entry points (`code`, `compress`, `retrieve`, `memory`, `vl_latent`) and shared pretraining code |
+| `src/cogsyndelta/quant/` | post-training quantization (`ptq.py`, `packing.py`) |
+| `src/cogsyndelta/eval/` | the benchmark battery `scripts/csd-benchmark.py` runs |
+| `src/cogsyndelta/pipeline/` | the shared receipt envelope (`receipt.py`) every stage writes into |
+| `src/cogsyndelta/contracts/` | region/config/component contracts and the model registry |
+| `src/cogsyndelta/data/`, `util/`, `model/`, `vl/` | corpus loading, shared utilities (incl. `util/gpu_budget.py`, the gpu-pack adapter), model definitions, visual composite encoder |
+| `src/cogsyndelta/poc/` | the LatentVAE proof-of-concept CLI (`cogsyndelta-poc`), separate from the region regime above |
+| `src/cogsyndelta/api/` | the FastAPI server (`cogsyndelta-server`) and a Google-ADK-shaped adapter module — present as code, not a verified compliance claim |
+| `src/cogsyndelta/agents/` | a self-improving-agent PoC predating the region-taxonomy design; not one of the faculties in `docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` and not on the training path |
+| `src/cogsyndelta/quantum/` | its own module docstring: "FUTURE FEATURE - BACKLOGGED" pending Python 3.14 ecosystem support for cirq/qiskit/pennylane |
+| `src/cogsyndelta/core/`, `src/cogsyndelta/memory/` | the pre-region-taxonomy PCN-VAE-GAN and memory-persistence stack; `core/` is marked superseded and kept unimported (DEC-12, `docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` §1.6) |
+| `program/` | `REMAINING.md` (live task list), `KICKOFF.md` (session bootstrap), `matrix/` (train→quant matrix config), `jobs/` (gpu-pack job specs) |
+| `docs/design/` | the design documents — source of truth; `docs/design/evidence/` — receipts backing specific measured claims in them |
+| `scripts/` | operational entry points: training, quantizing, publishing, corpus admission, CI, docs |
+| `tests/` | the pytest suite, including `tests/test_guards_can_fail.py` |
+| `.githooks/`, `.github/workflows/` | git hooks and CI job definitions |
 
-# Clone and setup (uv handles Python 3.14 and all dependencies)
-git clone https://github.com/tzervas/CogSynDelta.git
-cd CogSynDelta
-uv sync
-
-# Start OpenAPI server
-uv run cogsyndelta-server
-
-# Run benchmarks
-uv run cogsyndelta-benchmark
-
-# Run tests
-uv run pytest tests/ -v
-
-# Run any tool without installing globally
-uvx ruff check src/
-uvx black src/ tests/
-```
-
-Visit http://localhost:8000/docs for interactive API documentation.
-
-## 📚 Documentation
-
-- **[Architecture Guide](docs/ARCHITECTURE.md)** - System design and components
-- **[API Reference](docs/API_REFERENCE.md)** - Complete API documentation
-- **[Agent Development](docs/AGENT_DEVELOPMENT.md)** - Building custom agents
-- **[Contributing](docs/CONTRIBUTING.md)** - Contribution guidelines
-- **[Configuration](docs/CONFIGURATION.md)** - Configuration reference
-- **[Quality Improvements](QUALITY_IMPROVEMENTS.md)** - Recent improvements and metrics
-- **[Roadmap](ROADMAP.md)** - Project roadmap and backlog
-
-## 🎯 Key Features
-
-### Brain-Inspired Architecture
-
-The system is organized as specialized sections (brain regions) communicating via mHC pathways (white matter):
-
-- **Visual Cortex**: Processes visual input with VL-JEPA
-- **Language Cortex**: Multi-language code understanding and generation
-- **Prefrontal Cortex**: Planning and reasoning
-- **Hippocampus**: Persistent memory with compression
-- **Interconnect Manager**: Intelligent routing and context management
-
-### Measured Performance (Benchmarked)
-
-All claims are validated with concrete measurements:
-
-- **Compression**: 10-50x ratio with >0.95 fidelity (measured on test data)
-- **Memory**: Hierarchical storage with automatic archiving
-- **Inference**: Measured latency and throughput (see benchmarks)
-- **Safety**: Loop detection, circuit breakers, ethical constraints
-
-### Google ADK Compliance
-
-- Standard agent interface per ADK specification
-- Agent-to-Agent (A2A) protocol support
-- Tool/function calling with JSON schema
-- Multi-turn conversations with state management
-
-## 📦 Project Structure
-
-```
-CogSynDelta/
-├── src/cogsyndelta/
-│   ├── core/                    # Core components
-│   │   ├── pcn_vae_gan.py          # PCN-VAE-GAN hybrid
-│   │   ├── vl_jepa_extension.py    # VL-JEPA with mHC
-│   │   ├── model_sectioning.py     # Dynamic model sectioning
-│   │   ├── interconnect_manager.py # Communication management
-│   │   └── integrated_system.py    # Complete system
-│   ├── memory/                  # Memory systems
-│   │   ├── active_memory.py        # Tiered memory manager
-│   │   ├── memory_persistence.py   # Persistent memory
-│   │   ├── dense_embeddings.py     # Dense compression
-│   │   ├── unified_tools.py        # Memory tools
-│   │   └── auto_manager.py         # Auto-management
-│   ├── agents/                  # Agent systems
-│   │   └── self_improving_agents.py
-│   ├── quantum/                 # Quantum computing
-│   │   └── quantum_compute.py
-│   ├── optimization/            # Performance optimization
-│   │   └── cuda_optimization.py
-│   └── api/                     # API layer
-│       ├── server.py               # FastAPI server
-│       └── google_adk_adapter.py   # ADK compliance
-├── examples/                    # Example scripts
-│   ├── basic_training.py        # MNIST training
-│   ├── memory_management.py     # Memory demo
-│   ├── api_server.py            # API server
-│   ├── self_improving_agents.py # Agent demo
-│   ├── quantum_computing.py     # Quantum demo
-│   └── README.md                # Examples guide
-├── benchmarks/                  # Performance benchmarks
-│   ├── run.py                   # Benchmark suite
-│   └── __init__.py
-├── tests/                       # Test suite
-│   ├── test_unit.py
-│   ├── test_mnist.py
-│   └── test_comprehensive.py
-├── docs/                        # Documentation
-├── config/                      # Configuration files
-├── .github/workflows/           # CI/CD pipelines
-└── pyproject.toml              # Package configuration
-```
-
-## 💡 Examples
-
-Comprehensive examples are available in the `examples/` directory:
+## Getting started
 
 ```bash
-# Basic model training
-uv run python examples/basic_training.py
-
-# Memory system demonstration
-uv run python examples/memory_management.py
-
-# Start API server
-uv run python examples/api_server.py
-
-# Self-improving agents
-uv run python examples/self_improving_agents.py
-
-# Quantum computing (requires Python 3.13 - see ROADMAP.md)
-# python examples/quantum_computing.py
+uv sync                 # core + dev group (default)
+uv sync --group train   # add pyarrow/tokenizers for real training runs
 ```
 
-See [examples/README.md](examples/README.md) for detailed usage instructions.
-
-## 🔧 Configuration
-
-Edit `config.yaml` to customize:
-
-```yaml
-# Memory persistence with dense encoding
-memory_persistence:
-  dense_encoding:
-    enabled: true
-    dense_dim: 64  # 8x compression
-    fidelity_threshold: 0.95
-
-# Safeguards
-safeguards:
-  loop_detection:
-    max_iterations: 1000
-  ethical:
-    forbidden_patterns: [infinite_loop, memory_bomb]
-
-# Model sectioning
-model_sectioning:
-  max_loaded_sections: 5
-  dynamic_loading: true
-```
-
-## 🧪 Testing & Validation
+Before your first commit, install the pre-commit hooks once so formatting, ruff, mypy,
+shellcheck, yamllint, and commit-message checks run locally:
 
 ```bash
-# Run all tests
-uv run pytest tests/ -v
-
-# Run with coverage
-uv run pytest tests/ -v --cov=cogsyndelta --cov-report=html
-
-# Run specific test suite
-uv run pytest tests/test_unit.py -v
-uv run pytest tests/test_mnist.py -v
-uv run pytest tests/test_comprehensive.py -v
-
-# Run benchmarks
-uv run cogsyndelta-benchmark
-
-# Code quality checks (using uvx for isolated tool execution)
-uvx ruff check src/ tests/       # Linting
-uvx black src/ tests/            # Formatting
-uv run mypy src/                 # Type checking (uses project config)
+uv run pre-commit install
+uv run pre-commit install --hook-type commit-msg
 ```
 
-### CI/CD
+**If your clone has `core.hooksPath` set to `.githooks`** (`git config --get
+core.hooksPath`; this is the case for clones set up under this project's agent-worktree
+workflow, where hook directories are shared across worktrees), the commands above will
+fail with "Cowardly refusing to install hooks with `core.hooksPath` set" — pre-commit
+refuses to install itself over another hooks manager. In that case the tracked
+`.githooks/pre-commit` (ruff check --fix + ruff format + git-secrets on staged Python) and
+`.githooks/pre-push` (the full `scripts/ci_local.sh` gate) are already active on clone and
+there is nothing further to install; skip straight to running `./scripts/lint.sh` below.
+Only run `uv run pre-commit install` if `core.hooksPath` is unset.
 
-Automated testing runs on every push via GitHub Actions:
-- ✅ Python 3.14 testing
-- ✅ Code quality checks (ruff, black, mypy)
-- ✅ Test coverage reporting
-- ✅ CodeQL security analysis
-- ✅ Package build verification
-
-See [QUALITY_IMPROVEMENTS.md](QUALITY_IMPROVEMENTS.md) for recent improvements.
-
-## 🌐 API Usage
-
-### REST API
-
-```python
-import requests
-
-# Create session
-response = requests.post('http://localhost:8000/api/v1/session/create', json={
-    "modalities": ["video", "text"],
-    "processing_mode": "realtime"
-})
-session_id = response.json()['session_id']
-
-# Process video
-response = requests.post('http://localhost:8000/api/v1/process/video', json={
-    "session_id": session_id,
-    "video_config": {
-        "source_type": "webcam",
-        "device_id": 0
-    },
-    "num_frames": 16
-})
+```bash
+./scripts/lint.sh                 # the same gate CI runs, over the whole repo
+./scripts/ci_local.sh             # full local CI: lint + tests, own .venv-ci
+uv run pytest tests/ -v           # the test suite alone
+uv run cogsyndelta-server         # FastAPI server (src/cogsyndelta/api/server.py)
+uv run cogsyndelta-benchmark      # benchmarks/run.py
+uv run cogsyndelta-poc            # the LatentVAE PoC CLI (src/cogsyndelta/poc/cli.py)
 ```
 
-### WebSocket Streaming
+CI runs on self-hosted Forgejo Actions runners against `.github/workflows/*.yml` — Forgejo
+Actions resolves these the same way GitHub Actions does (`scripts/docs_to_wiki.py`
+docstring). `git.vectorweight.com/tzervas/CogSynDelta` is the working remote; GitHub is a
+backup mirror, not where CI or review happens (operator statement).
 
-```python
-import websockets
-import asyncio
-import json
+## Training, quantizing, publishing
 
-async def stream_video():
-    uri = "ws://localhost:8000/api/v1/stream/video"
-    async with websockets.connect(uri) as websocket:
-        await websocket.send(json.dumps({
-            "source_type": "webcam",
-            "fps": 30
-        }))
+- `scripts/csd-train-all.py` — runs the training program end to end, unattended: per-region
+  pretraining, evaluation, and a receipt per run, stopping at a failed gate.
+- `scripts/csd-benchmark.py` — scores a trained (or, once enabled, quantized) region across
+  ranking, efficiency and representation-health metrics into the shared receipt envelope.
+- `scripts/csd-quantize.py` — quantizes a region and proves the result against its own
+  fp32 training receipt via a matching corpus fingerprint, never a trusted one.
+- `scripts/csd-publish-checkpoint.py` — publishes one region's checkpoint, receipts and
+  model card to a private Hugging Face model repo; aborts before uploading if the repo does
+  not report back `private=True`.
+- `program/matrix/csd-matrix.yaml` — the train → test → quantize → test matrix config (23
+  cells today: code, compress, retrieve, reason, memory). The harness that runs it —
+  waves, gpu-pack admission, Hub publish/verify — lives in the sibling `tzervas/model-matrix`
+  repo (`program/matrix/README.md`).
 
-        async for message in websocket:
-            data = json.loads(message)
-            print(f"Semantic state: {data['frame_id']}")
+Eight private Hugging Face region repos exist under `tzervas`, plus the composed
+`tzervas/cogsyndelta`: `cogsyndelta-region-{code,compress,retrieve,reason,memory,
+stream-vae,residual}` and `cogsyndelta-vl-jepa` — the `<owner>/cogsyndelta-region-<name>`
+and `<owner>/cogsyndelta-vl-jepa` naming pattern is `scripts/csd-hf-repos.py`'s own naming
+section; the specific eight and their private status are an operator statement.
 
-asyncio.run(stream_video())
-```
+## Tooling repos
 
-### Google ADK Agent
+Per the operator's role split, tooling lives outside this repo, one repo per role, each
+with its own README:
 
-```python
-from google_adk_adapter import create_adk_compliant_agent
-from integrated_system import create_integrated_system
+- **`tzervas/gpu-pack`** — GPU packing and VRAM admission; CSD is a client, not a
+  dependency (`program/jobs/README.md`).
+- **`tzervas/model-matrix`** — the train→test→quantize→test matrix harness that reads
+  `program/matrix/csd-matrix.yaml` (`program/matrix/README.md`).
+- **`tzervas/dataset-factory`** — licence-gated corpus ingest with provenance, feeding the
+  candidates catalogued in `docs/design/DATASET-FACTORY-CATALOGUE-2026-09-03.md` (operator
+  statement).
+- **`tzervas/csd-autodev`** — the autonomous dev harness; CSD keeps a pointer here, not a
+  specification (`docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md`, "AUTODEV LEAVES THIS
+  DOCUMENT", DEC-60).
 
-# Create integrated system
-system = create_integrated_system()
+## Datasets and licences
 
-# Create ADK-compliant agent
-agent, adapter = create_adk_compliant_agent(system)
+**Stance** (operator, restated in `docs/design/DATASET-FACTORY-CATALOGUE-2026-09-03.md` §1):
+architecture and code are MIT; datasets — and therefore weights — may carry non-MIT terms
+that must be tracked; non-commercial (NC) terms are acceptable and change the release tier
+rather than blocking it; a mirror's licence tag is not evidence about its upstream, so every
+verdict rests on the upstream/primary text.
 
-# Use agent capabilities
-capabilities = agent.get_capabilities()
-for cap in capabilities:
-    print(f"Tool: {cap['function']['name']}")
-```
+**Catalogue counts** (`docs/design/DATASET-FACTORY-CATALOGUE-2026-09-03.md` §3 Totals):
+159 candidates surveyed across 7 faculties, spanning 106 distinct provenance groups —
+43 `PERMISSIVE_OK`, 24 `ATTRIBUTION`, 25 `SHARE_ALIKE`, 14 `NC`, 24 `UNVERIFIED`,
+11 `BLOCKING`, 18 `REFUSE`. `scripts/csd-corpus-admit.py` prints the admission checklist
+for one factory-fetched dataset against a target region.
 
-## 🤝 Contributing
+**Per-region release tiers, as currently trained** (`docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`,
+"The short version" and the per-corpus verdicts): `code` and `compress` are **BLOCKING** —
+`code`'s mirror licence tag does not match its unlicensed upstream (repairable to MIT by
+filtering to the ~71.3% of rows in permissively-licensed repos, not yet done); `compress` is
+41.8% MultiNLI-derived with three genres carrying named commercial copyright holders
+(repairable to CC BY-SA 4.0 by re-deriving from `nyu-mll/multi_nli`, not yet done).
+`vl_latent` is BLOCKING with no repair path found yet (see Status, above). `retrieve` is
+**CC BY-NC-SA 4.0** as trained — GooAQ's non-commercial reading was accepted 2026-09-02
+without a corpus change. `reason` is `PERMISSIVE_OK`/MIT as trained (`gsm8k` MIT +
+`aqua_rat` Apache-2.0, both catalogued `PERMISSIVE_OK`). `memory`, the `compress`+`retrieve`
+merge, inherits CC BY-NC-SA 4.0 from `retrieve` under **Rider 1** — a merge inherits its
+most restrictive parent. The composed model, once it exists, carries the single strictest
+term across every input — today, CC BY-NC-SA 4.0.
 
-We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
+## Documentation
 
-Key areas:
-- New compute backends (quantum, neuromorphic, photonic)
-- Additional model sections (brain regions)
-- Input/output adapters
-- Performance optimizations
-- Documentation improvements
+`docs/design/` is the source of truth for the architecture; everything else, including
+this README, derives from it and should cite it. On push to `main`, `.github/workflows/docs.yml`'s
+`wiki` job mirrors `docs/` into this repo's Forgejo wiki using `scripts/docs_to_wiki.py`.
+Three reader-oriented tracks (`docs/plain/`, `docs/technical/`, `docs/foundations/`) are
+planned on branch `docs/reader-tracks` and are not yet on `main` (operator statement).
 
-## 📊 Benchmarks
+## Licence
 
-All performance claims are validated with measured benchmarks. **CPU baseline established** (20-core system):
-
-| Metric | Value | Unit | Validation |
-|--------|-------|------|------------|
-| Matrix Operations | 8.6 | GFLOPS | ✅ Measured on CPU |
-| NN Inference | 5,152 | samples/sec | ✅ Batch 128, measured |
-| Memory Compression | 16× | ratio | ✅ 27M samples/sec |
-| Compression Fidelity | 0.67 | cosine similarity | ✅ At 2× ratio |
-
-**GPU Status (2026-01-18):**
-- **PyTorch 2.9.1** supports CUDA 12.6 and 12.8
-- **RTX 5080** on akula-prime workstation (`ssh akula-prime`)
-- All GPU workloads run on akula-prime
-- See [GPU_COMPATIBILITY.md](GPU_COMPATIBILITY.md) for setup instructions
-
-**Expected GPU Performance** (RTX 5080):
-- Matrix ops: ~60 TFLOPS (100-150× faster than CPU)
-- NN inference: ~250,000 samples/sec (50× faster)
-- Training: ~500,000 samples/sec with mixed precision
-
-See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for complete results.
-
-## 🔒 Safety & Ethics
-
-Built-in safeguards:
-- Loop detection (max 5 repetitions)
-- Execution timeouts (300s default)
-- Resource limits (1GB memory, 10MB output)
-- Forbidden pattern detection
-- Circuit breakers for runaway processes
-
-## 📄 License
-
-Proprietary License - see [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-Built on research from:
-- VL-JEPA (Meta AI Research)
-- Predictive Coding Networks
-- MAML (Model-Agnostic Meta-Learning)
-- VAE/GAN architectures
-- Quantum computing frameworks (Qiskit, PennyLane, Cirq)
-
-## 📧 Contact
-
-- Issues: https://github.com/tzervas/CogSynDelta/issues
-- Discussions: https://github.com/tzervas/CogSynDelta/discussions
-
----
-
-**Design a self-improving AI architecture emulating human cognition for novel problem-solving.**
+`pyproject.toml` declares `license = {text = "MIT"}` for the architecture and code. **The
+root `LICENSE` file has not been updated to match — it currently reads "Proprietary
+License"; this is a known, unresolved inconsistency, flagged here rather than silently
+picked one way.** Datasets, and the weights trained on them, carry their own tiers and do
+not inherit MIT automatically: see `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` for the
+per-region matrix and the reasoning behind it.

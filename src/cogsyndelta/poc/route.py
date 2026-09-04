@@ -10,6 +10,7 @@ from cogsyndelta.contracts.compactor import CalibratedQuantCompactor, measured_f
 from cogsyndelta.contracts.config import RouteConfig
 from cogsyndelta.contracts.device import DeviceContext
 from cogsyndelta.contracts.metrics import MetricsRecord, MetricsStatus
+from cogsyndelta.contracts.region_spec import MindSpec
 from cogsyndelta.contracts.registry import RegionRegistry
 from cogsyndelta.poc.regions import ResidualMLPRegion
 from cogsyndelta.poc.router import SoftmaxRouter
@@ -32,6 +33,49 @@ def default_two_region_mind(
             name="stream_vae",
         )
     )
+    return registry
+
+
+def build_mind_from_spec(spec: MindSpec) -> RegionRegistry:
+    """Build a registry from a declarative :class:`MindSpec`.
+
+    Only regions marked ``live`` are constructed. A spec whose ``kind`` has no
+    implementation raises rather than being skipped silently -- a mind that quietly comes
+    up with fewer regions than declared would train, converge, and be wrong in a way no
+    assertion catches.
+
+    Args:
+        spec: The mind to build.
+
+    Returns:
+        A populated :class:`RegionRegistry`.
+    """
+    registry = RegionRegistry()
+    for region in spec.live_regions:
+        if region.kind == "residual_mlp":
+            registry.register(
+                ResidualMLPRegion(
+                    dim=region.stream_dim,
+                    hidden_dim=region.hidden_dim,
+                    name=region.name,
+                )
+            )
+        elif region.kind == "latent_vae":
+            if region.latent_dim is None:
+                raise ValueError(f"{region.name}: latent_vae requires latent_dim")
+            registry.register(
+                LatentVAE(
+                    input_dim=region.stream_dim,
+                    hidden_dim=region.hidden_dim,
+                    latent_dim=region.latent_dim,
+                    name=region.name,
+                )
+            )
+        else:
+            raise NotImplementedError(
+                f"region {region.name!r} declares kind {region.kind!r}, which has no "
+                f"implementation. Either implement it or set live=false in the spec."
+            )
     return registry
 
 

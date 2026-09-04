@@ -1,0 +1,32 @@
+{
+  "description": "CogSynDelta Codex: orient + refuse git mutate on protected trunks.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/bash \"$(git rev-parse --show-toplevel)/scripts/hooks/codex-session-start.sh\"",
+            "timeout": 8,
+            "statusMessage": "CSD Codex orient",
+            "additionalContextLimit": 2000
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/bash \"$(git rev-parse --show-toplevel)/scripts/hooks/grok-branch-guard.sh\"",
+            "timeout": 8,
+            "statusMessage": "CSD branch guard"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -5,7 +5,7 @@
 name: Release
 
 # Manual only — no push/pull_request CI triggers
-on:
+"on":
   workflow_dispatch:
     inputs:
       dry_run:
@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  UV_VERSION: "0.7.17"
+  UV_VERSION: "0.9.21"
 
 jobs:
   # Check if release is needed (skip for docs-only changes)
@@ -30,7 +30,7 @@ jobs:
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -73,16 +73,20 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: ${{ env.UV_VERSION }}
-          enable-cache: true
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
       - name: Set up Python 3.12
         run: uv python install 3.12
@@ -148,7 +152,7 @@ jobs:
 
       - name: Upload artifacts
         if: steps.version.outputs.new_version != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: dist-${{ steps.version.outputs.new_version }}
           path: dist/
@@ -157,27 +161,34 @@ jobs:
   # Optional: Upload to private registry (GitHub Packages)
   publish-to-github-packages:
     name: Publish to GitHub Packages
+    # ghcr.io only exists on github.com; skip immediately so a Forgejo
+    # workflow_dispatch doesn't burn a runner slot on a doomed publish.
     runs-on: [self-hosted, linux, x64, podman]
     needs: release
-    if: ${{ github.event.inputs.dry_run != 'true' }}
+    if: ${{ github.event.inputs.dry_run != 'true' && github.server_url == 'https://github.com' }}
     permissions:
       contents: read
       packages: write
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
         with:
           pattern: dist-*
           path: dist/
           merge-multiple: true
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: ${{ env.UV_VERSION }}
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
       - name: Publish to GitHub Packages
         env:

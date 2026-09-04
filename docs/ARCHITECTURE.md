@@ -150,8 +150,9 @@ Extensible backend for specialized compute:
 Built-in protection against hazards:
 
 - **Loop Detection**: Max 5 state repetitions
-- **Timeouts**: 300s execution limit
-- **Resource Limits**: 1GB memory, 10MB output
+- **Timeouts**: 3600s default for lab GPU jobs
+- **Resource limits**: 14 GiB process budget (RTX 5080 exclusive floor),
+  20 GiB ceiling (RTX 3090 Ti exclusive); 512 MiB output
 - **Ethical Constraints**: Forbidden pattern detection
 - **Circuit Breakers**: Automatic process termination
 

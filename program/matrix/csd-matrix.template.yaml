@@ -1,0 +1,142 @@
+# Template for a new CSD matrix run. Copy this file, fill in every {placeholder}, delete
+# this header, and validate with `model-matrix validate --config <your-file>` before
+# `plan`/`run` (see `tzervas/model-matrix`, and program/matrix/README.md for the CSD-side
+# conventions this template follows). `program/matrix/csd-matrix.yaml` is a filled-in,
+# real example -- read it alongside this file for what the filled shape looks like.
+#
+# THE RULES THIS TEMPLATE ENCODES (see docs/design/MATRIX-PIPELINE.md for the reasoning):
+#   - budgets: {mib: null, source: probe} unless the number came from a REAL
+#     `gpu_budget.report_peak()` measurement for this EXACT axis combination -- a
+#     hand-read nvidia-smi number, a number from a different step count or a different
+#     region's docstring table, is `source: probe`, not `report_peak`, no matter how
+#     close it looks. `null` sends the cell to the harness's wave-0 probe instead of
+#     guessing (H4).
+#   - budget_axes must name EXACTLY the axes this region's VRAM depends on, and every
+#     key in `budgets` must name that full set, order-insensitive. Narrowing it below
+#     every declared axis needs `budget_axes_why` stating the claim (H2).
+#   - variance_axes names axes whose difference is noise (typically `seed`), not a
+#     designed comparison -- cells differing only in a variance axis get aggregated
+#     into one `mean +/- half-range` row rather than compared pairwise (N1).
+#   - test-quant.enabled stays `false` until `csd-benchmark.py --quantized` exists on
+#     the `run.code.sha` this config pins (A6) -- flipping it early against a `main`
+#     that lacks the flag makes every quantized cell fail at that stage.
+
+schema: model-matrix/v2
+
+run:
+  id: "{run-id}" # e.g. csd-<short-name>-<UTC date>
+  project: cogsyndelta
+  code:
+    repo: /home/kang/code/personal/tzervas/CogSynDelta
+    sha: "{40-hex-sha}" # `git -C /home/kang/code/personal/tzervas/CogSynDelta rev-parse main`
+  state_root: /akula-data/csd/matrix
+  finals_root: /akula-data/csd/finals # MUST be inside retention.prune_roots below
+  events_dir: /akula-data/csd/events
+  evidence_dir: docs/design/evidence
+
+hosts:
+  akula-prime:
+    gpu_index: 0
+    total_mib: 23028
+    foreign_floor_mib: 1100 # reserved desktop floor; measure with `nvidia-smi` when idle
+    cwd: /home/kang/code/personal/tzervas/CogSynDelta
+    python: /home/kang/code/personal/tzervas/CogSynDelta/.venv/bin/python
+    pythonpath: /home/kang/code/personal/tzervas/CogSynDelta/src
+    state_root: /akula-data/csd/matrix
+    roles: [train, eval, quantize]
+  # gpu5080:                                  # add only if this run uses the 5080
+  #   gpu_index: 0
+  #   total_mib: 16303
+  #   foreign_floor_mib: 0
+  #   cwd: /home/tzervas/CogSynDelta
+  #   python: /home/tzervas/CogSynDelta/.venv/bin/python
+  #   pythonpath: /home/tzervas/CogSynDelta/src
+  #   state_root: /bulk/csd-train-state/matrix
+  #   local_view: /mnt/bulk/csd-train-state/matrix
+  #   roles: [train, eval, quantize]
+
+gpu_pack:
+  ledger: /akula-data/csd/vram-budgets.json
+  registry: /akula-data/csd/gpu-admitted.json
+  receipts: /akula-data/csd/receipts
+  margin_mib: 1024
+  probe_first: true
+
+corpus:
+  fingerprint_probe: "{python} scripts/csd-train-all.py --regions {region} --print-corpus-fingerprint --dry-run"
+
+stages:
+  train: {kind: train, gpu: true, receipt_kind: train, receipt: "receipts/{region}-2*.json", gate: "$.beats_untrained.*", complete_on_gate_fail: true}
+  test: {kind: eval, gpu: true, receipt_kind: eval, receipt: "receipts/cogsyndelta-{region}-eval-*.json", gate: "$.gates.*", bound_to: train, complete_on_gate_fail: true, requires: [train]}
+  quantize: {kind: quantize, gpu: true, receipt_kind: quant, receipt: "receipts/{region}-quant-*.json", gate: "$.within_budget", bound_to: train, complete_on_gate_fail: true, requires: [test]}
+  test-quant: {kind: eval, gpu: true, receipt_kind: eval-quant, receipt: "receipts/cogsyndelta-{region}-eval-quantized-*.json", gate: "$.gates.*", bound_to: quantize, complete_on_gate_fail: true, requires: [quantize], enabled: false}
+  collect: {kind: collect, gpu: false, requires: [quantize]} # -> [test-quant] once enabled: true above
+  publish: {kind: publish, gpu: false, requires: [collect]}
+  verify: {kind: verify, gpu: false, requires: [publish]}
+
+pipeline:
+  base: [train, test, quantize, test-quant, collect, publish, verify]
+
+identifier:
+  pattern: "{region}-{axes}-{sha7}-{date}"
+  axes_sep: "-"
+
+regions:
+  defaults:
+    steps: 4000
+    max_len: 96
+    shard_limit: 2
+    tolerance: 0.01
+    aggressive_bits: 3
+    max_bits: 8
+    hosts: [akula-prime]
+    env: {PYTHONPATH: "{pythonpath}"}
+    commands:
+      train: >-
+        {python} scripts/csd-train-all.py --regions {region} --steps {steps} --batch {batch}
+        --max-len {max_len} --shard-limit {shard_limit} --seed {seed} --state {state}
+      test: "{python} scripts/csd-benchmark.py --regions {region} --state {state} --train-receipt {train_receipt}"
+      quantize: >-
+        {python} scripts/csd-quantize.py --regions {region} --state {state} --train-receipt {train_receipt}
+        --tolerance {tolerance} --aggressive-bits {aggressive_bits} --max-bits {max_bits}
+      test-quant: >-
+        {python} scripts/csd-benchmark.py --regions {region} --state {state} --quantized {quantized_path}
+        --quant-receipt {quant_receipt} --train-receipt {train_receipt}
+      publish: >-
+        {python} scripts/csd-publish-checkpoint.py --region {region} --repo {hub_repo}
+        --receipt {train_receipt} --eval-receipt {eval_receipt} --quant-receipt {quant_receipt}
+        --revision {hub_branch} --base-ref {base_ref}
+    primary_metric: "train:$.held_out.recall@1"
+    references: [untrained]
+    eval_key: ["train:$.corpus.fingerprint", "train:$.config.holdout_pairs", "train:$.config.steps", "train:$.config.max_len"]
+    gates_read:
+      beats_untrained: "train:$.beats_untrained.recall@1"
+      eval_pass: "test:$.gates.*"
+      quant_budget: "quantize:$.within_budget"
+    axis_short: {batch: b, seed: s}
+    variance_axes: [seed]
+    budget_axes: [batch]
+
+  "{region-name}": # one block per region; see program/matrix/templates/region.yaml for a fully-commented block
+    axes: {batch: [512], seed: [0]}
+    budgets:
+      "batch=512": {mib: null, source: probe}
+
+publish:
+  repo_pattern: "tzervas/cogsyndelta-region-{region}"
+  base_ref: "variants/base"
+  branch: "{variant_id}"
+  tags: {fp32: "{variant_id}--fp32", ptq: "{variant_id}--ptq"}
+  private: true
+  promote_main: manual
+  main_rule: best_primary_metric_all_gates_pass
+
+retention:
+  working_set: [unfinished, keep, current_final]
+  prune_order: [step_checkpoints, token_cache, remote_copies, fp32_final, ptq_final]
+  prune_roots: [/akula-data/csd/matrix, /akula-data/csd/finals]
+  finals_per_region: 1
+
+emit:
+  unit_prefix: mm
+  foreign_floor_mib: 1100

@@ -16,6 +16,7 @@ Features:
 """
 
 import asyncio
+import os
 from datetime import datetime
 from typing import Any
 
@@ -567,4 +568,11 @@ if __name__ == "__main__":
     print("API Documentation: http://localhost:8000/docs")
     print("=" * 70)
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    # Default to loopback, not 0.0.0.0. The banner above already advertises
+    # http://localhost:8000, so binding every interface contradicted what it told the
+    # operator, and this fleet's posture is LAN-only exposure through the Caddy edge --
+    # not services publishing themselves. Override deliberately via CSD_API_HOST when a
+    # host genuinely needs to serve the LAN.
+    host = os.environ.get("CSD_API_HOST", "127.0.0.1")
+    port = int(os.environ.get("CSD_API_PORT", "8000"))
+    uvicorn.run(app, host=host, port=port, log_level="info")

@@ -4,11 +4,11 @@
 name: Code Quality
 
 # Manual only — no push/pull_request CI triggers
-on:
+"on":
   workflow_dispatch:
 
 env:
-  UV_VERSION: "0.7.17"
+  UV_VERSION: "0.9.21"
 
 jobs:
   # CodeClimate integration (requires CC_TEST_REPORTER_ID secret)
@@ -20,13 +20,17 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: ${{ env.UV_VERSION }}
-          enable-cache: true
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
       - name: Set up Python
         run: uv python install 3.12
@@ -62,15 +66,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # Full history for better analysis
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: ${{ env.UV_VERSION }}
-          enable-cache: true
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
       - name: Set up Python
         run: uv python install 3.12
@@ -106,13 +114,17 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: ${{ env.UV_VERSION }}
-          enable-cache: true
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
 
       - name: Set up Python
         run: uv python install 3.12
@@ -143,7 +155,7 @@ jobs:
           uv run --no-project python scripts/quality_control.py src/ >> quality-metrics.md
 
       - name: Upload quality metrics
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v3
         with:
           name: quality-metrics
           path: quality-metrics.md

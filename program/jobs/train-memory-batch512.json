@@ -1,0 +1,22 @@
+{
+  "name": "train-memory-batch512",
+  "kind": "train",
+  "argv": [
+    "/home/kang/code/personal/tzervas/CogSynDelta/.venv/bin/python",
+    "scripts/csd-train-all.py",
+    "--regions", "memory",
+    "--steps", "8000",
+    "--batch", "512",
+    "--max-len", "96",
+    "--state", "/akula-data/csd/state-packs/train-memory-batch512/state"
+  ],
+  "env": {},
+  "cwd": "/home/kang/code/personal/tzervas/CogSynDelta",
+  "host": "akula-prime",
+  "gpu_index": 0,
+  "budget_mib": null,
+  "probe": null,
+  "state_dir": "/akula-data/csd/state-packs/train-memory-batch512",
+  "lock_name": "gpu-pack.lock",
+  "code_revision": "7fc139d1c04ca82d04a51ab1bde8d50412b7fd42"
+}

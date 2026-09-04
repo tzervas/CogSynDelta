@@ -4,7 +4,7 @@
 # runs-on labels match fleet agent defaults.
 name: fleet-ci
 
-on:
+"on":
   push:
     branches: [main, master, dev, develop]
   pull_request:
@@ -26,7 +26,7 @@ jobs:
       rust: ${{ steps.d.outputs.rust }}
       python: ${{ steps.d.outputs.python }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: d
         run: |
           set -euo pipefail
@@ -42,7 +42,7 @@ jobs:
     if: needs.detect.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, podman]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: cargo check
         run: cargo check --workspace --all-targets
       - name: cargo test
@@ -56,12 +56,16 @@ jobs:
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          version: "latest"
-          enable-cache: true
+      - uses: actions/checkout@v7
+      - name: Verify uv (baked into job image)
+        run: |
+          # uv is baked into the job image (fleet-ci-base), so nothing is installed
+          # here: no network dependency, and no tar extraction -- which is what forced
+          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
+          # must fail loudly and name the image, not silently skip the step.
+          command -v uv >/dev/null 2>&1 || {
+            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+          uv --version
       - name: Sync (CPU torch)
         run: |
           set -euo pipefail

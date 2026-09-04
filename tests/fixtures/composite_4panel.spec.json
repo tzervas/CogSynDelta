@@ -1,0 +1,98 @@
+{
+  "background": [
+    255,
+    255,
+    255
+  ],
+  "frame_size": 128,
+  "panels": [
+    {
+      "height": 64,
+      "id": "top_left",
+      "tile": {
+        "block": 8,
+        "colors": [
+          [
+            200,
+            60,
+            60
+          ]
+        ],
+        "kind": "solid"
+      },
+      "width": 64,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "height": 64,
+      "id": "top_right",
+      "tile": {
+        "block": 8,
+        "colors": [
+          [
+            60,
+            170,
+            80
+          ],
+          [
+            20,
+            60,
+            30
+          ]
+        ],
+        "kind": "hgradient"
+      },
+      "width": 64,
+      "x": 64,
+      "y": 0
+    },
+    {
+      "height": 64,
+      "id": "bottom_left",
+      "tile": {
+        "block": 8,
+        "colors": [
+          [
+            60,
+            90,
+            200
+          ],
+          [
+            200,
+            220,
+            255
+          ]
+        ],
+        "kind": "vgradient"
+      },
+      "width": 64,
+      "x": 0,
+      "y": 64
+    },
+    {
+      "height": 64,
+      "id": "bottom_right",
+      "tile": {
+        "block": 8,
+        "colors": [
+          [
+            230,
+            230,
+            230
+          ],
+          [
+            30,
+            30,
+            30
+          ]
+        ],
+        "kind": "checker"
+      },
+      "width": 64,
+      "x": 64,
+      "y": 64
+    }
+  ],
+  "patch_size": 8
+}

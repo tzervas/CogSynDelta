@@ -1,0 +1,1486 @@
+#!/usr/bin/env python3
+"""Monitor and steer lab GPUs + LocalAI from this machine.
+
+Usage:
+  ./scripts/csd-lab-console              # one snapshot
+  ./scripts/csd-lab-console --watch
+  ./scripts/csd-lab-console --http 9118  # dashboard (code.vectorweight.com/lab)
+  ./scripts/csd-lab-console --chat 'ping'
+  ./scripts/csd-lab-console --steer pause
+  ./scripts/csd-lab-console --steer resume
+  ./scripts/csd-lab-console --steer-note 'hold G-SQL'
+
+Never pauses LocalAI. Never dual 14B. UI tabs: live dual-host feed (loaded
+models only), pool, history, steer. No catalog dump on the feed tab.
+
+JSON routes wrap existing CLIs (also under /lab prefix). Never 0.0.0.0.
+Never widen apply allowlist. Never wrap csd-autodev-provision.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hmac
+import json
+import os
+import re
+import subprocess
+import time
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+STEER = Path(os.environ.get("CSD_STEER", "/akula-data/cabal/csd-steer.json"))
+LOCALAI = os.environ.get("LOCALAI_URL", "http://127.0.0.1:8080")
+GPU5080 = os.environ.get("GPU5080_SSH", "gpu5080")
+ROUTER_STATE = Path(os.environ.get("CSD_ROUTER_STATE", "/akula-data/cabal/model-router-state.json"))
+QUEUE_DIR = Path(os.environ.get("CSD_LOCALAI_QUEUE", "/akula-data/cabal/localai-queue"))
+AUTODEV_OUT = Path("/akula-data/cabal/autodev-out")
+GPU_PLAN = Path(os.environ.get("CSD_GPU_PLAN", "/akula-data/cabal/gpu-plan.json"))
+SESS_DIR = Path(os.environ.get("CSD_LAB_SESSIONS", "/akula-data/cabal/lab-sessions"))
+UPSTREAM = os.environ.get("CSD_UPSTREAM", "").rstrip("/")
+# Minted server-side at process start (secret exec), never taken from a client
+# header. Attached by proxy_upstream() for allowlisted routes only; never
+# forwarded for /api/apply, which never proxies (see PROXY_ALLOW).
+UPSTREAM_TOKEN = os.environ.get("CSD_UPSTREAM_TOKEN", "").strip()
+# Default-deny: only these read-only, non-credentialed routes may be relayed
+# to UPSTREAM. /api/apply is never eligible -- see dispatch_api_post, which
+# handles it locally before this allowlist is even consulted -- and the
+# exclusion is repeated in proxy_eligible() as an independent second guard.
+#
+# FUNCTIONAL IMPACT on a proxying node (CSD_UPSTREAM set, e.g. the homelab
+# instance pointed at akula-prime:9118): the console's own page issues ~19
+# distinct /api/* calls (gpu/lock, git, loop, priority, steer, spawn, chat,
+# forgejo/{whoami,prs,pr-create,status,wait,comment,merge-gate},
+# comfy/{queue-prompt,flux-klein-4b}, plus the 5 below). Only the 5 below are
+# allowlisted, so on a proxying node every other route now 404s through the
+# UI, and POST /api/apply is handled LOCALLY on the proxying node (see
+# dispatch_api_post) rather than relayed to prime -- where WORKTREES paths
+# don't exist, so it returns "unknown worktree" instead of writing anything.
+# Excluding apply from the proxy is intentional (OD-2) and correct; narrowing
+# reads to 5 routes is a defensible default-deny default, but it is a real
+# functional break for any node that was using this console as a UI
+# front-end onto prime, not a transparent no-op. This needs an explicit
+# operator call: widen PROXY_ALLOW to the read-only routes the UI actually
+# needs, or stop pointing CSD_UPSTREAM at a node used as the operator UI.
+# Do not report this as "keeps working" -- it does not, until that call is made.
+PROXY_ALLOW = frozenset(
+    {
+        "/api/status",
+        "/api/gpu",
+        "/api/sessions",
+        "/api/comfy/list-workflows",
+        "/api/comfy/prompt-status",
+    }
+)
+APPLY_TOKEN_FILE = Path(os.environ.get("CSD_APPLY_TOKEN_FILE", "/akula-data/cabal/csd-apply.token"))
+WORKTREES = {
+    "p1-08": Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-08"),
+    "p1-07": Path("/home/kang/code/personal/tzervas/python-ai/memory-gate-wt-p1-07"),
+}
+PROTECTED_WT = Path("/home/kang/code/personal/tzervas/python-ai/memory-gate")
+ALLOW_PREFIXES = ("src/", "tests/", "docs/")
+# Guard modules and the tests that prove they fire. http_apply refuses these
+# regardless of what worktree or path the client claims -- OD-1: the
+# autodev write scope must never include the code that checks autodev's own
+# output. Paired with a Forgejo path-scoped protection on the same paths so
+# the rule survives a new guard landing somewhere not yet listed here.
+PROTECTED_APPLY_PATHS = frozenset(
+    {
+        "src/cogsyndelta/eval/metrics.py",
+        "src/cogsyndelta/regions/pretrain.py",
+        "src/cogsyndelta/regions/_checkpoint.py",
+        "scripts/csd-train-all.py",
+        "tests/test_guards_can_fail.py",
+        "tests/test_reserved_corpus_guard.py",
+        "tests/test_checkpoint_load_security.py",
+    }
+)
+PROTECTED_APPLY_PREFIXES = (".github/workflows/", ".githooks/")
+
+
+def is_protected_apply_path(rel: str) -> bool:
+    """True for a guard module/test or CI/hook path that autodev must not touch."""
+    return rel in PROTECTED_APPLY_PATHS or rel.startswith(PROTECTED_APPLY_PREFIXES)
+
+
+ROOT = Path(__file__).resolve().parents[1]
+GOALS = ROOT / "docs/program/GOALS.md"
+ROUTER_JSON = ROOT / "config/model-router.json"
+SCRIPTS = ROOT / "scripts"
+SECRET_BIN = os.environ.get("CSD_SECRET_BIN", "/home/kang/.local/bin/secret")
+HEARTBEAT = Path(
+    os.environ.get("CSD_AUTODEV_HEARTBEAT", "/akula-data/cabal/autodev-heartbeat.json")
+)
+GIT_CLI = SCRIPTS / "csd-autodev-git"
+FORGEJO_CLI = SCRIPTS / "csd-autodev-forgejo"
+LOOP_CLI = SCRIPTS / "csd-autodev-loop"
+PRIORITY_CLI = SCRIPTS / "csd-autodev-priority"
+GPU_PLAN_CLI = SCRIPTS / "csd-gpu-plan"
+PROTECTED_REFS = frozenset({"main", "staging", "develop", "dev"})
+FORGEJO_ALLOW = frozenset({"tzervas/CogSynDelta", "tzervas/memory-gate"})
+WAN_BINDS = frozenset({"0.0.0.0", "::", "[::]"})
+
+
+def sh(args: list[str], timeout: int = 20) -> str:
+    """Run a helper CLI, never raising for a missing binary or a hang.
+
+    snapshot() calls this for nvidia-smi/docker/ssh unconditionally, on the
+    assumption that this console runs on a lab host with the GPU tooling
+    installed. Neither holds on a CI runner: `fleet-ci-base` has no
+    nvidia-smi (no GPU passthrough into the job container), so
+    subprocess.run's own Popen raised an uncaught FileNotFoundError here --
+    inside snapshot()'s dict literal, so it aborted the entire /api/status
+    response rather than degrading one field. Any missing-executable or
+    permission error is now reported as this field's value instead of
+    escaping; a slow/hung remote command (ssh_5080) is reported the same
+    way rather than exceeding its caller's HTTP-request budget.
+    """
+    try:
+        p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+    except OSError as exc:
+        return f"unavailable: {exc}"
+    except subprocess.TimeoutExpired:
+        return f"unavailable: timed out after {timeout}s"
+    return (p.stdout or p.stderr or "").strip()
+
+
+def ssh_5080(cmd: str) -> str:
+    return sh(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", GPU5080, cmd])
+
+
+def localai_key() -> str:
+    return os.environ.get("LOCALAI_API_KEY") or os.environ.get("API_KEY") or ""
+
+
+def _read_json(path: Path) -> dict:
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _latest_queue() -> dict:
+    """Running job, else newest result. Why: feed shows thinking, not catalog."""
+    if not QUEUE_DIR.is_dir():
+        return {}
+    running: dict = {}
+    newest: tuple[float, dict] | None = None
+    for path in QUEUE_DIR.glob("*.json"):
+        rec = _read_json(path)
+        if not rec:
+            continue
+        mtime = path.stat().st_mtime
+        if rec.get("status") == "running":
+            running = rec
+        if newest is None or mtime > newest[0]:
+            newest = (mtime, rec)
+    if running:
+        return running
+    return newest[1] if newest else {}
+
+
+def _latest_autodev() -> dict:
+    if not AUTODEV_OUT.is_dir():
+        return {}
+    files = list(AUTODEV_OUT.glob("*.json"))
+    if not files:
+        return {}
+    return _read_json(max(files, key=lambda p: p.stat().st_mtime))
+
+
+def loaded_only() -> dict:
+    """Currently placed aliases from the router, expired dropped."""
+    st = _read_json(ROUTER_STATE)
+    now = time.time()
+    prime: list[dict] = []
+    gpu: list[dict] = []
+    for alias, rec in (st.get("resident") or {}).items():
+        if not isinstance(rec, dict):
+            continue
+        if float(rec.get("until") or 0) <= now:
+            continue
+        item = {"alias": alias, **rec}
+        if rec.get("host") == "gpu5080":
+            gpu.append(item)
+        else:
+            prime.append(item)
+    return {"prime": prime, "gpu5080": gpu, "parked": st.get("parked") or {}}
+
+
+def live_feed(snap: dict) -> dict:
+    """Dual-host live pane: loaded models, activity, honest latent note."""
+    loaded = loaded_only()
+    qjob = _latest_queue()
+    aout = _latest_autodev()
+    thinking = None
+    if qjob.get("status") == "running":
+        thinking = {
+            "phase": "in-flight",
+            "alias": qjob.get("alias"),
+            "prompt": str(qjob.get("prompt") or "")[:2000],
+        }
+    elif qjob.get("result") or aout.get("text"):
+        thinking = {
+            "phase": "last",
+            "alias": qjob.get("alias") or "local/code",
+            "text": str(qjob.get("result") or aout.get("text") or "")[:4000],
+            "goal": aout.get("goal"),
+        }
+    plan = _read_json(GPU_PLAN)
+    pool = plan.get("pool") or {
+        "combined_mib": 39331,
+        "usable_mib": 37795,
+        "enabled": False,
+    }
+    return {
+        "prime": {
+            "gpu": "RTX 3090 Ti Ampere sm_86",
+            "smi": snap.get("prime_smi"),
+            "loaded": loaded["prime"],
+            "thinking": thinking,
+            "latent": {
+                "kind": "kv-occupancy",
+                "note": (
+                    "GGUF decode has no public latent hook. VRAM used is "
+                    "weights+KV. CSD region latents are not in this console."
+                ),
+            },
+        },
+        "gpu5080": {
+            "gpu": "RTX 5080 Blackwell sm_120",
+            "smi": snap.get("gpu5080_smi"),
+            "lock": snap.get("gpu5080_lock"),
+            "comfy": snap.get("gpu5080_comfy"),
+            "loaded": loaded["gpu5080"],
+            "thinking": None,
+            "latent": {
+                "kind": "embed-or-cuda",
+                "note": (
+                    "No LLM thinking on CUDA jobs. Embed probe appears when "
+                    "a helper is physically loaded (gguf_count>0)."
+                ),
+            },
+        },
+        "pool": {
+            **pool,
+            "parked": loaded["parked"],
+            "mode": "place-then-pool",
+            "mix": "single-or-mix when Stage B RPC is enabled",
+            "note": "Unified pool tab. llama.cpp RPC is specified, not enabled.",
+        },
+    }
+
+
+def snapshot() -> dict:
+    steer = {}
+    if STEER.is_file():
+        try:
+            steer = json.loads(STEER.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            steer = {"error": "invalid json"}
+    models: list[str] = []
+    lai = "down"
+    try:
+        req = urllib.request.Request(
+            f"{LOCALAI}/v1/models",
+            headers={"Authorization": f"Bearer {localai_key()}"} if localai_key() else {},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.load(resp)
+        models = [m.get("id") for m in (data.get("data") or []) if m.get("id")]
+        lai = "ok"
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        lai = "unreachable"
+    out = {
+        "prime_smi": sh(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.used,memory.free,utilization.gpu",
+                "--format=csv,noheader",
+            ]
+        ),
+        "localai": lai,
+        "models": models,
+        "localai_container": sh(["docker", "inspect", "-f", "{{.State.Status}}", "akula-localai"]),
+        "gpu5080_smi": ssh_5080(
+            "nvidia-smi --query-gpu=name,memory.used,memory.free,utilization.gpu --format=csv,noheader"
+        ),
+        "gpu5080_lock": ssh_5080(
+            "fuser /home/tzervas/akula-harness/state/gpu5080.lock 2>/dev/null || echo idle"
+        ),
+        "gpu5080_runner": ssh_5080("systemctl --user is-active forgejo-runner-gpu-tzervas.service"),
+        "gpu5080_comfy": ssh_5080("systemctl is-enabled akula-comfyui.service 2>/dev/null || true"),
+        "steer": steer,
+        "note": "autodev webapp on code.vectorweight.com; chat on ai.vectorweight.com",
+        "links": {
+            "lab": "https://code.vectorweight.com",
+            "chat": "https://ai.vectorweight.com",
+            "forgejo": "https://git.vectorweight.com/tzervas/CogSynDelta",
+            "grafana": "https://grafana.vectorweight.com",
+            "logs": "https://loki.vectorweight.com",
+            "metrics": "https://vm.vectorweight.com",
+            "status": "https://status.vectorweight.com",
+        },
+    }
+    out["feed"] = live_feed(out)
+    out["app"] = autodev_app()
+    return out
+
+
+def autodev_app() -> dict:
+    """Queue, goals, and latest ticks for the lab webapp."""
+    queue: list[dict] = []
+    live: list[dict] = []
+    if QUEUE_DIR.is_dir():
+        files = sorted(QUEUE_DIR.glob("*.json"), key=lambda p: -p.stat().st_mtime)
+        for path in files:
+            if path.name.endswith(".result.json"):
+                continue
+            rec = _read_json(path)
+            item = {
+                "id": rec.get("id") or path.stem,
+                "status": rec.get("status"),
+                "kind": rec.get("kind"),
+                "alias": rec.get("alias"),
+                "prio": rec.get("prio"),
+            }
+            if item["status"] in {"queued", "running"}:
+                live.append(item)
+            elif len(queue) < 12:
+                queue.append(item)
+    goals = []
+    if GOALS.is_file():
+        goals = [ln for ln in GOALS.read_text(encoding="utf-8").splitlines() if "| G-" in ln][:24]
+    ticks = []
+    if AUTODEV_OUT.is_dir():
+        files = sorted(AUTODEV_OUT.glob("*.json"), key=lambda p: -p.stat().st_mtime)[:8]
+        for path in files:
+            rec = _read_json(path)
+            ticks.append(
+                {
+                    "id": path.stem,
+                    "goal": str(rec.get("goal") or "")[:120],
+                    "ok": rec.get("rc") == 0,
+                    "applied": rec.get("applied"),
+                }
+            )
+    cat = _read_json(ROUTER_JSON)
+    runtimes = {
+        name: {
+            "best_for": spec.get("best_for"),
+            "image": spec.get("image"),
+            "hosts": spec.get("hosts"),
+        }
+        for name, spec in (cat.get("runtimes") or {}).items()
+    }
+    hb = _read_json(Path("/akula-data/cabal/autodev-heartbeat.json"))
+    age = time.time() - float(hb.get("t") or 0) if hb else None
+    return {
+        "queue_live": live,
+        "queue_recent_done": queue,
+        "queue": live or queue,
+        "worker_live": bool(age is not None and age < 90),
+        "worker_age_s": age,
+        "goals": goals,
+        "ticks": ticks,
+        "runtimes": runtimes,
+        "parallel": "3090 text + 5080 CUDA/helpers at once; interned GEMM later",
+    }
+
+
+def print_snap(s: dict) -> None:
+    print("=== akula-prime 3090 ===")
+    print(s.get("prime_smi"))
+    print("localai", s.get("localai_container"), s.get("localai"))
+    feed = s.get("feed") or {}
+    print("loaded prime", [x.get("alias") for x in (feed.get("prime") or {}).get("loaded") or []])
+    print("=== gpu5080 ===")
+    print(s.get("gpu5080_smi"))
+    print(
+        "lock",
+        s.get("gpu5080_lock"),
+        "runner",
+        s.get("gpu5080_runner"),
+        "comfy",
+        s.get("gpu5080_comfy"),
+    )
+    print("loaded 5080", [x.get("alias") for x in (feed.get("gpu5080") or {}).get("loaded") or []])
+    print("=== steer ===")
+    print(json.dumps(s.get("steer") or {}, indent=2))
+    print(s.get("note"))
+
+
+def write_steer(**fields: object) -> dict:
+    cur: dict = {}
+    if STEER.is_file():
+        try:
+            cur = json.loads(STEER.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            cur = {}
+    cur.update({k: v for k, v in fields.items() if v is not None})
+    STEER.parent.mkdir(parents=True, exist_ok=True)
+    STEER.write_text(json.dumps(cur, indent=2) + "\n", encoding="utf-8")
+    return cur
+
+
+def list_sessions() -> list[dict]:
+    """Historic lab chats (daily files) plus autodev ticks."""
+    items: list[dict] = []
+    if SESS_DIR.is_dir():
+        for path in SESS_DIR.glob("chat-*.json"):
+            rec = _read_json(path)
+            turns = rec.get("turns") or []
+            title = ""
+            if turns:
+                title = str(turns[0].get("prompt") or "")[:80]
+            items.append(
+                {
+                    "id": path.stem,
+                    "kind": "chat",
+                    "t": path.stat().st_mtime,
+                    "n": len(turns),
+                    "title": title,
+                }
+            )
+    if AUTODEV_OUT.is_dir():
+        for path in AUTODEV_OUT.glob("*.json"):
+            rec = _read_json(path)
+            items.append(
+                {
+                    "id": f"autodev-{path.stem}",
+                    "kind": "autodev",
+                    "t": float(rec.get("t") or path.stat().st_mtime),
+                    "n": 1,
+                    "title": str(rec.get("goal") or path.stem)[:80],
+                }
+            )
+    items.sort(key=lambda r: -float(r.get("t") or 0))
+    return items[:200]
+
+
+def load_session(sid: str) -> dict:
+    """Load one historic session by id (chat-YYYY-MM-DD or autodev-TS)."""
+    if sid.startswith("autodev-"):
+        path = AUTODEV_OUT / f"{sid[len('autodev-') :]}.json"
+        rec = _read_json(path)
+        rec["id"] = sid
+        rec["kind"] = "autodev"
+        return rec
+    if ".." in sid or "/" in sid:
+        return {"error": "bad id"}
+    rec = _read_json(SESS_DIR / f"{sid}.json")
+    rec["id"] = sid
+    rec["kind"] = "chat"
+    return rec
+
+
+def append_chat(prompt: str, reply: str, alias: str) -> None:
+    """Append a lab chat turn to today's session file."""
+    SESS_DIR.mkdir(parents=True, exist_ok=True)
+    day = time.strftime("%Y-%m-%d")
+    path = SESS_DIR / f"chat-{day}.json"
+    rec = _read_json(path)
+    if not rec:
+        rec = {"id": f"chat-{day}", "kind": "chat", "turns": []}
+    rec.setdefault("turns", []).append(
+        {
+            "t": time.time(),
+            "alias": alias,
+            "prompt": prompt,
+            "reply": reply,
+        }
+    )
+    path.write_text(json.dumps(rec, indent=2) + "\n", encoding="utf-8")
+
+
+def apply_token() -> str:
+    if os.environ.get("CSD_APPLY_TOKEN"):
+        return os.environ["CSD_APPLY_TOKEN"].strip()
+    if APPLY_TOKEN_FILE.is_file():
+        return APPLY_TOKEN_FILE.read_text(encoding="utf-8").strip()
+    return ""
+
+
+def check_apply_auth(header: str) -> bool:
+    """Bearer token compare. Why: worktree writes without SSH.
+
+    Requires the literal, case-sensitive "Bearer " scheme -- RFC 7235
+    registers auth-scheme names case-insensitively, but this console is
+    intentionally stricter: "bearer TOKEN", "BEARER TOKEN", and a bare
+    token with no scheme at all are all refused (401) rather than guessed
+    at. Nothing is stripped from the token except a single trailing CRLF
+    that the header parser can leave on a value (e.g. an obs-fold
+    continuation); any other trailing byte the client actually sent --
+    including plain trailing whitespace -- is compared literally, so
+    "Bearer TOKEN " (real trailing space) never matches "TOKEN".
+
+    Fails closed (False, never raises) on input hmac.compare_digest cannot
+    safely take: it only accepts ASCII-only str (or bytes/bytearray), and
+    a raw Authorization byte >= 0x80 decodes -- via http.client's latin-1
+    header parsing -- to a non-ASCII str that would otherwise raise
+    TypeError here, crashing the request unauthenticated instead of
+    refusing it. check_api_auth() also wraps its call to this function in
+    try/except as a second, redundant fail-closed layer; the isascii()
+    check below is the actual fix, not the belt-and-suspenders one.
+    """
+    want = apply_token()
+    if not want:
+        return False
+    header = header or ""
+    if header.endswith("\r\n"):
+        header = header[:-2]
+    if not header.startswith("Bearer "):
+        return False
+    got = header[len("Bearer ") :]
+    if not got.isascii():
+        return False
+    return hmac.compare_digest(got, want)
+
+
+def check_api_auth(auth_header: str) -> tuple[int, bytes] | None:
+    """The single auth gate for every /api route -- GET and POST alike.
+
+    dispatch_api_get() and dispatch_api_post() both call this as their FIRST
+    statement, unconditionally, on every path they are given -- before
+    UPSTREAM/proxy_eligible is even consulted, before any known-route
+    match, and before the final "not found" fallback. Nothing downstream
+    (proxy_upstream, handle_lab, or any local handler) runs for an
+    unauthenticated caller, so an unauthenticated caller learns nothing
+    about which /api routes exist: everything under /api behaves
+    identically -- 401, or 503 if the console itself has no token -- until
+    a valid bearer token is presented. There is deliberately no separate
+    per-route auth check anywhere else in this file; a new route added to
+    either dispatch table is gated by construction because it cannot be
+    reached without going through this function first.
+
+    Fail-closed distinctly from "wrong token": an empty/unset
+    CSD_APPLY_TOKEN (and no CSD_APPLY_TOKEN_FILE) means the console itself
+    is misconfigured, not that this particular caller is unauthorized, so
+    it is reported as 503 rather than 401 -- check_apply_auth() already
+    fails closed to False on an empty token, which would otherwise read
+    identically to "your token was wrong" instead of "no token is set
+    anywhere and every caller will be refused."
+
+    Reuses check_apply_auth()/CSD_APPLY_TOKEN -- the exact bearer mechanism
+    POST /api/apply already used before this change -- rather than
+    inventing a second token or comparison.
+
+    The check_apply_auth() call is wrapped in try/except: it already fails
+    closed on every input it was written to anticipate (see its
+    docstring), but this is the single choke point every /api caller
+    passes through, so an exception here -- anticipated or not -- must
+    still produce 401, never an uncaught traceback that abandons the
+    connection without a response.
+    """
+    if not apply_token():
+        return 503, json.dumps(
+            {"error": "lab console misconfigured: CSD_APPLY_TOKEN is not set"}
+        ).encode()
+    try:
+        authorized = check_apply_auth(auth_header)
+    except Exception:
+        authorized = False
+    if not authorized:
+        return 401, b'{"error":"unauthorized"}'
+    return None
+
+
+def http_apply(worktree: str, rel: str, content: str) -> dict:  # noqa: PLR0911
+    """Allowlisted worktree write. Never kang-main-wip.
+
+    Path checks run against the RESOLVED target, not the client-supplied
+    string. A raw-string check here is bypassable: PurePath silently
+    collapses "//", "." segments and a trailing "/", and resolve() follows
+    symlinks, so a string that looks unprotected (or looks inside
+    ALLOW_PREFIXES) can resolve to a byte-for-byte protected path. Resolving
+    first and re-deriving `rel` from the resolved target means the string
+    every check below sees is exactly the path that gets written -- and it
+    closes the symlink vector (an alias pointing at a protected file
+    resolves to that file's real path) for free.
+    """
+    dest = WORKTREES.get(worktree)
+    if dest is None or not dest.is_dir():
+        return {"ok": False, "error": f"unknown worktree {worktree}"}
+    droot = dest.resolve()
+    if droot == PROTECTED_WT.resolve():
+        return {"ok": False, "error": "refusing kang-main-wip"}
+    raw_rel = rel.lstrip("/")
+    target = (dest / raw_rel).resolve()
+    if droot not in target.parents:
+        return {"ok": False, "error": "escaped worktree"}
+    rel = target.relative_to(droot).as_posix()
+    if is_protected_apply_path(rel):
+        return {"ok": False, "error": f"protected path: {rel}"}
+    if not rel.startswith(ALLOW_PREFIXES):
+        return {"ok": False, "error": f"path not allowed: {rel}"}
+    if len(content) > 400_000:
+        return {"ok": False, "error": "content too large"}
+    if "def test_" in content and "assert" not in content and "pytest.raises" not in content:
+        return {"ok": False, "error": "test has no assert; refusing pass stubs"}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return {"ok": True, "wrote": str(target)}
+
+
+def _scrub(text: str) -> str:
+    """Strip token-like assignments from CLI text. Never print secrets."""
+    return re.sub(
+        r"(?i)(token|bearer|authorization|api[_-]?key)\s*[:=]\s*\S+",
+        r"\1=<redacted>",
+        text,
+    )
+
+
+def _parse_last_json(text: str) -> dict:
+    """Parse the last JSON object from CLI stdout."""
+    blob = (text or "").strip()
+    if not blob:
+        return {}
+    start = blob.rfind("{")
+    if start >= 0:
+        try:
+            data = json.loads(blob[start:])
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+    for line in reversed(blob.splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return {}
+
+
+def _run_cli(argv: list[str], timeout: int = 90) -> tuple[int, str]:
+    p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+    out = _scrub((p.stdout or "").strip())
+    err = _scrub((p.stderr or "").strip())
+    text = out if out else err
+    return p.returncode, text[:8000]
+
+
+def _forgejo_argv(rest: list[str]) -> list[str]:
+    """autodev Forgejo CLI; TOKEN from env or CSD vault. Never operator admin."""
+    cli = str(FORGEJO_CLI)
+    if os.environ.get("TOKEN") or os.environ.get("FORGEJO_TOKEN"):
+        return [cli, *rest]
+    return [SECRET_BIN, "exec", "TOKEN=git/autodev", "--", cli, *rest]
+
+
+def _repo_ok(raw: str) -> str | None:
+    name = raw if "/" in raw else f"tzervas/{raw}"
+    if name not in FORGEJO_ALLOW:
+        return None
+    return name
+
+
+def _as_int(val: object, default: int, lo: int, hi: int) -> int:
+    try:
+        n = int(val)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        n = default
+    return max(lo, min(n, hi))
+
+
+def lab_git(args: list[object]) -> dict:
+    """JSON wrap of scripts/csd-autodev-git. Never GitHub. Never protected trunks."""
+    if not args or not all(isinstance(a, str) for a in args):
+        return {"ok": False, "rc": 2, "stdout": "args must be a string array"}
+    argv = [str(a) for a in args]
+    if any("github.com" in a.lower() for a in argv):
+        return {"ok": False, "rc": 2, "stdout": "never GitHub"}
+    if any(a == "-c" or a.startswith("--exec") or "credential" in a.lower() for a in argv):
+        return {"ok": False, "rc": 2, "stdout": "refusing git config/credential args"}
+    if argv[0] in {"push", "checkout", "switch", "merge", "rebase"}:
+        for a in argv[1:]:
+            for branch in PROTECTED_REFS:
+                if a == branch or a.endswith(f":{branch}") or a.endswith(f"/{branch}"):
+                    return {
+                        "ok": False,
+                        "rc": 2,
+                        "stdout": f"refusing {argv[0]} {branch}",
+                    }
+    try:
+        rc, text = _run_cli([str(GIT_CLI), *argv], timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "rc": 1, "stdout": str(exc)[:400]}
+    return {"ok": rc == 0, "rc": rc, "stdout": text}
+
+
+def lab_gpu(refresh: bool = False) -> dict:
+    """Wrap csd-gpu-plan. Prefer CSD_GPU_PLAN file to avoid extra SSH."""
+    if not refresh:
+        plan = _read_json(GPU_PLAN)
+        if plan.get("akula-prime") is not None and plan.get("gpu5080") is not None:
+            return plan
+    try:
+        rc, text = _run_cli([str(GPU_PLAN_CLI)], timeout=40)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+    data = _parse_last_json(text)
+    if data.get("akula-prime") is not None:
+        return data
+    plan = _read_json(GPU_PLAN)
+    if plan:
+        return plan
+    return {"ok": False, "error": text[:400], "rc": rc}
+
+
+def lab_gpu_lock() -> dict:
+    """Observe gpu5080.lock from the plan. Acquire/release is not here."""
+    plan = lab_gpu(refresh=False)
+    g = plan.get("gpu5080") if isinstance(plan.get("gpu5080"), dict) else {}
+    return {
+        "lock": str(g.get("lock") or "unknown"),
+        "comfy": str(g.get("comfy") or "unknown"),
+        "helper_ok": bool(g.get("helper_ok")),
+    }
+
+
+def lab_priority(action: str) -> dict:
+    """Wrap csd-autodev-priority on|off|status. Never pause 3090 LocalAI."""
+    if action not in {"on", "off", "status"}:
+        return {"ok": False, "error": "action must be on|off|status"}
+    try:
+        _rc, text = _run_cli([str(PRIORITY_CLI), action], timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+    steer: dict = {}
+    comfy = ""
+    webui = ""
+    for line in text.splitlines():
+        if line.startswith("steer="):
+            try:
+                parsed = json.loads(line[6:])
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                steer = parsed
+        elif line.startswith("comfy=") or line.startswith("comfy:"):
+            comfy = line.split(":", 1)[-1].split("=", 1)[-1].strip()
+        elif "webui" in line.lower():
+            webui = line.strip()
+    if not steer and STEER.is_file():
+        steer = _read_json(STEER)
+    return {"steer": steer, "comfy": comfy, "webui": webui}
+
+
+def lab_loop(mode: str) -> dict:
+    """Wrap csd-autodev-loop --once. Worker is systemd, not HTTP."""
+    if mode == "worker":
+        hb = _read_json(HEARTBEAT)
+        last = hb.get("last") if isinstance(hb.get("last"), dict) else {}
+        age = time.time() - float(hb.get("t") or 0) if hb.get("t") else None
+        live = bool(age is not None and age < 90)
+        return {
+            "ok": live,
+            "rc": 0 if live else 1,
+            "goal": str(last.get("goal") or ""),
+            "applied": last.get("applied") if isinstance(last.get("applied"), dict) else {},
+            "out": "",
+            "notes": ("worker is systemd csd-autodev-loop.service; HTTP does not spawn it"),
+        }
+    if mode != "once":
+        return {
+            "ok": False,
+            "rc": 2,
+            "goal": "",
+            "applied": {},
+            "out": "mode must be once|worker",
+        }
+    try:
+        rc, text = _run_cli([str(LOOP_CLI), "--once"], timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "rc": 1, "goal": "", "applied": {}, "out": str(exc)[:400]}
+    rec = _parse_last_json(text)
+    applied = rec.get("applied") if isinstance(rec.get("applied"), dict) else {}
+    return {
+        "ok": bool(rec.get("ok")) if rec else rc == 0,
+        "rc": rc,
+        "goal": str(rec.get("goal") or ""),
+        "applied": applied,
+        "out": str(rec.get("out") or text[:2000]),
+    }
+
+
+def lab_forgejo(cmd: str, payload: dict) -> dict:  # noqa: PLR0911
+    """JSON wrap of csd-autodev-forgejo. Allowlisted repos only."""
+    rest: list[str] = []
+    timeout = 90
+    if cmd == "whoami":
+        rest = ["whoami"]
+    elif cmd == "prs":
+        repo = str(payload.get("repo") or "")
+        if not _repo_ok(repo):
+            return {
+                "http": 400,
+                "repo": repo,
+                "pulls": [],
+                "error": "repo not allowlisted",
+            }
+        limit = _as_int(payload.get("limit"), 20, 1, 100)
+        rest = [
+            "prs",
+            repo,
+            "--state",
+            str(payload.get("state") or "open"),
+            "--limit",
+            str(limit),
+        ]
+    elif cmd == "pr-create":
+        repo = str(payload.get("repo") or "")
+        title = str(payload.get("title") or "")
+        head = str(payload.get("head") or "")
+        if not _repo_ok(repo) or not title or not head:
+            return {"http": 400, "error": "repo, title, head required"}
+        if head in PROTECTED_REFS:
+            return {"http": 400, "error": f"refusing head {head}"}
+        rest = [
+            "pr-create",
+            repo,
+            title,
+            head,
+            "--base",
+            str(payload.get("base") or "main"),
+            "--body",
+            str(payload.get("body") or ""),
+        ]
+    elif cmd == "status":
+        repo = str(payload.get("repo") or "")
+        sha = str(payload.get("sha") or "")
+        if not _repo_ok(repo) or not sha:
+            return {
+                "http": 400,
+                "state": "error",
+                "checks": [],
+                "error": "repo and sha required",
+            }
+        rest = ["status", repo, sha]
+    elif cmd == "wait":
+        repo = str(payload.get("repo") or "")
+        sha = str(payload.get("sha") or "")
+        if not _repo_ok(repo) or not sha:
+            return {"http": 400, "state": "error", "error": "repo and sha required"}
+        wait_t = _as_int(payload.get("timeout"), 1800, 1, 1800)
+        poll = _as_int(payload.get("poll"), 30, 1, 120)
+        rest = ["wait", repo, sha, "--timeout", str(wait_t), "--poll", str(poll)]
+        timeout = wait_t + poll + 15
+    elif cmd == "comment":
+        repo = str(payload.get("repo") or "")
+        body = str(payload.get("body") or "")
+        number = payload.get("number")
+        if not _repo_ok(repo) or not body or number is None:
+            return {"http": 400, "ok": False, "error": "repo, number, body required"}
+        rest = ["comment", repo, str(int(number)), body]
+    elif cmd == "merge-gate":
+        repo = str(payload.get("repo") or "")
+        sha = str(payload.get("sha") or "")
+        number = payload.get("number")
+        if not _repo_ok(repo) or not sha or number is None:
+            return {
+                "ok": False,
+                "state": "error",
+                "merged": False,
+                "required_ran": False,
+                "required_succeeded": False,
+                "notes": "repo, sha, number required",
+            }
+        rest = ["merge-gate", repo, sha, str(int(number))]
+        timeout = 120
+    else:
+        return {"ok": False, "error": f"unknown forgejo cmd {cmd}"}
+    try:
+        rc, text = _run_cli(_forgejo_argv(rest), timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "http": 0, "error": str(exc)[:200]}
+    rec = _parse_last_json(text)
+    if not rec:
+        rec = {"ok": rc == 0, "error": text[:400]}
+    rec.setdefault("ok", rc == 0)
+    return rec
+
+
+def _qs_payload(query: str) -> dict:
+    q = parse_qs(query)
+    out: dict = {}
+    for key, vals in q.items():
+        if not vals:
+            continue
+        out[key] = vals[0]
+    for key in ("limit", "number", "timeout", "poll"):
+        if key in out:
+            try:
+                out[key] = int(out[key])
+            except (TypeError, ValueError):
+                out.pop(key, None)
+    if "pause" in out:
+        out["pause"] = str(out["pause"]).lower() in {"1", "true", "yes"}
+    if "refresh" in out:
+        out["refresh"] = str(out["refresh"]).lower() in {"1", "true", "yes"}
+    if "autodev_priority" in out:
+        out["autodev_priority"] = str(out["autodev_priority"]).lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+    return out
+
+
+def handle_lab(method: str, path: str, payload: dict) -> tuple[int, dict] | None:  # noqa: PLR0911
+    """Lab JSON routes wrapping existing CLIs. None = not a wrap route."""
+    if len(path) > 1:
+        path = path.rstrip("/")
+    if path == "/api/gpu":
+        return 200, lab_gpu(refresh=bool(payload.get("refresh")))
+    if path == "/api/gpu/lock":
+        return 200, lab_gpu_lock()
+    if path == "/api/git":
+        if method != "POST":
+            return 405, {"ok": False, "rc": 405, "stdout": "POST args"}
+        args = payload.get("args") if isinstance(payload.get("args"), list) else []
+        return 200, lab_git(args)
+    if path == "/api/loop":
+        if method != "POST":
+            return 405, {"ok": False, "rc": 405, "out": "POST mode"}
+        return 200, lab_loop(str(payload.get("mode") or ""))
+    if path == "/api/priority":
+        return 200, lab_priority(str(payload.get("action") or "status"))
+    if path == "/api/steer" and method == "GET":
+        return 200, _read_json(STEER)
+    if path == "/api/forgejo/whoami":
+        return 200, lab_forgejo("whoami", payload)
+    if path == "/api/forgejo/prs":
+        return 200, lab_forgejo("prs", payload)
+    if path == "/api/forgejo/pr-create":
+        if method != "POST":
+            return 405, {"http": 405, "error": "POST"}
+        return 200, lab_forgejo("pr-create", payload)
+    if path == "/api/forgejo/status":
+        return 200, lab_forgejo("status", payload)
+    if path == "/api/forgejo/wait":
+        return 200, lab_forgejo("wait", payload)
+    if path == "/api/forgejo/comment":
+        if method != "POST":
+            return 405, {"http": 405, "ok": False}
+        return 200, lab_forgejo("comment", payload)
+    if path == "/api/forgejo/merge-gate":
+        if method != "POST":
+            return 405, {
+                "ok": False,
+                "state": "error",
+                "merged": False,
+                "notes": "POST",
+            }
+        return 200, lab_forgejo("merge-gate", payload)
+    return None
+
+
+def lab_bind() -> str:
+    """LAN bind only. Why: never expose the lab agent on WAN 0.0.0.0."""
+    bind = os.environ.get("CSD_LAB_BIND", "192.168.1.98")
+    if bind in WAN_BINDS:
+        raise SystemExit("refusing WAN bind 0.0.0.0")
+    return bind
+
+
+def spawn_alias(alias: str, why: str) -> dict:
+    """Stand a catalog alias on 3090 or 5080 without dual 14B."""
+    router = Path(__file__).resolve().parents[1] / "scripts/csd-model-router"
+    p = subprocess.run(
+        [str(router), "request", "--alias", alias, "--why", why, "--noping"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    try:
+        rec = json.loads(p.stdout or "{}")
+    except json.JSONDecodeError:
+        rec = {"ok": False, "error": (p.stdout or p.stderr or "")[:400]}
+    rec["rc"] = p.returncode
+    return rec
+
+
+def comfy_tool(cmd: str, payload: dict | None = None) -> dict:
+    """Lab JSON wrap of scripts/csd-comfy. Fail-closed when masked."""
+    script = Path(__file__).resolve().parent / "csd-comfy"
+    p = subprocess.run(
+        [str(script), cmd],
+        input=json.dumps(payload or {}),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=45,
+    )
+    try:
+        rec = json.loads(p.stdout or "{}")
+    except json.JSONDecodeError:
+        rec = {"ok": False, "notes": (p.stderr or p.stdout or "bad json")[:400]}
+    if not isinstance(rec, dict):
+        return {"ok": False, "notes": "bad json"}
+    return rec
+
+
+def chat(prompt: str) -> str:
+    body = json.dumps(
+        {
+            "model": "local/code",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 512,
+            "temperature": 0.2,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        f"{LOCALAI}/v1/chat/completions",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            **({"Authorization": f"Bearer {localai_key()}"} if localai_key() else {}),
+        },
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.load(resp)
+    text = str(((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+    append_chat(prompt, text, "local/code")
+    return text
+
+
+def proxy_eligible(path: str) -> bool:
+    """Default-deny membership test for the upstream proxy.
+
+    /api/apply is excluded even though dispatch_api_post never lets a
+    request reach here for that path -- this is the independent second
+    guard, not the only one.
+    """
+    if path == "/api/apply":
+        return False
+    return path in PROXY_ALLOW
+
+
+def proxy_upstream(
+    method: str,
+    path_qs: str,
+    body: bytes | None = None,
+) -> tuple[int, bytes]:
+    """Homelab UI → prime GPU agent, allowlisted routes only.
+
+    Why: cards are inference providers only. Never relays the caller's
+    credentials -- the client's Authorization header is never read here.
+    Attaches a downstream-scoped bearer minted server-side (CSD_UPSTREAM_TOKEN,
+    set from env at service start via `secret exec`) when one is configured;
+    otherwise no Authorization header is sent at all.
+    """
+    headers: dict[str, str] = {}
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    if UPSTREAM_TOKEN:
+        headers["Authorization"] = f"Bearer {UPSTREAM_TOKEN}"
+    req = urllib.request.Request(
+        UPSTREAM + path_qs,
+        data=body,
+        method=method,
+        headers=headers,
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read()
+    except OSError as exc:
+        return 502, json.dumps({"error": "prime agent down", "detail": str(exc)[:200]}).encode()
+
+
+def dispatch_api_get(apipath: str, query: str, auth_header: str) -> tuple[int, bytes]:  # noqa: PLR0911
+    """Route one GET /api/* request. Pure function so proxy/auth order is testable.
+
+    check_api_auth() is the first statement, unconditionally -- see its
+    docstring. No GET route (proxied, /api/status, /api/sessions, or a
+    handle_lab route) is reachable without it passing first.
+    """
+    denied = check_api_auth(auth_header)
+    if denied is not None:
+        return denied
+    if UPSTREAM:
+        if not proxy_eligible(apipath):
+            return 404, b'{"error":"not found"}'
+        qs = apipath + (("?" + query) if query else "")
+        return proxy_upstream("GET", qs)
+    if apipath.startswith("/api/status"):
+        return 200, json.dumps(snapshot()).encode()
+    if apipath.startswith("/api/sessions"):
+        q = parse_qs(query)
+        sid = (q.get("id") or [""])[0]
+        body = load_session(sid) if sid else {"sessions": list_sessions()}
+        return 200, json.dumps(body).encode()
+    if apipath.startswith("/api/comfy/list-workflows"):
+        q = parse_qs(query)
+        src = (q.get("source") or ["catalog"])[0]
+        return 200, json.dumps(comfy_tool("list-workflows", {"source": src})).encode()
+    if apipath.startswith("/api/comfy/prompt-status"):
+        q = parse_qs(query)
+        pid = (q.get("prompt_id") or [""])[0]
+        return 200, json.dumps(comfy_tool("prompt-status", {"prompt_id": pid})).encode()
+    hit = handle_lab("GET", apipath, _qs_payload(query))
+    if hit is not None:
+        code, rec = hit
+        return code, json.dumps(rec).encode()
+    return 404, b'{"error":"not found"}'
+
+
+def dispatch_api_post(  # noqa: PLR0911
+    postpath: str, auth_header: str, raw_in: bytes
+) -> tuple[int, bytes]:
+    """Route one POST /api/* request. Pure function so proxy/auth order is testable.
+
+    check_api_auth() is the first statement, unconditionally -- see its
+    docstring. Every POST route (apply, proxied, or a handle_lab/local
+    route) is gated by that single call before any of the branches below
+    run.
+
+    /api/apply is still handled here before UPSTREAM is even consulted --
+    it never reaches proxy_upstream, regardless of whether this node is
+    proxying. That was the original OD-2 fix (apply auth used to run only
+    in the branch taken when UPSTREAM was unset, so a proxying node relayed
+    the client's raw Authorization header upstream for /api/apply without
+    ever calling check_apply_auth); the auth gate above now makes that
+    ordering true for every route, not only this one, so the per-route
+    check_apply_auth() call that used to live in this branch is gone -- the
+    shared gate already refused an unauthenticated /api/apply caller before
+    this function body executed a single line.
+    """
+    denied = check_api_auth(auth_header)
+    if denied is not None:
+        return denied
+    if postpath == "/api/apply":
+        try:
+            payload = json.loads(raw_in or b"{}")
+        except json.JSONDecodeError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        rec = http_apply(
+            str(payload.get("worktree") or ""),
+            str(payload.get("path") or ""),
+            str(payload.get("content") or ""),
+        )
+        return (200 if rec.get("ok") else 400), json.dumps(rec).encode()
+    if UPSTREAM:
+        if not proxy_eligible(postpath):
+            return 404, b'{"error":"not found"}'
+        return proxy_upstream("POST", postpath, raw_in)
+    try:
+        payload = json.loads(raw_in or b"{}")
+    except json.JSONDecodeError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    hit = handle_lab("POST", postpath, payload)
+    if hit is not None:
+        code, rec = hit
+        return code, json.dumps(rec).encode()
+    if postpath == "/api/steer":
+        return 200, json.dumps(write_steer(**payload)).encode()
+    if postpath == "/api/spawn":
+        rec = spawn_alias(
+            str(payload.get("alias") or "local/code"), str(payload.get("why") or "lab")
+        )
+        return 200, json.dumps(rec).encode()
+    if postpath == "/api/chat":
+        text = chat(str(payload.get("prompt") or ""))
+        return 200, json.dumps({"content": text}).encode()
+    if postpath == "/api/comfy/list-workflows":
+        return 200, json.dumps(comfy_tool("list-workflows", payload)).encode()
+    if postpath == "/api/comfy/queue-prompt":
+        return 200, json.dumps(comfy_tool("queue-prompt", payload)).encode()
+    if postpath == "/api/comfy/prompt-status":
+        return 200, json.dumps(comfy_tool("prompt-status", payload)).encode()
+    if postpath == "/api/comfy/flux-klein-4b":
+        return 200, json.dumps(comfy_tool("flux-klein-4b", payload)).encode()
+    return 404, b'{"error":"not found"}'
+
+
+def serve(port: int) -> None:
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, fmt: str, *args: object) -> None:
+            return
+
+        def _send(self, code: int, raw: bytes, ctype: str = "application/json") -> None:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self) -> None:
+            path = urlparse(self.path).path
+            if path in ("/", "/lab", "/lab/"):
+                body = PAGE.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            parsed = urlparse(self.path)
+            apipath = parsed.path[4:] if parsed.path.startswith("/lab/") else parsed.path
+            code, raw = dispatch_api_get(
+                apipath, parsed.query, self.headers.get("Authorization") or ""
+            )
+            self._send(code, raw)
+
+        def do_POST(self) -> None:
+            n = int(self.headers.get("Content-Length") or "0")
+            raw_in = self.rfile.read(n)
+            postpath = urlparse(self.path).path
+            if postpath.startswith("/lab/"):
+                postpath = postpath[4:]
+            code, raw = dispatch_api_post(postpath, self.headers.get("Authorization") or "", raw_in)
+            self._send(code, raw)
+
+    bind = lab_bind()
+    httpd = ThreadingHTTPServer((bind, port), H)
+    print(f"csd-lab-console http://{bind}:{port}/lab")
+    httpd.serve_forever()
+
+
+PAGE = """<!doctype html><meta charset=utf-8><title>CSD lab</title>
+<style>
+body{font:14px/1.4 system-ui,sans-serif;margin:0;background:#111;color:#ddd}
+header{padding:.8rem 1.2rem;border-bottom:1px solid #333;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+header h1{font-size:1.1rem;margin:0;font-weight:600}
+.tabs button{background:#222;color:#ddd;border:1px solid #444;padding:.35rem .7rem;cursor:pointer}
+.tabs button.on{background:#3a4a2a;border-color:#6a8}
+main{padding:1rem 1.2rem 2rem}
+.pane{display:none}.pane.on{display:block}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+@media(max-width:800px){.cols{grid-template-columns:1fr}}
+.card{background:#1a1a1a;border:1px solid #333;padding:.8rem 1rem;min-height:14rem}
+.card h2{font-size:.95rem;margin:0 0 .5rem;color:#aea}
+.alias{display:inline-block;background:#243;padding:.1rem .4rem;margin:.1rem .2rem .1rem 0;border-radius:3px}
+pre{background:#000;padding:.7rem;overflow:auto;max-height:22rem;white-space:pre-wrap}
+.muted{color:#888;font-size:.85rem}
+.bar{height:10px;background:#333;margin:.4rem 0 1rem;border-radius:2px;overflow:hidden}
+.bar>i{display:block;height:10px;background:#6c8}
+button,textarea{font:inherit}textarea{width:100%;background:#000;color:#ddd;border:1px solid #444}
+</style>
+<header>
+  <h1>CSD lab</h1>
+  <nav class=tabs>
+    <button class=on data-tab=feed>GPUs</button>
+    <button data-tab=auto>Autodev</button>
+    <button data-tab=chat>Chat</button>
+    <button data-tab=pool>Pool</button>
+    <button data-tab=spawn>Spawn</button>
+    <button data-tab=hist>History</button>
+    <button data-tab=steer>Steer</button>
+  </nav>
+  <span class=muted id=hdr></span>
+</header>
+<main>
+<section class="pane on" id=feed>
+  <p class=muted>Loaded models only. Dual host: 3090 Ti (left) · 5080 (right).</p>
+  <div class=cols>
+    <div class=card id=c0></div>
+    <div class=card id=c1></div>
+  </div>
+</section>
+<section class=pane id=auto>
+  <div class=cols>
+    <div class=card><h2>queue</h2><pre id=q></pre></div>
+    <div class=card><h2>ticks</h2><pre id=ticks></pre></div>
+  </div>
+  <div class=card><h2>goals</h2><pre id=goals></pre></div>
+</section>
+<section class=pane id=chat>
+  <p class=muted>Composed with existing Open WebUI (3090 LocalAI + Comfy). Autodev queue still has priority.</p>
+  <iframe src="https://ai.vectorweight.com" style="width:100%;height:70vh;border:1px solid #333;background:#000" title="Open WebUI"></iframe>
+</section>
+<section class=pane id=spawn>
+  <p class=muted>Stand a catalog alias on leftover 3090 or idle 5080. Never dual 14B.</p>
+  <p><input id=sa placeholder="local/code or embed-qwen3-0.6b" style="width:60%">
+  <button onclick="spawnNow()">spawn</button></p>
+  <pre id=so></pre>
+</section>
+<section class=pane id=pool>
+  <div class=card id=cpool></div>
+</section>
+<section class=pane id=hist>
+  <p class=muted>Lab chats by day and autodev ticks. Click a row.</p>
+  <div class=cols>
+    <div class=card><h2>sessions</h2><div id=hlist class=muted>loading…</div></div>
+    <div class=card><h2>session</h2><pre id=hview>pick one</pre></div>
+  </div>
+</section>
+<section class=pane id=steer>
+  <p>
+    <button onclick="steer({pause:true})">pause loops</button>
+    <button onclick="steer({pause:false})">resume</button>
+  </p>
+  <p><textarea id=n rows=2 placeholder="steer note"></textarea>
+  <button onclick="steer({note:document.getElementById('n').value})">set note</button></p>
+  <p class=muted>Human chat is the existing Open WebUI:
+  <a href="https://ai.vectorweight.com" style="color:#8c8">ai.vectorweight.com</a>
+  (3090 LocalAI + Comfy through that instance). This page does not host a
+  second WebUI.</p>
+  <pre id=raw></pre>
+</section>
+</main>
+<script>
+const BASE=location.pathname.indexOf('/lab')===0?'/lab':'';
+// Every /api/* route now requires the same bearer token POST /api/apply
+// always required (check_apply_auth / CSD_APPLY_TOKEN). This page has no
+// server session of its own, so it asks the operator for the token once
+// per browser tab (sessionStorage, not localStorage: cleared when the tab
+// closes) and attaches it to every fetch below via apiFetch(). A stale or
+// wrong token is dropped on a 401 so the NEXT call re-prompts instead of
+// looping silently against a token that will never work.
+function csdToken(){
+  let t=null;
+  try{ t=sessionStorage.getItem('csdApplyToken'); }catch(e){ t=null; }
+  if(t===null){
+    t=window.prompt('CSD lab console token (required for every /api/* call this session)')||'';
+    try{ sessionStorage.setItem('csdApplyToken', t); }catch(e){ /* private mode etc: re-prompt next call */ }
+  }
+  return t;
+}
+function csdForgetToken(){
+  try{ sessionStorage.removeItem('csdApplyToken'); }catch(e){ /* nothing stored to forget */ }
+}
+async function apiFetch(url, opts){
+  opts=Object.assign({}, opts||{});
+  opts.headers=Object.assign({'Authorization':'Bearer '+csdToken()}, opts.headers||{});
+  const r=await fetch(url, opts);
+  if(r.status===401) csdForgetToken();
+  return r;
+}
+function tab(id){
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on', p.id===id));
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===id));
+}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{tab(b.dataset.tab); if(b.dataset.tab==='hist') loadHist();});
+function esc(s){return String(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function splitThink(t){
+  t=t||'';
+  const m=/<think>([\\s\\S]*?)<\\/think>/i.exec(t);
+  return {think:m?m[1].trim():'', out:t.replace(/<think>[\\s\\S]*?<\\/think>/gi,'').trim()};
+}
+function aliases(list){
+  if(!list||!list.length) return '<span class=muted>none loaded</span>';
+  return list.map(x=>'<span class=alias>'+esc(x.alias)+(x.physical===false?' (logical)':'')+'</span>').join(' ');
+}
+function card(title, node){
+  const th=node.thinking||{};
+  const bits=splitThink(th.text||th.prompt||'');
+  const think = bits.think ? '<h3>thinking</h3><pre>'+esc(bits.think)+'</pre>' : '';
+  const body = bits.out ? '<h3>'+esc(th.phase||'activity')+'</h3><pre>'+esc(bits.out)+'</pre>' : (th.prompt?'<h3>in-flight</h3><pre>'+esc(th.prompt)+'</pre>':'<p class=muted>idle</p>');
+  const lat=node.latent||{};
+  return '<h2>'+title+'</h2><p class=muted>'+(node.gpu||'')+'</p><p>'+(node.smi||'')+'</p>'
+    +(node.lock?'<p>lock '+node.lock+' comfy '+(node.comfy||'')+'</p>':'')
+    +'<p>loaded '+aliases(node.loaded)+'</p>'
+    +think+body
+    +'<p class=muted>latent: '+(lat.kind||'')+' — '+(lat.note||'')+'</p>';
+}
+function render(d){
+  const f=d.feed||{};
+  const a0=d.app||{};
+  document.getElementById('hdr').textContent=(d.localai||'')+' · worker '+(a0.worker_live?'LIVE':'down')+' · steer '+(d.steer&&d.steer.pause?'PAUSE':'run');
+  document.getElementById('c0').innerHTML=card('akula-prime', f.prime||{});
+  document.getElementById('c1').innerHTML=card('gpu5080', f.gpu5080||{});
+  const p=f.pool||{};
+  const used=p.combined_mib||39331;
+  document.getElementById('cpool').innerHTML='<h2>Unified pool</h2>'
+    +'<p>'+(p.enabled?'RPC enabled':'Stage A placement — Stage B RPC off')+'</p>'
+    +'<p>combined '+(p.combined_mib||'?')+' MiB · usable '+(p.usable_mib||'?')+' MiB (~40 GiB class)</p>'
+    +'<div class=bar><i style="width:100%"></i></div>'
+    +'<p>mode '+(p.mode||'')+' · '+(p.mix||'')+'</p>'
+    +'<p>parked '+JSON.stringify(p.parked||{})+'</p>'
+    +'<p class=muted>'+(p.note||'')+'</p>'
+    +'<p class=muted>Single pooled GGUF or a mix lands here when llama.cpp RPC and 5080 GGUFs exist. Tight decode stays on one card; ok-lan may split 24:16.</p>';
+  document.getElementById('raw').textContent=JSON.stringify({steer:d.steer,note:d.note,links:d.links},null,2);
+  const a=d.app||{};
+  document.getElementById('q').textContent=JSON.stringify({live:a.queue_live||[], recent_done:a.queue_recent_done||[]},null,2);
+  document.getElementById('ticks').textContent=JSON.stringify(a.ticks||[],null,2);
+  document.getElementById('goals').textContent=(a.goals||[]).join('\\n');
+  void used;
+}
+async function spawnNow(){
+  const alias=document.getElementById('sa').value||'local/code';
+  const r=await apiFetch(BASE+'/api/spawn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({alias,why:'lab-spawn'})});
+  document.getElementById('so').textContent=JSON.stringify(await r.json(),null,2);
+  refresh();
+}
+async function refresh(){
+  const r=await apiFetch(BASE+'/api/status'); const d=await r.json();
+  render(d);
+}
+async function steer(body){
+  await apiFetch(BASE+'/api/steer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  refresh();
+}
+async function loadHist(){
+  const r=await apiFetch(BASE+'/api/sessions'); const d=await r.json();
+  const rows=d.sessions||[];
+  document.getElementById('hlist').innerHTML=rows.map(s=>
+    '<p><button onclick="openSess(\\''+esc(s.id)+'\\')">'+esc(s.kind)+' '+esc(s.id)+'</button> '
+    +esc((s.title||'').slice(0,60))+' <span class=muted>n='+s.n+'</span></p>'
+  ).join('') || '<p class=muted>none yet</p>';
+}
+async function openSess(id){
+  const r=await apiFetch(BASE+'/api/sessions?id='+encodeURIComponent(id));
+  const d=await r.json();
+  document.getElementById('hview').textContent=JSON.stringify(d,null,2);
+}
+async function go(){
+  const prompt=document.getElementById('p').value;
+  const r=await apiFetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
+  const d=await r.json();
+  document.getElementById('c').textContent=d.content||JSON.stringify(d);
+}
+refresh(); setInterval(refresh,2000);
+</script>
+"""
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--watch", action="store_true")
+    ap.add_argument("--http", type=int, metavar="PORT")
+    ap.add_argument("--chat")
+    ap.add_argument("--steer", choices=["pause", "resume"])
+    ap.add_argument("--steer-note")
+    args = ap.parse_args()
+    if args.steer:
+        print(json.dumps(write_steer(pause=args.steer == "pause"), indent=2))
+        return 0
+    if args.steer_note is not None:
+        print(json.dumps(write_steer(note=args.steer_note), indent=2))
+        return 0
+    if args.chat:
+        print(chat(args.chat))
+        return 0
+    if args.http:
+        serve(args.http)
+        return 0
+    if args.watch:
+        while True:
+            print("\033[2J\033[H", end="")
+            print_snap(snapshot())
+            time.sleep(5)
+    print_snap(snapshot())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

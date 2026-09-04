@@ -48,11 +48,20 @@ cd CogSynDelta
 # Create .venv (uv reads .python-version → 3.12)
 uv sync --group dev
 
+# Install the pre-commit hooks once (formatting, ruff, mypy, shellcheck,
+# yamllint, commit-message linting — see docs/DEVELOPMENT_STANDARDS.md)
+uv run pre-commit install
+uv run pre-commit install --hook-type commit-msg
+
 # Same gates as GitHub Actions (lint, mypy, quality>=90, poc-ci, full pytest)
 # Run this before every push. --cpu matches CI torch wheels; default is cu128.
 ./scripts/ci_local.sh
 ./scripts/ci_local.sh --poc          # fast loop
 ./scripts/ci_local.sh --cpu          # exact CI CPU-torch sync
+
+# Or run just the format/lint/shellcheck/yamllint gate (what scripts/lint.sh
+# and the CI lint jobs run) before committing:
+./scripts/lint.sh
 ```
 
 ### Using uvx for Development Tools

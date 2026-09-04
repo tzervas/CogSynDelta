@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""Intern identical read-only tensors; schedule parallel ops on them.
+
+Disk symlink is not VRAM sharing. This policy is the GPU-side intern
+pool + batching plan autodev extends. No CUDA here.
+
+  csd-weight-intern plan --json '...'
+"""
+# ruff: noqa: S607
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+CAT_PATH = ROOT / "config/model-router.json"
+
+
+def intern_plan(models: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build a content-hash intern pool for microscopic specialists.
+
+    Args:
+        models: Each has ``name`` and ``tensors`` (name, hash, nbytes,
+            writable, optional kind).
+
+    Returns:
+        Pool with unique VRAM, intern hits, private overlays, and
+        per-model pointer maps.
+
+    Why: 256 tiny models fit only if identical RO weights occupy VRAM
+    once. Writable tensors never intern (CoW/refuse).
+    """
+    pool: dict[str, dict[str, Any]] = {}
+    pointers: dict[str, dict[str, str]] = {}
+    unique_bytes = 0
+    interned_bytes = 0
+    refused: list[str] = []
+    runtime_of: dict[str, str] = {}
+    for model in models:
+        name = str(model.get("name") or "")
+        pointers[name] = {}
+        runtime_of[name] = pick_runtime(model)
+        for tensor in model.get("tensors") or []:
+            digest = str(tensor.get("hash") or "")
+            nbytes = int(tensor.get("nbytes") or 0)
+            tname = str(tensor.get("name") or digest[:8])
+            if tensor.get("writable"):
+                refused.append(f"{name}:{tname}")
+                pointers[name][tname] = f"private:{tname}"
+                unique_bytes += nbytes
+                continue
+            key = f"{runtime_of[name]}:{digest}"
+            if key in pool:
+                pool[key]["refs"] += 1
+                interned_bytes += nbytes
+            else:
+                pool[key] = {
+                    "nbytes": nbytes,
+                    "refs": 1,
+                    "kind": tensor.get("kind") or "weight",
+                    "runtime": runtime_of[name],
+                    "hash": digest,
+                }
+                unique_bytes += nbytes
+            pointers[name][tname] = key
+    naive = unique_bytes + interned_bytes
+    return {
+        "models": len(models),
+        "unique_bytes": unique_bytes,
+        "interned_ref_bytes": interned_bytes,
+        "naive_bytes": naive,
+        "saved_bytes": interned_bytes,
+        "pool": pool,
+        "pointers": pointers,
+        "writable_private": refused,
+        "runtime_of": runtime_of,
+        "mix": sorted(set(runtime_of.values())),
+    }
+
+
+def pick_runtime(model: dict[str, Any]) -> str:  # noqa: PLR0911
+    """Choose llama.cpp, vLLM, bitnet-cpp, or localai for one specialist.
+
+    Why: intern pool is backend-agnostic; BitNet 1.58 wants bitnet-cpp,
+    GGUF intern wants llama.cpp, batched LoRA/eval wants vLLM. A mix
+    in one schedule is allowed when formats differ.
+    """
+    explicit = str(model.get("runtime") or "").strip()
+    if explicit:
+        return explicit
+    fmt = str(model.get("format") or "").lower()
+    kind = str(model.get("kind") or "").lower()
+    if "1.58" in fmt or "w158" in fmt or "bitnet" in fmt or "bitnet" in kind:
+        return "bitnet-cpp"
+    if "moe" in kind or "moe" in fmt:
+        if fmt in {"safetensors", "hf"}:
+            return "vllm"
+        return "llama.cpp"
+    if fmt in {"safetensors", "hf"} or kind in {"multi-lora", "paged", "eval-batch"}:
+        return "vllm"
+    if kind in {"autodev", "openai-compat"}:
+        return "localai"
+    return "llama.cpp"
+
+
+def _have_image(name: str, digest: str | None) -> bool:
+    if not name:
+        return False
+    for exe in ("docker", "podman"):
+        if not shutil.which(exe):
+            continue
+        p = subprocess.run(
+            [exe, "image", "inspect", name],
+            capture_output=True,
+            check=False,
+        )
+        if p.returncode == 0:
+            return True
+        if digest:
+            p = subprocess.run(
+                [exe, "image", "inspect", digest],
+                capture_output=True,
+                check=False,
+            )
+            if p.returncode == 0:
+                return True
+    return False
+
+
+def _have_image_5080(name: str) -> bool:
+    if not name:
+        return False
+    p = subprocess.run(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=8",
+            "gpu5080",
+            f"podman image exists {name}",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    return p.returncode == 0
+
+
+def runtime_status() -> dict[str, Any]:
+    """Report which intern-pool runtimes are actually present.
+
+    Why: autodev must not pretend vLLM/BitNet exist. llama.cpp is LocalAI
+    on the 3090. vLLM belongs on 5080 podman, never loaded beside 14B.
+    """
+    cat = json.loads(CAT_PATH.read_text(encoding="utf-8"))
+    out: dict[str, Any] = {}
+    for name, spec in (cat.get("runtimes") or {}).items():
+        image = spec.get("image")
+        present = False
+        if name == "localai" or (name == "llama.cpp" and spec.get("wraps") == "llama.cpp"):
+            present = (
+                Path("/var/run/docker.sock").exists()
+                and subprocess.run(
+                    ["docker", "inspect", "-f", "{{.State.Status}}", "akula-localai"],
+                    capture_output=True,
+                    check=False,
+                ).returncode
+                == 0
+            )
+        elif image:
+            present = _have_image(str(image), spec.get("image_digest"))
+            if not present and name == "vllm":
+                present = _have_image_5080(str(image))
+        out[name] = {
+            "present": present,
+            "image": image,
+            "where": spec.get("where"),
+            "license": spec.get("license"),
+            "best_for": spec.get("best_for"),
+            "note": spec.get("note") or spec.get("source"),
+        }
+    if out.get("llama.cpp") and out.get("localai", {}).get("present"):
+        out["llama.cpp"]["present"] = True
+        out["llama.cpp"]["via"] = "localai"
+    return out
+
+
+def parallel_schedule(models: list[dict[str, Any]]) -> dict[str, Any]:
+    """Group specialists that share interned blocks into batched ops.
+
+    Args:
+        models: Same shape as :func:`intern_plan`.
+
+    Returns:
+        Batches keyed by interned hash (one GEMM) plus unique overlay
+        groups keyed by tensor name+shape.
+
+    Why: Running 256 serial forwards against one interned matrix wastes
+    compute. Batch tokens across specialists that share the block.
+    """
+    plan = intern_plan(models)
+    shared: dict[str, list[str]] = defaultdict(list)
+    overlays: dict[str, list[str]] = defaultdict(list)
+    for model in models:
+        name = str(model.get("name") or "")
+        for tensor in model.get("tensors") or []:
+            digest = str(tensor.get("hash") or "")
+            tname = str(tensor.get("name") or "")
+            if tensor.get("writable"):
+                overlays[tname].append(name)
+                continue
+            key = f"{pick_runtime(model)}:{digest}"
+            rec = (plan.get("pool") or {}).get(key) or {}
+            if int(rec.get("refs") or 0) > 1:
+                shared[key].append(name)
+            else:
+                overlays[tname].append(name)
+    batches = [
+        {
+            "kind": "interned-gemm",
+            "hash": digest,
+            "models": names,
+            "parallel": True,
+            "nbytes": (plan.get("pool") or {}).get(digest, {}).get("nbytes"),
+        }
+        for digest, names in shared.items()
+        if len(set(names)) > 1
+    ]
+    unique_runs = [
+        {"kind": "overlay", "tensor": tname, "models": names, "parallel": len(names) > 1}
+        for tname, names in overlays.items()
+    ]
+    return {
+        "intern": plan,
+        "shared_batches": batches,
+        "overlays": unique_runs,
+        "serial_forwards_avoided": max(0, plan["models"] - 1) if batches else 0,
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("plan")
+    p.add_argument("--json", help="models JSON (or stdin)")
+    s = sub.add_parser("schedule")
+    s.add_argument("--json", help="models JSON (or stdin)")
+    sub.add_parser("status")
+    args = ap.parse_args()
+    if args.cmd == "status":
+        print(json.dumps(runtime_status(), indent=2))
+        return 0
+    raw = args.json if getattr(args, "json", None) else sys.stdin.read()
+    payload = json.loads(raw)
+    models = payload if isinstance(payload, list) else payload.get("models") or []
+    if args.cmd == "plan":
+        print(json.dumps(intern_plan(models), indent=2))
+        return 0
+    print(json.dumps(parallel_schedule(models), indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

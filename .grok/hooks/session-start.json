@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "scripts/hooks/grok-session-orient.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

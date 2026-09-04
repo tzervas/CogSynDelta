@@ -1,0 +1,477 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Click series \u2192 Loki {group,service,host}. Taxonomy vars from Loki labels.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "csd-investigate"
+      ],
+      "title": "CSD lab",
+      "type": "dashboards"
+    }
+  ],
+  "liveNow": false,
+  "panels": [
+    {
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "content": "Selector `{env,host,ns,group,service}` from Loki labels (homelab journal). Suricata has no env and is excluded. Click a series to Explore Loki. If a line contains trace_id, the derived field opens Jaeger (LAN). No Tempo.",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.4.0",
+      "title": "How to read",
+      "type": "text"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 2,
+      "panels": [],
+      "title": "Volume and errors",
+      "type": "row"
+    },
+    {
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 3,
+      "libraryPanel": {
+        "name": "CSD Loki errors",
+        "uid": "csd-lib-loki-errors"
+      },
+      "title": "Loki errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki_ds}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Loki {group,service,host}",
+              "url": "",
+              "internal": {
+                "datasourceName": "Loki",
+                "datasourceUid": "P8E80F9AEF21F6940",
+                "query": {
+                  "expr": "{group=\"${__field.labels.group}\",service=\"${__field.labels.service}\",host=\"${__field.labels.host}\"}",
+                  "queryType": "range",
+                  "refId": "A"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki_ds}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (group, service, host) (count_over_time({env=~\"$env\", host=~\"$host\", ns=~\"$ns\", group=~\"$group\", service=~\"$service\"}[5m]))",
+          "legendFormat": "{{group}}/{{service}}/{{host}}",
+          "range": true,
+          "refId": "A",
+          "queryType": "range"
+        }
+      ],
+      "title": "log lines / 5m by group, service, host",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "id": 10,
+      "panels": [],
+      "title": "Logs $group / $service / $host",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki_ds}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Loki {group,service,host}",
+              "url": "",
+              "internal": {
+                "datasourceName": "Loki",
+                "datasourceUid": "P8E80F9AEF21F6940",
+                "query": {
+                  "expr": "{group=\"${__field.labels.group}\",service=\"${__field.labels.service}\",host=\"${__field.labels.host}\"}",
+                  "queryType": "range",
+                  "refId": "A"
+                }
+              }
+            },
+            {
+              "title": "CSD logs drilldown",
+              "url": "/d/csd-logs?var-group=${__field.labels.group}&var-service=${__field.labels.service}&var-host=${__field.labels.host}&var-env=${__field.labels.env}&var-ns=${__field.labels.ns}"
+            },
+            {
+              "title": "Jaeger trace_id",
+              "url": "",
+              "internal": {
+                "datasourceName": "Jaeger",
+                "datasourceUid": "csd-jaeger",
+                "query": {
+                  "query": "${__value.raw}",
+                  "queryType": "traceId"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "id": 11,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki_ds}"
+          },
+          "editorMode": "code",
+          "expr": "{env=~\"$env\", host=~\"$host\", ns=~\"$ns\", group=~\"$group\", service=~\"$service\"}",
+          "maxLines": 200,
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "CSD journal",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki_ds}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Loki {group,service,host}",
+              "url": "",
+              "internal": {
+                "datasourceName": "Loki",
+                "datasourceUid": "P8E80F9AEF21F6940",
+                "query": {
+                  "expr": "{group=\"${__field.labels.group}\",service=\"${__field.labels.service}\",host=\"${__field.labels.host}\"}",
+                  "queryType": "range",
+                  "refId": "A"
+                }
+              }
+            },
+            {
+              "title": "CSD logs drilldown",
+              "url": "/d/csd-logs?var-group=${__field.labels.group}&var-service=${__field.labels.service}&var-host=${__field.labels.host}&var-env=${__field.labels.env}&var-ns=${__field.labels.ns}"
+            },
+            {
+              "title": "Jaeger trace_id",
+              "url": "",
+              "internal": {
+                "datasourceName": "Jaeger",
+                "datasourceUid": "csd-jaeger",
+                "query": {
+                  "query": "${__value.raw}",
+                  "queryType": "traceId"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "id": 12,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki_ds}"
+          },
+          "editorMode": "code",
+          "expr": "{env=~\"$env\", host=~\"$host\", ns=~\"$ns\", group=~\"$group\", service=~\"$service\"} |~ \"(?i)error|fail|panic|fatal\"",
+          "maxLines": 200,
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "error|fail|panic|fatal",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "csd",
+    "lab",
+    "csd-investigate"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "VictoriaMetrics",
+          "value": "P4169E866C3094E38"
+        },
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "Loki",
+          "value": "P8E80F9AEF21F6940"
+        },
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "loki_ds",
+        "query": "loki",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "P8E80F9AEF21F6940"
+        },
+        "definition": "label_values({env=~\".+\"}, env)",
+        "includeAll": true,
+        "label": "env",
+        "multi": true,
+        "name": "env",
+        "query": "label_values({env=~\".+\"}, env)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "P8E80F9AEF21F6940"
+        },
+        "definition": "label_values({host=~\".+\"}, host)",
+        "includeAll": true,
+        "label": "host",
+        "multi": true,
+        "name": "host",
+        "query": "label_values({host=~\".+\"}, host)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "P8E80F9AEF21F6940"
+        },
+        "definition": "label_values({ns=~\".+\"}, ns)",
+        "includeAll": true,
+        "label": "ns",
+        "multi": true,
+        "name": "ns",
+        "query": "label_values({ns=~\".+\"}, ns)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "P8E80F9AEF21F6940"
+        },
+        "definition": "label_values({group=~\".+\"}, group)",
+        "includeAll": true,
+        "label": "group",
+        "multi": true,
+        "name": "group",
+        "query": "label_values({group=~\".+\"}, group)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "P8E80F9AEF21F6940"
+        },
+        "definition": "label_values({service=~\".+\"}, service)",
+        "includeAll": true,
+        "label": "service",
+        "multi": true,
+        "name": "service",
+        "query": "label_values({service=~\".+\"}, service)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "CSD logs",
+  "uid": "csd-logs",
+  "weekStart": ""
+}

@@ -1,0 +1,360 @@
+{
+  "regions": {
+    "code": {
+      "regions": {
+        "trained": {
+          "pooled_pr_rank": 42.633552623237634,
+          "pooled_entropy_rank": 114.9809799194336,
+          "token_global_pr_rank": 28.091115489593022,
+          "token_global_entropy_rank": 138.874267578125,
+          "token_per_item_pr_rank_mean": 4.35349484901969,
+          "token_per_item_pr_rank_n_items_used": 512,
+          "pooled_mean_pairwise_cosine": 0.12340544909238815,
+          "token_within_item_mean_pairwise_cosine": 0.5414308130857535,
+          "token_within_item_cosine_items_skipped_lt2": 0,
+          "n_short_items_lt2_tokens": 0,
+          "t_valid": {
+            "mean": 52.259765625,
+            "median": 48.0,
+            "max": 96,
+            "min": 2
+          },
+          "n_items": 512,
+          "n_tokens_total": 26757
+        },
+        "untrained": {
+          "pooled_pr_rank": 1.7425529103330213,
+          "pooled_entropy_rank": 16.83318328857422,
+          "token_global_pr_rank": 11.55883983970446,
+          "token_global_entropy_rank": 49.84858703613281,
+          "token_per_item_pr_rank_mean": 7.589894387127315,
+          "token_per_item_pr_rank_n_items_used": 512,
+          "pooled_mean_pairwise_cosine": 0.8397844433784485,
+          "token_within_item_mean_pairwise_cosine": 0.6006440886994824,
+          "token_within_item_cosine_items_skipped_lt2": 0,
+          "n_short_items_lt2_tokens": 0,
+          "t_valid": {
+            "mean": 52.259765625,
+            "median": 48.0,
+            "max": 96,
+            "min": 2
+          },
+          "n_items": 512,
+          "n_tokens_total": 26757
+        }
+      },
+      "dim": 256,
+      "max_len": 96,
+      "checkpoint": "/akula-data/csd/receipts/code-checkpoints/final.pt",
+      "checkpoint_sha256": "dac38d099072481e3f958b33cbca3e965c36b3ca210cc261654b29819f380b03",
+      "checkpoint_step": 8000,
+      "production": true
+    },
+    "compress": {
+      "regions": {
+        "trained": {
+          "pooled_pr_rank": 45.33143748971919,
+          "pooled_entropy_rank": 126.8619613647461,
+          "token_global_pr_rank": 35.57182189903689,
+          "token_global_entropy_rank": 147.4920654296875,
+          "token_per_item_pr_rank_mean": 8.497529924600897,
+          "token_per_item_pr_rank_n_items_used": 512,
+          "pooled_mean_pairwise_cosine": 0.022572070360183716,
+          "token_within_item_mean_pairwise_cosine": 0.16517265277070692,
+          "token_within_item_cosine_items_skipped_lt2": 0,
+          "n_short_items_lt2_tokens": 0,
+          "t_valid": {
+            "mean": 18.8203125,
+            "median": 15.5,
+            "max": 96,
+            "min": 3
+          },
+          "n_items": 512,
+          "n_tokens_total": 9636
+        },
+        "untrained": {
+          "pooled_pr_rank": 2.099314862737906,
+          "pooled_entropy_rank": 23.531444549560547,
+          "token_global_pr_rank": 7.3918892693947456,
+          "token_global_entropy_rank": 49.13910675048828,
+          "token_per_item_pr_rank_mean": 4.093048822023758,
+          "token_per_item_pr_rank_n_items_used": 512,
+          "pooled_mean_pairwise_cosine": 0.9272222518920898,
+          "token_within_item_mean_pairwise_cosine": 0.6823274675407447,
+          "token_within_item_cosine_items_skipped_lt2": 0,
+          "n_short_items_lt2_tokens": 0,
+          "t_valid": {
+            "mean": 18.8203125,
+            "median": 15.5,
+            "max": 96,
+            "min": 3
+          },
+          "n_items": 512,
+          "n_tokens_total": 9636
+        }
+      },
+      "dim": 256,
+      "max_len": 96,
+      "checkpoint": "/akula-data/csd/receipts/compress-checkpoints/final.pt",
+      "checkpoint_sha256": "c71cb3cd4048dd2b723e511af8b132f06d7a4d69c8b775a5d34e1c18932b7ad6",
+      "checkpoint_step": 8000,
+      "production": true
+    },
+    "compress_repo_local": {
+      "regions": {
+        "trained": {
+          "pooled_pr_rank": 7.1180908980502595,
+          "pooled_entropy_rank": 55.23091125488281,
+          "token_global_pr_rank": 14.208048745267527,
+          "token_global_entropy_rank": 92.41598510742188,
+          "token_per_item_pr_rank_mean": 4.152427870657428,
+          "token_per_item_pr_rank_n_items_used": 512,
+          "pooled_mean_pairwise_cosine": 0.46423956751823425,
+          "token_within_item_mean_pairwise_cosine": 0.711913185834419,
+          "token_within_item_cosine_items_skipped_lt2": 0,
+          "n_short_items_lt2_tokens": 0,
+          "t_valid": {
+            "mean": 19.11328125,
+            "median": 15.0,
+            "max": 137,
+            "min": 2
+          },
+          "n_items": 512,
+          "n_tokens_total": 9786
+        },
+        "untrained": {
+          "pooled_pr_rank": 2.133455248668928,
+          "pooled_entropy_rank": 23.522666931152344,
+          "token_global_pr_rank": 7.436694838252941,
+          "token_global_entropy_rank": 52.086341857910156,
+          "token_per_item_pr_rank_mean": 4.011660749096573,
+          "token_per_item_pr_rank_n_items_used": 512,
+          "pooled_mean_pairwise_cosine": 0.915216863155365,
+          "token_within_item_mean_pairwise_cosine": 0.6661176818306558,
+          "token_within_item_cosine_items_skipped_lt2": 0,
+          "n_short_items_lt2_tokens": 0,
+          "t_valid": {
+            "mean": 19.11328125,
+            "median": 15.0,
+            "max": 137,
+            "min": 2
+          },
+          "n_items": 512,
+          "n_tokens_total": 9786
+        }
+      },
+      "dim": 256,
+      "max_len": 256,
+      "checkpoint": "/home/kang/code/personal/tzervas/CogSynDelta/receipts/compress-checkpoints/final.pt",
+      "checkpoint_sha256": "75880e03b42e03c153f0da42ebe4eb8c4e3337ae26f920d1eed4cd6c8185bf16",
+      "checkpoint_step": 2000,
+      "production": false,
+      "note": "NOT the production checkpoint. receipts/compress-20260902T153612Z.json shows seed=2, max_len=256, steps=2000 -- a different, earlier/exploratory run over the same corpus. Different sha256 from the /akula-data compress checkpoint. Measured as a separate row per the task's explicit instruction to include this path; excluded from cross-region CKA because its tokenization (max_len 256) is not guaranteed identical to the production regions (max_len 96) for longer texts."
+    },
+    "retrieve": {
+      "regions": {
+        "trained": {
+          "pooled_pr_rank": 40.708016875208806,
+          "pooled_entropy_rank": 117.72013854980469,
+          "token_global_pr_rank": 40.65025019441494,
+          "token_global_entropy_rank": 142.85983276367188,
+          "token_per_item_pr_rank_mean": 5.127587210564447,
+          "token_per_item_pr_rank_n_items_used": 512,
+          "pooled_mean_pairwise_cosine": 0.015233353711664677,
+          "token_within_item_mean_pairwise_cosine": 0.3963175513781607,
+          "token_within_item_cosine_items_skipped_lt2": 0,
+          "n_short_items_lt2_tokens": 0,
+          "t_valid": {
+            "mean": 9.98828125,
+            "median": 10.0,
+            "max": 26,
+            "min": 6
+          },
+          "n_items": 512,
+          "n_tokens_total": 5114
+        },
+        "untrained": {
+          "pooled_pr_rank": 1.5262280587047123,
+          "pooled_entropy_rank": 36.9713020324707,
+          "token_global_pr_rank": 3.261659734150828,
+          "token_global_entropy_rank": 34.5632209777832,
+          "token_per_item_pr_rank_mean": 2.584399249705752,
+          "token_per_item_pr_rank_n_items_used": 512,
+          "pooled_mean_pairwise_cosine": 0.9786782264709473,
+          "token_within_item_mean_pairwise_cosine": 0.7406937736086547,
+          "token_within_item_cosine_items_skipped_lt2": 0,
+          "n_short_items_lt2_tokens": 0,
+          "t_valid": {
+            "mean": 9.98828125,
+            "median": 10.0,
+            "max": 26,
+            "min": 6
+          },
+          "n_items": 512,
+          "n_tokens_total": 5114
+        }
+      },
+      "dim": 256,
+      "max_len": 96,
+      "checkpoint": "/akula-data/csd/receipts/retrieve-checkpoints/final.pt",
+      "checkpoint_sha256": "24059d2ad2e2806be4128195efedd72a9583f09c43a0f2d59693eb9fd401dd46",
+      "checkpoint_step": 8000,
+      "production": true
+    },
+    "vl_latent": {
+      "regions": {
+        "trained": {
+          "pooled_pr_rank": 18.065766913435787,
+          "pooled_entropy_rank": 129.8317108154297,
+          "token_global_pr_rank": 23.54431167523938,
+          "token_global_entropy_rank": 239.08702087402344,
+          "token_per_item_pr_rank_mean": 8.334737747013133,
+          "token_per_item_pr_rank_n_items_used": 512,
+          "pooled_mean_pairwise_cosine": 0.3592691719532013,
+          "token_within_item_mean_pairwise_cosine": 0.23213744582608342,
+          "token_within_item_cosine_items_skipped_lt2": 0,
+          "n_short_items_lt2_tokens": 0,
+          "t_valid": {
+            "mean": 64.0,
+            "median": 64.0,
+            "max": 64,
+            "min": 64
+          },
+          "n_items": 512,
+          "n_tokens_total": 32768
+        },
+        "untrained": {
+          "pooled_pr_rank": 1.9058444935842058,
+          "pooled_entropy_rank": 56.713592529296875,
+          "token_global_pr_rank": 7.932465686201597,
+          "token_global_entropy_rank": 163.3213653564453,
+          "token_per_item_pr_rank_mean": 9.577272980611399,
+          "token_per_item_pr_rank_n_items_used": 512,
+          "pooled_mean_pairwise_cosine": 0.697357177734375,
+          "token_within_item_mean_pairwise_cosine": 0.549189269222552,
+          "token_within_item_cosine_items_skipped_lt2": 0,
+          "n_short_items_lt2_tokens": 0,
+          "t_valid": {
+            "mean": 64.0,
+            "median": 64.0,
+            "max": 64,
+            "min": 64
+          },
+          "n_items": 512,
+          "n_tokens_total": 32768
+        }
+      },
+      "dim": 384,
+      "n_patches": 64,
+      "checkpoint": "/akula-data/csd/receipts/vl_latent-checkpoints/step-8000.pt",
+      "checkpoint_sha256": "6c5412bf8cde19f472c683dbe885c453f46c1ba213afdb639c7e2c5b1612a930",
+      "checkpoint_step": 8000,
+      "production": true,
+      "note": "Vision region: token = patch (all patches valid, no padding). Checkpoint on disk carries only {step, model, config} -- fewer keys than _checkpoint_payload's current schema (no opt/rng state), i.e. it predates the richer resumable-checkpoint format; irrelevant to this read-only inference measurement. Not included in the text cross-region CKA matrix -- different modality, no shared raw-text input exists."
+    }
+  },
+  "generated_utc": "2026-09-03T01:34:22Z",
+  "cross_region_cka": {
+    "pooled": {
+      "trained": {
+        "code__code": 1.0,
+        "code__compress": 0.20504187047481537,
+        "code__retrieve": 0.20580323040485382,
+        "compress__code": 0.20504185557365417,
+        "compress__compress": 0.9999998807907104,
+        "compress__retrieve": 0.3364260792732239,
+        "retrieve__code": 0.20580321550369263,
+        "retrieve__compress": 0.3364260196685791,
+        "retrieve__retrieve": 0.9999999403953552
+      },
+      "untrained": {
+        "code__code": 1.0000001192092896,
+        "code__compress": 1.0000001192092896,
+        "code__retrieve": 1.0000001192092896,
+        "compress__code": 1.0000001192092896,
+        "compress__compress": 1.0000001192092896,
+        "compress__retrieve": 1.0000001192092896,
+        "retrieve__code": 1.0000001192092896,
+        "retrieve__compress": 1.0000001192092896,
+        "retrieve__retrieve": 1.0000001192092896
+      }
+    },
+    "token_aligned": {
+      "trained": {
+        "code__code": 0.9999998807907104,
+        "code__compress": 0.14397379755973816,
+        "code__retrieve": 0.3425315320491791,
+        "compress__code": 0.14397379755973816,
+        "compress__compress": 0.9999999403953552,
+        "compress__retrieve": 0.20429804921150208,
+        "retrieve__code": 0.3425315022468567,
+        "retrieve__compress": 0.20429804921150208,
+        "retrieve__retrieve": 0.9999998807907104
+      },
+      "untrained": {
+        "code__code": 1.0000001192092896,
+        "code__compress": 1.0000001192092896,
+        "code__retrieve": 1.0000001192092896,
+        "compress__code": 1.0000001192092896,
+        "compress__compress": 1.0000001192092896,
+        "compress__retrieve": 1.0000001192092896,
+        "retrieve__code": 1.0000001192092896,
+        "retrieve__compress": 1.0000001192092896,
+        "retrieve__retrieve": 1.0000001192092896
+      }
+    }
+  },
+  "cka_shared_set_composition": {
+    "code": 171,
+    "compress": 171,
+    "retrieve": 170
+  },
+  "verdicts": {
+    "code": {
+      "pooled_pr_rank": 42.633552623237634,
+      "token_global_pr_rank": 28.091115489593022,
+      "ratio": 0.6588968960161631,
+      "verdict": "BET DEAD for this region (token approx pooled, <=1.5x): retrain before interconnect work",
+      "flags": []
+    },
+    "compress": {
+      "pooled_pr_rank": 45.33143748971919,
+      "token_global_pr_rank": 35.57182189903689,
+      "ratio": 0.7847053583311647,
+      "verdict": "BET DEAD for this region (token approx pooled, <=1.5x): retrain before interconnect work",
+      "flags": []
+    },
+    "compress_repo_local": {
+      "pooled_pr_rank": 7.1180908980502595,
+      "token_global_pr_rank": 14.208048745267527,
+      "ratio": 1.9960476690680224,
+      "verdict": "AMBIGUOUS (between 1.5x and 2x pooled) -- neither pre-committed threshold met",
+      "flags": []
+    },
+    "retrieve": {
+      "pooled_pr_rank": 40.708016875208806,
+      "token_global_pr_rank": 40.65025019441494,
+      "ratio": 0.9985809507505375,
+      "verdict": "BET DEAD for this region (token approx pooled, <=1.5x): retrain before interconnect work",
+      "flags": []
+    },
+    "vl_latent": {
+      "pooled_pr_rank": 18.065766913435787,
+      "token_global_pr_rank": 23.54431167523938,
+      "ratio": 1.3032555876567364,
+      "verdict": "BET DEAD for this region (token approx pooled, <=1.5x): retrain before interconnect work",
+      "flags": []
+    }
+  },
+  "verified_notes": [
+    "tokenizer loaded from /mnt/fleet-datasets/tritter/gpt2_tokenizer.json, vocab_size=50257",
+    "code: manual forward replication matches model(ids,mask) to max_abs=0.00e+00 (8-item check).",
+    "compress: manual forward replication matches model(ids,mask) to max_abs=0.00e+00 (8-item check).",
+    "compress_repo_local: manual forward replication matches model(ids,mask) to max_abs=0.00e+00 (8-item check).",
+    "retrieve: manual forward replication matches model(ids,mask) to max_abs=0.00e+00 (8-item check).",
+    "vl_latent: manual ViTEncoder replication matches IJEPA.encode() to max_abs=0.00e+00 (8-item check).",
+    "CKA regions ['code', 'compress', 'retrieve'] share tokenizer=/mnt/fleet-datasets/tritter/gpt2_tokenizer.json and max_len=96, so token-level CKA on aligned (item, position) rows is valid."
+  ],
+  "inferred_notes": [],
+  "unreliable_notes": []
+}

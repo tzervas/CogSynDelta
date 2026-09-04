@@ -36,6 +36,9 @@ echo "Setting up virtual environment..."
 python3 -m venv venv
 
 echo "Activating virtual environment..."
+# venv/bin/activate is created by `python3 -m venv venv` immediately above;
+# it does not exist at shellcheck's lint time.
+# shellcheck disable=SC1091
 source venv/bin/activate
 
 echo "Upgrading pip..."

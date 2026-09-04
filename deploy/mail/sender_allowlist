@@ -1,0 +1,3 @@
+# Envelope senders allowed on the send-only MTA.
+# Grafana FROM only. Hash with: postmap hash:/etc/postfix/sender_allowlist
+grafana@vectorweight.com OK

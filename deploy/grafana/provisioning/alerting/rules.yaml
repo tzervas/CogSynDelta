@@ -1,0 +1,295 @@
+# CSD Grafana alert rules. PromQL only on series that exist in VictoriaMetrics.
+# Skipped (no Prom series): postfix deferred, Forgejo runner offline.
+# VM uid P4169E866C3094E38 is the live Grafana datasource.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: csd-taxonomy-alerts
+    folder: CSD lab
+    interval: 60s
+    rules:
+      - uid: csd-svc-down-by-group
+        title: CSDServiceDownByGroup
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        annotations:
+          summary: CSD backend down (localai|gpu|nl-router) grouped by taxonomy.
+          description: >-
+            akula_backend_up == 0 for backend={{ $labels.backend }}
+            host={{ $labels.host }} group={{ $labels.group }} ns={{ $labels.ns }}.
+            Comfy is excluded (masked).
+        labels:
+          group: csd-autodev
+          ns: csd
+          host: '{{ $labels.host }}'
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: P4169E866C3094E38
+            model:
+              datasource:
+                type: prometheus
+                uid: P4169E866C3094E38
+              expr: |
+                label_replace(
+                  label_replace(
+                    label_replace(
+                      akula_backend_up{backend=~"localai|gpu|nl-router"},
+                      "host", "prime", "host", "akula-prime"
+                    ),
+                    "group", "csd-autodev", "backend", ".+"
+                  ),
+                  "ns", "csd", "backend", ".+"
+                ) == 0
+              instant: true
+              intervalMs: 1000
+              legendFormat: ""
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: []
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+
+      - uid: csd-disk-low
+        title: CSDDiskLow
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        annotations:
+          summary: Root filesystem below 10% free on gpu5080.
+          description: >-
+            node_filesystem avail/size < 0.10 on device={{ $labels.device }}
+            mountpoint={{ $labels.mountpoint }} host={{ $labels.host }}.
+            Instant samples are absent while node_exporter is down; last_over_time 7d.
+        labels:
+          group: csd-autodev
+          ns: csd
+          host: gpu5080
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: P4169E866C3094E38
+            model:
+              datasource:
+                type: prometheus
+                uid: P4169E866C3094E38
+              expr: |
+                label_replace(
+                  label_replace(
+                    (
+                      last_over_time(
+                        node_filesystem_avail_bytes{device=~".*gpu5080.*",fstype="ext4",mountpoint="/"}[7d]
+                      )
+                      /
+                      last_over_time(
+                        node_filesystem_size_bytes{device=~".*gpu5080.*",fstype="ext4",mountpoint="/"}[7d]
+                      )
+                    ),
+                    "group", "csd-autodev", "fstype", ".+"
+                  ),
+                  "ns", "csd", "fstype", ".+"
+                ) < 0.10
+              instant: true
+              intervalMs: 1000
+              legendFormat: ""
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: []
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+
+      - uid: csd-gpu-lock-stale
+        title: CSDGPULockStale
+        condition: C
+        for: 2h
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        annotations:
+          summary: gpu5080 timeshare busy for over 2h (lock stale).
+          description: >-
+            akula_timeshare_busy{host=gpu5080} == 1 for 2h.
+            group={{ $labels.group }} ns={{ $labels.ns }}. Do not unmask Comfy.
+        labels:
+          group: csd-autodev
+          ns: csd
+          host: gpu5080
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: P4169E866C3094E38
+            model:
+              datasource:
+                type: prometheus
+                uid: P4169E866C3094E38
+              expr: |
+                label_replace(
+                  label_replace(
+                    akula_timeshare_busy{host="gpu5080"},
+                    "group", "csd-autodev", "host", ".+"
+                  ),
+                  "ns", "csd", "host", ".+"
+                ) == 1
+              instant: true
+              intervalMs: 1000
+              legendFormat: ""
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: []
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold

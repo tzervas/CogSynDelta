@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Git as Forgejo identity autodev. Token from the CSD vault only.
+# Never inherits workstation ~/.secrets. Never prints TOKEN.
+set -euo pipefail
+export SECRET_VAULT="${SECRET_VAULT:-/akula-data/cabal/csd-vault}"
+export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$SECRET_VAULT/age.txt}"
+export GIT_USERNAME=autodev
+export GIT_AUTHOR_NAME=autodev
+export GIT_AUTHOR_EMAIL=autodev@vectorweight.com
+export GIT_COMMITTER_NAME=autodev
+export GIT_COMMITTER_EMAIL=autodev@vectorweight.com
+export GIT_ASKPASS="${GIT_ASKPASS:-/home/kang/code/personal/tzervas/akula-ai-platform/scripts/git-askpass-token}"
+export GIT_TERMINAL_PROMPT=0
+exec /home/kang/.local/bin/secret exec TOKEN=git/autodev -- \
+  git -c credential.helper= \
+      -c credential.https://git.vectorweight.com.helper= \
+      "$@"

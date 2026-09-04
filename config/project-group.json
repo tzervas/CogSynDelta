@@ -1,0 +1,56 @@
+{
+  "schema": "csd-project-group/v1",
+  "forgejo": {
+    "host": "https://git.vectorweight.com",
+    "owner": "tzervas",
+    "project_name": "CogSynDelta lab",
+    "topics": ["cogsyndelta", "memory-gate", "lab-pool", "autodev"],
+    "repos": [
+      {"name": "CogSynDelta", "role": "program + lab harness", "exists": true},
+      {"name": "memory-gate", "role": "Phase 1 Python vehicle", "exists": true},
+      {"name": "memory-gate-rs", "role": "frozen reference until Phase 3", "exists": true}
+    ],
+    "fork_candidates": [
+      {
+        "src": "https://github.com/ggml-org/llama.cpp",
+        "as": "llama.cpp",
+        "why": "GGUF intern + MoE RPC pool",
+        "apply": false
+      },
+      {
+        "src": "https://github.com/vllm-project/vllm",
+        "as": "vllm",
+        "why": "HF/MoE batch runtime on 5080",
+        "apply": false
+      },
+      {
+        "src": "https://github.com/microsoft/BitNet",
+        "as": "BitNet",
+        "why": "W1.58 specialists; do not start CONV",
+        "apply": false
+      }
+    ],
+    "note": "Forgejo Projects API 404 on this host (feature off). Group with repo topics until admin enables Projects (LAN extras)."
+  },
+  "huggingface": {
+    "owner": "tzervas",
+    "collection": "cogsyndelta-lab",
+    "private": true,
+    "models": [
+      {"id": "tzervas/cogsyndelta", "role": "foundation weights when trained", "upload": "not-yet"},
+      {"id": "tzervas/cogsyndelta-bedrock", "role": "region specialists", "upload": "not-yet"}
+    ],
+    "datasets": [
+      {"id": "tzervas/cogsyndelta-data", "role": "train configs common / region-*", "upload": "when-recipe-exists"},
+      {"id": "tzervas/cogsyndelta-eval", "role": "eval-only; P1-15", "upload": "when-P1-15"}
+    ],
+    "fork_candidates": [
+      {
+        "id": "Qwen/Qwen3-Embedding-0.6B",
+        "as": "tzervas/Qwen3-Embedding-0.6B",
+        "why": "pin revision 97b0c614 for G-QD / P1-07",
+        "apply": false
+      }
+    ]
+  }
+}

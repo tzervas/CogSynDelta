@@ -1,0 +1,39 @@
+# gitleaks fingerprint ignore list.
+#
+# Each entry is the exact "<commit>:<file>:<rule>:<line>" fingerprint gitleaks
+# itself prints for a finding (see `gitleaks detect --verbose`). Ignores here
+# are scoped to one specific, already-reviewed occurrence -- never a whole
+# file, directory, or rule -- so a new secret introduced anywhere else,
+# including later in these same files, still fails the scan.
+#
+# The two entries below are the docs/ratified-design-2026-09-02 merge
+# (PR #5, fleet-security / gitleaks, run 2026-09-03T11:28:54Z): the
+# "generic-api-key" rule matches a key=value-shaped substring that follows
+# the word "tokenizer" a few characters later in a logged filesystem path,
+# and flags that path in evidence-run prose, not a credential. Both files
+# are committed, byte-for-byte experiment outputs -- one is checksummed in
+# docs/design/evidence/w1d-readout-probe-2026-09-02/SHA256SUMS -- so the fix
+# is a scoped ignore rather than a reword that would corrupt the recorded
+# evidence.
+#
+# Do NOT quote the flagged line here. This file is itself committed and
+# git-history-scanned, so a verbatim copy of the matched substring makes
+# .gitleaksignore match the same rule against its own content -- that
+# regression shipped in 6f8ff7b and is why this paragraph exists. Refer to
+# the finding by file:line only; open the file to see the actual text.
+#
+# The fingerprints below cover the two evidence-file occurrences at the
+# commit that introduced them (27b0e4d), but they do NOT and CANNOT cover
+# 6f8ff7b's own quoting of the same text inside this file: gitleaks runs in
+# full git-history mode (fleet-security.yml has no --no-git), so that
+# immutable historical commit is rescanned on every run regardless of how
+# this file reads today. That occurrence is suppressed by the regex
+# allowlist in .gitleaks.toml instead, which matches the exact substring
+# under the generic-api-key rule regardless of which commit or file quotes
+# it. Keep both: the fingerprints here document the reviewed occurrences by
+# commit; .gitleaks.toml is what actually keeps the gate green.
+#
+# docs/design/evidence/w1-token-rank-2026-09-02/results.json:350 -- tokenizer load path + vocab size, logged during the eval run
+27b0e4d4f0f949764693c6996fdd14d0d6acfef2:docs/design/evidence/w1-token-rank-2026-09-02/results.json:generic-api-key:350
+# docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:590 -- same tokenizer load line, different evidence run
+27b0e4d4f0f949764693c6996fdd14d0d6acfef2:docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:generic-api-key:590

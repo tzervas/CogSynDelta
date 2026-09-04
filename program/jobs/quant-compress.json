@@ -1,0 +1,20 @@
+{
+  "name": "quant-compress",
+  "kind": "quantize",
+  "argv": [
+    "/home/kang/code/personal/tzervas/CogSynDelta/.venv/bin/python",
+    "scripts/csd-quantize.py",
+    "--regions", "compress",
+    "--tolerance", "0.01",
+    "--state", "/akula-data/csd/state-packs/train-compress-tiny/state"
+  ],
+  "env": {},
+  "cwd": "/home/kang/code/personal/tzervas/CogSynDelta",
+  "host": "akula-prime",
+  "gpu_index": 0,
+  "budget_mib": null,
+  "probe": null,
+  "state_dir": "/akula-data/csd/state-packs/quant-compress",
+  "lock_name": "gpu-pack.lock",
+  "code_revision": "7fc139d1c04ca82d04a51ab1bde8d50412b7fd42"
+}

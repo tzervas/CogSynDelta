@@ -21,7 +21,7 @@ echo "3. Type hint coverage:"
 total=$(grep -rn "def " src/ --include="*.py" | grep -v "__pycache__" | wc -l)
 with_hints=$(grep -rn " -> " src/ --include="*.py" | grep -v "__pycache__" | wc -l)
 coverage=$(python3 -c "print(f'{$with_hints/$total*100:.1f}')")
-echo "  Functions: $with_hints/$total"
+echo "  Functions: $with_hints/$total ($coverage% typed)"
 echo ""
 
 # Check CI/CD files
@@ -33,7 +33,7 @@ echo ""
 # Check examples
 echo "5. Example scripts:"
 for example in examples/*.py; do
-    [ -f "$example" ] && echo "  ✓ $(basename $example)" || echo "  ✗ Missing $example"
+    [ -f "$example" ] && echo "  ✓ $(basename "$example")" || echo "  ✗ Missing $example"
 done
 echo ""
 

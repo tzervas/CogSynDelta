@@ -1,0 +1,124 @@
+{
+  "admission": {
+    "admitted": true,
+    "allow_nc": false,
+    "constants": {
+      "ADMISSIBLE_VERDICTS": [
+        "ATTRIBUTION",
+        "NC",
+        "PERMISSIVE_OK",
+        "SHARE_ALIKE"
+      ],
+      "ADMISSION_POLICY_VERSION": "2026-09-03.r3",
+      "ENRICHMENT_NONE_ADMISSIBLE_MARKER": "NONE ADMISSIBLE",
+      "ENRICHMENT_REFUSAL_MARKER_RE": "\\bREFUSE[SD]?\\b",
+      "EVAL_ONLY_TAG": "EVAL-ONLY",
+      "FORBIDDEN_REDISTRIBUTE_FLAGS": [
+        "nd"
+      ],
+      "FULL_CONTENT_GRANT_SCOPES": [
+        "whole_corpus",
+        "whole_corpus (heterogeneous per file)"
+      ],
+      "GRANT_SCOPE_CLASSES": [
+        "code_only",
+        "database_rights_only",
+        "metadata_only",
+        "unstated",
+        "whole_corpus",
+        "whole_corpus (heterogeneous per file)"
+      ],
+      "NC_VERDICT": "NC",
+      "REDISTRIBUTE_NC_FLAG": "nc",
+      "RED_FLAGS_BLOCK_ADMISSION": true,
+      "RED_FLAG_RESOLVED_MARKER": true,
+      "REQUIRED_VERIFICATION_STATUS": "VERIFIED",
+      "REQUIRE_LICENCE_TEXT": true,
+      "SCHEMA_DEFECTS_BLOCK_ADMISSION": true
+    },
+    "decided_at": "2026-09-04T01:07:54Z",
+    "policy_version": "2026-09-03.r3",
+    "reasons": []
+  },
+  "catalogue_entry": {
+    "caveat": "Its test split is a known formal-maths benchmark -- check for leakage before any training use.",
+    "enrichment_licence_result": "MIT; clean-permissive tier",
+    "enrichment_plan": "pair informal statement with a CoT-style informal proof as a rationale target",
+    "faculty": "reasoning",
+    "grant_scope": "whole_corpus",
+    "provenance_group": "proofnet",
+    "provenance_red_flags": [],
+    "provenance_red_flags_resolution": [],
+    "redistribute": {
+      "attribution": false,
+      "nc": false,
+      "nd": false,
+      "sa": false
+    },
+    "repo_id": "hoskinson-center/proofnet",
+    "schema_defects": [],
+    "usage_tag": null,
+    "why": "A distinct reasoning STYLE (formal proof, not word-problem arithmetic) and good NSRS cross-faculty reserve material."
+  },
+  "fetched_at": "2026-09-03T23:02:42Z",
+  "file_count": 8,
+  "file_manifest": [
+    {
+      "bytes": 2265,
+      "path": ".gitattributes",
+      "sha256": "79deb409a995d414d9b2e89b5e16a5f46fcaa7596c63242dd0bd72311a422458"
+    },
+    {
+      "bytes": 2695,
+      "path": "README.md",
+      "sha256": "2f5607b27136caf696e844b97b25af6c23dc9bb397e88c0e28db1225bb85c30a"
+    },
+    {
+      "bytes": 4890,
+      "path": "common.lean",
+      "sha256": "44126b473496cbb92c34a099e9b45680bf12f043a9a1466a7a211ae7ea19e67a"
+    },
+    {
+      "bytes": 227214,
+      "path": "proofnet.png",
+      "sha256": "d60e3d2c28aa7368c5438dba2eb7513e9d75acdc9166b9b990b3d8eb7618d85e"
+    },
+    {
+      "bytes": 2955,
+      "path": "proofnet.py",
+      "sha256": "3a1c1aa72d0c5140c24b709304c0fb23f60f776c22c70f9a44844ab52facc8e8"
+    },
+    {
+      "bytes": 279916,
+      "path": "test.jsonl",
+      "sha256": "4eae0ba4a6503d6828afb63b4936f9913cce299ef81a17c372e1b75b56187177"
+    },
+    {
+      "bytes": 414,
+      "path": "test_loader.py",
+      "sha256": "1796a9410108a96acce6e890b7e37882ce1f668eb79a3db45fb0640231c7641b"
+    },
+    {
+      "bytes": 259368,
+      "path": "valid.jsonl",
+      "sha256": "3bfbebfc1f279d16747a8ac89196910bde1a2781edcaa4ea3b1bdc64eb9fe50b"
+    }
+  ],
+  "file_manifest_exclusions": [
+    ".cache/huggingface/** (huggingface_hub's own bookkeeping, not dataset content)",
+    "*.lock files that are zero bytes (transient lock markers, not content)"
+  ],
+  "licence_fetch_date": "2026-09-03",
+  "licence_mirror_tag": "mit",
+  "licence_upstream_source": "https://raw.githubusercontent.com/zhangir-azerbayev/ProofNet/main/LICENSE",
+  "licence_upstream_verbatim": "\"MIT License ... Copyright (c) 2022 zhangir-azerbayev / Permission is hereby granted, free of charge...\"",
+  "mirror_url": "https://huggingface.co/datasets/hoskinson-center/proofnet",
+  "provenance_group": "proofnet",
+  "regenerated_from": "provenance.json.pre-r3.20260904T010754Z",
+  "resolved_revision": "cb8e75614830035a37f3a2a11de5e625eaf0bc31",
+  "tool_version": "0.1.0",
+  "total_bytes": 779717,
+  "upstream_url": "https://raw.githubusercontent.com/zhangir-azerbayev/ProofNet/main/LICENSE",
+  "verdict": "PERMISSIVE_OK",
+  "verification_status": "VERIFIED"
+}

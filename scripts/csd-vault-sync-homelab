@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Copy the CSD vault (own age key) to homelab. Never the operator vault.
+# Homelab path: ~/.config/csd/vault. chmod 700. No plaintext env files.
+set -euo pipefail
+SRC="${CSD_VAULT:-/akula-data/cabal/csd-vault}"
+DEST="${CSD_HOMELAB_VAULT:-/home/kang/.config/csd/vault}"
+HOST="${CSD_HOMELAB:-homelab}"
+if [ ! -s "$SRC/age.txt" ]; then
+  echo "missing $SRC/age.txt; run scripts/csd-vault-setup" >&2
+  exit 2
+fi
+ssh -o BatchMode=yes "$HOST" "mkdir -p '$DEST' && chmod 700 '$DEST' ~/.config/csd"
+rsync -a --chmod=go-rwx --delete \
+  --exclude '*.tmp' --exclude '.git' \
+  "$SRC/" "$HOST:$DEST/"
+ssh -o BatchMode=yes "$HOST" "chmod 700 '$DEST' && chmod 600 '$DEST'/age.txt '$DEST'/.sops.yaml 2>/dev/null || true; SECRET_VAULT='$DEST' SOPS_AGE_KEY_FILE='$DEST/age.txt' secret ls"
+echo "csd-vault synced to $HOST:$DEST" >&2

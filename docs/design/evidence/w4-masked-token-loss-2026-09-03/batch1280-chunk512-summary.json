@@ -1,0 +1,59 @@
+{
+  "probe": "w4-masked-token-loss VRAM re-probe #2, batch=1280, CHUNKED (chunk=512)",
+  "steps": 20,
+  "batch_size": 1280,
+  "max_len": 96,
+  "token_loss_weight": 0.1,
+  "decorr_weight": 0.1,
+  "token_loss_chunk": 512,
+  "encoder_config": {
+    "vocab_size": 50257,
+    "dim": 256,
+    "depth": 4,
+    "n_heads": 4,
+    "max_len": 96,
+    "out_dim": null
+  },
+  "fit": true,
+  "wall_elapsed_s": 32.04,
+  "training_loop_elapsed_s": 7.8,
+  "mean_step_time_ms": 390.0,
+  "parameters": 16021248,
+  "config_fingerprint": "6fc0cf23ff8591ff2241278f82c001d2",
+  "device": "cuda",
+  "precision": {
+    "autocast": "bf16",
+    "requested_bf16": true,
+    "master_weights": "fp32",
+    "logits": "fp32 (forced in info_nce)",
+    "eval": "fp32"
+  },
+  "peak_allocated_mib": 19079.7,
+  "peak_reserved_mib": 19444.0,
+  "driver": {
+    "sample_interval_s": 0.5,
+    "n_samples": 64,
+    "baseline_memory_used_mib_before_run": 1057,
+    "peak_memory_used_mib_raw": 20883,
+    "training_attributable_peak_mib": 19826,
+    "note": "baseline is pre-existing desktop/OS GPU usage (Xorg/KDE/Firefox) measured with nvidia-smi immediately before this process started, no training process running; 'raw' is nvidia-smi's system-wide memory.used peak sampled every 0.5s over the whole run (64 samples), 'training_attributable_peak_mib' subtracts the baseline. The last 10 consecutive samples before the run ended sit at 20,845-20,883 MiB, so the peak is a sustained plateau during the load-bearing training steps, not a one-sample outlier."
+  },
+  "gpu_total_mib": 23028,
+  "fits_threshold_mib": 20980,
+  "fits_by_metric": {
+    "peak_allocated_mib": true,
+    "peak_reserved_mib": true,
+    "driver_peak_raw_mib": true,
+    "driver_peak_training_attributable_mib": true
+  },
+  "fits": true,
+  "fits_rationale": "Unlike the chunk=2048 re-probe (batch1280-chunked-summary.json), EVERY metric clears the task's own fits formula (peak <= 23,028 - 2,048 = 20,980 MiB) at chunk=512: torch's own peaks (allocated 19,079.7 / reserved 19,444.0, margin 1,536-1,900 MiB) and, this time, the driver-observed peak too (20,883 MiB raw, margin 97 MiB; 19,826 MiB training-attributable, margin 1,154 MiB). The margin on the driver-raw reading is narrow (97 MiB) but positive, on 64 samples sampled at 0.5s with the peak sustained across the last 10 consecutive samples (20,845-20,883 MiB), not a transient spike.",
+  "launch_criterion_20260903_task": {
+    "threshold_mib": 22000,
+    "raw_driver_peak_mib": 20883,
+    "passed": true,
+    "card_headroom_mib": 2145,
+    "required_card_headroom_mib": 1028,
+    "note": "the pre-registered W4 memory launch task's own explicit go/no-go criterion (raw driver peak <= 22,000 MiB, leaving >= 1,028 MiB of the 23,028 MiB card below the ceiling with the desktop baseline included) -- looser than, and in addition to, the general fits_threshold_mib convention above. Both are cleared at chunk=512; chunk=256 was not probed."
+  }
+}

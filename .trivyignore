@@ -1,0 +1,18 @@
+# trivy vulnerability ignore list.
+#
+# Each entry is a CVE ID with a comment block explaining why it is accepted
+# here rather than fixed -- package, reachability, accept date, and the
+# condition under which the ignore should be removed. Scoped to one CVE at
+# a time; never a whole package or severity band.
+#
+# CVE-2026-81726 -- nltk 3.10.3, HIGH, path traversal in nltk's model-artifact
+# download APIs (nltk.download() / Downloader). No fixed nltk release exists
+# yet. nltk is transitive only, pulled in by llama-index-core==0.14.12 (see
+# uv.lock); the floor at nltk>=3.10.3 in pyproject.toml's
+# constraint-dependencies is for two earlier CVEs (CVE-2026-79675,
+# CVE-2026-78680), not a direct dependency. CogSynDelta code never imports
+# nltk: `grep -rn "nltk" src/ scripts/ tests/` finds no matches, so the
+# vulnerable download path is unreachable in this repo.
+# Accepted 2026-09-03. Remove when nltk publishes a fixed version;
+# `uv lock --upgrade-package nltk`.
+CVE-2026-81726

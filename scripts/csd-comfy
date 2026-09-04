@@ -1,0 +1,337 @@
+#!/usr/bin/env python3
+"""Comfy media tools for Grok/lab JSON. Fail-closed when masked.
+
+Usage:
+  ./scripts/csd-comfy list-workflows [--source catalog|live]
+  ./scripts/csd-comfy queue-prompt          # stdin {prompt: {API graph}}
+  ./scripts/csd-comfy prompt-status [--prompt-id ID]
+  ./scripts/csd-comfy flux-klein-4b --text '...' [--width 1024] [--height 1024]
+
+Never unmask. Never start Comfy. Never DALL-E. POST is the API graph, not
+UI nodes. Overlay akula_media does not POST /prompt.
+
+Why: autodev owns the 5080; Comfy is masked unless the operator unmasks.
+Honest red is {ok:false, notes:masked} instead of a cloud fallback.
+"""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+CATALOG = Path(
+    os.environ.get(
+        "CSD_COMFY_WORKFLOWS",
+        str(ROOT / "config/media/workflows.json"),
+    )
+)
+IMAGE_GRAPH = Path(
+    os.environ.get(
+        "CSD_COMFY_IMAGE_WORKFLOW",
+        str(ROOT / "config/media/comfy-image-workflow.json"),
+    )
+)
+IMAGE_NODES = Path(
+    os.environ.get(
+        "CSD_COMFY_IMAGE_NODES",
+        str(ROOT / "config/media/comfy-image-nodes.json"),
+    )
+)
+GPU_PLAN = Path(os.environ.get("CSD_GPU_PLAN", "/akula-data/cabal/gpu-plan.json"))
+COMFY_URL = os.environ.get("CSD_COMFY_URL", "http://192.168.1.252:8188").rstrip("/")
+MASKED_NOTES = "masked"
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _emit(rec: dict[str, Any], rc: int = 0) -> int:
+    print(json.dumps(rec, indent=2))
+    return rc
+
+
+def masked_result(**extra: Any) -> dict[str, Any]:
+    """Fail-closed payload. Why: skip-theatre / DALL-E is not green."""
+    rec: dict[str, Any] = {"ok": False, "notes": MASKED_NOTES}
+    rec.update(extra)
+    return rec
+
+
+def http_json(
+    method: str,
+    path: str,
+    body: dict[str, Any] | None = None,
+    timeout: float = 8.0,
+) -> tuple[int, Any]:
+    """GET/POST Comfy LAN API. Returns (0, 'unreachable') on refuse/timeout."""
+    data = None if body is None else json.dumps(body).encode()
+    req = urllib.request.Request(
+        COMFY_URL + path,
+        data=data,
+        method=method,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "csd-comfy",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            parsed: Any = json.loads(raw) if raw else {}
+            return int(resp.status), parsed
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")[:400]
+        try:
+            return int(exc.code), json.loads(raw) if raw else raw
+        except json.JSONDecodeError:
+            return int(exc.code), raw
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+        return 0, "unreachable"
+
+
+def plan_comfy() -> str:
+    plan = _read_json(GPU_PLAN)
+    gpu = plan.get("gpu5080")
+    if isinstance(gpu, dict):
+        return str(gpu.get("comfy") or "")
+    return str(plan.get("comfy") or "")
+
+
+def is_masked() -> bool:
+    """True unless env forces unmasked or Comfy is enabled and reachable.
+
+    Why: default fail-closed during autodev. CSD_COMFY_MASKED=0 is tests only.
+    """
+    flag = os.environ.get("CSD_COMFY_MASKED", "").strip().lower()
+    if flag in {"1", "true", "yes", "masked", "on"}:
+        return True
+    if flag in {"0", "false", "no", "unmasked", "off"}:
+        return False
+    if "masked" in plan_comfy().lower():
+        return True
+    code, _body = http_json("GET", "/system_stats")
+    return code == 0
+
+
+def catalog_workflows() -> list[dict[str, Any]]:
+    data = _read_json(CATALOG)
+    rows = data.get("workflows")
+    if not isinstance(rows, list):
+        return []
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def list_workflows(source: str = "catalog") -> dict[str, Any]:
+    if is_masked():
+        return masked_result(workflows=[])
+    want = (source or "catalog").strip().lower() or "catalog"
+    if want == "live":
+        code, body = http_json("GET", "/object_info")
+        if code == 0:
+            return masked_result(workflows=[])
+        names = sorted(body.keys()) if isinstance(body, dict) else []
+        return {
+            "ok": True,
+            "workflows": [{"class_type": n} for n in names],
+            "notes": "object_info",
+            "http": code,
+        }
+    rows = catalog_workflows()
+    return {
+        "ok": True,
+        "workflows": rows,
+        "notes": f"catalog n={len(rows)}",
+    }
+
+
+def queue_prompt(prompt: object | None) -> dict[str, Any]:
+    if is_masked():
+        return masked_result(prompt_id="")
+    graph: object | None = prompt
+    if isinstance(prompt, dict) and "prompt" in prompt and isinstance(prompt.get("prompt"), dict):
+        graph = prompt.get("prompt")
+    if not isinstance(graph, dict) or not graph:
+        return {"ok": False, "prompt_id": "", "notes": "need prompt API graph"}
+    body: dict[str, Any] = {"prompt": graph}
+    if isinstance(prompt, dict) and prompt.get("client_id"):
+        body["client_id"] = prompt["client_id"]
+    code, rec = http_json("POST", "/prompt", body)
+    if code == 0:
+        return masked_result(prompt_id="")
+    prompt_id = ""
+    if isinstance(rec, dict):
+        prompt_id = str(rec.get("prompt_id") or rec.get("promptId") or "")
+    ok = code in {200, 201} and bool(prompt_id)
+    return {
+        "ok": ok,
+        "prompt_id": prompt_id,
+        "notes": "queued" if ok else f"http={code}",
+        "http": code,
+    }
+
+
+def prompt_status(prompt_id: str = "") -> dict[str, Any]:
+    if is_masked():
+        return masked_result(queue={}, history={}, system_stats={})
+    q_code, queue = http_json("GET", "/queue")
+    if q_code == 0:
+        return masked_result(queue={}, history={}, system_stats={})
+    s_code, stats = http_json("GET", "/system_stats")
+    history: Any = {}
+    if prompt_id:
+        _h_code, history = http_json("GET", f"/history/{prompt_id}")
+    return {
+        "ok": True,
+        "queue": queue if isinstance(queue, dict) else {},
+        "history": history if isinstance(history, dict) else {},
+        "system_stats": stats if isinstance(stats, dict) else {},
+        "notes": "live",
+        "http": q_code if q_code else s_code,
+    }
+
+
+def _set_input(node: dict[str, Any], key: str, value: Any) -> None:
+    inputs = node.setdefault("inputs", {})
+    if isinstance(inputs, dict):
+        inputs[key] = value
+
+
+def flux_klein_4b(
+    text: str = "",
+    width: int = 1024,
+    height: int = 1024,
+    steps: int = 4,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """Native OWUI IMAGE_GENERATION_ENGINE=comfyui graph, not overlay."""
+    if is_masked():
+        return masked_result(prompt_id="", history={})
+    graph = _read_json(IMAGE_GRAPH)
+    if not graph:
+        return {"ok": False, "notes": "missing-graph", "prompt_id": "", "history": {}}
+    nodes = (
+        json.loads(IMAGE_NODES.read_text(encoding="utf-8"))
+        if IMAGE_NODES.is_file()
+        else [
+            {"type": "prompt", "key": "text", "node_ids": ["5"]},
+            {"type": "width", "key": "width", "node_ids": ["4", "10"]},
+            {"type": "height", "key": "height", "node_ids": ["4", "10"]},
+            {"type": "steps", "key": "steps", "node_ids": ["10"]},
+            {"type": "seed", "key": "noise_seed", "node_ids": ["8"]},
+        ]
+    )
+    g = copy.deepcopy(graph)
+    values = {
+        "prompt": text,
+        "width": int(width),
+        "height": int(height),
+        "steps": int(steps),
+        "seed": int(seed),
+    }
+    for spec in nodes:
+        if not isinstance(spec, dict):
+            continue
+        kind = str(spec.get("type") or "")
+        key = str(spec.get("key") or "")
+        if kind not in values or not key:
+            continue
+        for nid in spec.get("node_ids") or []:
+            node = g.get(str(nid))
+            if isinstance(node, dict):
+                _set_input(node, key, values[kind])
+    queued = queue_prompt(g)
+    rec: dict[str, Any] = {
+        "ok": bool(queued.get("ok")),
+        "prompt_id": str(queued.get("prompt_id") or ""),
+        "history": {},
+        "notes": str(queued.get("notes") or ""),
+    }
+    pid = rec["prompt_id"]
+    if rec["ok"] and pid:
+        st = prompt_status(pid)
+        rec["history"] = st.get("history") or {}
+    return rec
+
+
+def _stdin_json() -> dict[str, Any]:
+    if sys.stdin.isatty():
+        return {}
+    raw = sys.stdin.read()
+    if not raw.strip():
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="csd-comfy")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p_list = sub.add_parser("list-workflows")
+    p_list.add_argument("--source", default="catalog")
+
+    p_q = sub.add_parser("queue-prompt")
+    p_q.add_argument("--prompt-json", default="")
+
+    p_st = sub.add_parser("prompt-status")
+    p_st.add_argument("--prompt-id", default="")
+
+    p_fx = sub.add_parser("flux-klein-4b")
+    p_fx.add_argument("--text", default="")
+    p_fx.add_argument("--width", type=int, default=1024)
+    p_fx.add_argument("--height", type=int, default=1024)
+    p_fx.add_argument("--steps", type=int, default=4)
+    p_fx.add_argument("--seed", type=int, default=0)
+
+    ns = ap.parse_args(argv)
+    payload: dict[str, Any] = {}
+    if argv is None:
+        payload = _stdin_json()
+
+    if ns.cmd == "list-workflows":
+        src = str(payload.get("source") or ns.source)
+        return _emit(list_workflows(src))
+    if ns.cmd == "queue-prompt":
+        prompt: object | None = payload.get("prompt") if payload else None
+        if ns.prompt_json:
+            prompt = json.loads(ns.prompt_json)
+        elif prompt is None and payload:
+            prompt = payload
+        return _emit(queue_prompt(prompt))
+    if ns.cmd == "prompt-status":
+        pid = str(payload.get("prompt_id") or ns.prompt_id or "")
+        return _emit(prompt_status(pid))
+    if ns.cmd == "flux-klein-4b":
+        return _emit(
+            flux_klein_4b(
+                text=str(payload.get("text") or ns.text),
+                width=int(payload.get("width") or ns.width),
+                height=int(payload.get("height") or ns.height),
+                steps=int(payload.get("steps") or ns.steps),
+                seed=int(payload.get("seed") if payload.get("seed") is not None else ns.seed),
+            )
+        )
+    return _emit({"ok": False, "notes": "unknown"}, rc=2)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

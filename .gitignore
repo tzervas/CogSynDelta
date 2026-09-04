@@ -138,6 +138,12 @@ celerybeat.pid
 .env
 .envrc
 .venv
+# Isolated environment scripts/ci_local.sh uses so it never prunes the shared .venv
+# (see the isolation comment in scripts/ci_local.sh for why this exists).
+.venv-ci
+# Disposable project dir scripts/ci_local.sh resolves/locks into so `uv sync --cpu`
+# never rewrites the tracked uv.lock (see the second isolation comment in the script).
+.venv-ci-project
 env/
 venv/
 ENV/
@@ -207,13 +213,25 @@ marimo/_lsp/
 __marimo__/
 
 # Data directories
-data/
+# Anchored to the repo root on purpose. A bare `data/` matches a directory of
+# that name at ANY depth, which silently swallowed the src/cogsyndelta/data/
+# source package -- committed code that simply never appeared in git status.
+/data/
 *.pth
 
 # Model checkpoints and weights
 checkpoints/
 *.ckpt
 *.safetensors
+# The region pretrain harness writes {out_dir}/{region}-checkpoints/, which `checkpoints/`
+# does not match, and torch.save defaults to .pt, which *.pth does not match. Running it
+# with the default out_dir puts a 64 MB blob per region straight into git status.
+*-checkpoints/
+*.pt
+
+# Local receipts directory -- the secret audit found receipts/compress-20260902T153612Z.json
+# untracked and unignored here, unlike the checkpoint directories above.
+receipts/
 
 # Memory persistence files
 memory_storage/

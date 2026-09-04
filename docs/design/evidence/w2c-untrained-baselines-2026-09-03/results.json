@@ -1,0 +1,347 @@
+{
+  "regions": {
+    "code": {
+      "source_receipt": "code-20260903T115858Z.json",
+      "source_checkpoint_sha256": "1c4e41c94c595a5176a8cfe22c6064070f9ed0b68c0bba2294881a6e8b181247",
+      "source_config_git_revision": {
+        "git_sha": "9df6526b7ee09bce484fccfa091e9fcb14964c46",
+        "dirty": false,
+        "branch": "feat/vl-jepa"
+      },
+      "encoder_config": {
+        "vocab_size": 50257,
+        "dim": 256,
+        "depth": 4,
+        "n_heads": 4,
+        "max_len": 96,
+        "out_dim": null
+      },
+      "n_holdout_pairs": 512.0,
+      "holdout_reproduced_from_receipt": true,
+      "corpus_fingerprint": "e493273b003f5cf9c239db0ac461b993",
+      "seed_0": {
+        "seed": 0,
+        "note": "shared across all four text regions -- see module docstring",
+        "forward": {
+          "n_pairs": 512.0,
+          "recall@1": 0.228515625,
+          "recall@10": 0.2734375,
+          "mrr": 0.24636130034923553,
+          "emb_std": 0.021174566820263863
+        },
+        "tokens_pool": {
+          "n_pairs": 512.0,
+          "recall@1": 0.228515625,
+          "recall@10": 0.2734375,
+          "mrr": 0.24636130034923553,
+          "emb_std": 0.021174566820263863
+        },
+        "matches_receipt_untrained_baseline": true
+      },
+      "region_seed": {
+        "seed": 1216122864,
+        "formula": "int(sha256('csd-w2c-untrained:' + region)[:8 hex], 16)",
+        "forward": {
+          "n_pairs": 512.0,
+          "recall@1": 0.234375,
+          "recall@10": 0.279296875,
+          "mrr": 0.2524093687534332,
+          "emb_std": 0.020948870107531548
+        },
+        "tokens_pool": {
+          "n_pairs": 512.0,
+          "recall@1": 0.234375,
+          "recall@10": 0.279296875,
+          "mrr": 0.2524093687534332,
+          "emb_std": 0.020948870107531548
+        }
+      },
+      "chance": {
+        "recall@1": 0.001953125,
+        "recall@10": 0.01953125
+      },
+      "chance_normalised": {
+        "seed_0_recall@1": 0.22700587084148727,
+        "region_seed_recall@1": 0.2328767123287671,
+        "receipt_recorded_recall@1": 0.22700587084148727
+      },
+      "tau_lo_bin_chance_normalised": 0.2328767123287671,
+      "tau_lo_derivation": "tau_lo = chance_normalise(region-specific-seed untrained recall@1) = (s - chance)/(1 - chance), evaluated at the REGION-SPECIFIC seed (not seed 0), since W2c's own rationale for requiring a region-specific seed is that seed-0 baselines are not independent per-region measurements. Simplest reading of 'tau_lo is re-derived from the measured value, per bin, in chance-normalised units' (DEC-36) -- see DEVIATIONS for the choice this makes explicit."
+    },
+    "compress": {
+      "source_receipt": "compress-20260903T120818Z.json",
+      "source_checkpoint_sha256": "aaed684674c8c02c25cb4d5abbf3c6246da3dffb83eef64d3e845e750ca1dd09",
+      "source_config_git_revision": {
+        "git_sha": "9df6526b7ee09bce484fccfa091e9fcb14964c46",
+        "dirty": false,
+        "branch": "feat/vl-jepa"
+      },
+      "encoder_config": {
+        "vocab_size": 50257,
+        "dim": 256,
+        "depth": 4,
+        "n_heads": 4,
+        "max_len": 96,
+        "out_dim": null
+      },
+      "n_holdout_pairs": 512.0,
+      "holdout_reproduced_from_receipt": true,
+      "corpus_fingerprint": "65a9938192b5040beda5e92eb4078dbc",
+      "seed_0": {
+        "seed": 0,
+        "note": "shared across all four text regions -- see module docstring",
+        "forward": {
+          "n_pairs": 512.0,
+          "recall@1": 0.037109375,
+          "recall@10": 0.068359375,
+          "mrr": 0.05342389643192291,
+          "emb_std": 0.014141346327960491
+        },
+        "tokens_pool": {
+          "n_pairs": 512.0,
+          "recall@1": 0.037109375,
+          "recall@10": 0.068359375,
+          "mrr": 0.05342389643192291,
+          "emb_std": 0.014141346327960491
+        },
+        "matches_receipt_untrained_baseline": true
+      },
+      "region_seed": {
+        "seed": 219787741,
+        "formula": "int(sha256('csd-w2c-untrained:' + region)[:8 hex], 16)",
+        "forward": {
+          "n_pairs": 512.0,
+          "recall@1": 0.041015625,
+          "recall@10": 0.0703125,
+          "mrr": 0.05601418763399124,
+          "emb_std": 0.015871401876211166
+        },
+        "tokens_pool": {
+          "n_pairs": 512.0,
+          "recall@1": 0.041015625,
+          "recall@10": 0.0703125,
+          "mrr": 0.05601418763399124,
+          "emb_std": 0.015871401876211166
+        }
+      },
+      "chance": {
+        "recall@1": 0.001953125,
+        "recall@10": 0.01953125
+      },
+      "chance_normalised": {
+        "seed_0_recall@1": 0.03522504892367906,
+        "region_seed_recall@1": 0.03913894324853229,
+        "receipt_recorded_recall@1": 0.03522504892367906
+      },
+      "tau_lo_bin_chance_normalised": 0.03913894324853229,
+      "tau_lo_derivation": "tau_lo = chance_normalise(region-specific-seed untrained recall@1) = (s - chance)/(1 - chance), evaluated at the REGION-SPECIFIC seed (not seed 0), since W2c's own rationale for requiring a region-specific seed is that seed-0 baselines are not independent per-region measurements. Simplest reading of 'tau_lo is re-derived from the measured value, per bin, in chance-normalised units' (DEC-36) -- see DEVIATIONS for the choice this makes explicit."
+    },
+    "retrieve": {
+      "source_receipt": "retrieve-20260903T121603Z.json",
+      "source_checkpoint_sha256": "df27a73054af911deacb15b89948ae89363e6af314ae741aeeabf6579acf578d",
+      "source_config_git_revision": {
+        "git_sha": "9df6526b7ee09bce484fccfa091e9fcb14964c46",
+        "dirty": false,
+        "branch": "feat/vl-jepa"
+      },
+      "encoder_config": {
+        "vocab_size": 50257,
+        "dim": 256,
+        "depth": 4,
+        "n_heads": 4,
+        "max_len": 96,
+        "out_dim": null
+      },
+      "n_holdout_pairs": 512.0,
+      "holdout_reproduced_from_receipt": true,
+      "corpus_fingerprint": "af4bb36f6f5dcacd0bf7f211df6ef63a",
+      "seed_0": {
+        "seed": 0,
+        "note": "shared across all four text regions -- see module docstring",
+        "forward": {
+          "n_pairs": 512.0,
+          "recall@1": 0.001953125,
+          "recall@10": 0.01953125,
+          "mrr": 0.013310099020600319,
+          "emb_std": 0.007106330245733261
+        },
+        "tokens_pool": {
+          "n_pairs": 512.0,
+          "recall@1": 0.001953125,
+          "recall@10": 0.01953125,
+          "mrr": 0.013310099020600319,
+          "emb_std": 0.007106330245733261
+        },
+        "matches_receipt_untrained_baseline": true
+      },
+      "region_seed": {
+        "seed": 3481347848,
+        "formula": "int(sha256('csd-w2c-untrained:' + region)[:8 hex], 16)",
+        "forward": {
+          "n_pairs": 512.0,
+          "recall@1": 0.001953125,
+          "recall@10": 0.01953125,
+          "mrr": 0.013374922797083855,
+          "emb_std": 0.007351800333708525
+        },
+        "tokens_pool": {
+          "n_pairs": 512.0,
+          "recall@1": 0.001953125,
+          "recall@10": 0.01953125,
+          "mrr": 0.013374922797083855,
+          "emb_std": 0.007351800333708525
+        }
+      },
+      "chance": {
+        "recall@1": 0.001953125,
+        "recall@10": 0.01953125
+      },
+      "chance_normalised": {
+        "seed_0_recall@1": 0.0,
+        "region_seed_recall@1": 0.0,
+        "receipt_recorded_recall@1": 0.0
+      },
+      "tau_lo_bin_chance_normalised": 0.0,
+      "tau_lo_derivation": "tau_lo = chance_normalise(region-specific-seed untrained recall@1) = (s - chance)/(1 - chance), evaluated at the REGION-SPECIFIC seed (not seed 0), since W2c's own rationale for requiring a region-specific seed is that seed-0 baselines are not independent per-region measurements. Simplest reading of 'tau_lo is re-derived from the measured value, per bin, in chance-normalised units' (DEC-36) -- see DEVIATIONS for the choice this makes explicit."
+    },
+    "reason": {
+      "source_receipt": "reason-20260903T123431Z.json",
+      "source_checkpoint_sha256": "ecbcfd70d0840d7979dd5fd7ee362fd5028830c18be843ac82b7641a5777f3a1",
+      "source_config_git_revision": {
+        "git_sha": "0026a3d62b7330ccbf0e8152a5d1fcfd492ddae7",
+        "dirty": false,
+        "branch": "feat/vl-jepa"
+      },
+      "encoder_config": {
+        "vocab_size": 50257,
+        "dim": 256,
+        "depth": 4,
+        "n_heads": 4,
+        "max_len": 256,
+        "out_dim": null
+      },
+      "n_holdout_pairs": 512.0,
+      "holdout_reproduced_from_receipt": true,
+      "corpus_fingerprint": "ca364a92d2c6c5fd259404e0ab6f52a1",
+      "seed_0": {
+        "seed": 0,
+        "note": "shared across all four text regions -- see module docstring",
+        "forward": {
+          "n_pairs": 512.0,
+          "recall@1": 0.005859375,
+          "recall@10": 0.033203125,
+          "mrr": 0.021287329494953156,
+          "emb_std": 0.01252866443246603
+        },
+        "tokens_pool": {
+          "n_pairs": 512.0,
+          "recall@1": 0.005859375,
+          "recall@10": 0.033203125,
+          "mrr": 0.021287329494953156,
+          "emb_std": 0.01252866443246603
+        },
+        "matches_receipt_untrained_baseline": true
+      },
+      "region_seed": {
+        "seed": 2773680709,
+        "formula": "int(sha256('csd-w2c-untrained:' + region)[:8 hex], 16)",
+        "forward": {
+          "n_pairs": 512.0,
+          "recall@1": 0.00390625,
+          "recall@10": 0.033203125,
+          "mrr": 0.019273541867733,
+          "emb_std": 0.012107392773032188
+        },
+        "tokens_pool": {
+          "n_pairs": 512.0,
+          "recall@1": 0.00390625,
+          "recall@10": 0.033203125,
+          "mrr": 0.019273541867733,
+          "emb_std": 0.012107392773032188
+        }
+      },
+      "chance": {
+        "recall@1": 0.001953125,
+        "recall@10": 0.01953125
+      },
+      "chance_normalised": {
+        "seed_0_recall@1": 0.003913894324853229,
+        "region_seed_recall@1": 0.0019569471624266144,
+        "receipt_recorded_recall@1": 0.003913894324853229
+      },
+      "tau_lo_bin_chance_normalised": 0.0019569471624266144,
+      "tau_lo_derivation": "tau_lo = chance_normalise(region-specific-seed untrained recall@1) = (s - chance)/(1 - chance), evaluated at the REGION-SPECIFIC seed (not seed 0), since W2c's own rationale for requiring a region-specific seed is that seed-0 baselines are not independent per-region measurements. Simplest reading of 'tau_lo is re-derived from the measured value, per bin, in chance-normalised units' (DEC-36) -- see DEVIATIONS for the choice this makes explicit."
+    }
+  },
+  "code_lexical_floor_resolution": {
+    "surviving_receipt_figure": 0.2285,
+    "unsupported_prose_figure": 0.4,
+    "seed_0_measured": 0.228515625,
+    "region_seed_measured": 0.234375,
+    "verdict": "0.2285 (the surviving receipt figure) is correct; 0.40 remains unsupported by any artefact in the tree",
+    "0.40_prose_sites_found": [
+      "/home/kang/code/personal/tzervas/CogSynDelta/src/cogsyndelta/regions/classify_pretrain.py:65:which is not a formality (a random-init encoder already scores recall@1 0.40 on",
+      "/home/kang/code/personal/tzervas/CogSynDelta/src/cogsyndelta/regions/vl_pretrain.py:18:     recall@1 0.40 on CodeSearchNet from lexical overlap alone. Judging a run without that",
+      "/home/kang/code/personal/tzervas/CogSynDelta/src/cogsyndelta/regions/pretrain.py:165:    already scores recall@1 0.40 from lexical overlap, and stepping straight in at peak",
+      "/home/kang/code/personal/tzervas/CogSynDelta/src/cogsyndelta/regions/pretrain.py:1090:        # scores recall@1 ~0.40 here. A trained model that does not beat this has not",
+      "/home/kang/code/personal/tzervas/CogSynDelta/scripts/csd-train-all.py:30:scores recall@1 0.40 from lexical overlap alone, and early training DESTROYS that before",
+      "/home/kang/code/personal/tzervas/CogSynDelta/program/KICKOFF.md:120:  scores recall@1 0.40 on CodeSearchNet from lexical overlap alone; I-JEPA loss falls while",
+      "/home/kang/code/personal/tzervas/CogSynDelta/program/REMAINING.md:625:| **W2c** | **Measure the two untrained baselines the thresholds rest on** `[A23 fixed] [A13 fixed]`. (i) Instantiate `TextEncoder(vocab 50257, dim 256, depth 4, heads 4)` **at a region-specific seed**, run the `code` in-mixture eval, and settle whether the lexical floor is **0.2285** (the surviving receipt) or **\u22480.40** (prose in four files, no artefact). (ii) Re-instantiate `retrieve`'s random encoder and establish a real untrained baseline for the 0.7480 figure, whose recorded baseline is **exactly 0.0000**. | Both numbers exist in receipts. **\u03c4_lo is re-derived from the measured value, per bin, in chance-normalised units** (DEC-36). Whichever documents disagree are corrected. **This blocks W2b:** if the true code-adjacent lexical floor is 0.40, NSRS condition (1) at `\u03c4_lo = 0.35` rejects essentially every row built from `apps`/`code_contests` \u2014 the reserve's main source \u2014 and the reserve cannot be built from them at all. | todo | 3090 `.98` |",
+      "/home/kang/code/personal/tzervas/CogSynDelta/docs/design/MODERN-TRAINING-STACK.md:508:1333 of 8000 scored recall@1 **0.357 against an untrained baseline of 0.400**: healthy runs",
+      "/home/kang/code/personal/tzervas/CogSynDelta/docs/design/MODERN-TRAINING-STACK.md:509:go *below* baseline early, because a random-init encoder scores 0.40 from lexical overlap",
+      "/home/kang/code/personal/tzervas/CogSynDelta/docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md:1919:| **W2c** | **Measure the two untrained baselines the thresholds rest on** `[A23 fixed] [A13 fixed]`. (i) Instantiate `TextEncoder(vocab 50257, dim 256, depth 4, heads 4)` **at a region-specific seed**, run the `code` in-mixture eval, and settle whether the lexical floor is **0.2285** (the surviving receipt) or **\u22480.40** (prose in four files, no artefact). (ii) Re-instantiate `retrieve`'s random encoder and establish a real untrained baseline for the 0.7480 figure, whose recorded baseline is **exactly 0.0000**. | Both numbers exist in receipts. **\u03c4_lo is re-derived from the measured value, per bin, in chance-normalised units** (DEC-36). Whichever documents disagree are corrected. **This blocks W2b:** if the true code-adjacent lexical floor is 0.40, NSRS condition (1) at `\u03c4_lo = 0.35` rejects essentially every row built from `apps`/`code_contests` \u2014 the reserve's main source \u2014 and the reserve cannot be built from them at all. | W0 | todo | 3090 `.98` |",
+      "/home/kang/code/personal/tzervas/CogSynDelta/docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md:2411:justified condition (3) with *\"a random-init encoder scored r@1 \u2248 0.40 on CodeSearchNet from",
+      "/home/kang/code/personal/tzervas/CogSynDelta/docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md:2417:if the true lexical floor for code-adjacent material is 0.40, condition (1) at `\u03c4_lo = 0.35`",
+      "/home/kang/code/personal/tzervas/CogSynDelta/docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md:4400:  ^ code's untrained 0.2285 conflicts with the \"~0.40 lexical floor\" prose in four files;",
+      "/home/kang/code/personal/tzervas/CogSynDelta/docs/design/MODEL-MANIFESTS.md:1138:        A random-init encoder scores recall@1 0.40 on CodeSearchNet from lexical"
+    ]
+  },
+  "retrieve_0_7480_resolution": {
+    "doc_quoted_receipt": "retrieve-20260902T203759Z.json",
+    "doc_quoted_held_out_recall@1": 0.748046875,
+    "doc_quoted_untrained_baseline_recall@1": 0.0,
+    "new_2026-09-03_receipt": "retrieve-20260903T121603Z.json",
+    "new_receipt_held_out_recall@1": 0.755859375,
+    "new_receipt_untrained_baseline_recall@1": 0.001953125,
+    "this_run_seed_0_recall@1": 0.001953125,
+    "this_run_region_seed_recall@1": 0.001953125,
+    "chance_recall@1": 0.001953125,
+    "verdict": "the doc's quoted 'exactly 0.0000' is that ONE receipt's real measurement, not a bug (pretrain.py's own _beats_untrained_gate docstring explains why an untrained mean-pooled encoder here can land at or below chance on a 512-row diagonal); it is also already stale relative to both the NEW 2026-09-03 receipt (0.001953125, exactly 1/512 = chance) and this script's two fresh measurements, none of which is literally zero -- the untrained retrieve baseline sits AT CHANCE, not below a real floor, and 0.7480-scale trained recall is genuine headroom above it"
+  },
+  "meta": {
+    "code_revision": "0026a3d62b7330ccbf0e8152a5d1fcfd492ddae7",
+    "dirty": false,
+    "recorded": "2026-09-03T12:49:40Z",
+    "nvidia_smi_end": "15227 MiB, 7336 MiB",
+    "region_seed_formula": "int(sha256('csd-w2c-untrained:' + region)[:8 hex chars], 16)",
+    "verified": [
+      "HEAD=0026a3d62b7330ccbf0e8152a5d1fcfd492ddae7 dirty=False; nvidia-smi at start: 1057 MiB, 21507 MiB",
+      "code: holdout reproduction vs code-20260903T115858Z.json -- fingerprint_match=True cap_sampling_match=True source_counts_match=True duplicates_removed_match=True n_holdout=512 (receipt 512)",
+      "code: seed-0 re-measurement recall@1=0.228515625 vs receipt's recorded untrained_baseline.recall@1=0.228515625 (exact_match=True)",
+      "code/seed0: forward recall@1=0.228515625 == tokens()->pool() recall@1=0.228515625 (bitwise-equal=True) -- forward() IS pool(*tokens()), see text_encoder.py",
+      "code/region_seed: forward recall@1=0.234375 == tokens()->pool() recall@1=0.234375 (bitwise-equal=True) -- forward() IS pool(*tokens()), see text_encoder.py",
+      "compress: holdout reproduction vs compress-20260903T120818Z.json -- fingerprint_match=True cap_sampling_match=True source_counts_match=True duplicates_removed_match=True n_holdout=512 (receipt 512)",
+      "compress: seed-0 re-measurement recall@1=0.037109375 vs receipt's recorded untrained_baseline.recall@1=0.037109375 (exact_match=True)",
+      "compress/seed0: forward recall@1=0.037109375 == tokens()->pool() recall@1=0.037109375 (bitwise-equal=True) -- forward() IS pool(*tokens()), see text_encoder.py",
+      "compress/region_seed: forward recall@1=0.041015625 == tokens()->pool() recall@1=0.041015625 (bitwise-equal=True) -- forward() IS pool(*tokens()), see text_encoder.py",
+      "retrieve: holdout reproduction vs retrieve-20260903T121603Z.json -- fingerprint_match=True cap_sampling_match=True source_counts_match=True duplicates_removed_match=True n_holdout=512 (receipt 512)",
+      "retrieve: seed-0 re-measurement recall@1=0.001953125 vs receipt's recorded untrained_baseline.recall@1=0.001953125 (exact_match=True)",
+      "retrieve/seed0: forward recall@1=0.001953125 == tokens()->pool() recall@1=0.001953125 (bitwise-equal=True) -- forward() IS pool(*tokens()), see text_encoder.py",
+      "retrieve/region_seed: forward recall@1=0.001953125 == tokens()->pool() recall@1=0.001953125 (bitwise-equal=True) -- forward() IS pool(*tokens()), see text_encoder.py",
+      "reason: holdout reproduction vs reason-20260903T123431Z.json -- fingerprint_match=True cap_sampling_match=True source_counts_match=True duplicates_removed_match=True n_holdout=512 (receipt 512)",
+      "reason: seed-0 re-measurement recall@1=0.005859375 vs receipt's recorded untrained_baseline.recall@1=0.005859375 (exact_match=True)",
+      "reason/seed0: forward recall@1=0.005859375 == tokens()->pool() recall@1=0.005859375 (bitwise-equal=True) -- forward() IS pool(*tokens()), see text_encoder.py",
+      "reason/region_seed: forward recall@1=0.00390625 == tokens()->pool() recall@1=0.00390625 (bitwise-equal=True) -- forward() IS pool(*tokens()), see text_encoder.py",
+      "code lexical floor: seed0=0.2285 region_seed=0.2344, both far below 0.40 and consistent with the surviving receipt's 0.2285 -- resolution: 0.2285 (the surviving receipt figure) is correct; 0.40 remains unsupported by any artefact in the tree",
+      "0.40 prose sites (repo grep, not exhaustive): 14 found, none is an artefact -- see 0.40_prose_sites_found in results.json",
+      "retrieve: doc-quoted 0.0000 baseline is superseded by every later receipt and by this run's own measurements; see retrieve_0_7480_resolution in results.json"
+    ],
+    "inferred": [],
+    "deviations": [
+      "vl_latent ('visual if feasible') skipped: no 2026-09-03 vl_latent checkpoint receipt exists to match the task brief's 'using the NEW 2026-09-03 checkpoints' configs' instruction (newest is vl_latent-20260902T174836Z.json), and the W2c row does not ask for it.",
+      "W1d's matched-read-out-over-position-latents harness NOT reused: the W2c row asks for two eval-only untrained-encoder numbers (code lexical floor, retrieve's real baseline), not a trained read-out probe. The task brief makes that probe conditional on 'if the row asks', and it does not -- see module docstring.",
+      "tau_lo per bin is derived from the REGION-SPECIFIC-seed measurement, not seed 0 or a blend of the two -- both are reported in the receipt so a reader can re-derive under a different rule.",
+      "'the row's own held-out bin' is reproduced by keeping PretrainConfig.seed=0 (matches every 2026-09-03 receipt's config.seed, verified against the receipt's own corpus fingerprint/cap_sampling/source_counts/duplicates_removed) and varying ONLY the model's torch.manual_seed at construction time -- see module docstring for why cfg.seed alone conflates data-seed and model-seed in pretrain.py."
+    ]
+  }
+}

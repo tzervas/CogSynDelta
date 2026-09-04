@@ -1,0 +1,499 @@
+{
+  "schema": "csd-pretrain-receipt/v1",
+  "region": "memory",
+  "recorded": "2026-09-03T17:09:34Z",
+  "method": "symmetric InfoNCE over in-batch negatives",
+  "corpus": {
+    "shards": [
+      "train.parquet"
+    ],
+    "fingerprint": "6fc0cf23ff8591ff2241278f82c001d2",
+    "fingerprint_scheme": "csd-corpus-fp/v2",
+    "pair_columns": [
+      "query",
+      "passage"
+    ],
+    "sources": {
+      "primary": 14131,
+      "anchor->positive": 314315,
+      "query->answer": 100231,
+      "question->answer": 400000
+    },
+    "cap_sampling": {
+      "method": "reservoir (Algorithm R), one pass over every row of each source",
+      "seed": 0
+    },
+    "train_pairs": 782959,
+    "holdout_pairs": 512,
+    "duplicates_removed": 45168
+  },
+  "graded_corpus": {
+    "name": "stsb-validation",
+    "shards": [
+      "validation-00000-of-00001.parquet"
+    ],
+    "fingerprint": "6ea4d7fb3871c869863dadcff4c675f7",
+    "columns": [
+      "sentence1",
+      "sentence2",
+      "score"
+    ],
+    "pairs_loaded": 1500,
+    "pairs_removed_as_train_positive": 2,
+    "pairs_evaluated": 1498,
+    "sentence_overlap_with_train": 0.146,
+    "sentence_overlap_note": "Shared SENTENCES, not shared pairs. Inherent to the corpus pairing: STS-B was partly built from the same SNLI data as AllNLI. No graded score leaks through it. The pairs that did leak were removed and counted above."
+  },
+  "contamination": {
+    "train_pairs_seen": 782997,
+    "train_pairs_removed": 38,
+    "eval_pairs": 512,
+    "gated_channels": [
+      "pair_exact",
+      "pair_content"
+    ],
+    "channels": {
+      "anchor_exact": {
+        "key": "the eval anchor, whitespace- and case-normalised. VACUOUS whenever the caller deduplicated on this same key -- reported so a zero here is never mistaken for evidence.",
+        "gated": false,
+        "eval_unique": 512,
+        "overlap": 0,
+        "eval_fraction_contaminated": 0.0,
+        "examples": []
+      },
+      "positive_exact": {
+        "key": "the eval POSITIVE, normalised. Anchor-only dedup never touches this side, so it can fire. Reported rather than gated: a passage shared across two genuinely different queries is normal in IR and only leaks if the queries are also close.",
+        "gated": false,
+        "eval_unique": 512,
+        "overlap": 133,
+        "eval_fraction_contaminated": 0.259765625,
+        "examples": [
+          "1 year old dog is how old in human years?",
+          "A black dog is running on the grass with a pink purse in its mouth.",
+          "A black man is posing for a photo with two other people, showing just their hands, points guns at him.",
+          "A black-and-white dog running in the water.",
+          "A blond dog runs through the grass."
+        ]
+      },
+      "pair_exact": {
+        "key": "the whole pair, order-independent. A held-out pair that is also a training pair in either direction -- symmetric InfoNCE trains both directions, so a swap is the same leak. Unambiguous memorisation.",
+        "gated": true,
+        "eval_unique": 512,
+        "overlap": 0,
+        "eval_fraction_contaminated": 0.0,
+        "examples": []
+      },
+      "anchor_content": {
+        "key": "the eval anchor's content-word SET (function words, order and repetition discarded). Catches the paraphrase family exact normalisation cannot see.",
+        "gated": false,
+        "eval_unique": 512,
+        "overlap": 43,
+        "eval_fraction_contaminated": 0.083984375,
+        "examples": [
+          "'This is where you work.'",
+          "1 coulomb is equals to how many electrons?",
+          "But it is possible?",
+          "People are walking along a sidewalk.",
+          "are intp and infj compatible?"
+        ]
+      },
+      "positive_content": {
+        "key": "the eval positive's content-word set.",
+        "gated": false,
+        "eval_unique": 511,
+        "overlap": 160,
+        "eval_fraction_contaminated": 0.3131115459882583,
+        "examples": [
+          "'That'll be your job, Mr. White.",
+          "'This is where you work.'",
+          "1 year old dog is how old in human years?",
+          "A baby dressed in a brown striped jacket sits on a bed smiling while holding a glow-stick.",
+          "A black dog is running on the grass with a pink purse in its mouth."
+        ]
+      },
+      "pair_content": {
+        "key": "BOTH sides content-word-identical to a training pair. Function-word paraphrase of an entire training example, which is memorisation with the wording changed.",
+        "gated": true,
+        "eval_unique": 512,
+        "overlap": 25,
+        "eval_fraction_contaminated": 0.048828125,
+        "examples": [
+          "are intp and infj compatible?",
+          "can you get pregnant on cycle day 10?",
+          "can you tell if someone blocked your iphone texts?",
+          "how are electromagnetic waves are different than mechanical waves?",
+          "how do i download photos from my icloud to my laptop?"
+        ]
+      }
+    },
+    "eval_duplicate_positives": 0
+  },
+  "config": {
+    "region": "memory",
+    "pair_columns": [
+      "query",
+      "passage"
+    ],
+    "extra_sources": [
+      {
+        "shards": [
+          "/mnt/fleet-datasets/csd/region/compress/all-nli/pair/train-00000-of-00001.parquet"
+        ],
+        "columns": [
+          "anchor",
+          "positive"
+        ],
+        "limit": 0
+      },
+      {
+        "shards": [
+          "/mnt/fleet-datasets/csd/region/retrieve/natural-questions/pair/train-00000-of-00001.parquet"
+        ],
+        "columns": [
+          "query",
+          "answer"
+        ],
+        "limit": 0
+      },
+      {
+        "shards": [
+          "/mnt/fleet-datasets/csd/region/retrieve/gooaq/pair/train-00000-of-00002.parquet",
+          "/mnt/fleet-datasets/csd/region/retrieve/gooaq/pair/train-00001-of-00002.parquet"
+        ],
+        "columns": [
+          "question",
+          "answer"
+        ],
+        "limit": 400000
+      }
+    ],
+    "steps": 4000,
+    "batch_size": 256,
+    "lr": 0.0003,
+    "warmup_steps": 266,
+    "grad_clip": 1.0,
+    "checkpoint_every": 200,
+    "max_len": 96,
+    "seed": 0,
+    "bf16": true,
+    "device": "auto",
+    "eval_every": 666,
+    "holdout_pairs": 512,
+    "tokenizer_path": "/mnt/fleet-datasets/tritter/gpt2_tokenizer.json",
+    "out_dir": "/akula-data/session-backup-staging/w4-probes/w4-probe-batch256",
+    "graded_shards": [
+      "/mnt/fleet-datasets/csd/region/compress/stsb/data/validation-00000-of-00001.parquet"
+    ],
+    "graded_columns": [
+      "sentence1",
+      "sentence2",
+      "score"
+    ],
+    "graded_name": "stsb-validation",
+    "allow_unfingerprinted_resume": false,
+    "token_loss_weight": 0.1,
+    "decorr_weight": 0.1,
+    "token_loss_mask_prob": 0.15,
+    "init_embedding_from": null,
+    "encoder": {
+      "vocab_size": 50257,
+      "dim": 256,
+      "depth": 4,
+      "n_heads": 4,
+      "max_len": 96,
+      "out_dim": null
+    },
+    "trainer_defaults": {
+      "steps": 4000,
+      "batch_size": 256,
+      "lr": 0.0003,
+      "bf16": true,
+      "max_len": 96
+    }
+  },
+  "parameters": 16021248,
+  "checkpoint": "/akula-data/session-backup-staging/w4-probes/w4-probe-batch256/memory-checkpoints/d96be64b/final.pt",
+  "checkpoint_sha256": "47db3389e1f9fc9b00c6ffe627079d5f7f4621c98bd8156fb61bc8426862b635",
+  "device": "cuda",
+  "elapsed_s": 612.0,
+  "precision": {
+    "autocast": "bf16",
+    "requested_bf16": true,
+    "master_weights": "fp32",
+    "logits": "fp32 (forced in info_nce)",
+    "eval": "fp32"
+  },
+  "tokenisation": {
+    "mode": "pre-tokenised ragged corpus cache",
+    "prepare_s": 11.74,
+    "cache_dir": "/akula-data/session-backup-staging/w4-probes/w4-probe-batch256/token-cache",
+    "train_tokens": 44605084,
+    "ragged_ratio": 0.2967
+  },
+  "resumed": false,
+  "resumed_from_step": 0,
+  "history": [
+    {
+      "step": 0.0,
+      "lr": 0.0,
+      "loss": 7.359222412109375,
+      "in_batch_acc": 0.00390625,
+      "chance": 0.00390625,
+      "emb_std": 0.012290053069591522,
+      "token_loss": 10.855082511901855,
+      "token_loss_n_masked": 2228,
+      "decorr_loss": 5.101344108581543,
+      "held_recall@1": 0.017578125,
+      "held_recall@10": 0.0234375,
+      "held_spearman": 0.0846139052938172
+    },
+    {
+      "step": 666.0,
+      "lr": 0.00029158547657157953,
+      "loss": 4.35662841796875,
+      "in_batch_acc": 0.0625,
+      "chance": 0.00390625,
+      "emb_std": 0.020981069654226303,
+      "token_loss": 7.460718631744385,
+      "token_loss_n_masked": 2264,
+      "decorr_loss": 0.5118687152862549,
+      "held_recall@1": 0.048828125,
+      "held_recall@10": 0.26953125,
+      "held_spearman": 0.336441220799942
+    },
+    {
+      "step": 1332.0,
+      "lr": 0.00024360801923405985,
+      "loss": 3.2307052612304688,
+      "in_batch_acc": 0.22265625,
+      "chance": 0.00390625,
+      "emb_std": 0.030294638127088547,
+      "token_loss": 7.296099662780762,
+      "token_loss_n_masked": 2153,
+      "decorr_loss": 0.35936081409454346,
+      "held_recall@1": 0.16796875,
+      "held_recall@10": 0.55859375,
+      "held_spearman": 0.48878132572878646
+    },
+    {
+      "step": 1998.0,
+      "lr": 0.00016700068378004885,
+      "loss": 2.0867385864257812,
+      "in_batch_acc": 0.45703125,
+      "chance": 0.00390625,
+      "emb_std": 0.043880630284547806,
+      "token_loss": 7.086334228515625,
+      "token_loss_n_masked": 2334,
+      "decorr_loss": 0.4367787837982178,
+      "held_recall@1": 0.3828125,
+      "held_recall@10": 0.771484375,
+      "held_spearman": 0.5981254839123832
+    },
+    {
+      "step": 2664.0,
+      "lr": 8.519371363124974e-05,
+      "loss": 1.546543836593628,
+      "in_batch_acc": 0.55859375,
+      "chance": 0.00390625,
+      "emb_std": 0.048923954367637634,
+      "token_loss": 7.091091156005859,
+      "token_loss_n_masked": 2219,
+      "decorr_loss": 0.3187403082847595,
+      "held_recall@1": 0.509765625,
+      "held_recall@10": 0.85546875,
+      "held_spearman": 0.6587121328072008
+    },
+    {
+      "step": 3330.0,
+      "lr": 2.3207653006029736e-05,
+      "loss": 1.2375868558883667,
+      "in_batch_acc": 0.69140625,
+      "chance": 0.00390625,
+      "emb_std": 0.052184443920850754,
+      "token_loss": 6.767168998718262,
+      "token_loss_n_masked": 2138,
+      "decorr_loss": 0.3386402726173401,
+      "held_recall@1": 0.587890625,
+      "held_recall@10": 0.888671875,
+      "held_spearman": 0.6775162215489573
+    },
+    {
+      "step": 3996.0,
+      "lr": 8.494385258683845e-10,
+      "loss": 1.2825937271118164,
+      "in_batch_acc": 0.67578125,
+      "chance": 0.00390625,
+      "emb_std": 0.051837582141160965,
+      "token_loss": 7.127868175506592,
+      "token_loss_n_masked": 2091,
+      "decorr_loss": 0.2879509925842285,
+      "held_recall@1": 0.599609375,
+      "held_recall@10": 0.892578125,
+      "held_spearman": 0.677499436624685
+    },
+    {
+      "step": 3999.0,
+      "lr": 5.308995484898382e-11,
+      "loss": 1.1368486881256104,
+      "in_batch_acc": 0.65625,
+      "chance": 0.00390625,
+      "emb_std": 0.05188324302434921,
+      "token_loss": 7.074462890625,
+      "token_loss_n_masked": 2290,
+      "decorr_loss": 0.29710984230041504,
+      "held_recall@1": 0.599609375,
+      "held_recall@10": 0.892578125,
+      "held_spearman": 0.6774994372293225
+    }
+  ],
+  "untrained_baseline": {
+    "n_pairs": 512.0,
+    "recall@1": 0.017578125,
+    "recall@10": 0.0234375,
+    "mrr": 0.0254618301987648,
+    "emb_std": 0.01197535265237093
+  },
+  "held_out": {
+    "n_pairs": 512.0,
+    "recall@1": 0.599609375,
+    "recall@10": 0.892578125,
+    "mrr": 0.7008365988731384,
+    "emb_std": 0.05186796933412552
+  },
+  "untrained_graded_baseline": {
+    "n_pairs": 1498.0,
+    "spearman": 0.0846139052938172,
+    "emb_std": 0.012956127524375916,
+    "cos_mean": 0.9829236268997192,
+    "cos_std": 0.020570846274495125
+  },
+  "graded_held_out": {
+    "n_pairs": 1498.0,
+    "spearman": 0.6774994372293225,
+    "emb_std": 0.05014249309897423,
+    "cos_mean": 0.704585611820221,
+    "cos_std": 0.19125176966190338
+  },
+  "untrained_baseline_seed": 0,
+  "chance": {
+    "recall@1": 0.001953125,
+    "recall@10": 0.01953125,
+    "spearman": 0.0
+  },
+  "beats_untrained": {
+    "recall@1": true,
+    "recall@10": true,
+    "spearman": true
+  },
+  "capability_per_param": 0.03742588436306585,
+  "token_aware": {
+    "enabled": true,
+    "token_loss_weight": 0.1,
+    "decorr_weight": 0.1,
+    "token_loss_mask_prob": 0.15,
+    "token_loss_kind": "masked_token_prediction",
+    "final_block_rank": {
+      "pooled_pr_rank": 28.065340040966333,
+      "pooled_entropy_rank": 110.27615356445312,
+      "token_global_pr_rank": 44.52293447646654,
+      "token_global_entropy_rank": 151.17013549804688,
+      "n_tokens": 6714.0
+    }
+  },
+  "shared_embedding_table": {
+    "source": null,
+    "applied": false
+  },
+  "code_revision": {
+    "git_sha": "ef3e18049044f35a5fe4cf63b56fc1d800994acc",
+    "dirty": false,
+    "branch": "feat/vl-jepa"
+  },
+  "receipt_path": "/akula-data/session-backup-staging/w4-probes/w4-probe-batch256/memory-20260903T170934Z.json",
+  "retrieval": {
+    "eval_split": "dev",
+    "full_pool": {
+      "task": {
+        "queries": 500.0,
+        "pool_size": 57638.0,
+        "relevant_per_query": 2.472
+      },
+      "trained": {
+        "mrr": 0.0134408138692379,
+        "recall@1": 0.004000000189989805,
+        "recall@10": 0.030000001192092896,
+        "recall@100": 0.10400000214576721
+      },
+      "untrained": {
+        "mrr": 0.0004963813116773963,
+        "recall@1": 0.0,
+        "recall@10": 0.0,
+        "recall@100": 0.006000000052154064
+      },
+      "lexical_bm25": {
+        "mrr": 0.30793944001197815,
+        "recall@1": 0.23999999463558197,
+        "recall@10": 0.4399999976158142,
+        "recall@100": 0.6620000004768372,
+        "index_s": 2.6
+      }
+    },
+    "licence": "BeIR/fiqa + BeIR/fiqa-qrels, both cc-by-sa-4.0."
+  },
+  "gates": {
+    "a_beats_both_parents": {
+      "gate": "a_beats_both_parents",
+      "memory_recall@1": 0.599609375,
+      "compress_recall@1": 0.775390625,
+      "retrieve_recall@1": 0.755859375,
+      "recall_threshold": 0.775390625,
+      "memory_graded_spearman": 0.6774994372293225,
+      "compress_graded_spearman": 0.7588195158826483,
+      "passed_recall": false,
+      "passed_graded": false,
+      "passed": false
+    },
+    "b_full_pool_thresholds": {
+      "gate": "b_full_pool_thresholds",
+      "recall@10": 0.030000001192092896,
+      "recall@10_floor": 0.2,
+      "mrr": 0.0134408138692379,
+      "mrr_floor": 0.1,
+      "passed": false
+    },
+    "c_beats_bm25": {
+      "gate": "c_beats_bm25",
+      "trained_recall@10": 0.030000001192092896,
+      "bm25_recall@10": 0.4399999976158142,
+      "passed": false
+    },
+    "d_beats_random_init": {
+      "gate": "d_beats_random_init",
+      "trained_recall@10": 0.030000001192092896,
+      "untrained_recall@10": 0.0,
+      "passed": true
+    },
+    "e_retrain_gate": {
+      "gate": "e_retrain_gate",
+      "pr_rank_clause": {
+        "token_global_pr_rank": 44.52293447646654,
+        "pooled_pr_rank": 28.065340040966333,
+        "ratio": 1.586402816123996,
+        "required_ratio": 2.0,
+        "passed": false,
+        "note": "Measured NOT DISCRIMINATING at 50 steps on this harness: the W4 control arm (token_loss_weight=0.0, decorr_weight=0.0 -- the token-aware terms fully OFF) already clears this clause's ratio>=2.0 threshold on its own, at 2.0191x, because pooled_pr_rank sits barely above its floor while token_global_pr_rank starts measurably higher for reasons unrelated to L_token/L_decorr. A `passed: True` here does not by itself distinguish 'the token-aware terms worked' from 'the terms were never turned on' at this step count. See docs/design/evidence/w4-control-arm-2026-09-03/ for the three-arm evidence and full write-up. The threshold is unchanged; whether this clause discriminates at production scale (the ratified plan's step count, not this 50-step smoke run) is not measured here."
+      },
+      "receipt_regression_clause": {
+        "recall_regression_vs_compress": 0.17578125,
+        "recall_regression_vs_retrieve": 0.15625,
+        "graded_regression_vs_compress": 0.0813200786533258,
+        "worst_regression": 0.17578125,
+        "margin": 0.01,
+        "passed": false,
+        "banking77_probe": "not measured; out of scope for row W4's implementation"
+      },
+      "passed": false
+    },
+    "passed": false
+  }
+}

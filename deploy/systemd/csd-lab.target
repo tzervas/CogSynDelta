@@ -1,0 +1,7 @@
+[Unit]
+Description=CSD lab stack (webapp + gateway + autodev)
+Wants=csd-lab-console.service csd-openai-gateway.service csd-autodev-loop.service
+After=csd-lab-console.service csd-openai-gateway.service csd-autodev-loop.service
+
+[Install]
+WantedBy=default.target

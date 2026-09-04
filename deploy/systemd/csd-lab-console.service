@@ -1,0 +1,18 @@
+[Unit]
+Description=CSD lab webapp (code.vectorweight.com → :9118)
+After=default.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kang/code/personal/tzervas/CogSynDelta
+Environment=SECRET_VAULT=/akula-data/cabal/csd-vault
+Environment=SOPS_AGE_KEY_FILE=/akula-data/cabal/csd-vault/age.txt
+# Keys only via secret exec against the CSD vault (not workstation ~/.secrets).
+ExecStart=/home/kang/.local/bin/secret exec LOCALAI_API_KEY=gpu/localai-api-key -- /usr/bin/python3 /home/kang/code/personal/tzervas/CogSynDelta/scripts/csd-lab-console --http 9118
+Restart=always
+RestartSec=3
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

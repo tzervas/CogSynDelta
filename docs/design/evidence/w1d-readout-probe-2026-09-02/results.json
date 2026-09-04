@@ -1,0 +1,624 @@
+{
+  "generated_utc": "2026-09-03T03:15:23Z",
+  "regions": {
+    "code": {
+      "checkpoint": "/akula-data/csd/receipts/code-checkpoints/final.pt",
+      "checkpoint_sha256": "dac38d099072481e3f958b33cbca3e965c36b3ca210cc261654b29819f380b03",
+      "checkpoint_step": 8000,
+      "dim": 256,
+      "n_heads": 4,
+      "max_len": 96,
+      "n_holdout": 512,
+      "n_train_pool": 4096,
+      "metric": "recall@1 (region receipt metric), percentage points",
+      "arms": {
+        "a_final_tokens": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.974609375,
+            "recall@10": 0.98828125,
+            "mrr": 0.9786058664321899,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.966796875,
+            "recall@10": 0.98046875,
+            "mrr": 0.9703609943389893,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.05772349238395691,
+            "in_batch_acc": 0.9609375,
+            "chance": 0.00390625,
+            "emb_std": 0.06173756718635559
+          }
+        },
+        "b_pool_broadcast": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.974609375,
+            "recall@10": 0.98828125,
+            "mrr": 0.9786058664321899,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.966796875,
+            "recall@10": 0.982421875,
+            "mrr": 0.9711839556694031,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.06967608630657196,
+            "in_batch_acc": 0.9609375,
+            "chance": 0.00390625,
+            "emb_std": 0.06104562059044838
+          }
+        },
+        "c_penultimate_tokens": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.8984375,
+            "recall@10": 0.978515625,
+            "mrr": 0.9297005534172058,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.955078125,
+            "recall@10": 0.9765625,
+            "mrr": 0.9634702801704407,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.0729110985994339,
+            "in_batch_acc": 0.95703125,
+            "chance": 0.00390625,
+            "emb_std": 0.060964785516262054
+          }
+        },
+        "a_control_seed": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.97265625,
+            "recall@10": 0.990234375,
+            "mrr": 0.9781423211097717,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.96484375,
+            "recall@10": 0.9765625,
+            "mrr": 0.9685440063476562,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.05779808759689331,
+            "in_batch_acc": 0.9609375,
+            "chance": 0.00390625,
+            "emb_std": 0.061661094427108765
+          }
+        }
+      },
+      "arm_a_pct": 96.6796875,
+      "arm_b_pct": 96.6796875,
+      "arm_c_pct": 95.5078125,
+      "delta_a_minus_b_points": 0.0,
+      "rule_threshold_points": 2.0,
+      "verdict": "CONFIRMED",
+      "verify_by_failing": {
+        "main_seed": 0,
+        "control_seed": 1,
+        "main_pct": 96.6796875,
+        "control_pct": 96.484375,
+        "delta": 0.1953125,
+        "one_sided_rule_verdict_if_applied_literally": "CONFIRMED",
+        "symmetric_within_2pt": true,
+        "instrument_verdict": "CONFIRMED (gate can fail correctly)"
+      },
+      "penultimate_arm": {
+        "recall_at_1_pct": 95.5078125,
+        "delta_vs_final_block_points": -1.171875,
+        "interpretation": "penultimate-block read-out within noise of final-block -- L_token could be attached at either block"
+      },
+      "anomaly_flags": [],
+      "rank_on_probe_input_activations": {
+        "final_block": {
+          "pr_rank": 28.091115489593022,
+          "entropy_rank": 138.874267578125,
+          "n_tokens": 26757
+        },
+        "penultimate_block": {
+          "pr_rank": 7.372816016324239,
+          "entropy_rank": 101.46788787841797,
+          "n_tokens": 26757
+        },
+        "pooled": {
+          "pr_rank": 42.633552623237634,
+          "entropy_rank": 114.9809799194336
+        }
+      },
+      "within_between_token_variance": {
+        "final_block": {
+          "within_item_mean_sq_dist": 111.57300001196563,
+          "between_item_mean_sq_dist": 124.81416320800781,
+          "within_over_between": 0.8939129754531523,
+          "pct_of_total_that_is_within": 47.199263484599534,
+          "n_items": 512
+        },
+        "penultimate_block": {
+          "within_item_mean_sq_dist": 167.76194167509675,
+          "between_item_mean_sq_dist": 115.4138412475586,
+          "within_over_between": 1.4535686522663547,
+          "pct_of_total_that_is_within": 59.24303976266151,
+          "n_items": 512
+        }
+      },
+      "wall_time_s": 47.35280466079712
+    },
+    "compress": {
+      "checkpoint": "/akula-data/csd/receipts/compress-checkpoints/final.pt",
+      "checkpoint_sha256": "c71cb3cd4048dd2b723e511af8b132f06d7a4d69c8b775a5d34e1c18932b7ad6",
+      "checkpoint_step": 8000,
+      "dim": 256,
+      "n_heads": 4,
+      "max_len": 96,
+      "n_holdout": 512,
+      "n_train_pool": 4096,
+      "metric": "recall@1 (region receipt metric), percentage points",
+      "arms": {
+        "a_final_tokens": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.677734375,
+            "recall@10": 0.884765625,
+            "mrr": 0.7459454536437988,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.626953125,
+            "recall@10": 0.8515625,
+            "mrr": 0.7051637172698975,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.19764545559883118,
+            "in_batch_acc": 0.9375,
+            "chance": 0.00390625,
+            "emb_std": 0.061809711158275604
+          }
+        },
+        "b_pool_broadcast": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.677734375,
+            "recall@10": 0.884765625,
+            "mrr": 0.7459471821784973,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.64453125,
+            "recall@10": 0.876953125,
+            "mrr": 0.7224956750869751,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.4039309620857239,
+            "in_batch_acc": 0.87109375,
+            "chance": 0.00390625,
+            "emb_std": 0.0615750327706337
+          }
+        },
+        "c_penultimate_tokens": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.447265625,
+            "recall@10": 0.744140625,
+            "mrr": 0.547623336315155,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.587890625,
+            "recall@10": 0.84375,
+            "mrr": 0.6734465956687927,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.4848770499229431,
+            "in_batch_acc": 0.8515625,
+            "chance": 0.00390625,
+            "emb_std": 0.06072840839624405
+          }
+        },
+        "a_control_seed": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.646484375,
+            "recall@10": 0.890625,
+            "mrr": 0.7271701693534851,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.63671875,
+            "recall@10": 0.83203125,
+            "mrr": 0.7095434665679932,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.18511158227920532,
+            "in_batch_acc": 0.93359375,
+            "chance": 0.00390625,
+            "emb_std": 0.061947353184223175
+          }
+        }
+      },
+      "arm_a_pct": 62.6953125,
+      "arm_b_pct": 64.453125,
+      "arm_c_pct": 58.7890625,
+      "delta_a_minus_b_points": -1.7578125,
+      "rule_threshold_points": 2.0,
+      "verdict": "CONFIRMED",
+      "verify_by_failing": {
+        "main_seed": 0,
+        "control_seed": 1,
+        "main_pct": 62.6953125,
+        "control_pct": 63.671875,
+        "delta": -0.9765625,
+        "one_sided_rule_verdict_if_applied_literally": "CONFIRMED",
+        "symmetric_within_2pt": true,
+        "instrument_verdict": "CONFIRMED (gate can fail correctly)"
+      },
+      "penultimate_arm": {
+        "recall_at_1_pct": 58.7890625,
+        "delta_vs_final_block_points": -3.90625,
+        "interpretation": "penultimate-block read-out MEANINGFULLY WORSE than final-block -- keep L_token at the final block (ADOPTED option), penultimate fallback not indicated"
+      },
+      "anomaly_flags": [],
+      "rank_on_probe_input_activations": {
+        "final_block": {
+          "pr_rank": 35.57182189903689,
+          "entropy_rank": 147.4920654296875,
+          "n_tokens": 9636
+        },
+        "penultimate_block": {
+          "pr_rank": 13.908783262038131,
+          "entropy_rank": 102.85069274902344,
+          "n_tokens": 9636
+        },
+        "pooled": {
+          "pr_rank": 45.33143748971919,
+          "entropy_rank": 126.8619613647461
+        }
+      },
+      "within_between_token_variance": {
+        "final_block": {
+          "within_item_mean_sq_dist": 194.28713010251522,
+          "between_item_mean_sq_dist": 54.23893737792969,
+          "within_over_between": 3.582060038321702,
+          "pct_of_total_that_is_within": 78.1757551922808,
+          "n_items": 512
+        },
+        "penultimate_block": {
+          "within_item_mean_sq_dist": 150.08280459791422,
+          "between_item_mean_sq_dist": 33.22138214111328,
+          "within_over_between": 4.51765685004955,
+          "pct_of_total_that_is_within": 81.87636478352184,
+          "n_items": 512
+        }
+      },
+      "wall_time_s": 22.38684058189392
+    },
+    "retrieve": {
+      "checkpoint": "/akula-data/csd/receipts/retrieve-checkpoints/final.pt",
+      "checkpoint_sha256": "24059d2ad2e2806be4128195efedd72a9583f09c43a0f2d59693eb9fd401dd46",
+      "checkpoint_step": 8000,
+      "dim": 256,
+      "n_heads": 4,
+      "max_len": 96,
+      "n_holdout": 512,
+      "n_train_pool": 4096,
+      "metric": "recall@1 (region receipt metric), percentage points",
+      "arms": {
+        "a_final_tokens": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.666015625,
+            "recall@10": 0.935546875,
+            "mrr": 0.7604419589042664,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.61328125,
+            "recall@10": 0.90625,
+            "mrr": 0.7213113903999329,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.20539312064647675,
+            "in_batch_acc": 0.9140625,
+            "chance": 0.00390625,
+            "emb_std": 0.06201251596212387
+          }
+        },
+        "b_pool_broadcast": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.666015625,
+            "recall@10": 0.935546875,
+            "mrr": 0.7604458332061768,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.673828125,
+            "recall@10": 0.935546875,
+            "mrr": 0.7713053226470947,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.42443138360977173,
+            "in_batch_acc": 0.84765625,
+            "chance": 0.00390625,
+            "emb_std": 0.0617319718003273
+          }
+        },
+        "c_penultimate_tokens": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.423828125,
+            "recall@10": 0.806640625,
+            "mrr": 0.5476526021957397,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.58984375,
+            "recall@10": 0.900390625,
+            "mrr": 0.6976318359375,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.4095028042793274,
+            "in_batch_acc": 0.87890625,
+            "chance": 0.00390625,
+            "emb_std": 0.06052509322762489
+          }
+        },
+        "a_control_seed": {
+          "n_params": 262912,
+          "untrained": {
+            "recall@1": 0.681640625,
+            "recall@10": 0.94140625,
+            "mrr": 0.7705004811286926,
+            "n_items": 512
+          },
+          "trained": {
+            "recall@1": 0.638671875,
+            "recall@10": 0.8984375,
+            "mrr": 0.7306326031684875,
+            "n_items": 512
+          },
+          "final_train_stats": {
+            "loss": 0.2083260864019394,
+            "in_batch_acc": 0.91015625,
+            "chance": 0.00390625,
+            "emb_std": 0.062034688889980316
+          }
+        }
+      },
+      "arm_a_pct": 61.328125,
+      "arm_b_pct": 67.3828125,
+      "arm_c_pct": 58.984375,
+      "delta_a_minus_b_points": -6.0546875,
+      "rule_threshold_points": 2.0,
+      "verdict": "CONFIRMED",
+      "verify_by_failing": {
+        "main_seed": 0,
+        "control_seed": 1,
+        "main_pct": 61.328125,
+        "control_pct": 63.8671875,
+        "delta": -2.5390625,
+        "one_sided_rule_verdict_if_applied_literally": "CONFIRMED",
+        "symmetric_within_2pt": false,
+        "instrument_verdict": "GATE DID NOT SELF-CONFIRM -- seed-to-seed spread >= 2pp, instrument too noisy for a 2pp threshold"
+      },
+      "penultimate_arm": {
+        "recall_at_1_pct": 58.984375,
+        "delta_vs_final_block_points": -2.34375,
+        "interpretation": "penultimate-block read-out MEANINGFULLY WORSE than final-block -- keep L_token at the final block (ADOPTED option), penultimate fallback not indicated"
+      },
+      "anomaly_flags": [
+        "arm(b) beat arm(a) by 6.05pp -- attending over a broadcast pool outperformed attending over real tokens by more than the decision threshold; this is not predicted by the mechanism and should be treated as a possible read-out optimisation artefact on arm(a), not evidence tokens carry negative information."
+      ],
+      "rank_on_probe_input_activations": {
+        "final_block": {
+          "pr_rank": 40.65025019441494,
+          "entropy_rank": 142.85983276367188,
+          "n_tokens": 5114
+        },
+        "penultimate_block": {
+          "pr_rank": 19.55826993047983,
+          "entropy_rank": 98.39014434814453,
+          "n_tokens": 5114
+        },
+        "pooled": {
+          "pr_rank": 40.708016875208806,
+          "entropy_rank": 117.72013854980469
+        }
+      },
+      "within_between_token_variance": {
+        "final_block": {
+          "within_item_mean_sq_dist": 136.05745626986027,
+          "between_item_mean_sq_dist": 113.87004089355469,
+          "within_over_between": 1.1948485765193173,
+          "pct_of_total_that_is_within": 54.438770369031936,
+          "n_items": 512
+        },
+        "penultimate_block": {
+          "within_item_mean_sq_dist": 60.97204175963998,
+          "between_item_mean_sq_dist": 34.68091583251953,
+          "within_over_between": 1.7580862643329573,
+          "pct_of_total_that_is_within": 63.74297595648808,
+          "n_items": 512
+        }
+      },
+      "wall_time_s": 38.412803173065186
+    },
+    "vl_latent": {
+      "checkpoint": "/akula-data/csd/receipts/vl_latent-checkpoints/step-8000.pt",
+      "checkpoint_sha256": "6c5412bf8cde19f472c683dbe885c453f46c1ba213afdb639c7e2c5b1612a930",
+      "checkpoint_step": 8000,
+      "dim": 384,
+      "n_heads": 6,
+      "n_patches": 64,
+      "n_classes": 200,
+      "n_holdout": 512,
+      "n_train_pool": 4096,
+      "metric": "top1 (region receipt metric: linear-probe classification), percentage points",
+      "arms": {
+        "a_final_tokens": {
+          "n_params": 667976,
+          "untrained": {
+            "top1": 0.01171875,
+            "top5": 0.041015625,
+            "n_items": 512
+          },
+          "trained": {
+            "top1": 0.0546875,
+            "top5": 0.1796875,
+            "n_items": 512
+          },
+          "final_train_loss": 0.39515846967697144
+        },
+        "b_pool_broadcast": {
+          "n_params": 667976,
+          "untrained": {
+            "top1": 0.01171875,
+            "top5": 0.041015625,
+            "n_items": 512
+          },
+          "trained": {
+            "top1": 0.083984375,
+            "top5": 0.248046875,
+            "n_items": 512
+          },
+          "final_train_loss": 2.793238878250122
+        },
+        "c_penultimate_tokens": {
+          "n_params": 667976,
+          "untrained": {
+            "top1": 0.0,
+            "top5": 0.017578125,
+            "n_items": 512
+          },
+          "trained": {
+            "top1": 0.068359375,
+            "top5": 0.197265625,
+            "n_items": 512
+          },
+          "final_train_loss": 0.4508737027645111
+        },
+        "a_control_seed": {
+          "n_params": 667976,
+          "untrained": {
+            "top1": 0.001953125,
+            "top5": 0.02734375,
+            "n_items": 512
+          },
+          "trained": {
+            "top1": 0.06640625,
+            "top5": 0.21484375,
+            "n_items": 512
+          },
+          "final_train_loss": 0.40466785430908203
+        }
+      },
+      "arm_a_pct": 5.46875,
+      "arm_b_pct": 8.3984375,
+      "arm_c_pct": 6.8359375,
+      "delta_a_minus_b_points": -2.9296875,
+      "rule_threshold_points": 2.0,
+      "verdict": "CONFIRMED",
+      "verify_by_failing": {
+        "main_seed": 0,
+        "control_seed": 1,
+        "main_pct": 5.46875,
+        "control_pct": 6.640625,
+        "delta": -1.171875,
+        "one_sided_rule_verdict_if_applied_literally": "CONFIRMED",
+        "symmetric_within_2pt": true,
+        "instrument_verdict": "CONFIRMED (gate can fail correctly)"
+      },
+      "penultimate_arm": {
+        "top1_pct": 6.8359375,
+        "delta_vs_final_block_points": 1.3671875
+      },
+      "anomaly_flags": [
+        "arm(b) beat arm(a) by 2.93pp -- see the text-region note; treated as a possible optimisation artefact, not evidence against tokens."
+      ],
+      "rank_on_probe_input_activations": {
+        "final_block": {
+          "pr_rank": 25.419756513999236,
+          "entropy_rank": 242.5513153076172,
+          "n_tokens": 32768
+        },
+        "penultimate_block": {
+          "pr_rank": 20.950677002784097,
+          "entropy_rank": 234.9818878173828,
+          "n_tokens": 32768
+        },
+        "pooled": {
+          "pr_rank": 23.208084999013824,
+          "entropy_rank": 136.45816040039062
+        }
+      },
+      "within_between_token_variance": {
+        "final_block": {
+          "within_item_mean_sq_dist": 291.3569841682911,
+          "between_item_mean_sq_dist": 59.06853103637695,
+          "within_over_between": 4.932524629550392,
+          "pct_of_total_that_is_within": 83.14376993870505,
+          "n_items": 512
+        },
+        "penultimate_block": {
+          "within_item_mean_sq_dist": 285.191124945879,
+          "between_item_mean_sq_dist": 54.60713195800781,
+          "within_over_between": 5.222598490709736,
+          "pct_of_total_that_is_within": 83.9295432367525,
+          "n_items": 512
+        }
+      },
+      "wall_time_s": 8.023365020751953
+    }
+  },
+  "verified_notes": [
+    "tokenizer loaded from /mnt/fleet-datasets/tritter/gpt2_tokenizer.json, vocab_size=50257",
+    "code: train_items are train_pairs[:4096] from build_splits' own post-holdout, contamination-screened list -- disjoint from the 512-item holdout BY CONSTRUCTION (build_splits takes holdout = all_pairs[:holdout_pairs], train_pairs = all_pairs[holdout_pairs:]).",
+    "code: manual forward capture (with mid-loop penultimate hook) matches model(ids,mask) to max_abs=0.00e+00 (8-item check).",
+    "compress: train_items are train_pairs[:4096] from build_splits' own post-holdout, contamination-screened list -- disjoint from the 512-item holdout BY CONSTRUCTION (build_splits takes holdout = all_pairs[:holdout_pairs], train_pairs = all_pairs[holdout_pairs:]).",
+    "compress: manual forward capture (with mid-loop penultimate hook) matches model(ids,mask) to max_abs=0.00e+00 (8-item check).",
+    "retrieve: train_items are train_pairs[:4096] from build_splits' own post-holdout, contamination-screened list -- disjoint from the 512-item holdout BY CONSTRUCTION (build_splits takes holdout = all_pairs[:holdout_pairs], train_pairs = all_pairs[holdout_pairs:]).",
+    "retrieve: manual forward capture (with mid-loop penultimate hook) matches model(ids,mask) to max_abs=0.00e+00 (8-item check).",
+    "vl_latent: eval images are a seeded, class-stratified 512-sample of the valid split (200 of 200 classes present), train images a seeded, class-stratified 4096-sample of the train split (200 of 200 classes present) -- disjoint by construction (different source file, valid vs train), not by slicing. No on-disk decode cache was used (see deviation_notes for why: the full-split cache route does not fit this host's /tmp partition).",
+    "vl_latent: manual capture (with mid-loop penultimate hook) matches IJEPA.encode() to max_abs=0.00e+00 (8-item check)."
+  ],
+  "inferred_notes": [],
+  "unreliable_notes": [],
+  "deviation_notes": [
+    "Read-out architecture: single-query multi-head cross-attention (query is a learned [1,1,D] parameter; K/V linear from the input surface; SDPA; output LayerNorm), n_heads = the region's own encoder n_heads. Spec says 'small cross-attention read-out' and leaves the exact shape open; this is the simplest thing matching that description, and it is architecturally identical across arms (a)/(b)/(c) by construction, so 'identical params' is satisfied trivially rather than by matching two different designs' parameter counts after the fact.",
+    "Training budget (600 steps, batch 256 text / 128 vl, AdamW lr 2e-3 with 60-step linear warmup then constant, weight decay 1e-4, grad-clip 1.0) is a from-scratch choice sized to 'small read-out over cached frozen activations, ~1h for 3 arms' (\u00a74.1 cost table) on a lightly-loaded 3090 Ti; it is NOT taken from any existing receipt because no prior receipt trains a read-out of this shape. In-batch loss/acc at the final step is logged per arm so a reader can judge convergence directly rather than trusting the step count.",
+    "Penultimate-block activations are the raw residual-stream output after blocks[:-2] finish (i.e. entering the last block), WITHOUT the model's final LayerNorm applied -- that norm's affine params were fit for the post-final-block distribution, not an earlier one, so applying it to an earlier block would not be a neutral choice. The read-out's own input projection can absorb the scale difference.",
+    "'DEV half only' (\u00a72.7.8) has no literal referent here -- \u00a72.7.8 defines dev/sealed for the 5,120-item CROSS-FACULTY compose eval used by W5 onward, which does not exist yet and is not what W1d measures. Applied by principle instead: the read-out is fit ONLY on a slice of build_splits' train_pairs (the next 4,096 pairs after the 512-item holdout, disjoint from it by construction), and the 512-item holdout -- already the production decision set W1 itself used -- is read exactly once, for the arm(a)-vs-arm(b) evaluation that produces the verdict.",
+    "vl_latent's 'region's own task' is linear-probe top1/top5 classification (its receipt: 'objective: I-JEPA latent prediction; gated on linear probe, never on loss'), not retrieval. The read-out is therefore trained end-to-end with a joint linear classification head under cross-entropy on tiny-imagenet labels ('attentive probing'), which is the natural token-aware generalisation of the receipt's own linear probe over the pooled vector -- arm (b)'s broadcast-pool input makes this collapse back to exactly a linear probe over pool(), so the comparison is apples to apples with the production metric's own construction.",
+    "vl_latent eval/train images are NOT the first N rows of their parquet in file order (unlike W1's own vl capture, and unlike this same script's text regions, where build_splits already shuffles). tiny-imagenet's parquets are class-grouped (500 contiguous rows/class train, 50/class valid, sorted ascending by label); the first 512 valid rows span 11 of 200 classes and the first 4096 train rows span 9 -- confirmed by a direct parquet read before writing this fix, and unusable for a classification probe (any file-order prefix short of the whole split caps the read-out's ceiling on classes never seen, identically for every arm, which would understate everyone's accuracy without informing the a-vs-b comparison). Fix: stratified_decode() reads only the label column first (cheap), then decodes a seeded (VL_SHUFFLE_SEED), per-class-balanced sample of exactly N_HOLDOUT / N_TRAIN_POOL rows directly -- no on-disk cache of the full split, which does not fit this host's /tmp (~760MB free; the full 100k-row train split alone is 1.2GB uint8 -- hit mid-run and is why this function exists rather than a permute-then-slice of _decode_split's own full-split output). Rank and variance stats are computed on this stratified eval set, so they are not bit-identical to W1's README numbers for vl_latent specifically (text regions' rank numbers ARE bit-identical to W1, since build_splits' holdout order is untouched there -- confirmed in this run's own results against the W1 README table)."
+  ],
+  "wall_time_s_total": 116.51230192184448,
+  "config": {
+    "readout_steps": 600,
+    "readout_batch_text": 256,
+    "readout_batch_vl": 128,
+    "readout_lr": 0.002,
+    "readout_warmup": 60,
+    "seed_main": 0,
+    "seed_control": 1,
+    "data_order_seed": 12345,
+    "rule_threshold_points": 2.0,
+    "n_holdout": 512,
+    "n_train_pool": 4096
+  }
+}

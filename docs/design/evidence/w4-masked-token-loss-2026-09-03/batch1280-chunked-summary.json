@@ -1,0 +1,51 @@
+{
+  "probe": "w4-masked-token-loss VRAM re-probe, batch=1280, CHUNKED",
+  "steps": 20,
+  "batch_size": 1280,
+  "max_len": 96,
+  "token_loss_weight": 0.1,
+  "decorr_weight": 0.1,
+  "token_loss_chunk": 2048,
+  "encoder_config": {
+    "vocab_size": 50257,
+    "dim": 256,
+    "depth": 4,
+    "n_heads": 4,
+    "max_len": 96,
+    "out_dim": null
+  },
+  "fit": true,
+  "wall_elapsed_s": 33.9,
+  "training_loop_elapsed_s": 7.6,
+  "mean_step_time_ms": 380.0,
+  "parameters": 16021248,
+  "config_fingerprint": "6fc0cf23ff8591ff2241278f82c001d2",
+  "device": "cuda",
+  "precision": {
+    "autocast": "bf16",
+    "requested_bf16": true,
+    "master_weights": "fp32",
+    "logits": "fp32 (forced in info_nce)",
+    "eval": "fp32"
+  },
+  "peak_allocated_mib": 20357.0,
+  "peak_reserved_mib": 20726.0,
+  "driver": {
+    "sample_interval_s": 0.5,
+    "n_samples": 68,
+    "baseline_memory_used_mib_before_run": 981,
+    "peak_memory_used_mib_raw": 22120,
+    "training_attributable_peak_mib": 21139,
+    "note": "baseline is pre-existing desktop/OS GPU usage (Xorg/KDE/Firefox, ~981 MiB) unrelated to this training process; 'raw' is nvidia-smi's system-wide memory.used peak sampled every 0.5s over the whole run, 'training_attributable_peak_mib' subtracts the baseline. Both exceed torch's own peak_reserved_mib (20726) by ~400-1400 MiB, consistent with CUDA context/driver bookkeeping the caching allocator's own counters do not include (memory_summary shows 0 non-releasable/fragmented bytes, so this gap is not allocator fragmentation)."
+  },
+  "gpu_total_mib": 23028,
+  "fits_threshold_mib": 20980,
+  "fits_by_metric": {
+    "peak_allocated_mib": true,
+    "peak_reserved_mib": true,
+    "driver_peak_raw_mib": false,
+    "driver_peak_training_attributable_mib": false
+  },
+  "fits": false,
+  "fits_rationale": "The task's fits formula (peak <= 23,028 - 2,048 = 20,980 MiB) is satisfied by torch's own allocator-reported peaks (allocated 20,357 / reserved 20,726, margin 254-623 MiB) but NOT by the driver-observed peak (22,120 MiB raw, or 21,139 MiB after subtracting the ~981 MiB pre-existing desktop overhead) -- both driver-based readings exceed the threshold by 159-1,140 MiB. Reported fits=false using the driver peak as authoritative: it is the true hardware-observed number (it is why this probe was asked to sample nvidia-smi at all -- the caching allocator's own counters do not include ~400 MiB of CUDA context/driver bookkeeping this run actually used, confirmed by memory_summary showing zero fragmentation/non-releasable bytes, so the gap is real usage outside torch's view, not an artifact). The run itself completed without an OOM this time (unlike the unchunked probe, which OOM'd outright at 19,574 MiB allocated) -- chunking closed most, not all, of the gap to the pre-registered batch fitting within the requested safety margin."
+}

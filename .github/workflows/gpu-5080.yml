@@ -1,0 +1,50 @@
+# PoC CUDA on gpu5080. Never compute-cpu. Never pause 3090 LocalAI.
+# Shares gpu5080.lock with timeshare and with-gpu-5080 (queue, no collision).
+name: gpu-5080
+
+"on":
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [feat/agent-harness, main]
+
+concurrency:
+  # cancel-in-progress is exempted for main: Forgejo reports a cancelled run as
+  # `failure`, so cancelling a superseded main run mints a red status that no code
+  # change can clear. Same exemption as poc-ci.yml, ci.yml and fleet-ci.yml.
+  # Keyed on github.ref so push and pull_request for the same branch land in separate
+  # groups (`refs/heads/...` vs `refs/pull/N/merge`) and only supersede runs of the
+  # same event.
+  group: gpu5080-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  poc-cuda:
+    name: PoC CUDA on RTX 5080
+    runs-on: [self-hosted, linux, x64, gpu, 5080, host-gpu5080]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Exclusive 5080 + CUDA tests
+        run: |
+          set -euo pipefail
+          LOCK=/home/tzervas/akula-harness/scripts/gpu5080-lock
+          RECEIPT=/home/tzervas/akula-harness/state/ci-gpu/${GITHUB_RUN_ID:-manual}
+          mkdir -p "$RECEIPT"
+          nvidia-smi --query-gpu=name,memory.used,memory.free --format=csv \
+            | tee "$RECEIPT/smi-before.csv"
+          IMG=$(sudo -n podman images --format '{{.ID}}' | head -1)
+          "$LOCK" -- sudo -n podman run --rm --security-opt label=disable \
+            --device nvidia.com/gpu=all \
+            -v "$PWD":/work:ro \
+            -v "$RECEIPT":/out \
+            --workdir /work \
+            --entrypoint python3.13 "$IMG" \
+            /work/scripts/run_poc_cuda_gpu.py --out /out/poc-cuda.json
+          nvidia-smi --query-gpu=name,memory.used,memory.free --format=csv \
+            | tee "$RECEIPT/smi-after.csv"
+          echo "receipt=$RECEIPT"
+          python3 -c "import json,sys; d=json.load(open('$RECEIPT/poc-cuda.json')); sys.exit(0 if d.get('ok') else 1)"
