@@ -36,7 +36,7 @@ run:
   project: cogsyndelta
   code:
     repo: /home/kang/code/personal/tzervas/CogSynDelta
-    sha: 6614ec2315f5341d1a245c832a892ef8919d7293 # main, 2026-09-04 -- PR #21 merged: --seed flag for train/quantize/benchmark; --quantized/--quant-receipt/--train-receipt flags present
+    sha: 7bc2699d9f6b6d19d5f7518c7081853a55d9b015 # main, 2026-09-04 -- PRs #21 (--seed), #25 (per-region shard_limit), #27 (gate_exit_codes) merged
   state_root: /akula-data/csd/matrix
   finals_root: /akula-data/csd/finals # must be inside retention.prune_roots (loader-enforced)
   events_dir: /akula-data/csd/events
