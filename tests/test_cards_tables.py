@@ -324,6 +324,14 @@ def test_best_column_none_when_fewer_than_two_values() -> None:
     assert _best_column(row) is None
 
 
+def test_best_column_none_for_n_eval_count_row() -> None:
+    """Identity/count rows are not scores -- n_eval must not be bolded as 'better'."""
+    row = MetricRow(key="n_eval", variant=5400.0, baseline=5400.0)
+    assert _best_column(row) is None
+    row_int = MetricRow(key="n_pairs", variant=512, baseline=256)
+    assert _best_column(row_int) is None
+
+
 def test_render_table_markdown_bolds_the_best_value() -> None:
     from cogsyndelta.cards.methodology import METRIC_METHODOLOGY
     from cogsyndelta.cards.tables import CATEGORY_HEADINGS, MetricTable

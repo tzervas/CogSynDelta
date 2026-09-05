@@ -45,14 +45,14 @@ def _load(path: Path) -> dict[str, Any]:
 
 def _visual_cfg(**overrides: object) -> dict[str, object]:
     cfg: dict[str, object] = {
-        "kind": "jepa",
-        "modality": "image",
-        "role": "Visual encoder (I-JEPA EMA target).",
-        "router_trigger": "image input.",
+        "kind": "i-jepa",
+        "modality": "vision",
+        "role": "I-JEPA EMA target encoder over RGB images; maps an image to a [B, D] stream vector.",
+        "router_trigger": "RGB image input",
         "licence_tier": "mit",
         "licence_why": "Mix B includes CLEVR (CC BY 4.0, ATTRIBUTION)",
-        "stream_dim": 384,
-        "hidden_dim": 384,
+        "stream_dim": 512,
+        "hidden_dim": 1024,
     }
     cfg.update(overrides)
     return cfg
@@ -120,6 +120,104 @@ def test_render_visual_fixture_card_states_h1_fail_and_deployed_params(tmp_path:
     assert "Anisotropy is a representation-geometry diagnostic" in card
     # smoke 24-step: trained 0.6246 < threshold ~0.635; do not invent a pass
     assert "| H1 | PASS |" not in card
+
+
+def test_visual_overview_comes_from_receipt_jepa_not_stale_config(tmp_path: Path) -> None:
+    """(1) type/geometry/modality from receipt config.jepa + corrected catalogue
+    fields -- not stream_dim 512 / hidden_dim 1024 / jepa_predictor / latent."""
+    card = render_card(
+        "region_variant",
+        region="visual",
+        region_cfg=_visual_cfg(),
+        receipts=_fixture_receipts(),
+        files={},
+        budgets_root=tmp_path,
+        repo=HUB,
+    )
+    assert "| type | i-jepa |" in card
+    assert "| image_size | 128 |" in card
+    assert "| patch_size | 8 |" in card
+    assert "| dim | 384 |" in card
+    assert "| depth | 6 |" in card
+    assert "| n_heads | 6 |" in card
+    assert "| pos_kind | sincos2d |" in card
+    assert "| modality | image |" in card
+    assert "jepa_predictor" not in card
+    assert "stream_dim" not in card
+    assert "hidden_dim" not in card
+    assert "Latent visual reasoning" not in card
+    assert "Stream carrying visual latents" not in card
+    assert "Triggered by: RGB image input." in card
+    assert "latents.." not in card
+    assert "| n_eval | **5400** |" not in card
+    assert "| n_eval | 5400 |" in card
+
+
+def test_visual_how_to_is_ijepa_not_text_encoder_and_is_not_exec(tmp_path: Path) -> None:
+    """(2) Never a TextEncoder snippet on a visual card. Snippets are not
+    `<!-- exec -->` because the card-snippet harness has no tiny I-JEPA checkpoint
+    (tests/fixtures/cards/tiny_checkpoint.pt is a 4x8 linear layer)."""
+    card = render_card(
+        "region_variant",
+        region="visual",
+        region_cfg=_visual_cfg(),
+        receipts=_fixture_receipts(),
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert "TextEncoder" not in card
+    assert "from cogsyndelta.model.vl_jepa import IJEPA" in card
+    assert "wrap_deployed_visual_encoder" in card
+    assert "DeployedVisualEncoder" in card
+    assert "[B, D]" in card
+    assert "model.encode(images)" in card
+    assert "target_encoder.*" in card
+    assert "--regions visual" in card
+    assert "--train-receipt" in card
+    assert "--quantized" in card
+    assert "csd-quantize.py" in card
+    assert "--checkpoint final.pt" not in card
+    assert "<!-- exec -->\n```python" not in card
+
+
+def test_visual_footnotes_print_only_the_probe_branch(tmp_path: Path) -> None:
+    """(3) beats_untrained_eval / fp32_metric_recomputed / within_budget footnotes
+    are the visual formula, not the text rank.recall@1 slash."""
+    card = render_card(
+        "region_variant",
+        region="visual",
+        region_cfg=_visual_cfg(),
+        receipts=_fixture_receipts(),
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert "probe.top1 > untrained_baseline.top1" in card
+    assert "rank.recall@1 (eval battery) > the training receipt's untrained_baseline" not in card
+    assert "EuroSAT linear-probe top-1 measured fresh" in card
+    assert "quant.drop_probe_top1 <= tolerance" in card
+    assert "quant.drop_recall@1 <= tolerance" not in card
+
+
+def test_visual_model_index_splits_eurosat_and_fashion(tmp_path: Path) -> None:
+    """(4) one model-index dataset per probe set, named from the receipt."""
+    from huggingface_hub import ModelCard
+
+    card = render_card(
+        "region_variant",
+        region="visual",
+        region_cfg=_visual_cfg(),
+        receipts=_fixture_receipts(),
+        files={},
+        budgets_root=tmp_path,
+    )
+    data = ModelCard(card).data
+    results = list(data.eval_results or [])
+    by_metric = {r.metric_type: r for r in results}
+    assert by_metric["probe.top1"].dataset_name == "eurosat-test"
+    assert by_metric["probe.top1"].dataset_type == "phelber/eurosat-rgb-128"
+    assert by_metric["transfer.top1"].dataset_name == "fashion-t10k"
+    assert by_metric["transfer.top1"].dataset_type == "zalando/fashion-mnist"
+    assert "cogsyndelta-visual-holdout" not in card
 
 
 def test_csd_card_cli_renders_mix_b_cell_with_attribution_and_hub(

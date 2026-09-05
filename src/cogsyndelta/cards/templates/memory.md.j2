@@ -24,7 +24,7 @@ generation**.
 
 ## Key features
 
-- **Faculty, not a general model.** Triggered by: {{ router_trigger }}.
+- **Faculty, not a general model.** Triggered by: {{ (router_trigger or "").rstrip(".") }}.
 - **A region MERGE**, not an independently pretrained region -- trains on both
   `compress`'s SNLI-derived corpus and `retrieve`'s GooAQ/NQ/FiQA corpus.
 - **Every metric is reported beside its untrained baseline** -- see the Evaluation
@@ -36,14 +36,7 @@ generation**.
 
 ## Model overview
 
-| field | value |
-|---|---|
-| type | {{ region_cfg.get("kind", "(not recorded)") }} |
-| parameters | {{ "%.3f M"|format(parameters / 1e6) if parameters else "(not recorded)" }} |
-| stream_dim | {{ region_cfg.get("stream_dim", "(not recorded)") }} |
-| hidden_dim | {{ region_cfg.get("hidden_dim", "(not recorded)") }} |
-| modality | {{ modality }} |
-| precision | fp32{{ ", csd-ptq-v1 (packed, sub-byte)" if has_quant else "" }} |
+{{ overview_md }}
 
 ## Evaluation results
 

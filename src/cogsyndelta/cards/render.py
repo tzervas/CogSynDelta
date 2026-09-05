@@ -37,9 +37,9 @@ from huggingface_hub import ModelCard
 from cogsyndelta.cards.metadata import build_card_data, datasets_from_train_receipt
 from cogsyndelta.cards.methodology import (
     METHODOLOGY_DOC,
-    METRIC_METHODOLOGY,
     CardError,
     MetricMethodology,
+    methodology_for_region,
     methodology_key,
     normalize_quant_receipt_v1,
 )
@@ -367,10 +367,11 @@ def render_card(
     supplied = {k: v for k, v in schema_inputs.items() if v is not None}
     metrics_schema = assert_schemas_agree(supplied) if supplied else "(no receipts supplied)"
 
+    meth = methodology_for_region(region)
     tables: list[MetricTable] = []
     if train_receipt is not None:
-        tables.append(build_training_table(train_receipt))
-    gate_table = build_gate_table(eval_receipt)
+        tables.append(build_training_table(train_receipt, methodology=meth))
+    gate_table = build_gate_table(eval_receipt, methodology=meth)
     if gate_table is not None:
         tables.append(gate_table)
     tables.extend(
@@ -378,6 +379,7 @@ def render_card(
             eval_receipt=eval_receipt,
             comparators=comparators,
             heading_suffix=" (fp32)" if eval_quantized_receipt is not None else "",
+            methodology=meth,
         )
     )
     if eval_quantized_receipt is not None:
@@ -385,15 +387,16 @@ def render_card(
             build_eval_tables(
                 eval_receipt=eval_quantized_receipt,
                 heading_suffix=" (quantized artifact)",
+                methodology=meth,
             )
         )
-    quant_table = build_quant_table(quant_receipt)
+    quant_table = build_quant_table(quant_receipt, methodology=meth)
     if quant_table is not None:
         tables.append(quant_table)
 
-    footnote_numbers = _assign_footnotes(tables, METRIC_METHODOLOGY)
+    footnote_numbers = _assign_footnotes(tables, meth)
     tables_md = _append_markdown(
-        _render_tables_block(tables, footnote_numbers, METRIC_METHODOLOGY),
+        _render_tables_block(tables, footnote_numbers, meth),
         _visual_h1_and_transfer_markdown(train_receipt),
     )
     footnotes_md = _footnotes_markdown(footnote_numbers)
@@ -435,6 +438,7 @@ def render_card(
         eval_receipt=eval_receipt,
         quantized=quant_receipt is not None,
         datasets=datasets_from_train_receipt(train_receipt),
+        train_receipt=train_receipt,
     )
 
     placeholder_referent = PLACEHOLDER_REFERENT.get(region, "(no design-doc referent recorded)")
@@ -446,6 +450,17 @@ def render_card(
         "role": region_cfg.get("role", "(no role recorded)"),
         "router_trigger": region_cfg.get("router_trigger", "(none recorded)"),
         "modality": region_cfg.get("modality", "(not recorded)"),
+        "overview_md": _overview_markdown(
+            region_cfg=region_cfg,
+            train_receipt=train_receipt,
+            parameters=sizes.parameters,
+            has_quant=quant_receipt is not None,
+            extra_rows=(
+                (("release", f"`{region_cfg.get('release_tag', '(not tagged)')}`"),)
+                if kind == "region_main"
+                else ()
+            ),
+        ),
         "licence_line": licence_line,
         "methodology_doc": METHODOLOGY_DOC,
         "tables_md": tables_md,
@@ -506,6 +521,47 @@ def _append_markdown(base: str, extra: str, *, sep: str = "\n") -> str:
     if not extra:
         return base
     return f"{base}{sep}{extra}\n" if sep == "\n" else f"{base}{sep}{extra}"
+
+
+_JEPA_OVERVIEW_KEYS: tuple[str, ...] = (
+    "image_size",
+    "patch_size",
+    "dim",
+    "depth",
+    "n_heads",
+    "pos_kind",
+)
+
+
+def _overview_markdown(
+    *,
+    region_cfg: dict[str, Any],
+    train_receipt: dict[str, Any] | None,
+    parameters: int | None,
+    has_quant: bool,
+    extra_rows: tuple[tuple[str, Any], ...] = (),
+) -> str:
+    """Model-overview table. Visual cells source encoder geometry from `config.jepa`."""
+    kind = region_cfg.get("kind", "(not recorded)")
+    modality = region_cfg.get("modality", "(not recorded)")
+    param_cell = f"{parameters / 1e6:.3f} M" if parameters is not None else "(not recorded)"
+    precision = "fp32" + (", csd-ptq-v1 (packed, sub-byte)" if has_quant else "")
+    jepa = ((train_receipt or {}).get("config") or {}).get("jepa")
+    rows: list[tuple[str, Any]] = [("type", kind), ("parameters", param_cell)]
+    if isinstance(jepa, dict) and jepa:
+        for key in _JEPA_OVERVIEW_KEYS:
+            if key in jepa:
+                rows.append((key, jepa[key]))
+        rows.append(("modality", "image" if modality in {"vision", "latent"} else modality))
+    else:
+        rows.append(("stream_dim", region_cfg.get("stream_dim", "(not recorded)")))
+        rows.append(("hidden_dim", region_cfg.get("hidden_dim", "(not recorded)")))
+        rows.append(("modality", modality))
+    rows.append(("precision", precision))
+    rows.extend(extra_rows)
+    lines = ["| field | value |", "|---|---|"]
+    lines.extend(f"| {name} | {value} |" for name, value in rows)
+    return "\n".join(lines)
 
 
 def _fmt_h1_bool(v: bool) -> str:

@@ -38,6 +38,8 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple
 
+from cogsyndelta.regions.aliases import canonical_region
+
 METHODOLOGY_DOC = "docs/design/METRICS-METHODOLOGY.md"
 """Repo-relative path to the methodology reference, named in every card. Not a hyperlink
 -- a card is read from a private HF repo that does not carry this file, so a relative
@@ -139,10 +141,7 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         "rank.recall@1 (eval battery) > the training receipt's untrained_baseline "
         "recall@1, unmargined -- a different, simpler predicate than the training "
         "receipt's own beats_untrained_train gate, which is why g7 gives the two "
-        "separate names instead of sharing 'beats_untrained' across receipt kinds. "
-        "Visual eval receipts reuse this gate name for probe.top1 > "
-        "untrained_baseline.top1 (METRICS-METHODOLOGY.md §21), still unmargined; "
-        "H1's +0.01 margin is operator-side, not this gate",
+        "separate names instead of sharing 'beats_untrained' across receipt kinds",
         "eval battery",
         "scripts/csd-benchmark.py",
         battery_id="eval_holdout",
@@ -343,10 +342,8 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
     # `normalize_quant_receipt_v1` below -- still resolves every key a card might
     # print, old or new.
     "fp32_metric_recomputed": MetricMethodology(
-        "task metric measured fresh on the loaded fp32 checkpoint -- recall@1 on the "
-        "training held-out battery for text (NOT the eval battery's rank.recall@1; "
-        "see METRICS-METHODOLOGY.md §4), or EuroSAT linear-probe top-1 for visual "
-        "(§12.8.1)",
+        "recall@1 measured fresh on the loaded fp32 checkpoint -- the training held-out "
+        "battery, NOT the eval battery's rank.recall@1 (see METRICS-METHODOLOGY.md §4)",
         "training held-out battery (quantize stage)",
         "scripts/csd-quantize.py",
         battery_id="train_holdout",
@@ -433,8 +430,7 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         battery_id="quant_plan",
     ),
     "within_budget": MetricMethodology(
-        "quant.drop_recall@1 <= tolerance (text) or quant.drop_probe_top1 <= "
-        "tolerance (visual, METRICS-METHODOLOGY.md §12.8.1)",
+        "quant.drop_recall@1 <= tolerance",
         "quant_plan battery (quantize stage)",
         "scripts/csd-quantize.py",
         battery_id="quant_plan",
@@ -770,3 +766,41 @@ def require_documented(
             f"definition/battery/source. Add an entry (and, if it names a new formula, "
             f"a section to {METHODOLOGY_DOC}) before rendering."
         )
+
+
+# Visual receipts reuse the same *names* as text for three fields whose *formula*
+# differs. A visual card must footnote only the visual branch (CARD SPEC: fix, not
+# document a slash). Text cards keep the METRIC_METHODOLOGY entries above.
+VISUAL_METHODOLOGY_OVERRIDES: dict[str, MetricMethodology] = {
+    "beats_untrained_eval": MetricMethodology(
+        "probe.top1 > untrained_baseline.top1, unmargined. Not rank.recall@1. "
+        "H1's +0.01 margin is operator-side, not this gate",
+        "eval EuroSAT linear probe",
+        "scripts/csd-benchmark.py",
+        battery_id="eval_holdout",
+        pooling="linear_probe",
+    ),
+    "fp32_metric_recomputed": MetricMethodology(
+        "EuroSAT linear-probe top-1 measured fresh on the loaded fp32 EMA target "
+        "encoder -- not closed-pool recall@1 (METRICS-METHODOLOGY.md §12.8.1)",
+        "EuroSAT test linear probe (quantize stage)",
+        "scripts/csd-quantize.py",
+        battery_id="train_holdout",
+        pooling="linear_probe",
+    ),
+    "within_budget": MetricMethodology(
+        "quant.drop_probe_top1 <= tolerance",
+        "EuroSAT test linear probe (quantize stage)",
+        "scripts/csd-quantize.py",
+        battery_id="quant_plan",
+        pooling="linear_probe",
+    ),
+}
+
+
+def methodology_for_region(region: str | None) -> dict[str, MetricMethodology]:
+    """METRIC_METHODOLOGY, with visual-only formula overrides when `region` is visual."""
+    table = dict(METRIC_METHODOLOGY)
+    if region is not None and canonical_region(region) == "visual":
+        table.update(VISUAL_METHODOLOGY_OVERRIDES)
+    return table

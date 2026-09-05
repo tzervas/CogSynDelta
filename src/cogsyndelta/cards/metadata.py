@@ -32,9 +32,11 @@ from huggingface_hub import EvalResult, ModelCardData
 from cogsyndelta.cards.methodology import (
     RETIRED_RANK_METRICS,
     MetricMethodology,
+    methodology_for_region,
     methodology_key,
     require_documented,
 )
+from cogsyndelta.regions.aliases import canonical_region
 
 PIPELINE_TAG = "feature-extraction"
 """Every region and the composed mind are text (or text+visual) encoders -- see the
@@ -80,12 +82,32 @@ def region_repo_tags(region: str, *, quantized: bool) -> list[str]:
     return tags
 
 
+def _visual_set_identity(train_receipt: dict[str, Any] | None, which: str) -> tuple[str, str]:
+    """`(dataset_name, dataset_type)` for a visual probe set, from the train receipt."""
+    block: dict[str, Any] = {}
+    if isinstance(train_receipt, dict):
+        key = "held_out" if which == "probe" else "transfer"
+        raw = train_receipt.get(key)
+        if isinstance(raw, dict):
+            block = raw
+    if which == "transfer":
+        return (
+            str(block.get("name") or "fashion-t10k"),
+            str(block.get("source") or "zalando/fashion-mnist"),
+        )
+    return (
+        str(block.get("name") or "eurosat-test"),
+        str(block.get("source") or "phelber/eurosat-rgb-128"),
+    )
+
+
 def build_eval_results(
     *,
     region: str,
     eval_receipt: dict[str, Any] | None,
     dataset_name: str | None = None,
     methodology: dict[str, MetricMethodology] | None = None,
+    train_receipt: dict[str, Any] | None = None,
 ) -> list[EvalResult]:
     """One `EvalResult` per numeric key in the fp32 eval receipt's `metrics` dict,
     under whatever name that receipt itself carries (v2 canonical, or a v1 name a
@@ -120,6 +142,9 @@ def build_eval_results(
         methodology: overrides `METRIC_METHODOLOGY` for this call only -- a test's
             mutation-proof hook, the same seam `cogsyndelta.cards.tables`'s
             `build_*` functions expose; production callers leave this `None`.
+        train_receipt: the training receipt, used on visual cards to name the
+            EuroSAT / Fashion probe sets in the model-index (`held_out.name` /
+            `transfer.name` and their `source` fields). Ignored for text regions.
     """
     if eval_receipt is None:
         return []
@@ -136,14 +161,24 @@ def build_eval_results(
         for key in numeric_keys
         if not (key.startswith("rank.") and key.split(".", 1)[1] in RETIRED_RANK_METRICS)
     ]
-    require_documented((methodology_key(k) for k in published_keys), methodology=methodology)
+    table = methodology if methodology is not None else methodology_for_region(region)
+    require_documented(
+        (methodology_key(k, methodology=table) for k in published_keys),
+        methodology=table,
+    )
     results: list[EvalResult] = []
+    visual = canonical_region(region) == "visual"
     for key in sorted(published_keys):
+        if visual and dataset_name is None:
+            which = "transfer" if key.startswith("transfer.") else "probe"
+            this_name, this_type = _visual_set_identity(train_receipt, which)
+        else:
+            this_name, this_type = ds_name, ds_type
         results.append(
             EvalResult(
                 task_type=PIPELINE_TAG,
-                dataset_type=ds_type,
-                dataset_name=ds_name,
+                dataset_type=this_type,
+                dataset_name=this_name,
                 metric_type=key,
                 metric_value=metrics[key],
                 metric_name=key,
@@ -163,6 +198,7 @@ def build_card_data(
     datasets: list[str] | None = None,
     dataset_name: str | None = None,
     model_name: str | None = None,
+    train_receipt: dict[str, Any] | None = None,
 ) -> ModelCardData:
     """The card's YAML front matter, as a `ModelCardData` instance.
 
@@ -183,12 +219,17 @@ def build_card_data(
             `cogsyndelta-<region>-holdout`).
         model_name: overrides the default model name
             (`cogsyndelta-region-<region>` / `cogsyndelta` for a composed card).
+        train_receipt: forwarded to `build_eval_results` so a visual card's
+            model-index can name eurosat-test / fashion-t10k from the receipt.
     """
     tags = ["cogsyndelta"] if kind == "composed" else region_repo_tags(region, quantized=quantized)
     default_name = "cogsyndelta" if kind == "composed" else f"cogsyndelta-region-{region}"
     name = model_name or default_name
     eval_results = build_eval_results(
-        region=region, eval_receipt=eval_receipt, dataset_name=dataset_name
+        region=region,
+        eval_receipt=eval_receipt,
+        dataset_name=dataset_name,
+        train_receipt=train_receipt,
     )
     return ModelCardData(
         license=tier,

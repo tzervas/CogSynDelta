@@ -68,6 +68,20 @@ TRAINING_TABLE_IDENTITY_KEYS: frozenset[str] = frozenset({"source", "name"})
 #: better" (recall, mrr, throughput, ...); this is the deliberately short exception
 #: list. `within_budget`/booleans are excluded entirely from "best" bolding (see
 #: `_is_boolean`).
+#: Counts and identity fields -- never "better" in a two-column comparison.
+NOT_A_SCORE_KEYS: frozenset[str] = frozenset(
+    {
+        "n_eval",
+        "n_pairs",
+        "candidates",
+        "dimensions",
+        "parameters",
+        "fp32_bytes",
+        "stored_bytes",
+        "tolerance",
+    }
+)
+
 LOWER_IS_BETTER: frozenset[str] = frozenset(
     {
         "eff.latency_p50_ms",
@@ -384,6 +398,9 @@ def _best_column(row: MetricRow) -> str | None:
         if isinstance(v, int | float) and not _is_boolean(v):
             candidates[name] = float(v)
     if len(candidates) < 2:
+        return None
+    bare = methodology_key(row.key)
+    if row.key in NOT_A_SCORE_KEYS or bare in NOT_A_SCORE_KEYS:
         return None
     lower_is_better = row.key in LOWER_IS_BETTER
     return (
