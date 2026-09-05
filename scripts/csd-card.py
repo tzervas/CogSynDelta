@@ -30,11 +30,14 @@ and the `config/mind/csd-regions.json` loader already live in
 `scripts/csd-publish-checkpoint.py` -- this tool imports that script as a module (a
 hyphenated filename is not importable by name, hence `importlib`) rather than keeping a
 second copy that could silently drift from the one publish actually enforces. A region
-with no audited tier, or `vl_latent` (BLOCKING), refuses exactly as `licence_tier()`
-already does for a publish -- except for `--kind placeholder`/`composed`, where
-`cogsyndelta.cards.render`'s own contract allows an unresolved tier (a stated-TBD /
-no-weights line rather than an invented licence); this tool best-efforts a tier there
-too, when one happens to be on record, but never refuses for its absence.
+with no audited tier, or `visual`/`vl_latent` whose training receipt is not the admitted
+Mix B pin, refuses exactly as `licence_tier(region, receipt=train)` already does for a
+publish -- Mix B (`visual-clean-v1` + the pinned fingerprint) is MIT with the CLEVR
+TASL block; tiny-imagenet / missing / fingerprint-mismatched stays BLOCKING. Except
+for `--kind placeholder`/`composed`, where `cogsyndelta.cards.render`'s own contract
+allows an unresolved tier (a stated-TBD / no-weights line rather than an invented
+licence); this tool best-efforts a tier there too, when one happens to be on record,
+but never refuses for its absence.
 """
 
 from __future__ import annotations
@@ -48,8 +51,13 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC = str(REPO_ROOT / "src")
-if _SRC not in sys.path:
-    sys.path.append(_SRC)
+# Front of sys.path, not append: an editable install of a *different* checkout
+# (the operator's shared .venv pointing at main, a worktree running this
+# script) would otherwise win and silently use stale METRIC_METHODOLOGY /
+# render_card. The script's own tree is the code this CLI is meant to run.
+if _SRC in sys.path:
+    sys.path.remove(_SRC)
+sys.path.insert(0, _SRC)
 
 from cogsyndelta.cards.methodology import CardError  # noqa: E402 -- needs sys.path set above
 from cogsyndelta.cards.render import CARD_KINDS, render_card  # noqa: E402
@@ -190,10 +198,20 @@ def _checkpoint_files_block(
 _TIER_REQUIRED_KINDS = frozenset(set(CARD_KINDS) - {"placeholder", "composed"})
 
 
-def _region_cfg(pub_mod: Any, region: str, kind: str) -> dict[str, Any]:
+def _region_cfg(
+    pub_mod: Any,
+    region: str,
+    kind: str,
+    train_receipt: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """This region's `config/mind/csd-regions.json` entry, extended with
     `licence_tier`/`licence_why` from the publish script's audited table -- see the
     module docstring for why importing beats duplicating that table.
+
+    `train_receipt` is passed through to `licence_tier()`: visual is BLOCKING by
+    default and only resolves to MIT when the receipt names the admitted Mix B
+    corpus pin. Calling `licence_tier(region)` with no receipt would abort a Mix B
+    visual card the publish path itself would accept.
     """
     if kind == "composed":
         cfg: dict[str, Any] = {}
@@ -201,13 +219,15 @@ def _region_cfg(pub_mod: Any, region: str, kind: str) -> dict[str, Any]:
         cfg = dict(pub_mod.load_region_config(region))
 
     if kind in _TIER_REQUIRED_KINDS:
-        tier = pub_mod.licence_tier(region)  # raises PublishAbortError: unknown/BLOCKING
+        # raises PublishAbortError: unknown / BLOCKING (including visual whose
+        # receipt is not the admitted Mix B pin)
+        tier = pub_mod.licence_tier(region, receipt=train_receipt)
     else:
         # placeholder / composed: render_card itself allows an unresolved tier (a
         # stated-TBD / no-weights line) -- best-effort a real one only when the region
         # HAS an audited, non-BLOCKING tier on record, never refuse for its absence.
         try:
-            tier = pub_mod.licence_tier(region)
+            tier = pub_mod.licence_tier(region, receipt=train_receipt)
         except pub_mod.PublishAbortError:
             tier = None
     if tier is not None:
@@ -287,7 +307,11 @@ def main(argv: list[str] | None = None) -> int:
     pub_mod = _load_publish_module()
     try:
         region, receipts = _build_receipts_and_region(args, pub_mod)
-        region_cfg = _region_cfg(pub_mod, region, args.kind)
+        train_receipt = receipts.get("train")
+        region_cfg = _region_cfg(pub_mod, region, args.kind, train_receipt=train_receipt)
+        attr_lines = pub_mod.visual_attribution_block(train_receipt)
+        if attr_lines:
+            region_cfg["attribution_md"] = "\n".join(attr_lines).strip()
         comparators = _load_comparators(args.comparators)
         files = _checkpoint_files_block(pub_mod, receipts.get("train"))
         card = render_card(

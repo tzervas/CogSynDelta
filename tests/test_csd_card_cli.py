@@ -16,7 +16,9 @@ Covers:
   duplicated: an unaudited region (no tier) and `vl_latent` (BLOCKING) both refuse for
   `--kind region_variant`, exactly as a real publish would -- but `--kind placeholder`
   renders the SAME BLOCKING region's placeholder card without refusing (CARD SPEC's own
-  contract: a placeholder needs no resolved tier).
+  contract: a placeholder needs no resolved tier). Visual Mix B (`visual-clean-v1` +
+  the pinned fingerprint) resolves to `mit` because `_region_cfg` passes the train
+  receipt into `licence_tier`; an altered fingerprint still BLOCKS.
 - `--out` writes the rendered card to disk; the parent directory is created if needed.
 - Exit code: 0 on success, 2 with an `ABORT:` message on any refusal.
 """
@@ -32,6 +34,7 @@ from typing import Any
 import pytest
 
 from tests.test_publish_checkpoint import (
+    _mix_b_receipt,
     make_checkpoint,
     make_eval_receipt,
     make_quant_receipt,
@@ -468,6 +471,63 @@ def test_blocking_region_still_renders_as_placeholder(tmp_path: Path) -> None:
     rc = cli.main(["--region", "vl_latent", "--kind", "placeholder", "--out", str(out)])
     assert rc == 0
     assert "weights: none" in out.read_text()
+
+
+def test_region_cfg_visual_mix_b_resolves_mit() -> None:
+    """The publish guard's Mix B pin must reach `licence_tier` through this CLI:
+    calling `licence_tier(region)` with no receipt is the default BLOCKING path."""
+    pub = cli._load_publish_module()
+    rec = _mix_b_receipt()
+    cfg = cli._region_cfg(pub, "visual", "region_variant", train_receipt=rec)
+    assert cfg["licence_tier"] == "mit"
+    cfg_alias = cli._region_cfg(pub, "vl_latent", "region_variant", train_receipt=rec)
+    assert cfg_alias["licence_tier"] == "mit"
+
+
+def test_region_cfg_visual_without_receipt_stays_blocking() -> None:
+    pub = cli._load_publish_module()
+    with pytest.raises(pub.PublishAbortError, match="BLOCKING"):
+        cli._region_cfg(pub, "visual", "region_variant", train_receipt=None)
+    with pytest.raises(pub.PublishAbortError, match="BLOCKING"):
+        cli._region_cfg(pub, "visual", "region_variant", train_receipt={})
+
+
+def test_region_cfg_visual_altered_fingerprint_blocks() -> None:
+    """Mutation: same Mix B corpus_source, wrong fingerprint, must stay BLOCKING."""
+    pub = cli._load_publish_module()
+    rec = _mix_b_receipt(fingerprint="0" * 32)
+    with pytest.raises(pub.PublishAbortError, match="BLOCKING"):
+        cli._region_cfg(pub, "visual", "region_variant", train_receipt=rec)
+
+
+def test_visual_cli_altered_fingerprint_aborts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """End-to-end: a Mix B-shaped train receipt with a mutated fingerprint must not
+    render a region_variant card -- the CLI refuses with BLOCKING, writes nothing."""
+    rec = _mix_b_receipt(fingerprint="deadbeef" * 4)
+    rec["parameters"] = 22905216
+    rec["held_out"] = {"recall@1": 0.0}
+    rec["untrained_baseline"] = {"recall@1": 0.0}
+    rec["metrics_schema"] = "csd-metrics/v2"
+    path = tmp_path / "visual-bad-fp.json"
+    path.write_text(json.dumps(rec))
+    out = tmp_path / "README.md"
+    rc = cli.main(
+        [
+            "--region",
+            "visual",
+            "--kind",
+            "region_variant",
+            "--train-receipt",
+            str(path),
+            "--out",
+            str(out),
+        ]
+    )
+    assert rc == 2
+    assert not out.exists()
+    assert "BLOCKING" in capsys.readouterr().err
 
 
 def test_vl_latent_and_visual_placeholders_are_byte_identical_and_name_visual(
