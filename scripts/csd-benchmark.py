@@ -59,7 +59,7 @@ def _regions_spec() -> dict:
 
 
 def _is_visual_region(region: str) -> bool:
-    names = _regions_spec()["VL_REGIONS"]
+    names = _regions_spec().get("VL_REGIONS") or {}
     return region in names or canonical_region(region) in names
 
 
