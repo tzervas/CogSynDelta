@@ -20,6 +20,7 @@ from cogsyndelta.vl.mix_corpus import (
     load_manifest,
     receipt_shard_tail,
     shuffled_pngs,
+    source_train_path,
 )
 
 pytestmark = pytest.mark.cpu
@@ -251,3 +252,17 @@ def test_train_probe_path_overlap_refused(tmp_path: Path) -> None:
         check_paths_disjoint(man)
     with pytest.raises(MixCorpusError, match="train path intersects probe path"):
         dry_run(man)
+
+
+def test_rep_std_batch_spans_more_than_one_source(tmp_path: Path) -> None:
+    """F2 used to slice x_tr[:batch]; Mix B's first 128 refs are all pxhere."""
+    from cogsyndelta.regions.vl_pretrain import _PngTrain, collapse_batch_indices
+
+    man = _manifest(tmp_path, a_n=8, b_n=8, c_n=8)
+    shards = [str(source_train_path(man, s)) for s in man["sources"]]
+    ds = _PngTrain(shards, size=1, seed=7, limit=0)
+    prefix = {ds.refs[i].store for i in range(6)}
+    assert len(prefix) == 1
+    idx = collapse_batch_indices(ds.size(0), batch_size=6, seed=0)
+    stores = {ds.refs[int(i)].store for i in idx.tolist()}
+    assert len(stores) > 1

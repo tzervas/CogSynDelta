@@ -265,6 +265,40 @@ class _PngTrain:
         return torch.from_numpy(rgb.transpose(2, 0, 1))
 
 
+def collapse_batch_indices(n: int, batch_size: int, seed: int) -> torch.Tensor:
+    """Draw a diagnostic batch the same way the train loop draws.
+
+    Training uses ``torch.randint`` over all refs with a Generator seeded from
+    the run seed. The F2 collapse diagnostic used to slice ``x_tr[:batch_size]``,
+    which after per-shard listing is the first 128 Mix B images -- all pxhere.
+    This helper uses a *fresh* Generator at ``seed`` so it does not consume the
+    training RNG; baseline and final therefore see the same mixed-batch indices.
+
+    Args:
+        n: Train-set length (``x_tr.size(0)``).
+        batch_size: Same ``cfg.batch_size`` the train loop passes to randint.
+        seed: ``cfg.seed``.
+
+    Returns:
+        Int64 index tensor of length ``batch_size``.
+    """
+    gen = torch.Generator().manual_seed(seed)
+    return torch.randint(0, n, (batch_size,), generator=gen)
+
+
+def _rep_std_on_mixed_batch(
+    model: IJEPA,
+    x_tr: torch.Tensor | _PngTrain,
+    batch_size: int,
+    seed: int,
+    device: torch.device,
+) -> float:
+    """EMA-target ``rep_std`` on a mixed batch. Ratio definition is unchanged."""
+    idx = collapse_batch_indices(int(x_tr.size(0)), batch_size, seed)
+    feats = model.target_encoder(_to_float(x_tr[idx], device))
+    return feats.mean(dim=1).std(dim=0).mean().item()
+
+
 def _to_float(batch_u8: torch.Tensor, device: torch.device) -> torch.Tensor:
     """uint8 [B,3,H,W] -> normalised float on device."""
     x = batch_u8.to(device, non_blocking=True).float().div_(255.0)
@@ -615,9 +649,8 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
             cfg.seed,
         )
         with torch.no_grad():
-            probe_batch = _to_float(x_tr[: cfg.batch_size], device)
-            baseline["rep_std"] = (
-                model.target_encoder(probe_batch).mean(dim=1).std(dim=0).mean().item()
+            baseline["rep_std"] = _rep_std_on_mixed_batch(
+                model, x_tr, cfg.batch_size, cfg.seed, device
             )
 
         baseline_transfer = None
@@ -717,13 +750,7 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         cfg.seed,
     )
     with torch.no_grad():
-        final["rep_std"] = (
-            model.target_encoder(_to_float(x_tr[: cfg.batch_size], device))
-            .mean(dim=1)
-            .std(dim=0)
-            .mean()
-            .item()
-        )
+        final["rep_std"] = _rep_std_on_mixed_batch(model, x_tr, cfg.batch_size, cfg.seed, device)
 
     final_transfer = None
     if transfer:
@@ -741,10 +768,8 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         )
 
     # Collapse is judged against this run's own untrained spread, not a magic constant --
-    # what counts as "low" depends on the architecture and the data.
-    # F2 samples rep_std from the current train batch (vl_jepa.forward). Mix B
-    # concatenates sources in manifest order then shuffles per zip, so the first
-    # batch of a full run is all pxhere; a later fix can wait.
+    # what counts as "low" depends on the architecture and the data. Baseline and
+    # final rep_std use the same mixed-batch indices (collapse_batch_indices).
     collapse_ratio = final["rep_std"] / max(1e-9, baseline["rep_std"])
     collapsed = collapse_ratio < 0.1
 
