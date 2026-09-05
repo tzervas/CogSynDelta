@@ -137,7 +137,7 @@ run) of the `compress` region, not the promoted release -- see the region's
 |---|---|---|
 | weights on disk, fp32 | 0.037 MB | measured, `fp32_bytes` |
 | weights on disk, csd-ptq-v1 | 0.009 MB | measured, `stored_bytes` |
-| compression ratio (storage, not speed) | 4.28x | measured |
+| compression ratio (storage, not speed) | 4.28x | measured, `quant.compression_ratio` |
 | bit-width histogram | 3-bit: 1 | measured, `width_histogram` |
 
 ## How to use

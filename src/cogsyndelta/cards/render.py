@@ -188,7 +188,8 @@ def _sizes_block(sizes: SizeReport) -> str:
         )
     if sizes.compression_ratio is not None:
         lines.append(
-            f"| compression ratio (storage, not speed) | {sizes.compression_ratio:.3g}x | measured |"
+            f"| compression ratio (storage, not speed) | {sizes.compression_ratio:.3g}x | "
+            "measured, `quant.compression_ratio` |"
         )
     if sizes.width_histogram is not None:
         hist = ", ".join(f"{bits}-bit: {n}" for bits, n in sorted(sizes.width_histogram.items()))
