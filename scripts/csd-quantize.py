@@ -43,7 +43,27 @@ def _load_regions_spec() -> dict:
         raise RuntimeError(f"cannot load {path}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return {"REGIONS": mod.REGIONS, "_shards": mod._shards, "region_spec": mod.region_spec}
+    return {
+        "REGIONS": mod.REGIONS,
+        "VL_REGIONS": mod.VL_REGIONS,
+        "_shards": mod._shards,
+        "region_spec": mod.region_spec,
+    }
+
+
+def _is_visual_region(region: str) -> bool:
+    names = _load_regions_spec()["VL_REGIONS"]
+    return region in names or canonical_region(region) in names
+
+
+def _benchmark_mod() -> object:
+    path = Path(__file__).parent / "csd-benchmark.py"
+    spec = importlib.util.spec_from_file_location("csd_benchmark_for_quant", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _latest_receipt(state: Path, region: str) -> tuple[Path, dict]:
@@ -316,6 +336,118 @@ def quantize_text_region(
     }
 
 
+def quantize_visual_region(
+    region: str,
+    state: Path,
+    tolerance: float,
+    aggressive: int,
+    max_bits: int,
+    train_receipt_path: Path | None = None,
+) -> dict:
+    """PTQ the I-JEPA that visual eval probes.
+
+    `IJEPA.encode` reads the EMA **target encoder** (`vl_jepa.py:581-587`). The
+    predictor and the online context encoder are not in the probe path, but they
+    live on the same `state_dict` the training receipt bound, so this pass
+    quantizes the **full IJEPA** (same bytes eval loads) rather than a sliced
+    submodule that could no longer round-trip `load_state_dict` on the checkpoint.
+    `eval_fn` is held-out EuroSAT probe top-1, the same measurement training used.
+    """
+    from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
+    from cogsyndelta.model.vl_jepa import IJEPA
+    from cogsyndelta.quant.ptq import build_plan, save_packed_artifact
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
+
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    bench = _benchmark_mod()
+    if train_receipt_path is not None:
+        receipt_path = train_receipt_path
+        receipt = json.loads(train_receipt_path.read_text())
+    else:
+        receipt_path, receipt = _latest_receipt(state, region)
+    cfg = bench._vl_cfg_from_train_receipt(region, receipt)
+    fingerprint = fingerprint_corpus(cfg.train_shards, columns=[cfg.image_column, cfg.label_column])
+    verify_corpus_fingerprint(receipt.get("corpus", {}), fingerprint, region)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = IJEPA(cfg.jepa).to(device)
+    ckpt_sha_out: list[str] = []
+    ck = load_checkpoint(
+        receipt["checkpoint"],
+        expected_sha256=receipt.get("checkpoint_sha256") or None,
+        map_location=device,
+        sha256_out=ckpt_sha_out,
+    )
+    model.load_state_dict(ck["model"])
+    model.eval()
+    checkpoint_sha256 = ckpt_sha_out[0]
+
+    def eval_fn(m: torch.nn.Module) -> float:
+        held, _xfer = bench._measure_visual_probes(m, cfg, device)
+        return float(held["top1"])
+
+    fp32_metric = eval_fn(model)
+    recorded_metric = float(receipt["held_out"]["top1"])
+    started = time.time()
+    plan = build_plan(
+        model,
+        eval_fn,
+        baseline=fp32_metric,
+        tolerance=tolerance,
+        aggressive_bits=aggressive,
+        max_bits=max_bits,
+    )
+    checkpoint_path = Path(receipt["checkpoint"])
+    quantized_path = checkpoint_path.with_name(f"{checkpoint_path.stem}.ptq.pt")
+    quantized_sha256 = save_packed_artifact(model, plan, quantized_path)
+    by_width: dict[int, int] = {}
+    for bits in plan.bits.values():
+        by_width[bits] = by_width.get(bits, 0) + 1
+    print(
+        f"    quantized probe.top1={plan.metric:.4f}  drop={fp32_metric - plan.metric:.4f} "
+        f"(budget {tolerance})  {time.time() - started:.0f}s",
+        flush=True,
+    )
+    return {
+        "kind": "quant",
+        "started_utc": started_utc,
+        "region": canonical_region(region),
+        "recorded_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "method": "sensitivity-greedy-mixed-width",
+        "checkpoint": receipt["checkpoint"],
+        "artifacts": {
+            "checkpoint": receipt["checkpoint"],
+            "checkpoint_sha256": checkpoint_sha256,
+            "source_training_receipt": {
+                "path": str(receipt_path),
+                "sha256": sha256_file(receipt_path),
+            },
+            "quantized_path": str(quantized_path),
+            "quantized_sha256": quantized_sha256,
+            "artifact_device": "cpu",
+            "quantized_module": "IJEPA (encode uses target_encoder)",
+        },
+        "corpus_fingerprint": fingerprint,
+        "tolerance": tolerance,
+        "aggressive_bits": aggressive,
+        "max_bits": max_bits,
+        "fp32_metric_recomputed": fp32_metric,
+        "fp32_metric_receipt": recorded_metric,
+        "quant.plan_recall@1": plan.metric,
+        "quant.drop_recall@1": fp32_metric - plan.metric,
+        "within_budget": (fp32_metric - plan.metric) <= tolerance,
+        "fp32_bytes": plan.fp32_bytes,
+        "stored_bytes": plan.stored_bytes,
+        "quant.compression_ratio": plan.ratio,
+        "width_histogram": {str(k): v for k, v in sorted(by_width.items())},
+        "bits": plan.bits,
+        "fp32_tensors": plan.fp32,
+        "promotions": plan.promotions,
+        "battery_id": "quant_plan",
+        "pooling": "linear_probe",
+        "seed": cfg.seed,
+    }
+
+
 def main() -> int:
     from cogsyndelta.regions._receipt import write_receipt
     from cogsyndelta.util.gpu_budget import apply_budget_from_env, report_peak
@@ -362,7 +494,7 @@ def main() -> int:
     for region in [r.strip() for r in args.regions.split(",") if r.strip()]:
         print(f"\n=== {region}", flush=True)
         try:
-            rec = quantize_text_region(
+            rec = (quantize_visual_region if _is_visual_region(region) else quantize_text_region)(
                 region,
                 state,
                 args.tolerance,

@@ -32,6 +32,7 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -49,7 +50,170 @@ def _regions_spec() -> dict:
     spec = importlib.util.spec_from_file_location("csd_train_all", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return {"REGIONS": mod.REGIONS, "_shards": mod._shards, "region_spec": mod.region_spec}
+    return {
+        "REGIONS": mod.REGIONS,
+        "VL_REGIONS": mod.VL_REGIONS,
+        "_shards": mod._shards,
+        "region_spec": mod.region_spec,
+    }
+
+
+def _is_visual_region(region: str) -> bool:
+    names = _regions_spec()["VL_REGIONS"]
+    return region in names or canonical_region(region) in names
+
+
+def _vl_cfg_from_train_receipt(region: str, train_receipt: dict) -> Any:
+    from cogsyndelta.model.vl_jepa import JEPAConfig
+    from cogsyndelta.regions.vl_pretrain import VLPretrainConfig
+
+    probe = train_receipt.get("probe") or {}
+    cfg_d = train_receipt["config"]
+    ckpt = Path(str(train_receipt["checkpoint"]))
+    return VLPretrainConfig(
+        region=canonical_region(region),
+        train_shards=list(probe.get("jepa_train_shards") or []),
+        probe_train_shards=list(probe.get("linear_train_shards") or []),
+        probe_eval_shards=list(probe.get("linear_eval_shards") or []),
+        transfer_shards=list(probe.get("transfer_shards") or []),
+        image_column=str(probe.get("image_column") or "image"),
+        label_column=str(probe.get("label_column") or "label"),
+        transfer_image_column=str(probe.get("transfer_image_column") or "image"),
+        transfer_label_column=str(probe.get("transfer_label_column") or "label"),
+        image_backend=str(probe.get("image_backend") or "png_zip"),
+        steps=int(cfg_d["steps"]),
+        batch_size=int(cfg_d["batch_size"]),
+        seed=int(cfg_d.get("seed") or 0),
+        probe_steps=int(cfg_d.get("probe_steps") or 600),
+        probe_lr=float(cfg_d.get("probe_lr") or 1e-3),
+        jepa=JEPAConfig(**cfg_d["jepa"]),
+        probe_sets=list(probe.get("sets") or []),
+        device="cpu" if not torch.cuda.is_available() else "auto",
+        cache_dir=str(ckpt.parent.parent / "vl-cache"),
+        out_dir=str(ckpt.parent),
+    )
+
+
+def _measure_visual_probes(model: Any, cfg: Any, device: torch.device) -> tuple[dict, dict | None]:
+    from cogsyndelta.regions.vl_pretrain import (
+        _features,
+        _linear_probe,
+        _load_visual_splits,
+        _rep_std_on_mixed_batch,
+    )
+
+    size = cfg.jepa.image_size
+    x_tr, px_tr, py_tr, px_ev, py_ev, transfer = _load_visual_splits(cfg, size, Path(cfg.cache_dir))
+    n_classes = int(max(py_tr.max().item(), py_ev.max().item())) + 1
+    held = _linear_probe(
+        _features(model, px_tr, device),
+        py_tr,
+        _features(model, px_ev, device),
+        py_ev,
+        n_classes,
+        device,
+        cfg.probe_steps,
+        cfg.probe_lr,
+        cfg.seed,
+    )
+    with torch.no_grad():
+        held["rep_std"] = _rep_std_on_mixed_batch(model, x_tr, cfg.batch_size, cfg.seed, device)
+    xfer = None
+    if transfer:
+        ttr, tytr, tev, tyev, tn = transfer
+        xfer = _linear_probe(
+            _features(model, ttr, device),
+            tytr,
+            _features(model, tev, device),
+            tyev,
+            tn,
+            device,
+            cfg.probe_steps,
+            cfg.probe_lr,
+            cfg.seed,
+        )
+    return held, xfer
+
+
+def benchmark_visual_region(
+    region: str,
+    state: Path,
+    train_receipt_path: Path | None = None,
+    *,
+    allow_unbound_train_receipt: bool = False,
+) -> Receipt | None:
+    """fp32 visual eval: same linear-probe protocol training used, on the bound checkpoint."""
+    from cogsyndelta.model.vl_jepa import IJEPA
+    from cogsyndelta.quant.ptq import fp32_reference_bytes
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
+
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    t0 = time.time()
+    resolved_path = _find_train_receipt(region, state, train_receipt_path)
+    if resolved_path is None:
+        print(f"    no training receipt for {region}", flush=True)
+        return None
+    train_receipt = json.loads(resolved_path.read_text())
+    if allow_unbound_train_receipt:
+        raise UnboundTrainReceiptError(
+            "visual eval has no unbound fallback: the training receipt must name "
+            "checkpoint + checkpoint_sha256"
+        )
+    expected = expected_checkpoint_sha256(train_receipt, resolved_path, allow_unbound=False)
+    cfg = _vl_cfg_from_train_receipt(region, train_receipt)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = IJEPA(cfg.jepa).to(device).eval()
+    ckpt_sha_out: list[str] = []
+    ck = load_checkpoint(
+        train_receipt["checkpoint"],
+        expected_sha256=expected,
+        map_location=device,
+        sha256_out=ckpt_sha_out,
+    )
+    model.load_state_dict(ck["model"])
+    checkpoint_sha256 = ckpt_sha_out[0]
+    held, xfer = _measure_visual_probes(model, cfg, device)
+    baseline = train_receipt["untrained_baseline"]
+    collapse_ratio = held["rep_std"] / max(1e-9, float(baseline["rep_std"]))
+    collapsed = collapse_ratio < 0.1
+    stored = fp32_reference_bytes(model)
+    metrics: dict[str, float] = {
+        "probe.top1": float(held["top1"]),
+        "probe.top5": float(held["top5"]),
+        "repr.rep_std": float(held["rep_std"]),
+    }
+    if xfer is not None:
+        metrics["transfer.top1"] = float(xfer["top1"])
+        metrics["transfer.top5"] = float(xfer["top5"])
+    return Receipt(
+        producer=Producer("cogsyndelta", canonical_region(region), "i-jepa"),
+        stage="eval",
+        kind="eval",
+        metrics=metrics,
+        baseline={"probe.top1": float(baseline["top1"])},
+        gates={
+            "beats_untrained_eval": float(held["top1"]) > float(baseline["top1"]),
+            "not_collapsed": not collapsed,
+        },
+        artifacts={
+            "checkpoint": train_receipt["checkpoint"],
+            "checkpoint_sha256": checkpoint_sha256,
+            "source_training_receipt": {
+                "path": str(resolved_path),
+                "sha256": sha256_file(resolved_path),
+            },
+        },
+        provenance={
+            "eval_target": "fp32",
+            "stored_bytes_definition": "weights-only",
+            "fp32_reference_bytes": stored,
+            "collapse_ratio": round(collapse_ratio, 4),
+        },
+        detail={"held_out": held, "transfer": xfer},
+        started_utc=started_utc,
+        seconds=time.time() - t0,
+        device=str(device),
+    )
 
 
 class AmbiguousTrainReceiptError(RuntimeError):
@@ -409,6 +573,13 @@ def benchmark_region(
     allow_unbound_train_receipt: bool = False,
 ) -> Receipt | None:
     """The fp32 pass: score the checkpoint `region`'s training receipt names."""
+    if _is_visual_region(region):
+        return benchmark_visual_region(
+            region,
+            state,
+            train_receipt_path,
+            allow_unbound_train_receipt=allow_unbound_train_receipt,
+        )
     from cogsyndelta.quant.ptq import fp32_reference_bytes
     from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
     from cogsyndelta.regions.text_encoder import TextEncoder
@@ -516,6 +687,77 @@ def benchmark_region(
     )
 
 
+def benchmark_visual_region_quantized(
+    region: str,
+    state: Path,
+    quantized_path: Path,
+    quant_receipt_path: Path | None = None,
+    train_receipt_path: Path | None = None,
+) -> Receipt:
+    """Score a packed I-JEPA artifact with the same visual probe battery."""
+    from cogsyndelta.model.vl_jepa import IJEPA
+    from cogsyndelta.quant.ptq import load_packed_artifact, unpack_state_dict
+    from cogsyndelta.regions._checkpoint import sha256_file
+
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    t0 = time.time()
+    resolved_path = _find_train_receipt(region, state, train_receipt_path)
+    if resolved_path is None:
+        raise FileNotFoundError(f"no training receipt for {region}")
+    train_receipt = json.loads(resolved_path.read_text())
+    packed_sha = sha256_file(quantized_path)
+    if quant_receipt_path is not None:
+        qrec = json.loads(quant_receipt_path.read_text())
+        recorded = str((qrec.get("artifacts") or {}).get("quantized_sha256") or "")
+        if recorded and recorded != packed_sha:
+            raise ValueError(
+                f"{quant_receipt_path}: quantized_sha256 {recorded} != bytes at "
+                f"{quantized_path} ({packed_sha})"
+            )
+    packed = load_packed_artifact(quantized_path)
+    cfg = _vl_cfg_from_train_receipt(region, train_receipt)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = IJEPA(cfg.jepa).to(device)
+    model.load_state_dict(unpack_state_dict(packed))
+    model.eval()
+    held, xfer = _measure_visual_probes(model, cfg, device)
+    baseline = train_receipt["untrained_baseline"]
+    metrics: dict[str, float] = {
+        "probe.top1": float(held["top1"]),
+        "probe.top5": float(held["top5"]),
+        "repr.rep_std": float(held["rep_std"]),
+        "quant.artifact_recall@1": float(held["top1"]),
+    }
+    if xfer is not None:
+        metrics["transfer.top1"] = float(xfer["top1"])
+    return Receipt(
+        producer=Producer("cogsyndelta", canonical_region(region), "i-jepa"),
+        stage="eval",
+        kind="eval-quantized",
+        metrics=metrics,
+        baseline={"probe.top1": float(baseline["top1"])},
+        gates={
+            "beats_untrained_eval": float(held["top1"]) > float(baseline["top1"]),
+            "not_collapsed": (held["rep_std"] / max(1e-9, float(baseline["rep_std"]))) >= 0.1,
+        },
+        artifacts={
+            "checkpoint": train_receipt["checkpoint"],
+            "checkpoint_sha256": str(train_receipt.get("checkpoint_sha256") or ""),
+            "quantized_path": str(quantized_path),
+            "quantized_sha256": packed_sha,
+            "source_training_receipt": {
+                "path": str(resolved_path),
+                "sha256": sha256_file(resolved_path),
+            },
+        },
+        provenance={"eval_target": "quantized"},
+        detail={"held_out": held, "transfer": xfer},
+        started_utc=started_utc,
+        seconds=time.time() - t0,
+        device=str(device),
+    )
+
+
 def benchmark_region_quantized(
     region: str,
     state: Path,
@@ -541,6 +783,14 @@ def benchmark_region_quantized(
             training receipt's -- either means the files on disk are not the ones the
             receipts describe, and scoring them would produce a number bound to nothing.
     """
+    if _is_visual_region(region):
+        return benchmark_visual_region_quantized(
+            region,
+            state,
+            quantized_path,
+            quant_receipt_path=quant_receipt_path,
+            train_receipt_path=train_receipt_path,
+        )
     from cogsyndelta.quant.ptq import (
         load_packed_artifact,
         packed_stored_bytes,

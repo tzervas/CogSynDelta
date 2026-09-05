@@ -317,11 +317,11 @@ Written as `Receipt(kind="eval" | "eval-quantized", ...)`
 
 **Evaluation set, every field in this section:** the same held-out split §2 uses, rebuilt from
 the training receipt's own recorded config and cross-checked by corpus fingerprint
-(`_region_eval_context()`, `scripts/csd-benchmark.py:163-228`) -- **never** re-globbed. `kind:
+(`_region_eval_context()`, `scripts/csd-benchmark.py:347-412`) -- **never** re-globbed. `kind:
 "eval"` scores the fp32 checkpoint; `kind: "eval-quantized"` scores the actual packed `.ptq.pt`
-artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:388-541`), not
+artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:761-906`), not
 the in-memory quantization plan (§4). `_run_battery()`
-(`scripts/csd-benchmark.py:231-252`) encodes the **whole** holdout as one closed candidate
+(`scripts/csd-benchmark.py:415-436`) encodes the **whole** holdout as one closed candidate
 pool -- identical in shape to §2's `scores = a @ p.T`, `relevant = arange(...)` construction,
 which is why `rank.recall@1` in this battery is numerically identical to `held_out.recall@1`
 in §2 for the same checkpoint (confirmed against a real receipt pair in §10).
@@ -1922,3 +1922,22 @@ disk for a given battery.
 See [§15](#15-v1---v2-deprecation-map) for the full v1 -> v2 deprecation map and
 [§14](#14-schema-stamp-and-refuse-predicate) for the `metrics_schema` stamp and refuse
 predicate every comparison across these names must pass.
+
+## 21. Visual probe metrics (`kind: eval` on the I-JEPA region)
+
+These names are written by `scripts/csd-benchmark.py` `benchmark_visual_region` for
+`--regions visual`. They are **not** closed-pool `rank.*` scores. The battery is the
+same linear probe training used (`src/cogsyndelta/regions/vl_pretrain.py` `_linear_probe`
+on frozen `IJEPA.encode` features — the EMA target encoder).
+
+| field | battery | formula | file |
+|---|---|---|---|
+| `probe.top1` / `probe.top5` | EuroSAT official test (probe role `primary`) | linear-probe accuracy on frozen target-encoder latents | `scripts/csd-benchmark.py` `benchmark_visual_region`; probe fit `vl_pretrain.py` `_linear_probe` |
+| `transfer.top1` / `transfer.top5` | Fashion-MNIST t10k (probe role `transfer`) | same probe, different labelled set | same |
+| `repr.rep_std` | mixed I-JEPA train batch | std of target-encoder latents | `vl_pretrain.py` `_rep_std_on_mixed_batch` |
+| `gates.beats_untrained_eval` | same EuroSAT split | `probe.top1 > train_receipt.untrained_baseline.top1` | `benchmark_visual_region` |
+| `gates.not_collapsed` | same mixed batch | `rep_std / untrained.rep_std >= 0.1` | same predicate as the train receipt |
+
+Do not compare `probe.top1` to `rank.recall@1`. Quantize of visual reuses
+`quant.plan_recall@1` as the **plan's probe top-1** (same `eval_fn`), not a retrieval
+score.
