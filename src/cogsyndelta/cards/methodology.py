@@ -386,6 +386,32 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         battery_id="quant_plan",
         pooling="matched",
     ),
+    "quant.plan_probe_top1": MetricMethodology(
+        "EuroSAT official-test linear-probe top-1 measured on the IN-MEMORY "
+        "dequantized EMA target encoder, before the packed artifact is written "
+        "(METRICS-METHODOLOGY.md §12.8.1). Not closed-pool recall@1.",
+        "EuroSAT test linear probe, n_eval=5400, 10-way, chance 0.1 (quantize stage)",
+        "scripts/csd-quantize.py",
+        battery_id="quant_plan",
+        pooling="linear_probe",
+    ),
+    "quant.artifact_probe_top1": MetricMethodology(
+        "EuroSAT official-test linear-probe top-1 measured on the PACKED "
+        "target_encoder artifact read back off disk (kind=eval-quantized). The "
+        "byte-verified counterpart to quant.plan_probe_top1.",
+        "EuroSAT test linear probe, n_eval=5400 (eval-quantized)",
+        "scripts/csd-benchmark.py",
+        battery_id="eval_quantized_holdout",
+        pooling="linear_probe",
+    ),
+    "quant.drop_probe_top1": MetricMethodology(
+        "fp32_metric_recomputed - quant.plan_probe_top1, one named metric on the "
+        "EuroSAT linear-probe battery",
+        "EuroSAT test linear probe (quantize stage)",
+        "scripts/csd-quantize.py",
+        battery_id="quant_plan",
+        pooling="linear_probe",
+    ),
     "drop": MetricMethodology(
         "LEGACY name for quant.drop_recall@1 (pre-g7 quant receipts); "
         "fp32_metric_recomputed - quantized_metric",

@@ -165,6 +165,71 @@ def test_visual_quantize_writes_within_budget(tmp_path: Path) -> None:
     assert rec["artifacts"]["quantized_module"] == "target_encoder"
 
 
+_VISUAL_QUANT_PROBE_KEYS = frozenset(
+    {"quant.plan_probe_top1", "quant.drop_probe_top1", "quant.compression_ratio"}
+)
+
+
+def test_visual_quant_receipt_keys_are_probe_named_not_recall(tmp_path: Path) -> None:
+    """Visual quant receipts name probe top-1. Mutation: write quant.plan_recall@1
+    again and this finds a recall@1 key."""
+    _receipt, state, train_path = _train(tmp_path)
+    quant = _load_quantize()
+    rec = quant.quantize_visual_region(
+        "visual", state, tolerance=1.0, aggressive=8, max_bits=8, train_receipt_path=train_path
+    )
+    assert rec.keys() >= _VISUAL_QUANT_PROBE_KEYS
+    assert not any("recall@1" in k for k in rec)
+
+
+def test_visual_eval_quantized_uses_artifact_probe_top1(tmp_path: Path) -> None:
+    _receipt, state, train_path = _train(tmp_path)
+    quant = _load_quantize()
+    qrec = quant.quantize_visual_region(
+        "visual", state, tolerance=1.0, aggressive=8, max_bits=8, train_receipt_path=train_path
+    )
+    bench = _load_benchmark()
+    rec = bench.benchmark_visual_region_quantized(
+        "visual",
+        state,
+        Path(qrec["artifacts"]["quantized_path"]),
+        train_receipt_path=train_path,
+    )
+    assert "quant.artifact_probe_top1" in rec.metrics
+    assert "quant.artifact_recall@1" not in rec.metrics
+    assert rec.metrics["quant.artifact_probe_top1"] == rec.metrics["probe.top1"]
+
+
+def test_mixed_quantize_summary_print_does_not_raise() -> None:
+    """A mixed text+visual results list must not KeyError on the plan key."""
+    quant = _load_quantize()
+    text = {
+        "region": "language",
+        "quant.compression_ratio": 2.0,
+        "fp32_metric_recomputed": 0.9,
+        "quant.plan_recall@1": 0.88,
+        "within_budget": True,
+    }
+    vis = {
+        "region": "visual",
+        "quant.compression_ratio": 3.0,
+        "fp32_metric_recomputed": 0.7,
+        "quant.plan_probe_top1": 0.65,
+        "within_budget": True,
+    }
+    assert "0.8800" in quant._format_quant_summary(text)
+    assert "0.6500" in quant._format_quant_summary(vis)
+    with pytest.raises(KeyError):
+        quant._format_quant_summary(
+            {
+                "region": "visual",
+                "quant.compression_ratio": 3.0,
+                "fp32_metric_recomputed": 0.7,
+                "within_budget": True,
+            }
+        )
+
+
 def _packed_param_names(path: Path) -> set[str]:
     packed = torch.load(path, weights_only=True, map_location="cpu")
     return set(packed["fp32"]) | set(packed["bits"])

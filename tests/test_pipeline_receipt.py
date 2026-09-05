@@ -137,6 +137,31 @@ def test_adapts_v2_quant_receipt_under_its_new_field_names() -> None:
     assert rec.metrics_schema == METRICS_SCHEMA == "csd-metrics/v2"
 
 
+def test_adapts_visual_quant_receipt_under_probe_names() -> None:
+    """Visual quant receipts name probe top-1; adapt() still fills the envelope's
+    generic metric/drop keys. Mutation: drop plan_probe_top1 from is_v2_quant and
+    this returns None."""
+    raw = {
+        "region": "visual",
+        "kind": "quant",
+        "metrics_schema": "csd-metrics/v2",
+        "quant.compression_ratio": 4.0,
+        "quant.plan_probe_top1": 0.72,
+        "fp32_metric_recomputed": 0.73,
+        "stored_bytes": 1_000_000,
+        "quant.drop_probe_top1": 0.01,
+        "within_budget": True,
+    }
+    rec = adapt(raw, Path("visual-quant.json"))
+    assert rec is not None
+    assert rec.stage == "quantize"
+    assert rec.metrics["metric"] == 0.72
+    assert rec.metrics["drop"] == 0.01
+    assert rec.metrics["compression_ratio"] == 4.0
+    assert rec.passed
+    assert rec.metrics_schema == METRICS_SCHEMA
+
+
 def test_a_fresh_receipt_defaults_to_the_current_metrics_schema() -> None:
     assert Receipt(Producer("p", "c"), "eval").metrics_schema == METRICS_SCHEMA
 

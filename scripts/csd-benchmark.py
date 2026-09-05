@@ -847,7 +847,7 @@ def benchmark_visual_region_quantized(
         "probe.top1": float(held["top1"]),
         "probe.top5": float(held["top5"]),
         "repr.rep_std": float(held["rep_std"]),
-        "quant.artifact_recall@1": float(held["top1"]),
+        "quant.artifact_probe_top1": float(held["top1"]),
     }
     if xfer is not None:
         metrics["transfer.top1"] = float(xfer["top1"])

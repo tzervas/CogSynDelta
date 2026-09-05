@@ -444,8 +444,8 @@ def quantize_visual_region(
         "max_bits": max_bits,
         "fp32_metric_recomputed": fp32_metric,
         "fp32_metric_receipt": recorded_metric,
-        "quant.plan_recall@1": plan.metric,
-        "quant.drop_recall@1": fp32_metric - plan.metric,
+        "quant.plan_probe_top1": plan.metric,
+        "quant.drop_probe_top1": fp32_metric - plan.metric,
         "within_budget": (fp32_metric - plan.metric) <= tolerance,
         "fp32_bytes": plan.fp32_bytes,
         "stored_bytes": plan.stored_bytes,
@@ -458,6 +458,16 @@ def quantize_visual_region(
         "pooling": "linear_probe",
         "seed": cfg.seed,
     }
+
+
+def _format_quant_summary(r: dict) -> str:
+    """One summary line. Visual receipts name probe top-1; text receipts name recall@1."""
+    plan = r["quant.plan_probe_top1"] if "quant.plan_probe_top1" in r else r["quant.plan_recall@1"]
+    return (
+        f"  {r['region']:<10} {r['quant.compression_ratio']:.2f}x  "
+        f"{r['fp32_metric_recomputed']:.4f} -> {float(plan):.4f}  "
+        f"{'OK' if r['within_budget'] else 'OVER BUDGET'}"
+    )
 
 
 def main() -> int:
@@ -532,12 +542,7 @@ def main() -> int:
         flush=True,
     )
     for r in results:
-        print(
-            f"  {r['region']:<10} {r['quant.compression_ratio']:.2f}x  "
-            f"{r['fp32_metric_recomputed']:.4f} -> {r['quant.plan_recall@1']:.4f}  "
-            f"{'OK' if r['within_budget'] else 'OVER BUDGET'}",
-            flush=True,
-        )
+        print(_format_quant_summary(r), flush=True)
     report_peak()
     return 1 if failures else 0
 
