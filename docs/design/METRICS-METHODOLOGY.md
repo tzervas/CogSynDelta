@@ -317,11 +317,11 @@ Written as `Receipt(kind="eval" | "eval-quantized", ...)`
 
 **Evaluation set, every field in this section:** the same held-out split §2 uses, rebuilt from
 the training receipt's own recorded config and cross-checked by corpus fingerprint
-(`_region_eval_context()`, `scripts/csd-benchmark.py:347-412`) -- **never** re-globbed. `kind:
+(`_region_eval_context()`, `scripts/csd-benchmark.py:378-443`) -- **never** re-globbed. `kind:
 "eval"` scores the fp32 checkpoint; `kind: "eval-quantized"` scores the actual packed `.ptq.pt`
-artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:761-906`), not
+artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:792-937`), not
 the in-memory quantization plan (§4). `_run_battery()`
-(`scripts/csd-benchmark.py:415-436`) encodes the **whole** holdout as one closed candidate
+(`scripts/csd-benchmark.py:446-467`) encodes the **whole** holdout as one closed candidate
 pool -- identical in shape to §2's `scores = a @ p.T`, `relevant = arange(...)` construction,
 which is why `rank.recall@1` in this battery is numerically identical to `held_out.recall@1`
 in §2 for the same checkpoint (confirmed against a real receipt pair in §10).

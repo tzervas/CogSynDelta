@@ -387,7 +387,23 @@ def _linear_probe(
     fev = ((feats_ev - mu) / sigma).to(device)
     ytr, yev = y_tr.to(device), y_ev.to(device)
 
+    # Linear.reset_parameters uses the process-global RNG, not `g`. After a training
+    # loop that has drawn masks from that RNG, the head is a different draw than a
+    # fresh eval process that only loaded the checkpoint. Seed the head from `seed`
+    # and restore the global generators so this call does not perturb callers.
+    cpu_rng = torch.get_rng_state()
+    cuda_rng = (
+        torch.cuda.get_rng_state_all()
+        if device.type == "cuda" and torch.cuda.is_available()
+        else None
+    )
+    torch.manual_seed(seed)
+    if device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     head = nn.Linear(ftr.size(1), n_classes).to(device)
+    torch.set_rng_state(cpu_rng)
+    if cuda_rng is not None:
+        torch.cuda.set_rng_state_all(cuda_rng)
     opt = torch.optim.AdamW(head.parameters(), lr=lr, weight_decay=1e-4)
     bs = min(1024, ftr.size(0))
     for _ in range(steps):
@@ -898,7 +914,7 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         "held_out": _stamp_probe_identity(final, held_out_id),
         "untrained_transfer": _stamp_probe_identity(baseline_transfer, transfer_id),
         "transfer": _stamp_probe_identity(final_transfer, transfer_id),
-        "probe": {
+        "probe_protocol": {
             "jepa_train_shards": list(cfg.train_shards),
             "linear_train_shards": list(cfg.probe_train_shards),
             "linear_eval_shards": list(cfg.probe_eval_shards),
@@ -909,6 +925,7 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
             "transfer_image_column": cfg.transfer_image_column,
             "transfer_label_column": cfg.transfer_label_column,
             "sets": list(cfg.probe_sets),
+            "cache_dir": cfg.cache_dir,
         },
         "collapse_ratio": round(collapse_ratio, 4),
         "collapsed": collapsed,

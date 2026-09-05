@@ -67,30 +67,34 @@ def _vl_cfg_from_train_receipt(region: str, train_receipt: dict) -> Any:
     from cogsyndelta.model.vl_jepa import JEPAConfig
     from cogsyndelta.regions.vl_pretrain import VLPretrainConfig
 
-    probe = train_receipt.get("probe") or {}
+    protocol = train_receipt.get("probe_protocol")
+    if not isinstance(protocol, dict):
+        legacy = train_receipt.get("probe")
+        protocol = legacy if isinstance(legacy, dict) else {}
     cfg_d = train_receipt["config"]
     ckpt = Path(str(train_receipt["checkpoint"]))
+    cache_dir = protocol.get("cache_dir") or str(ckpt.parent.parent.parent / "vl-cache")
     return VLPretrainConfig(
         region=canonical_region(region),
-        train_shards=list(probe.get("jepa_train_shards") or []),
-        probe_train_shards=list(probe.get("linear_train_shards") or []),
-        probe_eval_shards=list(probe.get("linear_eval_shards") or []),
-        transfer_shards=list(probe.get("transfer_shards") or []),
-        image_column=str(probe.get("image_column") or "image"),
-        label_column=str(probe.get("label_column") or "label"),
-        transfer_image_column=str(probe.get("transfer_image_column") or "image"),
-        transfer_label_column=str(probe.get("transfer_label_column") or "label"),
-        image_backend=str(probe.get("image_backend") or "png_zip"),
+        train_shards=list(protocol.get("jepa_train_shards") or []),
+        probe_train_shards=list(protocol.get("linear_train_shards") or []),
+        probe_eval_shards=list(protocol.get("linear_eval_shards") or []),
+        transfer_shards=list(protocol.get("transfer_shards") or []),
+        image_column=str(protocol.get("image_column") or "image"),
+        label_column=str(protocol.get("label_column") or "label"),
+        transfer_image_column=str(protocol.get("transfer_image_column") or "image"),
+        transfer_label_column=str(protocol.get("transfer_label_column") or "label"),
+        image_backend=str(protocol.get("image_backend") or "png_zip"),
         steps=int(cfg_d["steps"]),
         batch_size=int(cfg_d["batch_size"]),
         seed=int(cfg_d.get("seed") or 0),
         probe_steps=int(cfg_d.get("probe_steps") or 600),
         probe_lr=float(cfg_d.get("probe_lr") or 1e-3),
         jepa=JEPAConfig(**cfg_d["jepa"]),
-        probe_sets=list(probe.get("sets") or []),
+        probe_sets=list(protocol.get("sets") or []),
         device="cpu" if not torch.cuda.is_available() else "auto",
-        cache_dir=str(ckpt.parent.parent / "vl-cache"),
-        out_dir=str(ckpt.parent),
+        cache_dir=str(cache_dir),
+        out_dir=str(ckpt.parent.parent),
     )
 
 
@@ -185,6 +189,25 @@ def benchmark_visual_region(
     if xfer is not None:
         metrics["transfer.top1"] = float(xfer["top1"])
         metrics["transfer.top5"] = float(xfer["top5"])
+    print(
+        f"    probe  untrained top1={float(baseline['top1']):.4f} "
+        f"top5={float(baseline.get('top5') or 0):.4f}  ->  "
+        f"trained top1={float(held['top1']):.4f} top5={float(held['top5']):.4f}",
+        flush=True,
+    )
+    untrained_xfer = train_receipt.get("untrained_transfer")
+    if xfer is not None and isinstance(untrained_xfer, dict):
+        tname = (train_receipt.get("transfer") or {}).get("name") or "transfer"
+        print(
+            f"    transfer ({tname})  untrained top1={float(untrained_xfer['top1']):.4f}  "
+            f"->  trained top1={float(xfer['top1']):.4f}",
+            flush=True,
+        )
+    print(
+        f"    rep_std {float(baseline['rep_std']):.4f} -> {float(held['rep_std']):.4f} "
+        f"(ratio {collapse_ratio:.4f}, collapsed={collapsed})",
+        flush=True,
+    )
     return Receipt(
         producer=Producer("cogsyndelta", canonical_region(region), "i-jepa"),
         stage="eval",
@@ -208,6 +231,14 @@ def benchmark_visual_region(
             "stored_bytes_definition": "weights-only",
             "fp32_reference_bytes": stored,
             "collapse_ratio": round(collapse_ratio, 4),
+            "probe_repeatability": "not-bitwise",
+            "probe_repeatability_reason": (
+                "_linear_probe re-seeds the Linear head from cfg.seed so train vs eval "
+                "no longer depend on how many global RNG draws the I-JEPA loop consumed; "
+                "CUDA GEMM/AdamW on the probe are still not bitwise-deterministic. "
+                "Smoke 24-step (same checkpoint): train held_out.top1 0.6269 vs eval "
+                "probe.top1 0.6215; rep_std matched bitwise."
+            ),
         },
         detail={"held_out": held, "transfer": xfer},
         started_utc=started_utc,

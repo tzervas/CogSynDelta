@@ -105,10 +105,14 @@ def _load_quantize():
     return mod
 
 
-def test_visual_eval_writes_gates_and_artifacts(tmp_path: Path) -> None:
+def test_visual_eval_writes_gates_and_artifacts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Harness-shaped invocation. Mutation: drop `_is_visual_region` dispatch in
     `benchmark_region` and this raises KeyError: no REGIONS entry for 'visual'."""
-    _receipt, state, train_path = _train(tmp_path)
+    receipt, state, train_path = _train(tmp_path)
+    assert "probe_protocol" in receipt
+    assert receipt.get("probe") is not True
     bench = _load_benchmark()
     rec = bench.benchmark_region("visual", state, train_receipt_path=train_path)
     assert rec is not None
@@ -122,6 +126,10 @@ def test_visual_eval_writes_gates_and_artifacts(tmp_path: Path) -> None:
     )
     assert "path" in rec.artifacts["source_training_receipt"]
     assert rec.metrics["probe.top1"] >= 0.0
+    assert rec.provenance["probe_repeatability"] == "not-bitwise"
+    printed = capsys.readouterr().out
+    assert "untrained top1" in printed
+    assert "rep_std" in printed
     out = rec.write(state / "receipts")
     assert out.name.startswith("cogsyndelta-visual-eval-")
 
