@@ -56,6 +56,24 @@ reading `<cell dir>/cell.json`'s own `stages.*.receipt` pointers (the exact path
 `"done"`; `--train-receipt`/`--eval-receipt`/`--eval-quantized-receipt`/`--quant-
 receipt` override or supply a receipt directly.
 
+## The faculty-name alias display rule
+
+`region` (the value `--region` names, and the id under which a cell's receipts were
+written) can be a legacy id — `code`, `vl_latent` — resolved to its canonical faculty by
+`cogsyndelta.regions.aliases.canonical_region` before `region_cfg` is looked up in
+`config/mind/csd-regions.json`. The templates never hide that resolution: when
+`region_cfg["name"]` (the canonical id) differs from `region` (what was asked for),
+`region_main.md.j2` and `region_variant.md.j2` print a **Faculty** line naming the
+canonical id and, if the config carries one, its `specialisation` — *"language
+(specialisation: `code`) -- this release's receipts were recorded under the legacy
+region id `code`"* — rather than silently rendering the card as if the legacy id were
+the whole story. A region whose config id already matches `region` and carries a bare
+`specialisation` (no rename involved) gets the shorter **Specialisation** line with no
+legacy-id note, because there is no alias to disclose. This is what DEC-01/DEC-78
+(`docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` §1) require of anything that reads a
+region name: resolve through the one alias module, and record which name was actually on
+disk.
+
 ## Every refusal, and why
 
 A card build refuses (raises, prints nothing) rather than publish a number it cannot
@@ -68,7 +86,7 @@ suite.
 | `metrics_schema` disagreement | `CardError` (`assert_schemas_agree`, `src/cogsyndelta/cards/tables.py:79`) | the train/eval/quant receipts merged into one card's tables stamp different `metrics_schema` values — `cogsyndelta.cards` refuses outright (stricter than `csd-publish-checkpoint.py`'s own `_metrics_schema_line`, which prints a `train=... eval=... quant=...` breakdown instead, because that script must keep publishing already-trained checkpoints whose receipts predate a schema migration) |
 | unresolved licence tier | `CardError` (`_licence_block`, `src/cogsyndelta/cards/render.py:233`) | any `kind` except `placeholder`/`composed` with no `region_cfg["licence_tier"]` set — a `placeholder` (no weights) or `composed` (licence resolution is the operator's call, CARD SPEC §9) renders a stated placeholder line instead |
 | unaudited region | `PublishAbortError` (`licence_tier`, `scripts/csd-publish-checkpoint.py:281`) | `--region` has no entry in `LICENCE_TIER` at all — refuses rather than default to MIT |
-| BLOCKING region | `PublishAbortError` (`licence_tier`, same function) | `--region vl_latent` — unreleasable as trained (`docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` §4), checked before the tier table is even consulted |
+| BLOCKING region | `PublishAbortError` (`licence_tier`, same function) | `--region visual` (or its legacy alias `vl_latent` — both resolve to the same config entry) — unreleasable as trained (`docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` §4), checked before the tier table is even consulted |
 | region mismatch | `CardCliError` (`scripts/csd-card.py`, `_build_receipts_and_region`) | `--region` disagrees with `--cell`'s own `cell.json` `region` field — the licence tier and repo name are derived from `--region`, so a mismatch would launder a receipt's real tier under a different region's name |
 | missing training receipt | `CardCliError` (same function) | `--kind region_variant`/`region_main`/`memory` with no train receipt from `--cell` or `--train-receipt` — `placeholder`/`composed` need none |
 | unloadable checkpoint under `--safetensors` | `PublishAbortError` (`build_plan`, `scripts/csd-publish-checkpoint.py`) | the checkpoint does not `torch.load()` as a plain state dict (or a `{"state_dict": ...}`-shaped wrapper) — see `cogsyndelta.cards.export._extract_state_dict` |
