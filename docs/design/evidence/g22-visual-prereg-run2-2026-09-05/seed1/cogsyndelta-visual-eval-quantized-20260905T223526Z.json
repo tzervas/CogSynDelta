@@ -1,0 +1,62 @@
+{
+  "producer": {
+    "project": "cogsyndelta",
+    "component": "visual",
+    "architecture": "i-jepa"
+  },
+  "stage": "eval",
+  "metrics": {
+    "probe.top1": 0.7242592573165894,
+    "probe.top5": 0.9792592525482178,
+    "repr.rep_std": 0.4016973376274109,
+    "quant.artifact_probe_top1": 0.7242592573165894,
+    "transfer.top1": 0.8100000619888306
+  },
+  "baseline": {
+    "probe.top1": 0.6337037086486816
+  },
+  "gates": {
+    "beats_untrained_eval": true,
+    "not_collapsed": true
+  },
+  "artifacts": {
+    "checkpoint": "/akula-data/csd/matrix/visual-b128-s1-3ce18db-20260905/receipts/visual-checkpoints/step-4000.pt",
+    "checkpoint_sha256": "219328ea24df3885f309c575503203778249fc5dd37e58eacd1f9047de651d8e",
+    "quantized_path": "/akula-data/csd/matrix/visual-b128-s1-3ce18db-20260905/receipts/visual-checkpoints/step-4000.ptq.pt",
+    "quantized_sha256": "51845d8b0111e927687d4b130df6f45a5646c0f18331f63d9baa1aaa4601b0e2",
+    "source_training_receipt": {
+      "path": "/akula-data/csd/matrix/visual-b128-s1-3ce18db-20260905/receipts/visual-20260905T222732Z.json",
+      "sha256": "165dc40b56adcc44c78ff6242cfdcbaef3890a14832362df13c6ec1890076682"
+    }
+  },
+  "provenance": {
+    "eval_target": "quantized",
+    "parameters": 10712448,
+    "quantized_module": "target_encoder"
+  },
+  "detail": {
+    "held_out": {
+      "top1": 0.7242592573165894,
+      "top5": 0.9792592525482178,
+      "n_eval": 5400.0,
+      "rep_std": 0.4016973376274109
+    },
+    "transfer": {
+      "top1": 0.8100000619888306,
+      "top5": 0.9980000257492065,
+      "n_eval": 2000.0
+    }
+  },
+  "started_utc": "2026-09-05T22:34:53Z",
+  "seconds": 33.18598699569702,
+  "device": "cuda",
+  "schema": "model-pipeline-receipt/v1",
+  "metrics_schema": "csd-metrics/v2",
+  "kind": "eval-quantized",
+  "code_revision": {
+    "git_sha": "6964c0a98ee30a44239affc170d028dc61f61b49",
+    "dirty": true,
+    "branch": "main",
+    "describe": "v0.2.0-164-g6964c0a"
+  }
+}
