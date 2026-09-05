@@ -37,3 +37,9 @@
 27b0e4d4f0f949764693c6996fdd14d0d6acfef2:docs/design/evidence/w1-token-rank-2026-09-02/results.json:generic-api-key:350
 # docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:590 -- same tokenizer load line, different evidence run
 27b0e4d4f0f949764693c6996fdd14d0d6acfef2:docs/design/evidence/w1d-readout-probe-2026-09-02/results.json:generic-api-key:590
+# tests/test_cards_tables.py latency-metric fixture: a metric NAME passed as a keyword argument,
+# flagged by generic-api-key in three historical commits (the file is now allowlisted by path in
+# .gitleaks.toml; these fingerprints cover the commits that predate that). Not credentials.
+5fc9960a7e17f2cf65310d764d657278742dd3c8:tests/test_cards_tables.py:generic-api-key:258
+daf19ffc426ec5468bced62b2b761eb6e77b4ded:tests/test_cards_tables.py:generic-api-key:259
+d5de59560d28b79aad133d3ac679bc50c9e3153c:.gitleaksignore:generic-api-key:40

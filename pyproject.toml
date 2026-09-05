@@ -46,6 +46,11 @@ dependencies = [
     "websockets>=12.0,<17.0",
     "httpx>=0.27.0,<1.0.0",
     "aiohttp>=3.14.3,<4.0.0",
+    # cogsyndelta.cards.export.export_safetensors -- the Hub only renders its
+    # safetensors badge/model-size sidebar for a file this library can itself parse;
+    # save_file/load_file also refuse arbitrary pickled objects outright (no pickle,
+    # unlike torch.save), which is why the export writes ONLY plain tensors.
+    "safetensors>=0.4.0,<1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -195,6 +200,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 cogsyndelta = ["config/*.yaml", "config/*.json"]
+"cogsyndelta.cards" = ["templates/*.md.j2"]
 
 [tool.ruff]
 line-length = 100

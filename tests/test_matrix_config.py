@@ -439,6 +439,7 @@ _NOT_CELL_VARS = frozenset(
         "finetune",
         "keep",
         "corpus_fingerprint_pin",
+        "card",  # model-card metadata for scripts/csd-card.py -- see its own tests below
     }
 )
 
@@ -570,3 +571,127 @@ def test_the_glob_guard_fires_when_the_receipt_kind_is_renamed() -> None:
         written = rec.write(Path(tmp) / "receipts")
         relative = f"receipts/{written.name}"
     assert not fnmatch.fnmatch(relative, glob)
+
+
+# ================================================== publish.card_command / regions.*.card
+#
+# `scripts/csd-card.py` (via `publish.card_command`) is a SEPARATE tool from the
+# `commands.publish` template (`csd-publish-checkpoint.py`) tested above -- see that
+# script's own module docstring. Its per-region `card:` metadata block must not silently
+# drift from the audited licence table `csd-publish-checkpoint.py`'s own `licence_tier()`
+# actually enforces: this config is descriptive (what a reader/harness sees), that
+# script is enforcing (what a real publish refuses), and the two naming different tiers
+# for the same region would be exactly the kind of provenance falsehood the rest of this
+# repo's card-building code refuses to print.
+
+PUBLISH_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "csd-publish-checkpoint.py"
+
+
+def _load_publish_licence_table() -> dict[str, str]:
+    import importlib.machinery
+    import importlib.util
+    import sys
+
+    loader = importlib.machinery.SourceFileLoader(
+        "csd_publish_checkpoint_for_matrix_test", str(PUBLISH_SCRIPT)
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[loader.name] = mod
+    loader.exec_module(mod)
+    return dict(mod.LICENCE_TIER)
+
+
+CARD_REGIONS = ("code", "compress", "retrieve", "reason", "memory")
+
+
+def test_every_card_region_declares_full_card_metadata() -> None:
+    raw = _raw()
+    for name in CARD_REGIONS:
+        card = raw["regions"][name].get("card")
+        assert isinstance(card, dict), f"region {name!r} has no 'card' block"
+        assert card.get("language") == "en"
+        assert isinstance(card.get("tags"), list) and card["tags"], (
+            f"region {name!r} card.tags empty"
+        )
+        assert isinstance(card.get("licence_tier"), str) and card["licence_tier"]
+        assert isinstance(card.get("datasets"), list) and card["datasets"], (
+            f"region {name!r} card.datasets empty"
+        )
+
+
+def test_every_card_tags_list_names_its_own_region() -> None:
+    raw = _raw()
+    for name in CARD_REGIONS:
+        tags = raw["regions"][name]["card"]["tags"]
+        assert "cogsyndelta" in tags
+        assert f"region:{name}" in tags
+
+
+def test_card_licence_tier_agrees_with_the_publish_script() -> None:
+    """The config's own `card.licence_tier` must equal what `csd-publish-checkpoint.py`'s
+    `licence_tier()` would actually resolve for that region -- the SAME audited table,
+    not a second, hand-copied one this config could silently drift from.
+    """
+    table = _load_publish_licence_table()
+    raw = _raw()
+    for name in CARD_REGIONS:
+        declared = raw["regions"][name]["card"]["licence_tier"]
+        assert declared == table[name], (
+            f"region {name!r} card.licence_tier={declared!r} disagrees with "
+            f"csd-publish-checkpoint.py's LICENCE_TIER[{name!r}]={table[name]!r}"
+        )
+
+
+def test_the_card_licence_tier_guard_fires_on_a_diverged_config() -> None:
+    """MUTATION. A config that names a tier the publish script's own table disagrees
+    with must be caught -- reproduced here by comparing a deliberately wrong table
+    entry against this config's real `card.licence_tier`, the same comparison the test
+    above makes, so a real future drift (someone edits one file and not the other) is
+    exactly what this shape catches."""
+    real_table = _load_publish_licence_table()
+    diverged_table = dict(real_table)
+    diverged_table["compress"] = "mit"  # the real tier is cc-by-sa-4.0
+    raw = _raw()
+    declared = raw["regions"]["compress"]["card"]["licence_tier"]
+    assert declared != diverged_table["compress"], (
+        "mutation proof is broken: the diverged table happens to already match the config"
+    )
+
+
+def test_publish_declares_card_command_and_branch_prefix() -> None:
+    raw = _raw()
+    publish = raw["publish"]
+    assert isinstance(publish.get("card_command"), str) and publish["card_command"].strip()
+    assert publish.get("branch_prefix") == "variants/"
+
+
+# card_command's placeholders: cell vars the harness already injects today
+# (region is a cell var; python/pythonpath are HARNESS_INJECTED_KEYS) plus the two
+# harness-round-4 keys this template genuinely needs (`hub_repo`, the ONE PENDING_HUB_KEYS
+# member `commands.publish` also needs) and `out`, which `card_command` is the only
+# template in this config that names (the harness would compute it from the cell dir +
+# a fixed filename, same shape as `train_receipt`/`quantized_path` above).
+CARD_COMMAND_KNOWN_EXTRA_KEYS = frozenset({"hub_repo", "out", "cell_dir"})
+
+
+def test_card_command_needs_only_known_or_pending_keys() -> None:
+    raw = _raw()
+    merged = _merged_regions(raw)["code"]  # any region: card_command is region-generic
+    known = _cell_var_names(merged) | HARNESS_INJECTED_KEYS | CARD_COMMAND_KNOWN_EXTRA_KEYS
+    missing = _placeholders(raw["publish"]["card_command"]) - known
+    assert missing == set(), (
+        f"publish.card_command references keys nothing injects or declares pending: {sorted(missing)}"
+    )
+
+
+def test_the_card_command_key_guard_fires_on_an_uninjected_key() -> None:
+    """MUTATION. Same shape as test_the_template_key_guard_fires_on_an_uninjected_key
+    above, for card_command specifically."""
+    raw = copy.deepcopy(_raw())
+    raw["publish"]["card_command"] += " --nonsense {no_such_key}"
+    merged = _merged_regions(raw)["code"]
+    known = _cell_var_names(merged) | HARNESS_INJECTED_KEYS | CARD_COMMAND_KNOWN_EXTRA_KEYS
+    missing = _placeholders(raw["publish"]["card_command"]) - known
+    assert missing == {"no_such_key"}

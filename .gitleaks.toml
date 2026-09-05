@@ -71,3 +71,13 @@ paths = [
 regexes = [
   '''token_only, decorr_weight=0\.0''',
 ]
+
+# tests/test_cards_tables.py builds MetricRow(...) fixtures whose keyword argument is literally
+# named `key` (a metric name such as eff.latency_p50_ms). generic-api-key matches the
+# key-equals-quoted-token shape on every commit that carries such a line, including history, so the
+# file is allowlisted by path; it holds metric names and numbers, never credentials.
+[[allowlists]]
+description = "metric-table test fixtures: MetricRow(key=...) is a metric name, not a key"
+paths = [
+  '''tests/test_cards_tables\.py$''',
+]

@@ -98,6 +98,11 @@ prefix.
 packer; the model-matrix harness owns the variant driver; the dataset-factory ingest owns corpus
 sourcing; `csd-autodev` owns the dev loop. CSD stays the model.
 
+**One standalone reference lives here outside the thirteen-chapter index.**
+[`model-card-pipeline.md`](model-card-pipeline.md) documents `scripts/csd-card.py` and
+`cogsyndelta.cards` (what renders from what, every refusal) — a piece of tooling, not a
+design-derived chapter, so it carries no row above and no `DEC`/`OD` content of its own.
+
 ## Four facts to hold before writing or reviewing anything here
 
 1. **The taxonomy is not applied.** `config/mind/csd-regions.json` still carries `residual_mlp`,
