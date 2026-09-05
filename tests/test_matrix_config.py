@@ -603,7 +603,7 @@ def _load_publish_licence_table() -> dict[str, str]:
     return dict(mod.LICENCE_TIER)
 
 
-CARD_REGIONS = ("language", "compress", "retrieve", "reason", "memory")
+CARD_REGIONS = ("language", "compress", "retrieve", "reason", "memory", "visual")
 
 
 def test_every_card_region_declares_full_card_metadata() -> None:
@@ -682,16 +682,50 @@ def test_language_region_hub_repo_name_pins_the_legacy_hub_repo() -> None:
 
 
 def test_no_other_region_needs_a_hub_repo_name_override() -> None:
-    """Only `language` was renamed, so only its row's `repo_pattern` substitution
-    diverges from the Hub repo actually live today -- every other region's default
-    `tzervas/cogsyndelta-region-<name>` pattern already resolves correctly, and an
-    override on one of them would be a sign this test itself needs updating for a new
-    rename, not that the config is wrong."""
+    """`language` pins the pre-rename Hub slug; `visual` pins `-vl-jepa` because
+    `repo_pattern` would mint `-region-visual`. Every other region's default
+    `tzervas/cogsyndelta-region-<name>` pattern already resolves correctly."""
     raw = _raw()
     for name in CARD_REGIONS:
-        if name == "language":
+        if name in ("language", "visual"):
             continue
         assert "hub_repo_name" not in raw["regions"][name]
+
+
+def test_visual_region_declares_its_legacy_alias_and_vl_jepa_hub_repo() -> None:
+    region = _raw()["regions"]["visual"]
+    assert region["aliases"] == ["vl_latent"]
+    assert "corpus_source" not in region
+
+    import importlib.machinery
+    import importlib.util
+    import sys
+
+    publish_script = Path(__file__).resolve().parents[1] / "scripts" / "csd-publish-checkpoint.py"
+    loader = importlib.machinery.SourceFileLoader(
+        "csd_publish_checkpoint_for_visual_hub_repo_test", str(publish_script)
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    pub_mod = importlib.util.module_from_spec(spec)
+    sys.modules[loader.name] = pub_mod
+    loader.exec_module(pub_mod)
+
+    assert region["hub_repo_name"] == pub_mod.default_repo("visual")
+    assert region["hub_repo_name"] == pub_mod.default_repo("vl_latent")
+    assert region["card"]["licence_tier"] == "mit"
+    assert region["hosts"] == ["akula-prime"]
+    assert region["axes"] == {"batch": [128], "seed": [0, 1]}
+    assert len(_cells(_merged_regions(_raw())["visual"])) == 2
+
+
+def test_shipped_config_plans_twenty_three_cells_across_six_card_regions() -> None:
+    """Five text/memory regions (21 cells) plus visual b128 × s{0,1} (2) = 23."""
+    merged = _merged_regions(_raw())
+    assert set(merged) == set(CARD_REGIONS)
+    counts = {name: len(_cells(spec)) for name, spec in merged.items()}
+    assert counts["visual"] == 2
+    assert sum(counts.values()) == 23
 
 
 def test_the_card_licence_tier_guard_fires_on_a_diverged_config() -> None:
