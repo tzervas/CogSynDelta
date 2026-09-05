@@ -1271,6 +1271,8 @@ def run_vl_region(
     if manifest_rel:
         from cogsyndelta.vl.mix_corpus import (
             MixCorpusError,
+            check_listed_matches_declared,
+            check_paths_disjoint,
             load_manifest,
             source_probe_path,
             source_train_path,
@@ -1284,6 +1286,8 @@ def run_vl_region(
         try:
             manifest = load_manifest(repo_root / str(manifest_rel))
             dry_info = visual_corpus_dry(manifest)
+            check_listed_matches_declared(dry_info)
+            check_paths_disjoint(manifest)
         except MixCorpusError as exc:
             raise SystemExit(f"visual corpus refused: {exc}") from exc
         print(
@@ -1359,7 +1363,7 @@ def run_vl_region(
         cache_dir=str(state / "vl-cache"),
         image_backend="png_zip" if png_backend else "parquet",
         probe_set_names=probe_set_names,
-        corpus_source=str(corpus_source),
+        corpus_source=str(manifest["id"]) if png_backend else str(corpus_source),
     )
     started = time.time()
     receipt = pretrain_vl_region(cfg)

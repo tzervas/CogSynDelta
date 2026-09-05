@@ -742,6 +742,9 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
 
     # Collapse is judged against this run's own untrained spread, not a magic constant --
     # what counts as "low" depends on the architecture and the data.
+    # F2 samples rep_std from the current train batch (vl_jepa.forward). Mix B
+    # concatenates sources in manifest order then shuffles per zip, so the first
+    # batch of a full run is all pxhere; a later fix can wait.
     collapse_ratio = final["rep_std"] / max(1e-9, baseline["rep_std"])
     collapsed = collapse_ratio < 0.1
 
@@ -760,6 +763,8 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     # under labels for the probe; `probe_eval_shards`/`transfer_shards` are held out,
     # not trained on, so they do not belong in a corpus-identity hash any more than a
     # text region's holdout split does).
+    from cogsyndelta.vl.mix_corpus import receipt_shard_tail
+
     corpus_fingerprint = fingerprint_corpus(
         cfg.train_shards, columns=[cfg.image_column, cfg.label_column]
     )
@@ -773,11 +778,13 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         # "receipts that still use randperm must print masking: random-permutation").
         # Multi-block masking is NOT implemented in this increment.
         "masking": "random-permutation",
+        # csd-corpus-fp/v2 hashes basename+size per shard (not the landing-qualified
+        # tail below). corpus_source names the admitted Mix B id when wired.
         "corpus": {
-            "shards": [Path(s).name for s in cfg.train_shards],
+            "corpus_source": cfg.corpus_source,
+            "shards": [receipt_shard_tail(s) for s in cfg.train_shards],
             "fingerprint": corpus_fingerprint,
             "fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
-            "corpus_source": cfg.corpus_source or None,
             "image_column": cfg.image_column,
             "label_column": cfg.label_column,
             "probe_sets": list(cfg.probe_set_names),

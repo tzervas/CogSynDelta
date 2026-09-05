@@ -11,6 +11,8 @@ sampling; this file does NOT implement multi-block masking (`g8-visual/S02.md` Â
 from __future__ import annotations
 
 import io
+import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -78,6 +80,8 @@ def test_receipt_stamps_corpus_fingerprint_and_scheme(tiny_cfg: VLPretrainConfig
         tiny_cfg.train_shards, columns=[tiny_cfg.image_column, tiny_cfg.label_column]
     )
     assert receipt["corpus"]["fingerprint"] == expected
+    assert receipt["corpus"]["corpus_source"] == ""
+    assert receipt["corpus"]["shards"] == ["images.parquet"]
 
 
 def test_corpus_fingerprint_uses_the_shared_helper_no_new_scheme(
@@ -103,8 +107,6 @@ def test_fingerprint_changes_when_the_train_shard_content_changes(
 
     other_shard = tmp_path / "images2.parquet"
     _write_image_parquet(other_shard, n=8, size=16, n_classes=3)
-    from dataclasses import replace
-
     cfg_b = replace(
         tiny_cfg,
         region="vl-fingerprint-test-b",
@@ -117,3 +119,26 @@ def test_fingerprint_changes_when_the_train_shard_content_changes(
     receipt_b = pretrain_vl_region(cfg_b)
 
     assert receipt_a["corpus"]["fingerprint"] != receipt_b["corpus"]["fingerprint"]
+
+
+def test_receipt_stamps_corpus_source_and_landing_tail(
+    tmp_path: Path, tiny_cfg: VLPretrainConfig
+) -> None:
+    dest_dir = tmp_path / "aa__aa" / "processed" / "20260905T031650Z"
+    dest_dir.mkdir(parents=True)
+    dest = dest_dir / "images.parquet"
+    shutil.copy(tiny_cfg.train_shards[0], dest)
+    cfg = replace(
+        tiny_cfg,
+        corpus_source="visual-clean-v1",
+        train_shards=[str(dest)],
+        probe_train_shards=[str(dest)],
+        probe_eval_shards=[str(dest)],
+        out_dir=str(tmp_path / "run-tail"),
+        cache_dir=str(tmp_path / "vl-cache-tail"),
+    )
+    receipt = pretrain_vl_region(cfg)
+    assert receipt["corpus"]["corpus_source"] == "visual-clean-v1"
+    assert receipt["corpus"]["shards"] == ["aa__aa/processed/20260905T031650Z/images.parquet"]
+    expected = fingerprint_corpus(cfg.train_shards, columns=[cfg.image_column, cfg.label_column])
+    assert receipt["corpus"]["fingerprint"] == expected

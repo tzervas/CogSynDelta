@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +25,10 @@ from cogsyndelta.corpus import CORPUS_FINGERPRINT_SCHEME, fingerprint_corpus
 PNG_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[3] / "config" / "mind" / "visual-clean-v1.json"
 PRIMARY_PROBE = "eurosat-test"
+STAMP_DIR_RE = re.compile(r"^\d{8}T\d{6}Z$")
+SUPERSEDED_MARKER = "SUPERSEDED.json"
+CONTAMINATED_MARKER = "CONTAMINATED_SPLIT.json"
+OPERATIONS = "operations.json"
 
 
 class MixCorpusError(RuntimeError):
@@ -49,7 +54,7 @@ class ZipPngReader:
         self._zips: dict[Path, zipfile.ZipFile] = {}
 
     def read(self, ref: ImageRef) -> bytes:
-        """Return PNG bytes for `ref` without extracting the zip."""
+        """Return PNG bytes for ``ref`` without extracting the zip to disk."""
         if ref.member is None:
             return ref.store.read_bytes()
         handle = self._zips.get(ref.store)
@@ -59,13 +64,106 @@ class ZipPngReader:
         return handle.read(ref.member)
 
     def close(self) -> None:
-        """Close cached zip handles."""
+        """Close every cached zip handle."""
         for handle in self._zips.values():
             handle.close()
         self._zips.clear()
 
 
+def stamp_is_inactive(stamp_dir: Path) -> bool:
+    """True if this processed stamp must not be used as Mix B train (g24 rule).
+
+    Markers (any one is enough): ``SUPERSEDED.json``, any ``CONTAMINATED*.json``,
+    or ``operations.json`` with ``contaminated_split: true``.
+    """
+    if (stamp_dir / SUPERSEDED_MARKER).is_file():
+        return True
+    if any(stamp_dir.glob("CONTAMINATED*.json")):
+        return True
+    ops = stamp_dir / OPERATIONS
+    if ops.is_file():
+        try:
+            payload: Any = json.loads(ops.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            payload = None
+        if isinstance(payload, dict) and payload.get("contaminated_split") is True:
+            return True
+    return False
+
+
+def processed_stamp_dirs(dataset_dir: Path) -> list[Path]:
+    """ISO ``processed/<YYYYMMDDTHHMMSSZ>/`` dirs, oldest first."""
+    processed = dataset_dir / "processed"
+    if not processed.is_dir():
+        return []
+    return sorted(p for p in processed.iterdir() if p.is_dir() and STAMP_DIR_RE.match(p.name))
+
+
+def choose_active_stamp(dataset_dir: Path) -> tuple[Path | None, list[str]]:
+    """Newest non-inactive processed stamp, plus the inactive stamp names.
+
+    This is the g24 rule: newest stamp without SUPERSEDED / CONTAMINATED markers.
+    """
+    stamps = processed_stamp_dirs(dataset_dir)
+    inactive = [p.name for p in stamps if stamp_is_inactive(p)]
+    active_dirs = [p for p in stamps if p.name not in set(inactive)]
+    if not active_dirs:
+        return None, inactive
+    return active_dirs[-1], inactive
+
+
+def _active_stamp_from_provenance(landing: Path) -> str | None:
+    """Prefer ``active_train_set.stamp`` on the landing record; else g24 newest."""
+    prov_path = landing / "provenance.json"
+    if prov_path.is_file():
+        try:
+            prov: Any = json.loads(prov_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            prov = None
+        if isinstance(prov, dict):
+            ats = prov.get("active_train_set")
+            if isinstance(ats, dict) and ats.get("stamp"):
+                return str(ats["stamp"])
+    active, _inactive = choose_active_stamp(landing)
+    return active.name if active is not None else None
+
+
+def check_source_stamp_active(manifest: dict[str, Any], source: dict[str, Any]) -> None:
+    """Refuse a source whose stamp is superseded, contaminated, or not active.
+
+    Args:
+        manifest: Loaded visual-clean-v1 document (needs ``root``).
+        source: One ``sources[]`` row.
+
+    Raises:
+        MixCorpusError: The named stamp is unusable as Mix B train.
+    """
+    landing = Path(manifest["root"]) / source["landing"]
+    stamp = str(source["stamp"])
+    stamp_dir = landing / "processed" / stamp
+    if stamp_dir.is_dir() and stamp_is_inactive(stamp_dir):
+        raise MixCorpusError(
+            f"{source['id']} stamp {stamp} is inactive (SUPERSEDED or CONTAMINATED "
+            f"under {stamp_dir})"
+        )
+    if not (landing / "provenance.json").is_file() and not processed_stamp_dirs(landing):
+        return
+    active = _active_stamp_from_provenance(landing)
+    if active is not None and stamp != active:
+        raise MixCorpusError(
+            f"{source['id']} stamp {stamp} is not the active admitted stamp {active}"
+        )
+
+
 def load_manifest(path: str | Path | None = None) -> dict[str, Any]:
+    """Load a visual-clean-v1 manifest and refuse inactive stamps.
+
+    Each source's ``<landing>/provenance.json`` is read when present. The
+    admissible stamp is ``active_train_set.stamp`` when that field exists,
+    otherwise the newest ``processed/<ISO>/`` without SUPERSEDED /
+    CONTAMINATED markers (g24). A stamp dir carrying those markers is
+    refused even when provenance is absent.
+    """
     p = Path(path) if path is not None else DEFAULT_MANIFEST
     if not p.is_file():
         raise MixCorpusError(f"visual corpus manifest not present: {p}")
@@ -74,6 +172,10 @@ def load_manifest(path: str | Path | None = None) -> dict[str, Any]:
         raise MixCorpusError(f"unsupported visual corpus schema: {data.get('schema')!r}")
     if not data.get("sources"):
         raise MixCorpusError(f"{p}: no sources")
+    for source in data["sources"]:
+        if source.get("role") != "train":
+            continue
+        check_source_stamp_active(data, source)
     return data
 
 
@@ -91,6 +193,67 @@ def source_probe_path(manifest: dict[str, Any], source: dict[str, Any]) -> Path 
     if not probe:
         return None
     return Path(manifest["root"]) / source["landing"] / probe
+
+
+def check_paths_disjoint(manifest: dict[str, Any]) -> None:
+    """Refuse when a resolved train path is also a resolved probe path.
+
+    Args:
+        manifest: Loaded visual-clean-v1 document.
+
+    Raises:
+        MixCorpusError: Naming both sides of the first intersecting path.
+    """
+    train_of: dict[Path, str] = {}
+    probe_of: dict[Path, str] = {}
+    for source in manifest["sources"]:
+        sid = str(source["id"])
+        train_of[source_train_path(manifest, source).resolve()] = sid
+        probe = source_probe_path(manifest, source)
+        if probe is not None:
+            probe_of[probe.resolve()] = sid
+    overlap = set(train_of) & set(probe_of)
+    if not overlap:
+        return
+    path = sorted(overlap, key=str)[0]
+    raise MixCorpusError(
+        f"train path intersects probe path {path} "
+        f"(train source {train_of[path]}, probe source {probe_of[path]})"
+    )
+
+
+def check_listed_matches_declared(dry_info: dict[str, Any]) -> None:
+    """Refuse listed!=declared or a train source that lists zero / missing.
+
+    Args:
+        dry_info: Return value of :func:`dry_run`.
+
+    Raises:
+        MixCorpusError: First offending source, with both counts.
+    """
+    for row in dry_info["sources"]:
+        listed = int(row["listed_train"])
+        declared = int(row["declared_train"])
+        if listed != declared or listed <= 0:
+            raise MixCorpusError(f"{row['id']} listed_train={listed} declared_train={declared}")
+    listed_total = int(dry_info["listed_train"])
+    declared_total = int(dry_info["declared_train"])
+    if listed_total != declared_total:
+        raise MixCorpusError(f"listed_train {listed_total} != declared_train {declared_total}")
+
+
+def receipt_shard_tail(path: str | Path) -> str:
+    """Landing-qualified tail ``<landing>/processed/<stamp>/<file>``, else basename.
+
+    Mix B receipts must not stamp ``train.zip`` seven times. Parquet tests have
+    no landing layout, so they keep the basename.
+    """
+    parts = Path(path).parts
+    if "processed" in parts:
+        idx = parts.index("processed")
+        if idx >= 1:
+            return "/".join(parts[idx - 1 :])
+    return Path(path).name
 
 
 def check_concentration(manifest: dict[str, Any]) -> float:
@@ -183,7 +346,9 @@ def dry_run(manifest: dict[str, Any]) -> dict[str, Any]:
     """Count listed PNGs per source, fingerprint the train artefacts, check concentration.
 
     Opens zip central directories only. Does not decode pixels and does not extract.
+    Refuses listed!=declared, a zero listing, and train/probe path overlap.
     """
+    check_paths_disjoint(manifest)
     largest = check_concentration(manifest)
     per_source = []
     listed_train = 0
@@ -191,21 +356,21 @@ def dry_run(manifest: dict[str, Any]) -> dict[str, Any]:
         counts = count_source(manifest, source)
         listed_train += max(counts["listed_train"], 0)
         per_source.append({"id": source["id"], "stamp": source["stamp"], **counts})
-    fingerprint = fingerprint_train(manifest)
-    probe_sets = list(manifest.get("probe_sets") or [])
-    return {
+    result = {
         "corpus_source": manifest["id"],
         "schema": manifest["schema"],
-        "fingerprint": fingerprint,
+        "fingerprint": fingerprint_train(manifest),
         "fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
         "concentration_largest_share": round(largest, 4),
         "concentration_cap": float(manifest["concentration_cap"]),
         "declared_train": int(manifest["n_train"]),
         "listed_train": listed_train,
         "sources": per_source,
-        "probe_sets": [p["name"] for p in probe_sets],
+        "probe_sets": [p["name"] for p in (manifest.get("probe_sets") or [])],
         "shuffle_seed": int(manifest.get("shuffle_seed", 0)),
     }
+    check_listed_matches_declared(result)
+    return result
 
 
 def _iter_tree_pngs(root: Path) -> list[Path]:

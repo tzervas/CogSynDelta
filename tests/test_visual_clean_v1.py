@@ -11,11 +11,14 @@ import pytest
 from cogsyndelta.corpus import CORPUS_FINGERPRINT_SCHEME
 from cogsyndelta.vl.mix_corpus import (
     ConcentrationError,
+    MixCorpusError,
     check_concentration,
+    check_paths_disjoint,
     dry_run,
     fingerprint_train,
     list_pngs,
     load_manifest,
+    receipt_shard_tail,
     shuffled_pngs,
 )
 
@@ -157,3 +160,94 @@ def test_shuffle_is_seeded(tmp_path: Path) -> None:
     assert a == b
     assert a != c
     assert set(a) == {r.member for r in list_pngs(store)}
+
+
+def test_receipt_shard_tail_is_landing_qualified() -> None:
+    mix = "/bulk/visual/phelber__eurosat-rgb-128/processed/20260905T031650Z/train.zip"
+    assert receipt_shard_tail(mix) == (
+        "phelber__eurosat-rgb-128/processed/20260905T031650Z/train.zip"
+    )
+    assert receipt_shard_tail("scratch/images.parquet") == "images.parquet"
+
+
+def _iso_landing(tmp: Path, *, point_at: str) -> Path:
+    """Two ISO stamps: contaminated older, active newer. Manifest points at `point_at`."""
+    root = tmp / "visual"
+    landing = root / "pcam"
+    old, new = "20260905T035325Z", "20260905T045655Z"
+    for stamp in (old, new):
+        _write_zip(
+            landing / "processed" / stamp / "train.zip",
+            [f"x/{stamp[-2:]}.png"],
+        )
+    (landing / "processed" / old / "CONTAMINATED_SPLIT.json").write_text(
+        json.dumps({"contaminated_split": True, "do_not_admit_as_train": True}),
+        encoding="utf-8",
+    )
+    (landing / "provenance.json").write_text(
+        json.dumps({"active_train_set": {"stamp": new, "train_files": 1}}),
+        encoding="utf-8",
+    )
+    body = {
+        "id": "visual-clean-v1",
+        "schema": "csd-visual-corpus-manifest/v1",
+        "root": str(root),
+        "concentration_cap": 0.4,
+        "shuffle_seed": 7,
+        "n_train": 1,
+        "sources": [
+            {
+                "id": "basveeling/pcam",
+                "landing": "pcam",
+                "stamp": point_at,
+                "train": f"processed/{point_at}/train.zip",
+                "probe": None,
+                "n_train": 1,
+                "n_probe": 0,
+                "licence_tier": "cc0_pd",
+                "verdict": "PERMISSIVE_OK",
+                "role": "train",
+            }
+        ],
+        "probe_sets": [],
+    }
+    path = tmp / "visual-clean-v1.json"
+    path.write_text(json.dumps(body), encoding="utf-8")
+    return path
+
+
+def test_load_manifest_refuses_contaminated_stamp(tmp_path: Path) -> None:
+    path = _iso_landing(tmp_path, point_at="20260905T035325Z")
+    with pytest.raises(MixCorpusError, match="inactive"):
+        load_manifest(path)
+
+
+def test_load_manifest_accepts_active_stamp(tmp_path: Path) -> None:
+    path = _iso_landing(tmp_path, point_at="20260905T045655Z")
+    man = load_manifest(path)
+    assert man["sources"][0]["stamp"] == "20260905T045655Z"
+
+
+def test_dry_run_refuses_listed_not_declared(tmp_path: Path) -> None:
+    man = _manifest(tmp_path, a_n=2, b_n=2, c_n=2)
+    (Path(man["root"]) / "bb__bb" / "processed" / "s" / "train.zip").unlink()
+    with pytest.raises(MixCorpusError, match=r"bb/bb listed_train=-1 declared_train=2"):
+        dry_run(man)
+
+
+def test_dry_run_refuses_zero_listing(tmp_path: Path) -> None:
+    man = _manifest(tmp_path, a_n=2, b_n=2, c_n=2)
+    empty = Path(man["root"]) / "bb__bb" / "processed" / "s" / "train.zip"
+    empty.unlink()
+    _write_zip(empty, [])
+    with pytest.raises(MixCorpusError, match=r"bb/bb listed_train=0 declared_train=2"):
+        dry_run(man)
+
+
+def test_train_probe_path_overlap_refused(tmp_path: Path) -> None:
+    man = _manifest(tmp_path, a_n=2, b_n=2, c_n=2)
+    man["sources"][0]["train"] = man["sources"][0]["probe"]
+    with pytest.raises(MixCorpusError, match="train path intersects probe path"):
+        check_paths_disjoint(man)
+    with pytest.raises(MixCorpusError, match="train path intersects probe path"):
+        dry_run(man)
