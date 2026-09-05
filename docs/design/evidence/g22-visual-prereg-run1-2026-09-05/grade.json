@@ -1,0 +1,67 @@
+{
+ "rows": [
+  {
+   "seed": 0,
+   "verdict": "PASS",
+   "receipt": "/akula-data/csd/matrix/visual-b128-s0-198074a-20260905/receipts/visual-20260905T192701Z.json",
+   "n_eval": 5400.0,
+   "untrained": 0.6246296167373657,
+   "threshold": 0.6346,
+   "top1": 0.7190740704536438,
+   "top5": 0.9809259176254272,
+   "collapsed": false,
+   "collapse_ratio": 0.8435,
+   "transfer": 0.800000011920929,
+   "untrained_transfer": 0.7100000381469727,
+   "transfer_n": 2000.0,
+   "masking": "random-permutation",
+   "fingerprint_ok": true,
+   "corpus_source": "visual-clean-v1",
+   "train_images": 581280,
+   "params": 22905216,
+   "seconds": 636.7,
+   "code": {
+    "git_sha": "d90d8b6ee688406445011b56a9f61ea6587a45e6",
+    "dirty": true,
+    "branch": "main",
+    "describe": "v0.2.0-150-gd90d8b6"
+   },
+   "resumed": false,
+   "F1": false,
+   "F3": false,
+   "F4": false
+  },
+  {
+   "seed": 1,
+   "verdict": "PASS",
+   "receipt": "/akula-data/csd/matrix/visual-b128-s1-198074a-20260905/receipts/visual-20260905T193619Z.json",
+   "n_eval": 5400.0,
+   "untrained": 0.6390740871429443,
+   "threshold": 0.6491,
+   "top1": 0.7298148274421692,
+   "top5": 0.9792592525482178,
+   "collapsed": false,
+   "collapse_ratio": 0.8652,
+   "transfer": 0.8045000433921814,
+   "untrained_transfer": 0.706000030040741,
+   "transfer_n": 2000.0,
+   "masking": "random-permutation",
+   "fingerprint_ok": true,
+   "corpus_source": "visual-clean-v1",
+   "train_images": 581280,
+   "params": 22905216,
+   "seconds": 508.2,
+   "code": {
+    "git_sha": "d90d8b6ee688406445011b56a9f61ea6587a45e6",
+    "dirty": true,
+    "branch": "main",
+    "describe": "v0.2.0-150-gd90d8b6"
+   },
+   "resumed": false,
+   "F1": false,
+   "F3": false,
+   "F4": false
+  }
+ ],
+ "h1_both_seeds": true
+}

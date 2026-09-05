@@ -1,0 +1,152 @@
+{
+  "region": "visual",
+  "objective": "I-JEPA latent prediction; gated on linear probe, never on loss",
+  "masking": "random-permutation",
+  "corpus": {
+    "corpus_source": "visual-clean-v1",
+    "shards": [
+      "nyuuzyou__pxhere/processed/20260905T035325Z/train.zip",
+      "biglam__british-library-book-images/processed/20260905T035325Z/train.zip",
+      "basveeling__pcam/processed/20260905T045655Z/train.zip",
+      "google-deepmind__3d-shapes/processed/20260905T062637Z/train.zip",
+      "facebookresearch__clevr/processed/20260905T063733Z/train.zip",
+      "zalando__fashion-mnist/processed/20260905T062523Z/train.zip",
+      "phelber__eurosat-rgb-128/processed/20260905T031650Z/train.zip"
+    ],
+    "fingerprint": "ab5761b65714e4ba4d7c36df095f3599",
+    "fingerprint_scheme": "csd-corpus-fp/v2",
+    "image_column": "image",
+    "label_column": "label",
+    "probe_sets": [
+      "eurosat-test",
+      "fashion-t10k",
+      "shapes3d-probe",
+      "clevr-val-probe"
+    ]
+  },
+  "started_utc": "2026-09-05T19:27:22Z",
+  "seconds": 508.2,
+  "device": "cuda",
+  "parameters": 22905216,
+  "train_images": 581280,
+  "probe_classes": 10,
+  "config": {
+    "jepa": {
+      "image_size": 128,
+      "patch_size": 8,
+      "in_channels": 3,
+      "dim": 384,
+      "depth": 6,
+      "n_heads": 6,
+      "predictor_dim": 192,
+      "predictor_depth": 3,
+      "ema_base": 0.996,
+      "ema_final": 1.0,
+      "context_keep": 0.4,
+      "n_target_blocks": 4,
+      "target_scale": [
+        0.15,
+        0.2
+      ],
+      "pos_kind": "sincos2d"
+    },
+    "steps": 4000,
+    "batch_size": 128,
+    "trainer_defaults": {
+      "steps": 4000,
+      "batch_size": 128,
+      "lr": 0.00015,
+      "bf16": null,
+      "max_len": null
+    }
+  },
+  "untrained_baseline": {
+    "top1": 0.6390740871429443,
+    "top5": 0.9538888931274414,
+    "n_eval": 5400.0,
+    "rep_std": 0.44906291365623474
+  },
+  "held_out": {
+    "top1": 0.7298148274421692,
+    "top5": 0.9792592525482178,
+    "n_eval": 5400.0,
+    "rep_std": 0.38853907585144043
+  },
+  "untrained_transfer": {
+    "top1": 0.706000030040741,
+    "top5": 0.987000048160553,
+    "n_eval": 2000.0
+  },
+  "transfer": {
+    "top1": 0.8045000433921814,
+    "top5": 0.9955000281333923,
+    "n_eval": 2000.0
+  },
+  "collapse_ratio": 0.8652,
+  "collapsed": false,
+  "history": [
+    {
+      "step": 500,
+      "loss": 0.05635997653007507,
+      "rep_std": 0.4313291013240814,
+      "lr": 0.0001485511918539119
+    },
+    {
+      "step": 1000,
+      "loss": 0.03746780753135681,
+      "rep_std": 0.4043431282043457,
+      "lr": 0.00013614749746690164
+    },
+    {
+      "step": 1500,
+      "loss": 0.03775928169488907,
+      "rep_std": 0.3736806809902191,
+      "lr": 0.00011308138492007198
+    },
+    {
+      "step": 2000,
+      "loss": 0.03606175258755684,
+      "rep_std": 0.38834643363952637,
+      "lr": 8.337494092970883e-05
+    },
+    {
+      "step": 2500,
+      "loss": 0.037736132740974426,
+      "rep_std": 0.4035930037498474,
+      "lr": 5.2208140817581654e-05
+    },
+    {
+      "step": 3000,
+      "loss": 0.038523122668266296,
+      "rep_std": 0.39650747179985046,
+      "lr": 2.5015605283889674e-05
+    },
+    {
+      "step": 3500,
+      "loss": 0.038471780717372894,
+      "rep_std": 0.38709601759910583,
+      "lr": 6.538954128247959e-06
+    },
+    {
+      "step": 4000,
+      "loss": 0.04343518987298012,
+      "rep_std": 0.38153237104415894,
+      "lr": 0.0
+    }
+  ],
+  "resumed": false,
+  "resumed_from_step": 0,
+  "beats_untrained": {
+    "probe_top1": true,
+    "probe_top5": true,
+    "not_collapsed": true,
+    "transfer_top1": true
+  },
+  "code_revision": {
+    "git_sha": "d90d8b6ee688406445011b56a9f61ea6587a45e6",
+    "dirty": true,
+    "branch": "main",
+    "describe": "v0.2.0-150-gd90d8b6"
+  },
+  "metrics_schema": "csd-metrics/v2"
+}
