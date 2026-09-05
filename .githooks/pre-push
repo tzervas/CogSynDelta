@@ -22,6 +22,16 @@
 #   (b) `cz check --rev-range` over every commit about to be pushed, so a badly-formatted
 #       commit that slipped past (or bypassed) the commit-msg hook is still caught here.
 #
+# 2026-09-04: (c) mirror replication exemption, ported from
+# agent-workflows/.githooks/pre-push. github.com is a backup mirror of Forgejo, never a
+# work target. A push of refs/heads/main to a github.com remote is allowed ONLY when the
+# pushed sha equals forgejo/main -- that is replication of a main that already arrived by
+# PR, not a direct-to-main push. Any other sha on a mirror push, and every push of
+# refs/heads/main to Forgejo itself, are still refused. Commit messages on a mirror push
+# were already gated on Forgejo before merge, so the `cz check --rev-range` step (b) is
+# skipped for mirror pushes; every other gate (naming for non-main refs, GPG note,
+# scripts/ci_local.sh) still runs.
+#
 # Override with --no-verify when you genuinely need to push a WIP branch. That is a
 # deliberate act, which is the point.
 #
@@ -38,6 +48,16 @@ CZ_VERSION="4.18.0"
 BRANCH_RE='^(feat|fix|docs|chore|refactor|test|ci|build|perf|style|revert)/[a-z0-9][a-z0-9._-]*$'
 TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.]+)?$'
 NULL_SHA="0000000000000000000000000000000000000000"
+
+# git invokes pre-push as: pre-push <remote-name> <remote-url>, with the ref lines on
+# stdin. Used by the mirror-replication exemption (c) below.
+REMOTE_NAME="${1:-}"
+REMOTE_URL="${2:-}"
+MIRROR=0
+case "$REMOTE_URL" in
+    *github.com/* | *github.com:*) MIRROR=1 ;;
+esac
+FORGEJO_MAIN="$(git rev-parse --verify --quiet forgejo/main 2>/dev/null || true)"
 
 fail=0
 
@@ -56,8 +76,12 @@ for line in "${push_lines[@]}"; do
 
     case "$remote_ref" in
         refs/heads/main | refs/heads/master)
-            echo "pre-push: BLOCKED — refusing to push directly to ${remote_ref#refs/heads/}; open a PR instead." >&2
-            fail=1
+            if [ "$MIRROR" = 1 ] && [ -n "$FORGEJO_MAIN" ] && [ "$local_sha" = "$FORGEJO_MAIN" ]; then
+                echo "pre-push: mirror replication of forgejo/main (${local_sha:0:12}) to ${REMOTE_NAME:-mirror} — allowed"
+            else
+                echo "pre-push: BLOCKED — refusing to push directly to ${remote_ref#refs/heads/}; open a PR instead." >&2
+                fail=1
+            fi
             ;;
         refs/heads/*)
             branch_name="${remote_ref#refs/heads/}"
@@ -104,25 +128,31 @@ done
 # --- (b) commit message range check ---------------------------------------------------
 # Mirrors what .github/workflows/conventions.yml runs remotely, but locally and before
 # the slow gates -- catch a bad message before spending minutes on ci_local.sh.
-base_ref="forgejo/main"
-git rev-parse --verify --quiet "$base_ref" >/dev/null || base_ref="origin/main"
-if git rev-parse --verify --quiet "$base_ref" >/dev/null; then
-    merge_base="$(git merge-base "$base_ref" HEAD 2>/dev/null || true)"
-    if [ -n "$merge_base" ] && [ "$merge_base" != "$(git rev-parse HEAD)" ]; then
-        if command -v uvx >/dev/null 2>&1; then
-            echo "pre-push: cz check --rev-range ${merge_base}..HEAD"
-            if ! uvx --from "commitizen==${CZ_VERSION}" cz check --rev-range "${merge_base}..HEAD"; then
-                echo "pre-push: BLOCKED — one or more commits are not Conventional Commits." >&2
+# Skipped for mirror pushes (c): those commits were already gated on Forgejo before
+# merge, so there is nothing new here to check.
+if [ "$MIRROR" = 1 ]; then
+    echo "pre-push: mirror push — commit-range check skipped (commits were gated on Forgejo before merge)"
+else
+    base_ref="forgejo/main"
+    git rev-parse --verify --quiet "$base_ref" >/dev/null || base_ref="origin/main"
+    if git rev-parse --verify --quiet "$base_ref" >/dev/null; then
+        merge_base="$(git merge-base "$base_ref" HEAD 2>/dev/null || true)"
+        if [ -n "$merge_base" ] && [ "$merge_base" != "$(git rev-parse HEAD)" ]; then
+            if command -v uvx >/dev/null 2>&1; then
+                echo "pre-push: cz check --rev-range ${merge_base}..HEAD"
+                if ! uvx --from "commitizen==${CZ_VERSION}" cz check --rev-range "${merge_base}..HEAD"; then
+                    echo "pre-push: BLOCKED — one or more commits are not Conventional Commits." >&2
+                    fail=1
+                fi
+            else
+                echo "pre-push: uvx not found. Install: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+                echo "pre-push: BLOCKED — cannot validate commit range without uvx." >&2
                 fail=1
             fi
-        else
-            echo "pre-push: uvx not found. Install: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
-            echo "pre-push: BLOCKED — cannot validate commit range without uvx." >&2
-            fail=1
         fi
+    else
+        echo "pre-push: note — no $base_ref to diff against; skipping cz check --rev-range" >&2
     fi
-else
-    echo "pre-push: note — no $base_ref to diff against; skipping cz check --rev-range" >&2
 fi
 
 if [ "$fail" -ne 0 ]; then

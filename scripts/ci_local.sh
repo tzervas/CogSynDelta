@@ -11,6 +11,18 @@
 # Why: ruff S105, quality docstrings, and Python-floor drift landed on GitHub
 # before we ran the same commands locally. This script is the pre-push gate.
 #
+# 2026-09-04: the pytest / poc pytest / poc cli steps below now run with
+# CUDA_VISIBLE_DEVICES="" -- CPU-only, always -- regardless of which sync branch ran.
+# The PoC route-train test previously diverged between the tracked pre-push hook and CI:
+# the hook runs this script on whatever machine pushed, and on a GPU box the default
+# sync branch ("desktop CUDA torch from pyproject") installs cu128 wheels, so
+# torch.cuda.is_available() is true there and the test exercises CUDA kernels; CI's
+# runner has no GPU, so the identical test exercises CPU kernels. Same test, same
+# command, two different code paths. The torch *sync* is left exactly as-is (CUDA torch
+# still gets installed either way, matching what CI's own sync does); only test
+# *execution* is pinned CPU-only, by hiding the device rather than by not installing
+# CUDA support for it. tests/test_ci_local_cpu_gate.py makes this observable.
+#
 # 2026-09-04: the lint gate (`bash scripts/lint.sh`) now runs BY DEFAULT instead of
 # behind an opt-in `--pre-commit` flag. PR #33 (CI task 7597) landed two pydocstyle
 # D209 violations that the tracked `.githooks/pre-push` hook did not catch: it calls
@@ -203,6 +215,13 @@ if torch.cuda.is_available():
     print(f"device {torch.cuda.get_device_name(0)}")
 PY
 
+# --- CPU-only test execution, matching the GPU-less CI runner ------------------------
+# See the header comment (2026-09-04) for why. This does not undo the sync above -- CUDA
+# torch is still installed -- it only hides the device from every step that runs after
+# this line (pytest, the poc pytest set, and the poc cli smoke commands below).
+export CUDA_VISIBLE_DEVICES=""
+echo "== CUDA_VISIBLE_DEVICES=\"\" for test execution (CI runner has no GPU) =="
+
 fail=0
 run() {
     local title="$1"
@@ -245,6 +264,7 @@ POC_PYTESTS=(
     tests/test_poc_compress.py
     tests/test_poc_registry.py
     tests/test_poc_route_train.py
+    tests/test_ci_local_cpu_gate.py
 )
 if [[ -f tests/test_poc_cuda.py ]]; then
     POC_PYTESTS+=(tests/test_poc_cuda.py)
