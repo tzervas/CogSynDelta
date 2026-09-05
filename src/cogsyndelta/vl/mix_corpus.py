@@ -195,6 +195,29 @@ def source_probe_path(manifest: dict[str, Any], source: dict[str, Any]) -> Path 
     return Path(manifest["root"]) / source["landing"] / probe
 
 
+def refuse_unless_manifest_consistent(
+    path: str | Path | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load the Mix B manifest and refuse unless listed=declared and paths are disjoint.
+
+    This is the run-start gate ``run_vl_region`` used to inline: ``load_manifest``,
+    ``dry_run`` (which already checks concentration, listed=declared, and disjoint
+    paths), then the same listed/disjoint checks again so a caller that skips
+    ``dry_run`` still cannot start.
+
+    Returns:
+        ``(manifest, dry_info)``.
+
+    Raises:
+        MixCorpusError: inactive stamp, listed≠declared, overlap, or missing file.
+    """
+    manifest = load_manifest(path)
+    dry_info = dry_run(manifest)
+    check_listed_matches_declared(dry_info)
+    check_paths_disjoint(manifest)
+    return manifest, dry_info
+
+
 def check_paths_disjoint(manifest: dict[str, Any]) -> None:
     """Refuse when a resolved train path is also a resolved probe path.
 

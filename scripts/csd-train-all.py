@@ -1271,23 +1271,15 @@ def run_vl_region(
     if manifest_rel:
         from cogsyndelta.vl.mix_corpus import (
             MixCorpusError,
-            check_listed_matches_declared,
-            check_paths_disjoint,
-            load_manifest,
+            refuse_unless_manifest_consistent,
             source_probe_path,
             source_train_path,
             train_sources,
         )
-        from cogsyndelta.vl.mix_corpus import (
-            dry_run as visual_corpus_dry,
-        )
 
         repo_root = Path(__file__).resolve().parent.parent
         try:
-            manifest = load_manifest(repo_root / str(manifest_rel))
-            dry_info = visual_corpus_dry(manifest)
-            check_listed_matches_declared(dry_info)
-            check_paths_disjoint(manifest)
+            manifest, dry_info = refuse_unless_manifest_consistent(repo_root / str(manifest_rel))
         except MixCorpusError as exc:
             raise SystemExit(f"visual corpus refused: {exc}") from exc
         print(

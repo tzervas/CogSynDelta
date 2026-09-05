@@ -503,20 +503,17 @@ def _checkpoint_payload(
     }
 
 
-def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
-    """Train the visual region and return a receipt. Never gates on the loss.
-
-    Resumable on the same contract as :func:`cogsyndelta.regions.pretrain.pretrain_region`
-    -- see the module comment above for the two places this harness genuinely differs
-    (sampled batch order, a second RNG stream feeding both mask sampling and the linear
-    probe's head init) and why the EMA target encoder and the decoded-image cache need no
-    special handling.
-    """
-    torch.manual_seed(cfg.seed)
-    device = _resolve_device(cfg.device)
-    cache = Path(cfg.cache_dir)
-    size = cfg.jepa.image_size
-
+def _load_visual_splits(
+    cfg: VLPretrainConfig, size: int, cache: Path
+) -> tuple[
+    torch.Tensor | _PngTrain,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int] | None,
+]:
+    """Decode train/probe/transfer tensors (or a lazy PNG train set). No training."""
     x_tr: torch.Tensor | _PngTrain
     if cfg.image_backend == "png_zip":
         x_tr = _PngTrain(cfg.train_shards, size, cfg.seed, cfg.train_limit)
@@ -532,8 +529,6 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         px_ev, py_ev = _decode_split(
             cfg.probe_eval_shards, cfg.image_column, cfg.label_column, size, 0, cache
         )
-    n_classes = int(max(py_tr.max().item(), py_ev.max().item())) + 1
-
     transfer = None
     if cfg.transfer_shards:
         if cfg.image_backend == "png_zip":
@@ -549,6 +544,25 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
             )
         cut = int(tx.size(0) * 0.8)
         transfer = (tx[:cut], ty[:cut], tx[cut:], ty[cut:], int(ty.max().item()) + 1)
+    return x_tr, px_tr, py_tr, px_ev, py_ev, transfer
+
+
+def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
+    """Train the visual region and return a receipt. Never gates on the loss.
+
+    Resumable on the same contract as :func:`cogsyndelta.regions.pretrain.pretrain_region`
+    -- see the module comment above for the two places this harness genuinely differs
+    (sampled batch order, a second RNG stream feeding both mask sampling and the linear
+    probe's head init) and why the EMA target encoder and the decoded-image cache need no
+    special handling.
+    """
+    torch.manual_seed(cfg.seed)
+    device = _resolve_device(cfg.device)
+    cache = Path(cfg.cache_dir)
+    size = cfg.jepa.image_size
+
+    x_tr, px_tr, py_tr, px_ev, py_ev, transfer = _load_visual_splits(cfg, size, cache)
+    n_classes = int(max(py_tr.max().item(), py_ev.max().item())) + 1
 
     model = IJEPA(cfg.jepa).to(device)
     params = sum(p.numel() for p in model.parameters())
