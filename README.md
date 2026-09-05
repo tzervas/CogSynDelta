@@ -16,7 +16,7 @@ the region taxonomy, §2.3 DEC-16 for the interconnect module, "What revision 3.
 
 | region | what it is | measured | source |
 |---|---|---|---|
-| `code` | language centre, code specialisation | recall@1 0.9766 | `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, "What is actually being trained on" (receipt `code-20260902T210830Z.json`) |
+| `language` | language centre, code specialisation (`region_alias_of: "code"` on legacy reads) | recall@1 0.9766 | `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, "What is actually being trained on" (receipt `code-20260902T210830Z.json`) |
 | `compress` | memory faculty, consolidation head | recall@1 0.7070; graded (STS-B) spearman 0.7588 | same table; graded figure from `program/REMAINING.md` P0.9c (receipt `compress-20260903T120818Z.json`) |
 | `retrieve` | memory faculty, retrieval head | recall@1 0.7480 | `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, same table |
 | `reason` | reasoning centre | retrained under the fixed contamination guard; a further re-run against the corrected clean pool is still open | `program/REMAINING.md` P0.11 (receipt `reason-20260903T123431Z.json`) |
@@ -27,10 +27,12 @@ pre-registered gates yet. Best run (batch 1280, chunked token loss): recall@1 0.
 3 of 5 gates passed (a, b, d); gates (c) `c_beats_bm25` and (e) `e_retrain_gate`'s rank
 clause still fail. Source: `docs/design/evidence/w4-production-runs-2026-09-03/README.md`.
 
-**Visual region, pre-receipts for release purposes** — `vl_latent` is trained (probe
+**Visual region, pre-receipts for release purposes** — `visual` (`vl_latent` legacy name;
+`region_alias_of: "vl_latent"` on legacy reads) is trained (probe
 top-1 0.0606) but its entire pretraining corpus (`zh-plus/tiny-imagenet`, ImageNet-derived)
 carries no licence anywhere in its chain and is **BLOCKING** for an open-weights release;
-no subset is clean. Source: `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, `vl_latent` section.
+no subset is clean. Source: `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, `vl_latent` section
+(that document still uses the pre-rename name).
 
 **Not trained / not built:**
 - The interconnect ("white matter"). `docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` is
@@ -69,7 +71,7 @@ Real, present directories only.
 
 | path | what it is |
 |---|---|
-| `src/cogsyndelta/regions/` | per-faculty training entry points (`code`, `compress`, `retrieve`, `memory`, `vl_latent`) and shared pretraining code |
+| `src/cogsyndelta/regions/` | per-faculty training entry points (`language`, `compress`, `retrieve`, `memory`, `visual`; `code`/`vl_latent` still work as aliases via `cogsyndelta.regions.aliases`) and shared pretraining code |
 | `src/cogsyndelta/quant/` | post-training quantization (`ptq.py`, `packing.py`) |
 | `src/cogsyndelta/eval/` | the benchmark battery `scripts/csd-benchmark.py` runs |
 | `src/cogsyndelta/pipeline/` | the shared receipt envelope (`receipt.py`) every stage writes into |
@@ -137,7 +139,10 @@ backup mirror, not where CI or review happens (operator statement).
   model card to a private Hugging Face model repo; aborts before uploading if the repo does
   not report back `private=True`.
 - `program/matrix/csd-matrix.yaml` — the train → test → quantize → test matrix config (23
-  cells today: code, compress, retrieve, reason, memory). The harness that runs it —
+  cells today: language, compress, retrieve, reason, memory — `region:language` since the
+  DEC-01/DEC-78 rename; the runtime cell directories under `/akula-data/csd` are matrix
+  DATA and keep their pre-rename names, per the alias-layer compatibility rule). The
+  harness that runs it —
   waves, gpu-pack admission, Hub publish/verify — lives in the sibling `tzervas/model-matrix`
   repo (`program/matrix/README.md`).
 
