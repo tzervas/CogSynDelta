@@ -317,11 +317,11 @@ Written as `Receipt(kind="eval" | "eval-quantized", ...)`
 
 **Evaluation set, every field in this section:** the same held-out split §2 uses, rebuilt from
 the training receipt's own recorded config and cross-checked by corpus fingerprint
-(`_region_eval_context()`, `scripts/csd-benchmark.py:163-228`) -- **never** re-globbed. `kind:
+(`_region_eval_context()`, `scripts/csd-benchmark.py:490-555`) -- **never** re-globbed. `kind:
 "eval"` scores the fp32 checkpoint; `kind: "eval-quantized"` scores the actual packed `.ptq.pt`
-artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:388-541`), not
+artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:915-1109`), not
 the in-memory quantization plan (§4). `_run_battery()`
-(`scripts/csd-benchmark.py:231-252`) encodes the **whole** holdout as one closed candidate
+(`scripts/csd-benchmark.py:558-579`) encodes the **whole** holdout as one closed candidate
 pool -- identical in shape to §2's `scores = a @ p.T`, `relevant = arange(...)` construction,
 which is why `rank.recall@1` in this battery is numerically identical to `held_out.recall@1`
 in §2 for the same checkpoint (confirmed against a real receipt pair in §10).
@@ -1521,6 +1521,26 @@ or receipt field with this name would have no code behind it.
   (§14's schema-falsifier #2) -- "never compare across `battery_id`" is stricter than MM
   actually requires and must not be over-applied here.
 
+### 12.8.1 Visual: `quant.plan_probe_top1` / `quant.artifact_probe_top1` / `quant.drop_probe_top1`
+
+Visual receipts do **not** write `quant.*_recall@1`. The measured quantity is EuroSAT
+linear-probe top-1 (`probe.top1`), not closed-pool `recall_at_k(k=1)`.
+
+- **Formula:** `plan_probe_top1` = in-memory plan's EuroSAT probe top-1
+  (`quantize_visual_region()`, `scripts/csd-quantize.py:340-460`). `artifact_probe_top1` = packed
+  EMA-target-encoder artifact's EuroSAT probe top-1
+  (`benchmark_visual_region_quantized()`, `scripts/csd-benchmark.py:833-912`).
+  `drop_probe_top1 = fp32_metric_recomputed - plan_probe_top1`. `quant.compression_ratio`
+  is the same byte-accounting name as the text receipts (`fp32_bytes / stored_bytes`).
+- **Battery:** EuroSAT official test linear probe, `n_eval=5400`, 10-way, chance 0.1.
+  Fashion t10k transfer is a different named metric (`transfer.top1`), not these fields.
+- **`battery_id` / pooling:** `quant_plan` / `linear_probe` (plan); `eval_quantized_holdout`
+  / `linear_probe` (artifact).
+- **Unit:** top-1 accuracy `[0, 1]`.
+- **Sameness special-case:** `quant.plan_probe_top1` vs. `quant.artifact_probe_top1` on
+  the identical checkpoint sha is the visual counterpart of §12.8's text pair. Do not
+  compare either to `quant.plan_recall@1` or `rank.recall@1`.
+
 ### 12.9 `gate.beats_untrained_train` / `gate.beats_untrained_eval`
 
 - **Formula:**
@@ -1684,6 +1704,9 @@ takes the `quant.` name in the one plan-vs-artifact comparison §12.8 licenses.
 | `quantized_metric` | quant | `quant.plan_recall@1` | §12.8 |
 | `rank.recall@1` (read specifically for a plan-vs-artifact delta) | eval-quantized | `quant.artifact_recall@1` | context-dependent -- stays `rank.recall@1` for its own eval purposes; take the `quant.` name only when the comparison in play is the plan-vs-artifact one (§12.8's sameness special-case) |
 | `drop` | quant | `quant.drop_recall@1` | one named metric, one battery (MM §4-5) |
+| `quant.plan_recall@1` (on a **visual** receipt) | visual quant | `quant.plan_probe_top1` | §12.8.1 — the quantity was never recall@1 |
+| `quant.artifact_recall@1` (on a **visual** eval-quantized receipt) | visual eval-quantized | `quant.artifact_probe_top1` | §12.8.1 |
+| `quant.drop_recall@1` (on a **visual** receipt) | visual quant | `quant.drop_probe_top1` | §12.8.1 |
 | `compression_ratio` | quant | `quant.compression_ratio` | §12.8 |
 | `gates.beats_untrained` (train receipt, margined) | train | `gate.beats_untrained_train` | §12.9 |
 | `gates.beats_untrained` (eval receipt, unmargined) | eval, eval-quantized | `gate.beats_untrained_eval` | §12.9 -- same v1 name as the row above, different receipt kind, different predicate |
@@ -1902,7 +1925,7 @@ the publish script's read-time normalisation: `csd-quantize.py` writes
 `quant.plan_recall@1`, `quant.drop_recall@1`, and `quant.compression_ratio` into the quant
 receipt, and `csd-benchmark.py` writes `quant.artifact_recall@1` into the eval-quantized
 receipt's `metrics` (`scripts/csd-quantize.py:270,271,275`,
-`scripts/csd-benchmark.py:604`). Only `token.*` (§12.2) and `beir.*` (§12.7) remain
+`scripts/csd-benchmark.py:1042`). Only `token.*` (§12.2) and `beir.*` (§12.7) remain
 unwritten by any production receipt; check §15 before assuming an unmarked name below is on
 disk for a given battery.
 
@@ -1917,8 +1940,40 @@ disk for a given battery.
 | `rank.recall@k`, `rank.mrr`, `rank.ndcg@10` (closed pool) | (same names) | [§12.6](#126-rankrecallk--rankmrr--rankndcg10-closed-pool) |
 | `beir.ndcg@10`, `beir.recall@k`, `beir.mrr` | BEIR-FiQA `recall@k`/`mrr` (§7.2); `ndcg@10` unimplemented | [§12.7](#127-beirndcg10--beirrecallk--beirmrr) |
 | `quant.plan_recall@1`, `.artifact_recall@1`, `.drop_recall@1`, `.compression_ratio` | `quantized_metric`, `rank.recall@1` (eval-quantized), `drop`, `compression_ratio` | [§12.8](#128-quantplan_recall1--quantartifact_recall1--quantdrop_recall1--quantcompression_ratio) |
+| `quant.plan_probe_top1`, `.artifact_probe_top1`, `.drop_probe_top1` | (visual; never `quant.*_recall@1` — the quantity is EuroSAT probe top-1) | [§12.8.1](#1281-visual-quantplan_probe_top1--quantartifact_probe_top1--quantdrop_probe_top1) |
 | `gate.beats_untrained_train`, `gate.beats_untrained_eval` | `beats_untrained` / `gates.beats_untrained` | [§12.9](#129-gatebeats_untrained_train--gatebeats_untrained_eval) |
 
 See [§15](#15-v1---v2-deprecation-map) for the full v1 -> v2 deprecation map and
 [§14](#14-schema-stamp-and-refuse-predicate) for the `metrics_schema` stamp and refuse
 predicate every comparison across these names must pass.
+
+## 21. Visual probe metrics (`kind: eval` on the I-JEPA region)
+
+These names are written by `scripts/csd-benchmark.py` `benchmark_visual_region` for
+`--regions visual`. They are **not** closed-pool `rank.*` scores. The battery is the
+same linear probe training used (`src/cogsyndelta/regions/vl_pretrain.py` `_linear_probe`
+on frozen `IJEPA.encode` features — the EMA target encoder).
+
+| field | battery | formula | file |
+|---|---|---|---|
+| `probe.top1` / `probe.top5` | EuroSAT official test (probe role `primary`) | linear-probe accuracy on frozen target-encoder latents | `scripts/csd-benchmark.py` `benchmark_visual_region`; probe fit `vl_pretrain.py` `_linear_probe` |
+| `transfer.top1` / `transfer.top5` | Fashion-MNIST t10k (probe role `transfer`) | same probe, different labelled set | same |
+| `repr.rep_std` | mixed I-JEPA train batch | std of target-encoder latents | `vl_pretrain.py` `_rep_std_on_mixed_batch` |
+| `gates.beats_untrained_eval` | same EuroSAT split | `probe.top1 > train_receipt.untrained_baseline.top1` | `benchmark_visual_region` |
+| `gates.not_collapsed` | same mixed batch | `rep_std / untrained.rep_std >= 0.1` | same predicate as the train receipt |
+
+Do not compare `probe.top1` to `rank.recall@1`. Visual quantize writes
+`quant.plan_probe_top1` / `quant.drop_probe_top1` / `quant.artifact_probe_top1`
+(§12.8.1), not `quant.*_recall@1`.
+
+### 21.1 Deployed module is the EMA target encoder
+
+Visual quantize and eval-quantized pack **only** `target_encoder.*`
+(`DeployedVisualEncoder` in `scripts/csd-benchmark.py`). `IJEPA.encode` is
+`target_encoder.embed` (`src/cogsyndelta/model/vl_jepa.py:581-587`). The online
+context encoder and the predictor are training-only: they have zero probe
+sensitivity, so a full-IJEPA plan would drive them to the floor for free and
+`fp32_reference_bytes` / `provenance.parameters` would describe an artifact
+nobody deploys. The packed file is still sha-bound to the full training
+checkpoint. `--quantized` eval rebuilds the encoder-only wrapper; it does not
+`load_state_dict` onto a full IJEPA.

@@ -31,7 +31,9 @@ import importlib.util
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -41,6 +43,9 @@ from cogsyndelta.eval.benchmark import BenchmarkResult, benchmark_embeddings, pr
 from cogsyndelta.pipeline.receipt import Producer, Receipt
 from cogsyndelta.regions.aliases import canonical_region, legacy_names
 
+if TYPE_CHECKING:
+    from cogsyndelta.model.vl_jepa import ViTEncoder
+
 STATE = Path("/akula-data/csd")
 
 
@@ -49,7 +54,287 @@ def _regions_spec() -> dict:
     spec = importlib.util.spec_from_file_location("csd_train_all", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return {"REGIONS": mod.REGIONS, "_shards": mod._shards, "region_spec": mod.region_spec}
+    return {
+        "REGIONS": mod.REGIONS,
+        "VL_REGIONS": mod.VL_REGIONS,
+        "_shards": mod._shards,
+        "region_spec": mod.region_spec,
+    }
+
+
+def _is_visual_region(region: str) -> bool:
+    names = _regions_spec().get("VL_REGIONS") or {}
+    return region in names or canonical_region(region) in names
+
+
+def _vl_cfg_from_train_receipt(region: str, train_receipt: dict) -> Any:
+    from cogsyndelta.model.vl_jepa import JEPAConfig
+    from cogsyndelta.regions.vl_pretrain import VLPretrainConfig
+
+    protocol = train_receipt.get("probe_protocol")
+    if not isinstance(protocol, dict):
+        legacy = train_receipt.get("probe")
+        protocol = legacy if isinstance(legacy, dict) else {}
+    cfg_d = train_receipt["config"]
+    ckpt = Path(str(train_receipt["checkpoint"]))
+    cache_dir = protocol.get("cache_dir") or str(ckpt.parent.parent.parent / "vl-cache")
+    return VLPretrainConfig(
+        region=canonical_region(region),
+        train_shards=list(protocol.get("jepa_train_shards") or []),
+        probe_train_shards=list(protocol.get("linear_train_shards") or []),
+        probe_eval_shards=list(protocol.get("linear_eval_shards") or []),
+        transfer_shards=list(protocol.get("transfer_shards") or []),
+        image_column=str(protocol.get("image_column") or "image"),
+        label_column=str(protocol.get("label_column") or "label"),
+        transfer_image_column=str(protocol.get("transfer_image_column") or "image"),
+        transfer_label_column=str(protocol.get("transfer_label_column") or "label"),
+        image_backend=str(protocol.get("image_backend") or "png_zip"),
+        steps=int(cfg_d["steps"]),
+        batch_size=int(cfg_d["batch_size"]),
+        seed=int(cfg_d.get("seed") or 0),
+        probe_steps=int(cfg_d.get("probe_steps") or 600),
+        probe_lr=float(cfg_d.get("probe_lr") or 1e-3),
+        jepa=JEPAConfig(**cfg_d["jepa"]),
+        probe_sets=list(protocol.get("sets") or []),
+        device="cpu" if not torch.cuda.is_available() else "auto",
+        cache_dir=str(cache_dir),
+        out_dir=str(ckpt.parent.parent),
+    )
+
+
+class DeployedVisualEncoder(torch.nn.Module):
+    """The EMA target encoder — the only module ``IJEPA.encode`` reads (vl_jepa.py:581-587).
+
+    Packed artifacts use ``target_encoder.*`` keys so a reader can see the online
+    context encoder and the predictor were excluded.
+    """
+
+    # nn.Module attribute access is Tensor | Module; declare so embed/__call__ type-check.
+    target_encoder: ViTEncoder
+
+    def __init__(self, target_encoder: ViTEncoder) -> None:
+        super().__init__()
+        self.target_encoder = target_encoder
+
+    def embed(self, images: torch.Tensor) -> torch.Tensor:
+        return self.target_encoder.embed(images)
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        return self.target_encoder(images)
+
+
+def wrap_deployed_visual_encoder(ijepa: Any) -> DeployedVisualEncoder:
+    """Reparent the EMA target encoder so packed keys are ``target_encoder.*``."""
+    return DeployedVisualEncoder(ijepa.target_encoder)
+
+
+def _visual_parameter_count(module: torch.nn.Module) -> int:
+    return sum(p.numel() for p in module.parameters())
+
+
+@dataclass
+class VisualSplits:
+    """Decoded Mix B / probe tensors. Load once per process; eval_fn must not reload."""
+
+    x_tr: Any
+    px_tr: torch.Tensor
+    py_tr: torch.Tensor
+    px_ev: torch.Tensor
+    py_ev: torch.Tensor
+    transfer: Any
+    n_classes: int
+
+
+def load_visual_splits(cfg: Any) -> VisualSplits:
+    from cogsyndelta.regions.vl_pretrain import _load_visual_splits
+
+    size = cfg.jepa.image_size
+    x_tr, px_tr, py_tr, px_ev, py_ev, transfer = _load_visual_splits(cfg, size, Path(cfg.cache_dir))
+    n_classes = int(max(py_tr.max().item(), py_ev.max().item())) + 1
+    return VisualSplits(x_tr, px_tr, py_tr, px_ev, py_ev, transfer, n_classes)
+
+
+def _visual_embed(module: Any, x_float: torch.Tensor) -> torch.Tensor:
+    if hasattr(module, "embed"):
+        return module.embed(x_float)  # type: ignore[no-any-return]
+    return module.encode(x_float)  # type: ignore[no-any-return]
+
+
+def _visual_latents(
+    module: Any, x_u8: torch.Tensor, device: torch.device, bs: int = 256
+) -> torch.Tensor:
+    from cogsyndelta.regions.vl_pretrain import _to_float
+
+    module.eval()
+    out = []
+    with torch.no_grad():
+        for i in range(0, x_u8.size(0), bs):
+            out.append(_visual_embed(module, _to_float(x_u8[i : i + bs], device)).float().cpu())
+    return torch.cat(out)
+
+
+def _visual_rep_std(
+    module: Any, x_tr: Any, batch_size: int, seed: int, device: torch.device
+) -> float:
+    from cogsyndelta.regions.vl_pretrain import _to_float, collapse_batch_indices
+
+    enc = getattr(module, "target_encoder", module)
+    idx = collapse_batch_indices(int(x_tr.size(0)), batch_size, seed)
+    feats = enc(_to_float(x_tr[idx], device))
+    return float(feats.mean(dim=1).std(dim=0).mean().item())
+
+
+def _measure_visual_probes(
+    model: Any,
+    cfg: Any,
+    device: torch.device,
+    splits: VisualSplits | None = None,
+) -> tuple[dict, dict | None]:
+    from cogsyndelta.regions.vl_pretrain import _linear_probe
+
+    if splits is None:
+        splits = load_visual_splits(cfg)
+    held = _linear_probe(
+        _visual_latents(model, splits.px_tr, device),
+        splits.py_tr,
+        _visual_latents(model, splits.px_ev, device),
+        splits.py_ev,
+        splits.n_classes,
+        device,
+        cfg.probe_steps,
+        cfg.probe_lr,
+        cfg.seed,
+    )
+    with torch.no_grad():
+        held["rep_std"] = _visual_rep_std(model, splits.x_tr, cfg.batch_size, cfg.seed, device)
+    xfer = None
+    if splits.transfer:
+        ttr, tytr, tev, tyev, tn = splits.transfer
+        xfer = _linear_probe(
+            _visual_latents(model, ttr, device),
+            tytr,
+            _visual_latents(model, tev, device),
+            tyev,
+            tn,
+            device,
+            cfg.probe_steps,
+            cfg.probe_lr,
+            cfg.seed,
+        )
+    return held, xfer
+
+
+def benchmark_visual_region(
+    region: str,
+    state: Path,
+    train_receipt_path: Path | None = None,
+    *,
+    allow_unbound_train_receipt: bool = False,
+) -> Receipt | None:
+    """fp32 visual eval: same linear-probe protocol training used, on the bound checkpoint."""
+    from cogsyndelta.model.vl_jepa import IJEPA
+    from cogsyndelta.quant.ptq import fp32_reference_bytes
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
+
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    t0 = time.time()
+    resolved_path = _find_train_receipt(region, state, train_receipt_path)
+    if resolved_path is None:
+        print(f"    no training receipt for {region}", flush=True)
+        return None
+    train_receipt = json.loads(resolved_path.read_text())
+    if allow_unbound_train_receipt:
+        raise UnboundTrainReceiptError(
+            "visual eval has no unbound fallback: the training receipt must name "
+            "checkpoint + checkpoint_sha256"
+        )
+    expected = require_bound_visual_train_receipt(train_receipt, resolved_path)
+    cfg = _vl_cfg_from_train_receipt(region, train_receipt)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = IJEPA(cfg.jepa).to(device).eval()
+    ckpt_sha_out: list[str] = []
+    ck = load_checkpoint(
+        train_receipt["checkpoint"],
+        expected_sha256=expected,
+        map_location=device,
+        sha256_out=ckpt_sha_out,
+    )
+    model.load_state_dict(ck["model"])
+    checkpoint_sha256 = ckpt_sha_out[0]
+    deployed = wrap_deployed_visual_encoder(model).to(device).eval()
+    splits = load_visual_splits(cfg)
+    held, xfer = _measure_visual_probes(deployed, cfg, device, splits)
+    baseline = train_receipt["untrained_baseline"]
+    collapse_ratio = held["rep_std"] / max(1e-9, float(baseline["rep_std"]))
+    collapsed = collapse_ratio < 0.1
+    stored = fp32_reference_bytes(deployed)
+    n_params = _visual_parameter_count(deployed)
+    metrics: dict[str, float] = {
+        "probe.top1": float(held["top1"]),
+        "probe.top5": float(held["top5"]),
+        "repr.rep_std": float(held["rep_std"]),
+    }
+    if xfer is not None:
+        metrics["transfer.top1"] = float(xfer["top1"])
+        metrics["transfer.top5"] = float(xfer["top5"])
+    print(
+        f"    probe  untrained top1={float(baseline['top1']):.4f} "
+        f"top5={float(baseline.get('top5') or 0):.4f}  ->  "
+        f"trained top1={float(held['top1']):.4f} top5={float(held['top5']):.4f}",
+        flush=True,
+    )
+    untrained_xfer = train_receipt.get("untrained_transfer")
+    if xfer is not None and isinstance(untrained_xfer, dict):
+        tname = (train_receipt.get("transfer") or {}).get("name") or "transfer"
+        print(
+            f"    transfer ({tname})  untrained top1={float(untrained_xfer['top1']):.4f}  "
+            f"->  trained top1={float(xfer['top1']):.4f}",
+            flush=True,
+        )
+    print(
+        f"    rep_std {float(baseline['rep_std']):.4f} -> {float(held['rep_std']):.4f} "
+        f"(ratio {collapse_ratio:.4f}, collapsed={collapsed})",
+        flush=True,
+    )
+    return Receipt(
+        producer=Producer("cogsyndelta", canonical_region(region), "i-jepa"),
+        stage="eval",
+        kind="eval",
+        metrics=metrics,
+        baseline={"probe.top1": float(baseline["top1"])},
+        gates={
+            "beats_untrained_eval": float(held["top1"]) > float(baseline["top1"]),
+            "not_collapsed": not collapsed,
+        },
+        artifacts={
+            "checkpoint": train_receipt["checkpoint"],
+            "checkpoint_sha256": checkpoint_sha256,
+            "source_training_receipt": {
+                "path": str(resolved_path),
+                "sha256": sha256_file(resolved_path),
+            },
+        },
+        provenance={
+            "eval_target": "fp32",
+            "stored_bytes_definition": "weights-only",
+            "fp32_reference_bytes": stored,
+            "parameters": n_params,
+            "quantized_module": "target_encoder",
+            "collapse_ratio": round(collapse_ratio, 4),
+            "probe_repeatability": "not-bitwise",
+            "probe_repeatability_reason": (
+                "_linear_probe re-seeds the Linear head from cfg.seed so train vs eval "
+                "no longer depend on how many global RNG draws the I-JEPA loop consumed; "
+                "CUDA GEMM/AdamW on the probe are still not bitwise-deterministic. "
+                "Smoke 24-step (same checkpoint): train held_out.top1 0.6269 vs eval "
+                "probe.top1 0.6215; rep_std matched bitwise."
+            ),
+        },
+        detail={"held_out": held, "transfer": xfer},
+        started_utc=started_utc,
+        seconds=time.time() - t0,
+        device=str(device),
+    )
 
 
 class AmbiguousTrainReceiptError(RuntimeError):
@@ -178,6 +463,28 @@ def expected_checkpoint_sha256(
         "--allow-unbound-train-receipt to score it anyway (pre-R9 receipts predate "
         "checkpoint fingerprinting)."
     )
+
+
+def require_bound_visual_train_receipt(train_receipt: dict, receipt_path: Path) -> str:
+    """checkpoint_sha256 for a visual train receipt, or refuse. Does not load.
+
+    Visual eval and quantize have no unbound fallback: missing ``checkpoint`` or
+    ``checkpoint_sha256`` raises :class:`UnboundTrainReceiptError` with the same
+    message shape as ``benchmark_visual_region``.
+    """
+    msg = (
+        f"{receipt_path}: visual has no unbound fallback: the training receipt must name "
+        "checkpoint + checkpoint_sha256"
+    )
+    if not train_receipt.get("checkpoint"):
+        raise UnboundTrainReceiptError(msg)
+    try:
+        sha = expected_checkpoint_sha256(train_receipt, receipt_path, allow_unbound=False)
+    except UnboundTrainReceiptError:
+        raise UnboundTrainReceiptError(msg) from None
+    if not sha:
+        raise UnboundTrainReceiptError(msg)
+    return sha
 
 
 def _region_eval_context(region: str, train_receipt: dict) -> tuple:
@@ -409,6 +716,13 @@ def benchmark_region(
     allow_unbound_train_receipt: bool = False,
 ) -> Receipt | None:
     """The fp32 pass: score the checkpoint `region`'s training receipt names."""
+    if _is_visual_region(region):
+        return benchmark_visual_region(
+            region,
+            state,
+            train_receipt_path,
+            allow_unbound_train_receipt=allow_unbound_train_receipt,
+        )
     from cogsyndelta.quant.ptq import fp32_reference_bytes
     from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
     from cogsyndelta.regions.text_encoder import TextEncoder
@@ -516,6 +830,88 @@ def benchmark_region(
     )
 
 
+def benchmark_visual_region_quantized(
+    region: str,
+    state: Path,
+    quantized_path: Path,
+    quant_receipt_path: Path | None = None,
+    train_receipt_path: Path | None = None,
+) -> Receipt:
+    """Score a packed EMA-target-encoder artifact with the same visual probe battery.
+
+    Packed keys are ``target_encoder.*``. Do not ``load_state_dict`` onto a full
+    IJEPA — the predictor and online context encoder are not in the artifact.
+    """
+    from cogsyndelta.model.vl_jepa import IJEPA
+    from cogsyndelta.quant.ptq import load_packed_artifact, unpack_state_dict
+    from cogsyndelta.regions._checkpoint import sha256_file
+
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    t0 = time.time()
+    resolved_path = _find_train_receipt(region, state, train_receipt_path)
+    if resolved_path is None:
+        raise FileNotFoundError(f"no training receipt for {region}")
+    train_receipt = json.loads(resolved_path.read_text())
+    checkpoint_sha256 = require_bound_visual_train_receipt(train_receipt, resolved_path)
+    packed_sha = sha256_file(quantized_path)
+    if quant_receipt_path is not None:
+        qrec = json.loads(quant_receipt_path.read_text())
+        recorded = str((qrec.get("artifacts") or {}).get("quantized_sha256") or "")
+        if recorded and recorded != packed_sha:
+            raise ValueError(
+                f"{quant_receipt_path}: quantized_sha256 {recorded} != bytes at "
+                f"{quantized_path} ({packed_sha})"
+            )
+    packed = load_packed_artifact(quantized_path)
+    cfg = _vl_cfg_from_train_receipt(region, train_receipt)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    deployed = wrap_deployed_visual_encoder(IJEPA(cfg.jepa)).to(device)
+    deployed.load_state_dict(unpack_state_dict(packed))
+    deployed.eval()
+    splits = load_visual_splits(cfg)
+    held, xfer = _measure_visual_probes(deployed, cfg, device, splits)
+    baseline = train_receipt["untrained_baseline"]
+    n_params = _visual_parameter_count(deployed)
+    metrics: dict[str, float] = {
+        "probe.top1": float(held["top1"]),
+        "probe.top5": float(held["top5"]),
+        "repr.rep_std": float(held["rep_std"]),
+        "quant.artifact_probe_top1": float(held["top1"]),
+    }
+    if xfer is not None:
+        metrics["transfer.top1"] = float(xfer["top1"])
+    return Receipt(
+        producer=Producer("cogsyndelta", canonical_region(region), "i-jepa"),
+        stage="eval",
+        kind="eval-quantized",
+        metrics=metrics,
+        baseline={"probe.top1": float(baseline["top1"])},
+        gates={
+            "beats_untrained_eval": float(held["top1"]) > float(baseline["top1"]),
+            "not_collapsed": (held["rep_std"] / max(1e-9, float(baseline["rep_std"]))) >= 0.1,
+        },
+        artifacts={
+            "checkpoint": train_receipt["checkpoint"],
+            "checkpoint_sha256": checkpoint_sha256,
+            "quantized_path": str(quantized_path),
+            "quantized_sha256": packed_sha,
+            "source_training_receipt": {
+                "path": str(resolved_path),
+                "sha256": sha256_file(resolved_path),
+            },
+        },
+        provenance={
+            "eval_target": "quantized",
+            "parameters": n_params,
+            "quantized_module": "target_encoder",
+        },
+        detail={"held_out": held, "transfer": xfer},
+        started_utc=started_utc,
+        seconds=time.time() - t0,
+        device=str(device),
+    )
+
+
 def benchmark_region_quantized(
     region: str,
     state: Path,
@@ -541,6 +937,14 @@ def benchmark_region_quantized(
             training receipt's -- either means the files on disk are not the ones the
             receipts describe, and scoring them would produce a number bound to nothing.
     """
+    if _is_visual_region(region):
+        return benchmark_visual_region_quantized(
+            region,
+            state,
+            quantized_path,
+            quant_receipt_path=quant_receipt_path,
+            train_receipt_path=train_receipt_path,
+        )
     from cogsyndelta.quant.ptq import (
         load_packed_artifact,
         packed_stored_bytes,

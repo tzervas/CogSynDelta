@@ -288,11 +288,19 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
     # to land in the same three generic buckets a dashboard can plot without knowing
     # what produced them).
     is_v1_quant = "compression_ratio" in raw and "quantized_metric" in raw
-    is_v2_quant = "quant.compression_ratio" in raw and "quant.plan_recall@1" in raw
+    is_v2_quant = "quant.compression_ratio" in raw and (
+        "quant.plan_recall@1" in raw or "quant.plan_probe_top1" in raw
+    )
     if is_v1_quant or is_v2_quant:
-        metric = raw.get("quant.plan_recall@1", raw.get("quantized_metric"))
+        metric = raw.get(
+            "quant.plan_probe_top1",
+            raw.get("quant.plan_recall@1", raw.get("quantized_metric")),
+        )
         ratio = raw.get("quant.compression_ratio", raw.get("compression_ratio"))
-        drop = raw.get("quant.drop_recall@1", raw.get("drop"))
+        drop = raw.get(
+            "quant.drop_probe_top1",
+            raw.get("quant.drop_recall@1", raw.get("drop")),
+        )
         return Receipt(
             producer=Producer("cogsyndelta", component, "dense-transformer"),
             stage="quantize",

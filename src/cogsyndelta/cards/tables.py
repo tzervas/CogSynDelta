@@ -61,6 +61,7 @@ LOWER_IS_BETTER: frozenset[str] = frozenset(
         "eff.stored_mb",
         "repr.anisotropy",
         "quant.drop_recall@1",
+        "quant.drop_probe_top1",
         "drop",
     }
 )
@@ -324,6 +325,8 @@ def build_quant_table(
         "fp32_metric_recomputed",
         "quant.plan_recall@1",
         "quant.drop_recall@1",
+        "quant.plan_probe_top1",
+        "quant.drop_probe_top1",
         "tolerance",
         "within_budget",
         "quant.compression_ratio",
