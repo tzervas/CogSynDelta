@@ -660,7 +660,7 @@ quantization that the quant receipt's single `recall@1` figure cannot see at all
 
 **Publish-time reconciliation.** `scripts/csd-publish-checkpoint.py` independently
 **re-measures** `stored_bytes` and `width_histogram` from the packed artifact file itself
-(`verify_quantized_measurements()`, `scripts/csd-publish-checkpoint.py:658-719`, using
+(`verify_quantized_measurements()`, `scripts/csd-publish-checkpoint.py:803-864`, using
 `packed_stored_bytes()` / `packed_width_histogram()`, §5.6) and refuses to publish if they
 disagree with what the quant receipt claims. It does **not** re-run the eval battery -- a
 published card's `stored_bytes`/`compression_ratio`/`width_histogram` are file-verified at
@@ -793,7 +793,7 @@ Produced by `quantize_text_region()` (`scripts/csd-quantize.py:54-272`), backed 
 
 - **(c)** `src/cogsyndelta/quant/ptq.py:488-504` (`packed_stored_bytes`),
   `src/cogsyndelta/quant/ptq.py:507-518` (`packed_width_histogram`). Invoked at publish time by
-  `verify_quantized_measurements()`, `scripts/csd-publish-checkpoint.py:658-719`.
+  `verify_quantized_measurements()`, `scripts/csd-publish-checkpoint.py:803-864`.
 - **(e)/(f)** A quant receipt's own `stored_bytes`/`width_histogram` (§5.2/§5.3) are recorded
   from the **plan** at quantize time; `scripts/csd-publish-checkpoint.py` independently
   re-derives both from the **file** and refuses to publish on any disagreement. A card built by
@@ -1209,7 +1209,7 @@ legitimate "before vs. after" comparison.
    they exist to catch the case where a ranking metric looks fine while the space has
    quietly collapsed, per `src/cogsyndelta/eval/benchmark.py:21-26`.
 3. **A licence tier follows the corpus, not the metric.** `licence_tier()`
-   (`scripts/csd-publish-checkpoint.py:310-325`) is derived entirely from
+   (`scripts/csd-publish-checkpoint.py:395-420`) is derived entirely from
    `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`'s per-region table (section "Decision
    2026-09-02") -- a region's training data provenance -- and has no dependency on anything in
    this document. A region whose numbers on this page look identical to another's can still
