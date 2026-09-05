@@ -5,16 +5,15 @@ name: fleet-security
 
 "on":
   push:
-    branches: [main, master, dev, develop]
+    branches: [main]
   pull_request:
-    branches: [main, master, dev, develop]
   schedule:
     - cron: "17 7 * * 1"
   workflow_dispatch:
 
 concurrency:
-  group: fleet-security-${{ github.ref }}
-  cancel-in-progress: false
+  group: fleet-security-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
