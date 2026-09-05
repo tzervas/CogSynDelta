@@ -1,0 +1,65 @@
+{
+  "producer": {
+    "project": "cogsyndelta",
+    "component": "visual",
+    "architecture": "i-jepa"
+  },
+  "stage": "eval",
+  "metrics": {
+    "probe.top1": 0.7224074006080627,
+    "probe.top5": 0.9809259176254272,
+    "repr.rep_std": 0.3534567058086395,
+    "transfer.top1": 0.8005000352859497,
+    "transfer.top5": 0.9925000667572021
+  },
+  "baseline": {
+    "probe.top1": 0.6251851916313171
+  },
+  "gates": {
+    "beats_untrained_eval": true,
+    "not_collapsed": true
+  },
+  "artifacts": {
+    "checkpoint": "/akula-data/csd/matrix/visual-b128-s0-3ce18db-20260905/receipts/visual-checkpoints/step-4000.pt",
+    "checkpoint_sha256": "1f909b6d7e9ff5b2b88721ff0fe9686ac69e61f2fe3e89cd4034e58c78843d9f",
+    "source_training_receipt": {
+      "path": "/akula-data/csd/matrix/visual-b128-s0-3ce18db-20260905/receipts/visual-20260905T220929Z.json",
+      "sha256": "135be92615d88cf0f7f727569bbeb10e98ccb4f2015ef84b68486118a42c77c2"
+    }
+  },
+  "provenance": {
+    "eval_target": "fp32",
+    "stored_bytes_definition": "weights-only",
+    "fp32_reference_bytes": 42849792,
+    "parameters": 10712448,
+    "quantized_module": "target_encoder",
+    "collapse_ratio": 0.8385,
+    "probe_repeatability": "not-bitwise",
+    "probe_repeatability_reason": "_linear_probe re-seeds the Linear head from cfg.seed so train vs eval no longer depend on how many global RNG draws the I-JEPA loop consumed; CUDA GEMM/AdamW on the probe are still not bitwise-deterministic. Smoke 24-step (same checkpoint): train held_out.top1 0.6269 vs eval probe.top1 0.6215; rep_std matched bitwise."
+  },
+  "detail": {
+    "held_out": {
+      "top1": 0.7224074006080627,
+      "top5": 0.9809259176254272,
+      "n_eval": 5400.0,
+      "rep_std": 0.3534567058086395
+    },
+    "transfer": {
+      "top1": 0.8005000352859497,
+      "top5": 0.9925000667572021,
+      "n_eval": 2000.0
+    }
+  },
+  "started_utc": "2026-09-05T22:09:31Z",
+  "seconds": 36.91348838806152,
+  "device": "cuda",
+  "schema": "model-pipeline-receipt/v1",
+  "metrics_schema": "csd-metrics/v2",
+  "kind": "eval",
+  "code_revision": {
+    "git_sha": "6964c0a98ee30a44239affc170d028dc61f61b49",
+    "dirty": true,
+    "branch": "main",
+    "describe": "v0.2.0-164-g6964c0a"
+  }
+}
