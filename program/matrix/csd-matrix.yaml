@@ -31,6 +31,11 @@
 
 schema: model-matrix/v2
 
+# `project.repo` (model-matrix #8): the checkout `publish.card_command` runs FROM, so the
+# relative `scripts/csd-card.py` resolves the same way from any invoking directory.
+project:
+  repo: /home/kang/code/personal/tzervas/CogSynDelta
+
 run:
   id: csd-m1-20260904
   project: cogsyndelta
