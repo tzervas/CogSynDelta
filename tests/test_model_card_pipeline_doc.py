@@ -46,16 +46,38 @@ def test_doc_exists() -> None:
 # Plain `path:line` anchors: exist, and are long enough to contain the cited line.
 # =====================================================================================
 
-_ANCHOR_RE = re.compile(r"`((?:src|scripts|tests)/[A-Za-z0-9_./-]+\.py):(\d+)(?:-(\d+))?`")
+# `\s` inside the path portion of the character class (not just `[A-Za-z0-9_./-]`) is
+# deliberate: markdown's soft-wrap can split a citation's backtick span across a line
+# break with no real space in the path -- `` `src/cogsyndelta/cards/\nexport.py:54` ``
+# is what a scoped review actually found -- and a citation that is otherwise
+# well-formed but falls outside a character class that excludes whitespace is invisible
+# to every test below, silently, however wrong the line number it names. `\s` is also
+# tolerated around `:` and `-` for the same reason: the wrap can land anywhere in the
+# citation, not only inside the path. `_clean_anchor_path` strips whatever whitespace
+# this had to tolerate back out before the captured text is used as a real path.
+_ANCHOR_RE = re.compile(
+    r"`((?:src|scripts|tests)/[A-Za-z0-9_./\s-]+?\.py)\s*:\s*(\d+)(?:\s*-\s*(\d+))?`"
+)
 
 
-def _anchors() -> list[tuple[str, int, int]]:
-    """Every unique `file:line` / `file:start-end` anchor cited in the doc."""
-    text = DOC.read_text() if DOC.is_file() else ""
+def _clean_anchor_path(raw: str) -> str:
+    """Collapse whitespace a wrapped citation's path had to tolerate back to the real,
+    single-line path a filesystem lookup needs. A real path never contains whitespace,
+    so it is removed outright here rather than collapsed to a space."""
+    return re.sub(r"\s+", "", raw)
+
+
+def _anchors_in(text: str) -> list[tuple[str, int, int]]:
+    """Every unique `file:line` / `file:start-end` anchor cited in `text`, tolerant of
+    a citation's backtick span wrapping across a line break. Factored out of
+    `_anchors()` so the wrap-tolerance is itself provable against a synthetic fixture
+    without touching the real doc -- see
+    `test_anchor_regex_sees_a_citation_wrapped_across_a_newline` below."""
     out: list[tuple[str, int, int]] = []
     seen: set[tuple[str, int, int]] = set()
     for m in _ANCHOR_RE.finditer(text):
-        path, start_s, end_s = m.group(1), m.group(2), m.group(3)
+        path = _clean_anchor_path(m.group(1))
+        start_s, end_s = m.group(2), m.group(3)
         start = int(start_s)
         end = int(end_s) if end_s else start
         key = (path, start, end)
@@ -66,12 +88,22 @@ def _anchors() -> list[tuple[str, int, int]]:
     return out
 
 
+def _anchors() -> list[tuple[str, int, int]]:
+    """Every unique `file:line` / `file:start-end` anchor cited in the doc."""
+    text = DOC.read_text() if DOC.is_file() else ""
+    return _anchors_in(text)
+
+
 def test_doc_cites_a_realistic_number_of_anchors() -> None:
     """Guards the guard: if the doc's citation format drifts, `_ANCHOR_RE` would
     silently match nothing and `test_anchor_resolves` below would pass vacuously (zero
-    parametrized cases). The doc cites 6 distinct anchors today; require at least 5 so a
-    format change is caught here rather than by a suite that quietly stopped checking."""
-    assert len(_anchors()) >= 5
+    parametrized cases). Pinned to an exact count rather than a `>= N` floor: a scoped
+    review found a real citation invisible to this scan because its backtick span
+    wrapped across a line break (see `_ANCHOR_RE`'s comment above), and a `>= 5` floor
+    still passed at 6 visible anchors while the doc actually cited 7 -- a floor cannot
+    catch a citation that silently vanishes above it, only one that drops the count
+    below the floor. The doc cites 7 distinct anchors today."""
+    assert len(_anchors()) == 7
 
 
 @pytest.mark.parametrize("path,start,end", _anchors())
@@ -84,6 +116,45 @@ def test_anchor_resolves(path: str, start: int, end: int) -> None:
     assert n >= end, f"{path}:{start}-{end} cited, but the file now has only {n} lines"
 
 
+def test_anchor_regex_sees_a_citation_wrapped_across_a_newline() -> None:
+    """Mutation proof for the exact hole a scoped review found in this doc: a
+    `` `path:line` `` citation whose backtick span wraps across a line break with no
+    real space in the path -- `` `src/cogsyndelta/cards/\\nexport.py:54` `` -- was
+    invisible to the pre-fix `_ANCHOR_RE` (character class without `\\s`), so
+    `test_anchor_resolves` never parametrized over it at all and it could name any line
+    number, however wrong, with nothing in this suite noticing.
+
+    Reproduces that exact shape as a fixture string -- never touches the real doc --
+    with a deliberately out-of-range line number (99999) standing in for "wrong", and
+    proves both halves of the fix: (1) `_anchors_in` finds it at all (the wrap-hiding
+    hole is closed), with the path cleaned back to its real, single-line form; (2) the
+    line number it names is checked against the real file exactly as
+    `test_anchor_resolves` checks every anchor `_anchors()` finds, and fails -- the
+    guard goes red instead of passing vacuously."""
+    fixture_doc = (
+        "See `cogsyndelta.cards.export.export_safetensors(checkpoint)` (`src/"
+        "cogsyndelta/cards/\nexport.py:99999`) for details.\n"
+    )
+
+    anchors = _anchors_in(fixture_doc)
+    assert anchors, "regex found nothing -- this test would pass vacuously"
+    path, start, end = anchors[0]
+    assert path == "src/cogsyndelta/cards/export.py", (
+        f"wrapped path did not clean back to a real single-line path: {path!r}"
+    )
+    assert start == end == 99999
+
+    # The same check `test_anchor_resolves` applies to every real anchor: the file
+    # must have at least `end` lines. It does not -- that is what "wrong" means here,
+    # and it is only checkable at all because the anchor is no longer invisible.
+    real_file = ROOT / path
+    real_lines = len(real_file.read_text().splitlines())
+    assert real_lines < end, (
+        "fixture's out-of-range line number is not actually out of range for "
+        f"{path} ({real_lines} real lines) -- tighten the fixture"
+    )
+
+
 # =====================================================================================
 # Named anchors: `` `name` `` (bare, no `()`) immediately next to a `path:line` --
 # this doc's own citation convention, distinct from METRICS-METHODOLOGY.md's.
@@ -91,34 +162,42 @@ def test_anchor_resolves(path: str, start: int, end: int) -> None:
 
 _NAMED_ANCHOR_RE = re.compile(
     r"`([A-Za-z_][A-Za-z0-9_.]*)`(?:[^`|]{0,60})"
-    r"`((?:src|scripts)/[A-Za-z0-9_./-]+\.py):(\d+)(?:-(\d+))?`"
+    r"`((?:src|scripts)/[A-Za-z0-9_./\s-]+?\.py)\s*:\s*(\d+)(?:\s*-\s*(\d+))?`"
 )
 
 
-def _named_anchors() -> list[tuple[str, str, int, int]]:
+def _named_anchors_in(text: str) -> list[tuple[str, str, int, int]]:
     """Every bare `` `name` `` followed, within 60 chars and no intervening backtick or
     table-cell boundary (`|`), by a `` `path:line` `` anchor -- i.e. every place the doc
     claims "this citation is where `name` is defined/raised". The no-intervening-
     backtick rule is what makes `` `CardError` (`require_documented`, `path:line`) ``
     resolve to `require_documented` (the function that actually raises at that line),
-    not the exception class named one backtick-span earlier."""
-    text = DOC.read_text() if DOC.is_file() else ""
+    not the exception class named one backtick-span earlier. Same wrap-tolerance as
+    `_anchors_in`, factored out the same way and for the same reason -- the path
+    portion of the `path:line` half can wrap across a line break just as easily here."""
     out: list[tuple[str, str, int, int]] = []
     for m in _NAMED_ANCHOR_RE.finditer(text):
         name, path, start_s, end_s = m.group(1), m.group(2), m.group(3), m.group(4)
         start = int(start_s)
-        out.append((name, path, start, int(end_s) if end_s else start))
+        out.append((name, _clean_anchor_path(path), start, int(end_s) if end_s else start))
     return out
+
+
+def _named_anchors() -> list[tuple[str, str, int, int]]:
+    """Every bare `` `name` `` (no `()`) immediately next to a `path:line` -- this
+    doc's own citation convention, distinct from METRICS-METHODOLOGY.md's."""
+    text = DOC.read_text() if DOC.is_file() else ""
+    return _named_anchors_in(text)
 
 
 def test_doc_cites_a_realistic_number_of_named_anchors() -> None:
     """Guards `_named_anchors` itself the same way `test_doc_cites_a_realistic_number_of_
-    anchors` guards `_anchors`: if the bare-name-next-to-anchor convention drifts, this
-    format-drift check catches `test_named_anchor_resolves` passing vacuously on zero
-    parametrized cases. The doc cites 7 named anchors today (`build_card`,
+    anchors` guards `_anchors`, and pinned to an exact count for the same reason (see
+    that test's docstring): a `>= N` floor cannot catch a named anchor that silently
+    vanishes above it. The doc cites 7 named anchors today (`build_card`,
     `render_card` x2, `require_documented`, `assert_schemas_agree`, `_licence_block`,
-    `licence_tier`); require at least 5."""
-    assert len(_named_anchors()) >= 5
+    `licence_tier`)."""
+    assert len(_named_anchors()) == 7
 
 
 @pytest.mark.parametrize("name,path,start,end", _named_anchors())
