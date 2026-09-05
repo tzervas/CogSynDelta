@@ -1530,7 +1530,7 @@ def test_check_5_passes_on_a_record_the_live_factory_writes() -> None:
             upstream_url="https://example.com/LICENSE",
             mirror_url="https://huggingface.co/datasets/BeIR/scidocs",
             resolved_revision="abc",
-            data_dir=data_dir,
+            dataset_dir=data_dir,
         )
 
     result = mod.check_policy_constants_drift(record)
