@@ -58,6 +58,17 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
+_SRC = str(Path(__file__).resolve().parents[1] / "src")
+if _SRC not in sys.path:
+    # cogsyndelta.regions.aliases has no heavy dependency (no torch, no
+    # tokenizers/pyarrow), so importing it here costs the --help / --dry-run paths
+    # nothing -- same reasoning as scripts/csd-publish-checkpoint.py's own sys.path
+    # shim, needed because this script is often invoked directly rather than with
+    # PYTHONPATH already set.
+    sys.path.append(_SRC)
+
+from cogsyndelta.regions.aliases import REGION_ALIASES  # noqa: E402
+
 # Durable, never a temp dir. /tmp filled at 0 bytes free when checkpoints landed there.
 DEFAULT_STATE = Path("/akula-data/csd")
 CORPUS = Path("/mnt/fleet-datasets/csd")
@@ -513,6 +524,30 @@ REGIONS: dict[str, tuple[list[SourceSpec], str, int, GradedSpec | None]] = {
 }
 
 
+def _add_region_name_aliases(regions: dict[str, object]) -> dict[str, object]:
+    """Make every entry already present under a legacy OR canonical region name
+    (`cogsyndelta.regions.aliases.REGION_ALIASES`) reachable under the OTHER spelling
+    too, pointing at the exact same value -- so `REGIONS["language"] is
+    REGIONS["code"]`, and a monkeypatch.setitem into either key mutates what the other
+    spelling sees. Does not invent an entry for a region that has neither spelling
+    present. Mutates and returns `regions` so it can wrap a dict literal in place.
+    """
+    for legacy, canonical in REGION_ALIASES.items():
+        if legacy in regions and canonical not in regions:
+            regions[canonical] = regions[legacy]
+        elif canonical in regions and legacy not in regions:
+            regions[legacy] = regions[canonical]
+    return regions
+
+
+# `REGIONS`'s own key stays the legacy `code` -- it matches the on-disk corpus
+# directory (`region/code/...`, above), the matrix cell names, and every comment in
+# this module about that corpus, none of which rename with the catalogue. `language`
+# is added as an alias to the identical entry so `--regions language` (or
+# `region_spec("language")`) resolves it too -- see `_add_region_name_aliases`.
+_add_region_name_aliases(REGIONS)
+
+
 class RegionEntry(NamedTuple):
     """A `REGIONS[name]` value, typed and named, plus the corpus root it resolves against.
 
@@ -593,7 +628,7 @@ def region_spec(name: str) -> RegionEntry:
 # and its data is an image struct rather than two text columns. So it gets its own entry
 # and its own runner rather than being bent into REGIONS.
 VL_REGIONS: dict[str, dict] = {
-    "vl_latent": {
+    "visual": {
         # OD-4 (g8-visual-faculty-design.md "Operator decisions", row "OD-4 mix"):
         # tiny-imagenet is 100% BLOCKING as a training source -- `license: []` plus an
         # ImageNet ToA `extra_gated_prompt` (non-commercial; indemnify copies of
@@ -623,6 +658,13 @@ VL_REGIONS: dict[str, dict] = {
         ),
     },
 }
+
+# `visual` (nee `vl_latent`, operator naming rule 2026-09-04) is the canonical key
+# above; `vl_latent` is added as an alias to the identical entry -- `--regions
+# vl_latent` and every test written before the rename keep working, and
+# `monkeypatch.setitem(VL_REGIONS["vl_latent"], ...)` mutates the SAME dict `"visual"`
+# also sees. See `_add_region_name_aliases`, defined next to `REGIONS` above.
+_add_region_name_aliases(VL_REGIONS)
 
 
 # The classify corpora are (text, LABEL) rows, not (anchor, positive) text pairs -- see
@@ -886,6 +928,10 @@ def run_region(
         # those columns being attached to that region.
         token_loss_weight, decorr_weight = TOKEN_AWARE_REGIONS.get(name, (0.0, 0.0))
         plan = {
+            # NOT canonicalized -- matches exactly what the real (non-dry) run below
+            # writes as `PretrainConfig.region`, which is also deliberately left as
+            # `name` (see that assignment's comment): the dry-run preview must show
+            # what a real run actually does, not a nicer-looking name it does not use.
             "region": name,
             "pair_columns": list(pair_cols),
             "shards": shards,
@@ -924,6 +970,13 @@ def run_region(
 
     token_loss_weight, decorr_weight = TOKEN_AWARE_REGIONS.get(name, (0.0, 0.0))
     cfg = PretrainConfig(
+        # Deliberately NOT canonicalized, unlike the dry-run plan's display above:
+        # `cogsyndelta.regions.pretrain.pretrain_region` derives the checkpoint
+        # directory (`{cfg.region}-checkpoints`) and receipt filename straight from
+        # this value, and changing THAT for an in-flight region would split one
+        # region's history across two directories mid-run. Out of scope for this
+        # rename -- see cogsyndelta.regions.aliases's module docstring for what stays
+        # legacy-spelled on disk.
         region=name,
         pair_columns=pair_cols,
         shards=shards,
