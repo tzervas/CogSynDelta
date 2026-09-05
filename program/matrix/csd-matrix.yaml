@@ -191,12 +191,14 @@ regions:
     # sensitive source (an uncapped SourceSpec; a `cap`-ed source like gooaq or
     # aqua_rat-raw is exempt from shard_limit entirely, see csd-train-all.py's
     # `run_region`) to exactly ONE file today, so shard_limit=2 already includes it
-    # whole and reproduces each region's cited baseline. `code` is the one region that
-    # needed an explicit override (see its own `shard_limit:` below): its primary
-    # source, codesearchnet-python, is FOUR shard files, so the default of 2 silently
-    # trains on a different (and smaller) corpus than the cited baseline -- measured,
-    # not theoretical: the matrix's first real cell (code, batch=512) inherited this
-    # default and trained on 214,813 pairs at corpus.fingerprint
+    # whole and reproduces each region's cited baseline. `language` (the language
+    # centre -- specialisation: code; region id `code` before the 2026-09-04 naming
+    # rule, still the spelling every cell dir/receipt/corpus path below carries) is the
+    # one region that needed an explicit override (see its own `shard_limit:` below):
+    # its primary source, codesearchnet-python, is FOUR shard files, so the default of
+    # 2 silently trains on a different (and smaller) corpus than the cited baseline --
+    # measured, not theoretical: the matrix's first real cell (code, batch=512)
+    # inherited this default and trained on 214,813 pairs at corpus.fingerprint
     # 6745b766a9e9d5ab798d87116e526416
     # (/akula-data/csd/matrix/code-b512-s0-6614ec2-20260904/receipts/code-20260904T090702Z.json),
     # not the cited baseline's 430,931 pairs at e493273b003f5cf9c239db0ac461b993. Every
@@ -259,14 +261,34 @@ regions:
     budget_axes: [batch]
     # REQUIRED whenever budget_axes is narrower than the region's full axis set (C2):
     # `model_matrix.config.validate_region_budgets` refuses the region outright without
-    # this claim, and every region inheriting these defaults (code, compress, retrieve,
-    # reason) declares axes {batch, seed} while budgeting on batch alone. Stating it once
+    # this claim, and every region inheriting these defaults (language, compress,
+    # retrieve, reason) declares axes {batch, seed} while budgeting on batch alone. Stating it once
     # here rather than four times is the point of `defaults`; `memory` narrows a different
     # way and carries its own copy of this sentence, because the shallow merge means an
     # overriding region must restate both keys together.
     budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
 
-  code:
+  language:
+    # Operator naming rule (2026-09-04): the language centre, id `language`,
+    # `specialisation: code` -- its current corpus and battery are code-flavoured, but
+    # the faculty is not domain-scoped. `aliases` names the pre-rename spelling this
+    # row (and everything it produced before today) was known by --
+    # cogsyndelta.regions.aliases.REGION_ALIASES is the ONE place that mapping lives;
+    # this field is a legible restatement for a reader of this config, not a second
+    # copy of the logic. EVERYTHING already on disk -- cell dirs (`code-b512-...`),
+    # receipt filenames, the `region/code/...` corpus path below, the Hub repo -- still
+    # uses `code`; only a NEW cell planned against this row uses `language` (see
+    # `hub_repo_name` below for the one place that split is not automatic).
+    aliases: [code]
+    specialisation: code
+    # The Hub repo for this region has not been renamed yet (a separate, later step by
+    # the orchestrator -- see cogsyndelta.regions.aliases's module docstring); default
+    # `publish.repo_pattern` templated with THIS row's own `{region}` would now compute
+    # the FUTURE name (`cogsyndelta-region-language`), not the one live today. Every
+    # other region in this file has no override because its row key never changed, so
+    # `repo_pattern` already computes correctly for it -- this is the one row that
+    # needs an explicit pin until the Hub rename lands and this can be deleted.
+    hub_repo_name: tzervas/cogsyndelta-region-code
     axes: {batch: [512, 1280], seed: [0, 1]}
     # batch=1280/seed=0 is today's production baseline: held_out.recall@1=0.9863, sha
     # 9df6526, corpus.fingerprint e493273b003f5cf9c239db0ac461b993, 430,931 train pairs
@@ -296,7 +318,7 @@ regions:
     # `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` §"code", "upstream" row.
     card:
       language: en
-      tags: [cogsyndelta, "region:code"]
+      tags: [cogsyndelta, "region:language"]
       licence_tier: mit
       datasets: ["code-search-net/code_search_net"]
 
