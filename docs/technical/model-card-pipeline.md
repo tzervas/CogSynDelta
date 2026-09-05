@@ -93,8 +93,7 @@ suite.
 
 ## The safetensors export
 
-`cogsyndelta.cards.export.export_safetensors(checkpoint)` (`src/cogsyndelta/cards/
-export.py:54`) writes `<checkpoint stem>.safetensors` beside a checkpoint — fp32,
+`cogsyndelta.cards.export.export_safetensors(checkpoint)` (`src/cogsyndelta/cards/export.py:62`) writes `<checkpoint stem>.safetensors` beside a checkpoint — fp32,
 weights-only, CPU, contiguous — so the Hub can render its safetensors badge and
 model-size sidebar next to the pickled `final.pt` primary artifact (`.safetensors`
 files refuse anything but plain tensors by construction; there is no pickle path
