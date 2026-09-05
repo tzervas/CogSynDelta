@@ -227,6 +227,20 @@ def test_renders_placeholder_kind_with_no_receipts() -> None:
     assert "weights: none" in card
 
 
+def test_placeholder_vl_latent_alias_renders_as_visual() -> None:
+    card = render_card(
+        "placeholder",
+        region="vl_latent",
+        region_cfg={"kind": "jepa", "modality": "image"},
+        receipts={},
+        files={},
+    )
+    assert "cogsyndelta-region-visual" in card
+    assert "region:visual" in card
+    assert "# CogSynDelta -- visual (placeholder)" in card
+    assert "formerly `vl_latent`" in card
+
+
 def test_renders_composed_kind_with_no_receipts() -> None:
     card = render_card("composed", region="cogsyndelta", region_cfg={}, receipts={}, files={})
     assert "TBD" in card
@@ -291,13 +305,26 @@ def test_faculty_line_shown_when_region_cfg_carries_a_different_canonical_name(
     )
     assert "**Faculty:** `language`" in card
     assert "specialisation: `code`" in card
-    assert "legacy region id `code`" in card
+    assert "(formerly `code`)" in card
+    assert "region:language" in card
+    assert "legacy region id" not in card
+    main = render_card(
+        "region_main",
+        region="code",
+        region_cfg=region_cfg(name="language", specialisation="code"),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert "**Faculty:** `language`" in main
+    assert "(formerly `code`)" in main
+    assert "region:language" in main
 
 
 def test_specialisation_shown_with_no_alias_note_when_name_matches(tmp_path: Path) -> None:
     """When `region_cfg["name"]` already equals `region` (a canonical receipt, no
     rename involved), the specialisation still shows but there is nothing to call a
-    legacy alias -- no 'legacy region id' text."""
+    legacy alias -- no 'formerly' parenthetical."""
     receipts = _full_fixture_receipts(tmp_path)
     card = render_card(
         "region_variant",
@@ -308,7 +335,9 @@ def test_specialisation_shown_with_no_alias_note_when_name_matches(tmp_path: Pat
         budgets_root=tmp_path,
     )
     assert "**Specialisation:** `code`" in card
+    assert "formerly" not in card
     assert "legacy region id" not in card
+    assert "region:language" in card
 
 
 def test_no_faculty_or_specialisation_line_when_region_cfg_carries_neither(

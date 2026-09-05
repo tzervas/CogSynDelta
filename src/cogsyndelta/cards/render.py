@@ -59,6 +59,7 @@ from cogsyndelta.cards.tables import (
     build_training_table,
     render_table_markdown,
 )
+from cogsyndelta.regions.aliases import canonical_region
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
@@ -96,9 +97,10 @@ PLACEHOLDER_REFERENT: dict[str, str] = {
     "`stream_vae` PoC region trained today under `residual_mlp`'s sibling config)",
     "residual_mlp": "no design row exists for this name in the current design "
     "revision -- the repo name predates the ratified region catalogue",
-    "vl_latent": "the future `visual` slot (see docs/design; today's `zh-plus/tiny-"
-    "imagenet` toy checkpoint is BLOCKING per docs/design/LICENCE-FOR-OPEN-WEIGHTS.md "
-    "and is not what this repo, once populated, is meant to hold)",
+    "visual": "the visual faculty slot (see docs/design; formerly `vl_latent`). "
+    "Today's `zh-plus/tiny-imagenet` toy checkpoint is BLOCKING per "
+    "docs/design/LICENCE-FOR-OPEN-WEIGHTS.md and is not what this repo, once "
+    "populated, is meant to hold",
 }
 
 
@@ -330,6 +332,12 @@ def render_card(
         CardError: an undocumented metric, a `metrics_schema` disagreement across the
             supplied receipts, or (non-`composed` kinds) a missing `licence_tier`.
     """
+    region_in = region
+    if kind in ("placeholder", "region_variant", "region_main"):
+        region = canonical_region(region)
+    region_legacy = (
+        region_in if kind in ("region_variant", "region_main") and region_in != region else None
+    )
     train_receipt = receipts.get("train")
     eval_receipt = receipts.get("eval")
     eval_quantized_receipt = receipts.get("eval_quantized")
@@ -375,7 +383,7 @@ def render_card(
     footnotes_md = _footnotes_markdown(footnote_numbers)
 
     sizes = build_size_report(
-        region=region,
+        region=region_in,
         train_receipt=train_receipt or {},
         quant_receipt=quant_receipt,
         eval_receipt=eval_receipt,
@@ -413,6 +421,7 @@ def render_card(
 
     template_kwargs: dict[str, Any] = {
         "region": region,
+        "region_legacy": region_legacy,
         "region_cfg": region_cfg,
         "role": region_cfg.get("role", "(no role recorded)"),
         "router_trigger": region_cfg.get("router_trigger", "(none recorded)"),
