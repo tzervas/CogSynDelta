@@ -517,6 +517,13 @@ regions:
     # publish.repo_pattern would mint tzervas/cogsyndelta-region-visual; the live
     # Hub slug is tzervas/cogsyndelta-vl-jepa (REGION_REPO_SUFFIX visual/vl_latent).
     hub_repo_name: tzervas/cogsyndelta-vl-jepa
+    how_chosen: >-
+      main_rule best_primary_metric_all_gates_pass on train:$.held_out.top1 among the
+      visual cells of run 2 (pin 3ce18db, corpus visual-clean-v1 ab5761b6, seeds 0 and 1,
+      steps 4000, batch 128) whose train, test, quantize and test-quant stages all passed:
+      seed 1 (0.7237) over seed 0 (0.7224), a gap inside seed-to-seed spread. Both pass
+      PREREG g22 H1. The run-1 cells (pin 198074a) are excluded: they have no eval or
+      quant receipt and no checkpoint binding (docs/design/evidence/g22-visual-prereg-run{1,2}-2026-09-05).
     steps: 4000
     hosts: [akula-prime]  # PREREG exclusive-seq; 5080 idle for visual; 1080 Ti excluded
     axes: {batch: [128], seed: [0, 1]}
