@@ -148,6 +148,7 @@ from cogsyndelta.cards.methodology import (  # noqa: E402 -- needs sys.path set 
     normalize_quant_receipt_v1,
     require_documented,
 )
+from cogsyndelta.regions.aliases import canonical_region  # noqa: E402
 
 DEFAULT_OWNER = "tzervas"
 DEFAULT_BASE = "cogsyndelta"
@@ -159,10 +160,21 @@ DEFAULT_REGIONS_CONFIG = REPO_ROOT / "config" / "mind" / "csd-regions.json"
 # pattern -- those repos are not in csd-hf-repos.py's REPOS list yet, so this is an
 # extension of its convention, not a transcription of it; create_repo(exist_ok=True)
 # provisions them the first time this script runs against one.
+#
+# `default_repo` does NOT canonicalize its input (see that function) -- `code` and
+# `language` deliberately compute DIFFERENT repo names (the plain pattern turns the
+# region's own spelling into the suffix), because the Hub repo itself is still named
+# with the legacy `code` spelling and its rename is a separate, later step by the
+# orchestrator (see cogsyndelta.regions.aliases's module docstring). `vl_latent` is
+# different: its suffix was never derived from the region's spelling at all (`-vl-jepa`
+# names the model, not the region id), so both the legacy and canonical spelling are
+# listed here pointing at the identical suffix -- there is no future rename pending for
+# this one, only a name the region is reachable under today.
 REGION_REPO_SUFFIX = {
     "residual_mlp": "-region-residual",
     "stream_vae": "-region-stream-vae",
     "vl_latent": "-vl-jepa",
+    "visual": "-vl-jepa",
 }
 
 # Source: docs/design/LICENCE-FOR-OPEN-WEIGHTS.md, "Decision 2026-09-02" and the
@@ -173,12 +185,19 @@ REGION_REPO_SUFFIX = {
 #
 # residual_mlp and stream_vae are deliberately absent: no licence audit exists for
 # either, so `licence_tier()` raises for them rather than defaulting to MIT.
+#
+# Keyed CANONICALLY (`language`, not `code`; `visual`, not `vl_latent`) -- unlike
+# REGION_REPO_SUFFIX above, this table is an internal lookup with no Hub-visible name
+# baked into its keys, so there is nothing gained by keeping it legacy-spelled. Every
+# reader (`licence_tier()`, `LICENCE_WHY.get()` in build_card) resolves its input
+# through `canonical_region()` first, so a caller still spelling either region the old
+# way keeps working.
 LICENCE_TIER: dict[str, str] = {
-    "code": "mit",
+    "language": "mit",
     "classify_banking77": "mit",
     "classify_go_emotions": "mit",
     "reason": "mit",
-    "vl_latent": "mit",
+    "visual": "mit",
     "compress": "cc-by-sa-4.0",
     "retrieve": "cc-by-nc-sa-4.0",
     "memory": "cc-by-nc-sa-4.0",
@@ -198,18 +217,18 @@ ALLOWED_CHECKPOINT_SUFFIXES: frozenset[str] = frozenset({".pt", ".safetensors"})
 # Regions whose training data has no licence grant anywhere in the provenance chain at
 # all -- BLOCKING per docs/design/LICENCE-FOR-OPEN-WEIGHTS.md section 4, strictly worse
 # than "unknown". Checked inside licence_tier() before the tier lookup below, so a
-# BLOCKING region refuses regardless of what LICENCE_TIER says for it (vl_latent's entry
+# BLOCKING region refuses regardless of what LICENCE_TIER says for it (visual's entry
 # there is for its eventual composite replacement -- Decision 2026-09-02 -- not for the
 # tiny-imagenet checkpoint that exists today, which is why the tier value alone is not
-# a safe gate).
-BLOCKING_REGIONS: frozenset[str] = frozenset({"vl_latent"})
+# a safe gate). Canonical key; licence_tier() canonicalizes its input before this check.
+BLOCKING_REGIONS: frozenset[str] = frozenset({"visual"})
 
 LICENCE_WHY: dict[str, str] = {
-    "code": "no NC or share-alike input in the catalogue, once GitHub-licence-filtered",
+    "language": "no NC or share-alike input in the catalogue, once GitHub-licence-filtered",
     "classify_banking77": "no NC or share-alike input in the catalogue",
     "classify_go_emotions": "no NC or share-alike input in the catalogue",
     "reason": "no NC or share-alike input in the catalogue",
-    "vl_latent": "no NC or share-alike input in the catalogue (corpus's own BLOCKING "
+    "visual": "no NC or share-alike input in the catalogue (corpus's own BLOCKING "
     "grant problem is separate from licence family and is not resolved by this tag)",
     "compress": "SNLI (+ government + fiction) repaired corpus is share-alike; "
     "no NC-tagged input identified",
@@ -274,11 +293,22 @@ def _content_matches(
 
 
 def default_repo(region: str, owner: str = DEFAULT_OWNER, base: str = DEFAULT_BASE) -> str:
+    """The repo a region's checkpoints publish to, keyed by whatever spelling of the
+    region name is given -- deliberately NOT canonicalized. `code` and `language` compute
+    DIFFERENT names (`cogsyndelta-region-code` vs. `cogsyndelta-region-language`): the
+    Hub repo for the language centre is still named with the legacy spelling, and its
+    rename is a separate, later step by the orchestrator, so the future canonical name
+    is what this returns for the canonical input -- not what is live today. `vl_latent`
+    and `visual` are the exception: REGION_REPO_SUFFIX lists both spellings against the
+    identical suffix, since that name was never derived from the region id to begin
+    with.
+    """
     suffix = REGION_REPO_SUFFIX.get(region, f"-region-{region.replace('_', '-')}")
     return f"{owner}/{base}{suffix}"
 
 
 def licence_tier(region: str) -> str:
+    region = canonical_region(region)
     if region in BLOCKING_REGIONS:
         raise PublishAbortError(
             f"region {region!r} is BLOCKING per docs/design/LICENCE-FOR-OPEN-WEIGHTS.md "
@@ -333,9 +363,14 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def load_region_config(region: str, regions_path: Path = DEFAULT_REGIONS_CONFIG) -> dict[str, Any]:
+    """Find `region`'s entry in the catalogue, matching on canonical name so a caller
+    still spelling it the legacy way (`code`, `vl_latent`) finds the same entry the
+    catalogue now stores under its canonical name (`language`, `visual`)."""
+    target = canonical_region(region)
     data = load_json(regions_path)
     for r in data.get("regions", []):
-        if r.get("name") == region:
+        name = r.get("name")
+        if isinstance(name, str) and canonical_region(name) == target:
             return r
     raise PublishAbortError(f"region {region!r} not found in {regions_path}")
 
@@ -527,9 +562,14 @@ def assert_region_matches(receipt: dict[str, Any], region: str, label: str) -> N
     """--region is what licence_tier() and the repo name are derived from. Nothing else
     ties it to the receipt actually being published, so a mismatch -- a CLI typo, or a
     misdirected agent -- would launder that receipt's real licence tier under whatever
-    --region claims. One comparison per receipt closes the class."""
+    --region claims. One comparison per receipt closes the class.
+
+    Compared CANONICALLY: an old receipt naming the legacy spelling (`region: "code"`)
+    still matches `--region language`, and vice versa -- the rename does not turn every
+    receipt written before it into a forced mismatch.
+    """
     claimed = receipt_region(receipt, label)
-    if claimed != region:
+    if canonical_region(claimed) != canonical_region(region):
         raise PublishAbortError(
             f"{label} receipt's region {claimed!r} does not match --region {region!r} -- "
             "refusing: the licence tier and repo name are derived from --region, and a "
@@ -1074,7 +1114,8 @@ def build_card(
         "",
         f"**Router trigger.** {region_cfg.get('router_trigger', '(none recorded)')}",
         "",
-        f"**Licence tier.** `{tier}` -- {LICENCE_WHY.get(region, '(reason not recorded)')}. "
+        f"**Licence tier.** `{tier}` -- "
+        f"{LICENCE_WHY.get(canonical_region(region), '(reason not recorded)')}. "
         'See `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, "Decision 2026-09-02".',
         "",
         "## Metrics",

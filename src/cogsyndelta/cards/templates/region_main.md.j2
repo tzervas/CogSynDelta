@@ -17,6 +17,11 @@ this region ships under `main.pt` / the region's Hub repo default revision.
 {%- else -%}
 **Role:** {{ role }}
 {%- endif %}
+{%- if region_cfg.get("name") and region_cfg["name"] != region %}
+**Faculty:** `{{ region_cfg["name"] }}`{% if region_cfg.get("specialisation") %} (specialisation: `{{ region_cfg["specialisation"] }}`){% endif %} -- this release's receipts were recorded under the legacy region id `{{ region }}` (see `cogsyndelta.regions.aliases`).
+{%- elif region_cfg.get("specialisation") %}
+**Specialisation:** `{{ region_cfg["specialisation"] }}`
+{%- endif %}
 
 ## How this was chosen
 

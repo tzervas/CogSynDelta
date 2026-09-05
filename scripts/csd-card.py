@@ -211,16 +211,23 @@ def _region_cfg(pub_mod: Any, region: str, kind: str) -> dict[str, Any]:
             tier = None
     if tier is not None:
         cfg["licence_tier"] = tier
-        cfg["licence_why"] = pub_mod.LICENCE_WHY.get(region, "(reason not recorded)")
+        cfg["licence_why"] = pub_mod.LICENCE_WHY.get(
+            pub_mod.canonical_region(region), "(reason not recorded)"
+        )
     return cfg
 
 
 def _build_receipts_and_region(
     args: argparse.Namespace,
+    pub_mod: Any,
 ) -> tuple[str, dict[str, dict[str, Any] | None]]:
     if args.cell is not None:
         region, receipts = _receipts_from_cell(args.cell)
-        if args.region and args.region != region:
+        # Canonically compared: a cell recorded under the legacy `code` still matches
+        # `--region language`, and vice versa -- see cogsyndelta.regions.aliases.
+        if args.region and pub_mod.canonical_region(args.region) != pub_mod.canonical_region(
+            region
+        ):
             raise CardCliError(
                 f"--region {args.region!r} does not match {args.cell / 'cell.json'}'s "
                 f"own region {region!r} -- refusing to render a card for a region "
@@ -276,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     pub_mod = _load_publish_module()
     try:
-        region, receipts = _build_receipts_and_region(args)
+        region, receipts = _build_receipts_and_region(args, pub_mod)
         region_cfg = _region_cfg(pub_mod, region, args.kind)
         comparators = _load_comparators(args.comparators)
         files = _checkpoint_files_block(pub_mod, receipts.get("train"))

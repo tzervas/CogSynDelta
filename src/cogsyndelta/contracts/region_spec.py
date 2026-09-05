@@ -28,9 +28,12 @@ be compared against one that was not.
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+
+from cogsyndelta.regions.aliases import canonical_region
 
 Modality = Literal["text", "latent", "vision", "any"]
 
@@ -105,6 +108,22 @@ class RegionSpec:
     but a merged region can never itself be `live`, since its objective is no longer
     trained on its own (see `__post_init__`)."""
 
+    specialisation: str | None = None
+    """Domain flavour of an otherwise domain-agnostic faculty -- e.g. `language`'s
+    `specialisation: "code"` records that its CURRENT corpus and battery are
+    code-flavoured, without the region itself being named after that domain (operator
+    naming rule, 2026-09-04: regions are named by cognitive faculty, never by knowledge
+    domain). A domain that is not the faculty's whole identity belongs here, or as a
+    memory-gate persona/variant branch -- never as the region `name`."""
+
+    region_alias_of: str | None = None
+    """Set by ``MindSpec.from_dict`` when this spec was loaded from a legacy region name
+    (``cogsyndelta.regions.aliases.REGION_ALIASES``) -- e.g. a spec built from a config
+    that still says ``name: "code"`` carries ``name="language"``,
+    ``region_alias_of="code"``. ``None`` for a spec that was already canonical, or one
+    built directly (not through the loader) -- this field records how THIS spec was
+    resolved, not a general fact about the region."""
+
     def __post_init__(self) -> None:
         """Reject a spec that cannot build: empty name, non-positive dims, or a
         latent_vae with no latent_dim.
@@ -166,12 +185,30 @@ class MindSpec:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MindSpec:
-        """Rebuild a MindSpec from parsed JSON, restoring nested pretrain/quant specs."""
+        """Rebuild a MindSpec from parsed JSON, restoring nested pretrain/quant specs.
+
+        Resolves a legacy region name (``cogsyndelta.regions.aliases.REGION_ALIASES``,
+        e.g. a config that still says ``"code"`` or ``"vl_latent"``) to its canonical
+        spelling, warns once per entry, and records where it came from in
+        ``RegionSpec.region_alias_of`` -- so an old config keeps loading, but nothing
+        downstream ever sees the legacy name as this spec's ``name``.
+        """
         regions = []
         for raw in data.get("regions", []):
             raw = dict(raw)
             pre = raw.pop("pretrain", None)
             quant = raw.pop("quantization", None)
+            raw_name = raw["name"]
+            canonical = canonical_region(raw_name)
+            if canonical != raw_name:
+                warnings.warn(
+                    f"region name {raw_name!r} is deprecated; use {canonical!r} "
+                    "(cogsyndelta.regions.aliases.REGION_ALIASES)",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                raw["name"] = canonical
+                raw.setdefault("region_alias_of", raw_name)
             regions.append(
                 RegionSpec(
                     **raw,

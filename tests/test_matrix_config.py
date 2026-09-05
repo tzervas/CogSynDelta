@@ -279,7 +279,7 @@ def test_the_budget_axes_why_guard_fires_when_the_defaults_claim_is_removed() ->
         for name, merged in _merged_regions(raw).items()
         if _narrows_budget_axes(merged) and not merged.get("budget_axes_why")
     ]
-    assert sorted(offenders) == ["code", "compress", "reason", "retrieve"]
+    assert sorted(offenders) == ["compress", "language", "reason", "retrieve"]
 
 
 # ------------------------------------------- C1: requires must name a stage in the pipeline
@@ -498,7 +498,7 @@ def test_the_template_key_guard_fires_on_an_uninjected_key() -> None:
     checker reports it -- the same shape as publish's real gap."""
     raw = copy.deepcopy(_raw())
     raw["regions"]["defaults"]["commands"]["train"] += " --nonsense {no_such_key}"
-    merged = _merged_regions(raw)["code"]
+    merged = _merged_regions(raw)["language"]
     assert _unresolvable(merged, "train") == {"no_such_key"}
 
 
@@ -603,7 +603,7 @@ def _load_publish_licence_table() -> dict[str, str]:
     return dict(mod.LICENCE_TIER)
 
 
-CARD_REGIONS = ("code", "compress", "retrieve", "reason", "memory")
+CARD_REGIONS = ("language", "compress", "retrieve", "reason", "memory")
 
 
 def test_every_card_region_declares_full_card_metadata() -> None:
@@ -644,6 +644,56 @@ def test_card_licence_tier_agrees_with_the_publish_script() -> None:
         )
 
 
+# ---------------------------------------------- region rename (naming rule 2026-09-04)
+
+
+def test_language_region_declares_its_legacy_alias_and_specialisation() -> None:
+    """The language centre's row records what it used to be called and what it is
+    specialised on, for a reader of this config -- cogsyndelta.regions.aliases is the
+    logic's one source of truth, this is a legible restatement of it."""
+    region = _raw()["regions"]["language"]
+    assert region["aliases"] == ["code"]
+    assert region["specialisation"] == "code"
+
+
+def test_language_region_hub_repo_name_pins_the_legacy_hub_repo() -> None:
+    """`publish.repo_pattern` templated with this row's OWN `{region}` (`language`)
+    would compute the future Hub repo name, not the one live today -- `hub_repo_name`
+    is the explicit override until the orchestrator's Hub rename lands, and it must
+    equal what `csd-publish-checkpoint.py`'s `default_repo("code")` (the legacy
+    spelling, still the live Hub repo) actually resolves to."""
+    region = _raw()["regions"]["language"]
+
+    import importlib.machinery
+    import importlib.util
+    import sys
+
+    publish_script = Path(__file__).resolve().parents[1] / "scripts" / "csd-publish-checkpoint.py"
+    loader = importlib.machinery.SourceFileLoader(
+        "csd_publish_checkpoint_for_hub_repo_test", str(publish_script)
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    pub_mod = importlib.util.module_from_spec(spec)
+    sys.modules[loader.name] = pub_mod
+    loader.exec_module(pub_mod)
+
+    assert region["hub_repo_name"] == pub_mod.default_repo("code")
+
+
+def test_no_other_region_needs_a_hub_repo_name_override() -> None:
+    """Only `language` was renamed, so only its row's `repo_pattern` substitution
+    diverges from the Hub repo actually live today -- every other region's default
+    `tzervas/cogsyndelta-region-<name>` pattern already resolves correctly, and an
+    override on one of them would be a sign this test itself needs updating for a new
+    rename, not that the config is wrong."""
+    raw = _raw()
+    for name in CARD_REGIONS:
+        if name == "language":
+            continue
+        assert "hub_repo_name" not in raw["regions"][name]
+
+
 def test_the_card_licence_tier_guard_fires_on_a_diverged_config() -> None:
     """MUTATION. A config that names a tier the publish script's own table disagrees
     with must be caught -- reproduced here by comparing a deliberately wrong table
@@ -678,7 +728,7 @@ CARD_COMMAND_KNOWN_EXTRA_KEYS = frozenset({"hub_repo", "out", "cell_dir"})
 
 def test_card_command_needs_only_known_or_pending_keys() -> None:
     raw = _raw()
-    merged = _merged_regions(raw)["code"]  # any region: card_command is region-generic
+    merged = _merged_regions(raw)["language"]  # any region: card_command is region-generic
     known = _cell_var_names(merged) | HARNESS_INJECTED_KEYS | CARD_COMMAND_KNOWN_EXTRA_KEYS
     missing = _placeholders(raw["publish"]["card_command"]) - known
     assert missing == set(), (
@@ -691,7 +741,7 @@ def test_the_card_command_key_guard_fires_on_an_uninjected_key() -> None:
     above, for card_command specifically."""
     raw = copy.deepcopy(_raw())
     raw["publish"]["card_command"] += " --nonsense {no_such_key}"
-    merged = _merged_regions(raw)["code"]
+    merged = _merged_regions(raw)["language"]
     known = _cell_var_names(merged) | HARNESS_INJECTED_KEYS | CARD_COMMAND_KNOWN_EXTRA_KEYS
     missing = _placeholders(raw["publish"]["card_command"]) - known
     assert missing == {"no_such_key"}

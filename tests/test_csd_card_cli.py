@@ -229,6 +229,70 @@ def test_region_mismatch_against_cell_aborts(
     assert "does not match" in err
 
 
+# ---------------------------------------------- region rename (naming rule 2026-09-04)
+
+
+def test_region_code_and_language_both_render_the_same_cell_with_the_alias_shown(
+    tmp_path: Path,
+) -> None:
+    """A cell recorded under the legacy `code` id renders identically whether asked
+    for by `--region code` or `--region language` (cogsyndelta.regions.aliases), and
+    either way the card shows the faculty name/specialisation the catalogue now
+    carries for it."""
+    cell_dir = _write_cell(tmp_path, region="code")
+
+    out_legacy = tmp_path / "legacy.md"
+    rc_legacy = cli.main(
+        [
+            "--cell",
+            str(cell_dir),
+            "--region",
+            "code",
+            "--kind",
+            "region_variant",
+            "--out",
+            str(out_legacy),
+        ]
+    )
+    out_canonical = tmp_path / "canonical.md"
+    rc_canonical = cli.main(
+        [
+            "--cell",
+            str(cell_dir),
+            "--region",
+            "language",
+            "--kind",
+            "region_variant",
+            "--out",
+            str(out_canonical),
+        ]
+    )
+
+    assert rc_legacy == 0
+    assert rc_canonical == 0
+    card_legacy = out_legacy.read_text()
+    card_canonical = out_canonical.read_text()
+    assert card_legacy == card_canonical
+    assert "**Faculty:** `language`" in card_legacy
+    assert "specialisation: `code`" in card_legacy
+    assert "legacy region id `code`" in card_legacy
+    # LICENCE_WHY is keyed canonically too -- looking it up by the raw (possibly
+    # legacy) region would silently fall back to "(reason not recorded)".
+    assert "(reason not recorded)" not in card_legacy
+    assert "no NC or share-alike input in the catalogue" in card_legacy
+
+
+def test_region_defaults_to_the_cells_own_spelling_when_omitted(tmp_path: Path) -> None:
+    """No --region at all still works and still shows the faculty/specialisation line
+    -- the alias resolution is not gated on the operator spelling it out."""
+    cell_dir = _write_cell(tmp_path, region="code")
+    out = tmp_path / "README.md"
+    rc = cli.main(["--cell", str(cell_dir), "--kind", "region_variant", "--out", str(out)])
+    assert rc == 0
+    card = out.read_text()
+    assert "**Faculty:** `language`" in card
+
+
 # =====================================================================================
 # --kind requires a training receipt, except placeholder/composed.
 # =====================================================================================
