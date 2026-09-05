@@ -275,7 +275,9 @@ def test_region_code_and_language_both_render_the_same_cell_with_the_alias_shown
     assert card_legacy == card_canonical
     assert "**Faculty:** `language`" in card_legacy
     assert "specialisation: `code`" in card_legacy
-    assert "legacy region id `code`" in card_legacy
+    assert "(formerly `code`)" in card_legacy
+    assert "region:language" in card_legacy
+    assert "legacy region id" not in card_legacy
     # LICENCE_WHY is keyed canonically too -- looking it up by the raw (possibly
     # legacy) region would silently fall back to "(reason not recorded)".
     assert "(reason not recorded)" not in card_legacy

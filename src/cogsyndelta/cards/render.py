@@ -332,8 +332,12 @@ def render_card(
         CardError: an undocumented metric, a `metrics_schema` disagreement across the
             supplied receipts, or (non-`composed` kinds) a missing `licence_tier`.
     """
-    if kind == "placeholder":
+    region_in = region
+    if kind in ("placeholder", "region_variant", "region_main"):
         region = canonical_region(region)
+    region_legacy = (
+        region_in if kind in ("region_variant", "region_main") and region_in != region else None
+    )
     train_receipt = receipts.get("train")
     eval_receipt = receipts.get("eval")
     eval_quantized_receipt = receipts.get("eval_quantized")
@@ -379,7 +383,7 @@ def render_card(
     footnotes_md = _footnotes_markdown(footnote_numbers)
 
     sizes = build_size_report(
-        region=region,
+        region=region_in,
         train_receipt=train_receipt or {},
         quant_receipt=quant_receipt,
         eval_receipt=eval_receipt,
@@ -417,6 +421,7 @@ def render_card(
 
     template_kwargs: dict[str, Any] = {
         "region": region,
+        "region_legacy": region_legacy,
         "region_cfg": region_cfg,
         "role": region_cfg.get("role", "(no role recorded)"),
         "router_trigger": region_cfg.get("router_trigger", "(none recorded)"),
