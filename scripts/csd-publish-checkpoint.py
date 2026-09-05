@@ -166,19 +166,16 @@ DEFAULT_REGIONS_CONFIG = REPO_ROOT / "config" / "mind" / "csd-regions.json"
 # extension of its convention, not a transcription of it; create_repo(exist_ok=True)
 # provisions them the first time this script runs against one.
 #
-# `default_repo` does NOT canonicalize its input (see that function) -- `code` and
-# `language` deliberately compute DIFFERENT repo names (the plain pattern turns the
-# region's own spelling into the suffix), because the Hub repo itself is still named
-# with the legacy `code` spelling and its rename is a separate, later step by the
-# orchestrator (see cogsyndelta.regions.aliases's module docstring). `vl_latent` is
-# different: its suffix was never derived from the region's spelling at all (`-vl-jepa`
-# names the model, not the region id), so both the legacy and canonical spelling are
-# listed here pointing at the identical suffix -- there is no future rename pending for
-# this one, only a name the region is reachable under today.
+# Keyed CANONICALLY -- `default_repo()` resolves its input through `canonical_region()`
+# before this lookup, so a legacy spelling (`code`, `vl_latent`) needs no entry of its
+# own: it resolves to its canonical id first. `visual`'s suffix (`-vl-jepa`) was never
+# derived from the region id at all, so it stays a table entry; `language`'s Hub repo
+# was renamed 2026-09-05 (tzervas/cogsyndelta-region-code ->
+# tzervas/cogsyndelta-region-language, via `move_repo`, old id redirects), so the plain
+# "-region-<name>" pattern now resolves it correctly and it needs no entry either.
 REGION_REPO_SUFFIX = {
     "residual_mlp": "-region-residual",
     "stream_vae": "-region-stream-vae",
-    "vl_latent": "-vl-jepa",
     "visual": "-vl-jepa",
 }
 
@@ -309,16 +306,14 @@ def _content_matches(
 
 
 def default_repo(region: str, owner: str = DEFAULT_OWNER, base: str = DEFAULT_BASE) -> str:
-    """The repo a region's checkpoints publish to, keyed by whatever spelling of the
-    region name is given -- deliberately NOT canonicalized. `code` and `language` compute
-    DIFFERENT names (`cogsyndelta-region-code` vs. `cogsyndelta-region-language`): the
-    Hub repo for the language centre is still named with the legacy spelling, and its
-    rename is a separate, later step by the orchestrator, so the future canonical name
-    is what this returns for the canonical input -- not what is live today. `vl_latent`
-    and `visual` are the exception: REGION_REPO_SUFFIX lists both spellings against the
-    identical suffix, since that name was never derived from the region id to begin
-    with.
+    """The repo a region's checkpoints publish to. Canonicalizes `region` first (the
+    same `canonical_region` alias layer `licence_tier` uses), so a legacy spelling and
+    its canonical replacement always agree: `default_repo("code") == default_repo(
+    "language") == "tzervas/cogsyndelta-region-language"` (Hub repo renamed 2026-09-05
+    via `move_repo`; the old id redirects). Likewise `vl_latent`/`visual` both resolve
+    to `tzervas/cogsyndelta-vl-jepa`.
     """
+    region = canonical_region(region)
     suffix = REGION_REPO_SUFFIX.get(region, f"-region-{region.replace('_', '-')}")
     return f"{owner}/{base}{suffix}"
 
