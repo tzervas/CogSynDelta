@@ -60,6 +60,8 @@ from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig, check_checkpoint_grid_c
 from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
 from cogsyndelta.regions._receipt import trainer_defaults, write_receipt
 
+__all__ = ["VLPretrainConfig", "collapse_batch_indices", "pretrain_vl_region"]
+
 
 @dataclass
 class VLPretrainConfig:
@@ -232,10 +234,11 @@ def _decode_png_stores(
     return torch.from_numpy(x), torch.from_numpy(y)
 
 
-class _PngTrain:
+class PngTrain:
     """Lazy Mix B train set: stream zip members, never extract, never hold 581k tensors."""
 
     def __init__(self, shards: list[str], size: int, seed: int, limit: int) -> None:
+        """Index ``shards`` (zip or PNG tree) shuffled with ``seed``; ``limit`` 0 keeps all."""
         from cogsyndelta.vl.mix_corpus import ZipPngReader, shuffled_pngs
 
         refs: list[Any] = []
@@ -248,11 +251,13 @@ class _PngTrain:
         self.reader = ZipPngReader()
 
     def size(self, dim: int = 0) -> int:
+        """Return the image count (``dim`` must be 0, matching a 1-D tensor API)."""
         if dim != 0:
             raise IndexError(dim)
         return len(self.refs)
 
     def __getitem__(self, idx: Any) -> torch.Tensor:
+        """Decode one image, a slice, or a 1-D index tensor to CHW float tensors."""
         if isinstance(idx, slice):
             chosen = self.refs[idx]
             arr = np.stack([_decode_png_ref(r, self.size_px, self.reader) for r in chosen])
@@ -288,7 +293,7 @@ def collapse_batch_indices(n: int, batch_size: int, seed: int) -> torch.Tensor:
 
 def _rep_std_on_mixed_batch(
     model: IJEPA,
-    x_tr: torch.Tensor | _PngTrain,
+    x_tr: torch.Tensor | PngTrain,
     batch_size: int,
     seed: int,
     device: torch.device,
@@ -516,9 +521,7 @@ def _probe_peak_vl(cfg: VLPretrainConfig) -> dict[str, Any]:
     device = _resolve_device(cfg.device)
     size = cfg.jepa.image_size
     if cfg.image_backend == "png_zip":
-        x_tr: torch.Tensor | _PngTrain = _PngTrain(
-            cfg.train_shards, size, cfg.seed, cfg.train_limit
-        )
+        x_tr: torch.Tensor | PngTrain = PngTrain(cfg.train_shards, size, cfg.seed, cfg.train_limit)
     else:
         x_tr, _ = _decode_split(
             cfg.train_shards,
@@ -558,6 +561,50 @@ def _probe_peak_vl(cfg: VLPretrainConfig) -> dict[str, Any]:
     }
 
 
+def _load_visual_splits(
+    cfg: VLPretrainConfig, size: int, cache: Path
+) -> tuple[
+    torch.Tensor | PngTrain,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int] | None,
+]:
+    """Decode train/probe/transfer tensors (or a lazy PNG train set). No training."""
+    x_tr: torch.Tensor | PngTrain
+    if cfg.image_backend == "png_zip":
+        x_tr = PngTrain(cfg.train_shards, size, cfg.seed, cfg.train_limit)
+        px_tr, py_tr = _decode_png_stores(cfg.probe_train_shards, size, cfg.probe_limit, cfg.seed)
+        px_ev, py_ev = _decode_png_stores(cfg.probe_eval_shards, size, 0, cfg.seed)
+    else:
+        x_tr, _ = _decode_split(
+            cfg.train_shards, cfg.image_column, cfg.label_column, size, cfg.train_limit, cache
+        )
+        px_tr, py_tr = _decode_split(
+            cfg.probe_train_shards, cfg.image_column, cfg.label_column, size, cfg.probe_limit, cache
+        )
+        px_ev, py_ev = _decode_split(
+            cfg.probe_eval_shards, cfg.image_column, cfg.label_column, size, 0, cache
+        )
+    transfer = None
+    if cfg.transfer_shards:
+        if cfg.image_backend == "png_zip":
+            tx, ty = _decode_png_stores(cfg.transfer_shards, size, cfg.probe_limit, cfg.seed)
+        else:
+            tx, ty = _decode_split(
+                cfg.transfer_shards,
+                cfg.transfer_image_column,
+                cfg.transfer_label_column,
+                size,
+                cfg.probe_limit,
+                cache,
+            )
+        cut = int(tx.size(0) * 0.8)
+        transfer = (tx[:cut], ty[:cut], tx[cut:], ty[cut:], int(ty.max().item()) + 1)
+    return x_tr, px_tr, py_tr, px_ev, py_ev, transfer
+
+
 def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     """Train the visual region and return a receipt. Never gates on the loss.
 
@@ -580,38 +627,8 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     cache = Path(cfg.cache_dir)
     size = cfg.jepa.image_size
 
-    x_tr: torch.Tensor | _PngTrain
-    if cfg.image_backend == "png_zip":
-        x_tr = _PngTrain(cfg.train_shards, size, cfg.seed, cfg.train_limit)
-        px_tr, py_tr = _decode_png_stores(cfg.probe_train_shards, size, cfg.probe_limit, cfg.seed)
-        px_ev, py_ev = _decode_png_stores(cfg.probe_eval_shards, size, 0, cfg.seed)
-    else:
-        x_tr, _ = _decode_split(
-            cfg.train_shards, cfg.image_column, cfg.label_column, size, cfg.train_limit, cache
-        )
-        px_tr, py_tr = _decode_split(
-            cfg.probe_train_shards, cfg.image_column, cfg.label_column, size, cfg.probe_limit, cache
-        )
-        px_ev, py_ev = _decode_split(
-            cfg.probe_eval_shards, cfg.image_column, cfg.label_column, size, 0, cache
-        )
+    x_tr, px_tr, py_tr, px_ev, py_ev, transfer = _load_visual_splits(cfg, size, cache)
     n_classes = int(max(py_tr.max().item(), py_ev.max().item())) + 1
-
-    transfer = None
-    if cfg.transfer_shards:
-        if cfg.image_backend == "png_zip":
-            tx, ty = _decode_png_stores(cfg.transfer_shards, size, cfg.probe_limit, cfg.seed)
-        else:
-            tx, ty = _decode_split(
-                cfg.transfer_shards,
-                cfg.transfer_image_column,
-                cfg.transfer_label_column,
-                size,
-                cfg.probe_limit,
-                cache,
-            )
-        cut = int(tx.size(0) * 0.8)
-        transfer = (tx[:cut], ty[:cut], tx[cut:], ty[cut:], int(ty.max().item()) + 1)
 
     model = IJEPA(cfg.jepa).to(device)
     params = sum(p.numel() for p in model.parameters())

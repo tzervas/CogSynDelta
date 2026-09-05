@@ -656,38 +656,12 @@ def test_language_region_declares_its_legacy_alias_and_specialisation() -> None:
     assert region["specialisation"] == "code"
 
 
-def test_language_region_hub_repo_name_pins_the_legacy_hub_repo() -> None:
-    """`publish.repo_pattern` templated with this row's OWN `{region}` (`language`)
-    would compute the future Hub repo name, not the one live today -- `hub_repo_name`
-    is the explicit override until the orchestrator's Hub rename lands, and it must
-    equal what `csd-publish-checkpoint.py`'s `default_repo("code")` (the legacy
-    spelling, still the live Hub repo) actually resolves to."""
-    region = _raw()["regions"]["language"]
-
-    import importlib.machinery
-    import importlib.util
-    import sys
-
-    publish_script = Path(__file__).resolve().parents[1] / "scripts" / "csd-publish-checkpoint.py"
-    loader = importlib.machinery.SourceFileLoader(
-        "csd_publish_checkpoint_for_hub_repo_test", str(publish_script)
-    )
-    spec = importlib.util.spec_from_loader(loader.name, loader)
-    assert spec is not None
-    pub_mod = importlib.util.module_from_spec(spec)
-    sys.modules[loader.name] = pub_mod
-    loader.exec_module(pub_mod)
-
-    assert region["hub_repo_name"] == pub_mod.default_repo("code")
-
-
 def test_no_other_region_needs_a_hub_repo_name_override() -> None:
-    """`language` pins the pre-rename Hub slug; `visual` pins `-vl-jepa` because
-    `repo_pattern` would mint `-region-visual`. Every other region's default
-    `tzervas/cogsyndelta-region-<name>` pattern already resolves correctly."""
+    """After the Hub rename, only `visual` still overrides (`-vl-jepa`). Language
+    renders `repo_pattern` with the canonical id."""
     raw = _raw()
     for name in CARD_REGIONS:
-        if name in ("language", "visual"):
+        if name == "visual":
             continue
         assert "hub_repo_name" not in raw["regions"][name]
 
