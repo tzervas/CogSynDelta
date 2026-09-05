@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import torch
 from PIL import Image
 
 from cogsyndelta.model.vl_jepa import JEPAConfig
@@ -158,3 +159,66 @@ def test_visual_quantize_writes_within_budget(tmp_path: Path) -> None:
     assert rec["within_budget"] is True
     assert Path(rec["artifacts"]["quantized_path"]).is_file()
     assert rec["artifacts"]["checkpoint_sha256"]
+
+
+def _counting_splits(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
+    import cogsyndelta.regions.vl_pretrain as vl
+
+    counts = {"n": 0}
+    orig = vl._load_visual_splits
+
+    def counted(*args: object, **kwargs: object) -> object:
+        counts["n"] += 1
+        return orig(*args, **kwargs)
+
+    monkeypatch.setattr(vl, "_load_visual_splits", counted)
+    return counts
+
+
+def _cpu_visual_model(receipt: dict):
+    from cogsyndelta.model.vl_jepa import IJEPA
+    from cogsyndelta.regions._checkpoint import load_checkpoint
+
+    cfg_jepa = receipt["config"]["jepa"]
+    from cogsyndelta.model.vl_jepa import JEPAConfig
+
+    model = IJEPA(JEPAConfig(**cfg_jepa))
+    ck = load_checkpoint(
+        receipt["checkpoint"],
+        expected_sha256=receipt["checkpoint_sha256"],
+        map_location="cpu",
+    )
+    model.load_state_dict(ck["model"])
+    return model
+
+
+def test_splits_loaded_once_across_eval_fn_calls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N eval_fn calls share one load. Mutation: drop the splits argument so
+    `_measure_visual_probes` reloads, and counts['n'] becomes N."""
+    receipt, _state, _train_path = _train(tmp_path)
+    bench = _load_benchmark()
+    counts = _counting_splits(monkeypatch)
+    cfg = bench._vl_cfg_from_train_receipt("visual", receipt)
+    splits = bench.load_visual_splits(cfg)
+    assert counts["n"] == 1
+    model = _cpu_visual_model(receipt)
+    device = torch.device("cpu")
+    n_eval = 3
+    for _ in range(n_eval):
+        bench._measure_visual_probes(model, cfg, device, splits)
+    assert counts["n"] == 1
+
+
+def test_mutation_per_call_load_is_n(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    receipt, _state, _train_path = _train(tmp_path)
+    bench = _load_benchmark()
+    counts = _counting_splits(monkeypatch)
+    cfg = bench._vl_cfg_from_train_receipt("visual", receipt)
+    model = _cpu_visual_model(receipt)
+    device = torch.device("cpu")
+    n_eval = 3
+    for _ in range(n_eval):
+        bench._measure_visual_probes(model, cfg, device)
+    assert counts["n"] == n_eval

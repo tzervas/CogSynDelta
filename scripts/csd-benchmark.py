@@ -31,6 +31,7 @@ import importlib.util
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -98,33 +99,60 @@ def _vl_cfg_from_train_receipt(region: str, train_receipt: dict) -> Any:
     )
 
 
-def _measure_visual_probes(model: Any, cfg: Any, device: torch.device) -> tuple[dict, dict | None]:
-    from cogsyndelta.regions.vl_pretrain import (
-        _features,
-        _linear_probe,
-        _load_visual_splits,
-        _rep_std_on_mixed_batch,
-    )
+@dataclass
+class VisualSplits:
+    """Decoded Mix B / probe tensors. Load once per process; eval_fn must not reload."""
+
+    x_tr: Any
+    px_tr: torch.Tensor
+    py_tr: torch.Tensor
+    px_ev: torch.Tensor
+    py_ev: torch.Tensor
+    transfer: Any
+    n_classes: int
+
+
+def load_visual_splits(cfg: Any) -> VisualSplits:
+    from cogsyndelta.regions.vl_pretrain import _load_visual_splits
 
     size = cfg.jepa.image_size
     x_tr, px_tr, py_tr, px_ev, py_ev, transfer = _load_visual_splits(cfg, size, Path(cfg.cache_dir))
     n_classes = int(max(py_tr.max().item(), py_ev.max().item())) + 1
+    return VisualSplits(x_tr, px_tr, py_tr, px_ev, py_ev, transfer, n_classes)
+
+
+def _measure_visual_probes(
+    model: Any,
+    cfg: Any,
+    device: torch.device,
+    splits: VisualSplits | None = None,
+) -> tuple[dict, dict | None]:
+    from cogsyndelta.regions.vl_pretrain import (
+        _features,
+        _linear_probe,
+        _rep_std_on_mixed_batch,
+    )
+
+    if splits is None:
+        splits = load_visual_splits(cfg)
     held = _linear_probe(
-        _features(model, px_tr, device),
-        py_tr,
-        _features(model, px_ev, device),
-        py_ev,
-        n_classes,
+        _features(model, splits.px_tr, device),
+        splits.py_tr,
+        _features(model, splits.px_ev, device),
+        splits.py_ev,
+        splits.n_classes,
         device,
         cfg.probe_steps,
         cfg.probe_lr,
         cfg.seed,
     )
     with torch.no_grad():
-        held["rep_std"] = _rep_std_on_mixed_batch(model, x_tr, cfg.batch_size, cfg.seed, device)
+        held["rep_std"] = _rep_std_on_mixed_batch(
+            model, splits.x_tr, cfg.batch_size, cfg.seed, device
+        )
     xfer = None
-    if transfer:
-        ttr, tytr, tev, tyev, tn = transfer
+    if splits.transfer:
+        ttr, tytr, tev, tyev, tn = splits.transfer
         xfer = _linear_probe(
             _features(model, ttr, device),
             tytr,
@@ -176,7 +204,8 @@ def benchmark_visual_region(
     )
     model.load_state_dict(ck["model"])
     checkpoint_sha256 = ckpt_sha_out[0]
-    held, xfer = _measure_visual_probes(model, cfg, device)
+    splits = load_visual_splits(cfg)
+    held, xfer = _measure_visual_probes(model, cfg, device, splits)
     baseline = train_receipt["untrained_baseline"]
     collapse_ratio = held["rep_std"] / max(1e-9, float(baseline["rep_std"]))
     collapsed = collapse_ratio < 0.1
@@ -751,7 +780,8 @@ def benchmark_visual_region_quantized(
     model = IJEPA(cfg.jepa).to(device)
     model.load_state_dict(unpack_state_dict(packed))
     model.eval()
-    held, xfer = _measure_visual_probes(model, cfg, device)
+    splits = load_visual_splits(cfg)
+    held, xfer = _measure_visual_probes(model, cfg, device, splits)
     baseline = train_receipt["untrained_baseline"]
     metrics: dict[str, float] = {
         "probe.top1": float(held["top1"]),

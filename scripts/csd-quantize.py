@@ -62,6 +62,7 @@ def _benchmark_mod() -> object:
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load {path}")
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
 
@@ -380,9 +381,19 @@ def quantize_visual_region(
     model.load_state_dict(ck["model"])
     model.eval()
     checkpoint_sha256 = ckpt_sha_out[0]
+    splits = bench.load_visual_splits(cfg)
+    eval_calls = 0
 
     def eval_fn(m: torch.nn.Module) -> float:
-        held, _xfer = bench._measure_visual_probes(m, cfg, device)
+        nonlocal eval_calls
+        eval_calls += 1
+        t0 = time.time()
+        held, _xfer = bench._measure_visual_probes(m, cfg, device, splits)
+        print(
+            f"    eval_fn[{eval_calls}] probe.top1={float(held['top1']):.4f}  "
+            f"{time.time() - t0:.1f}s",
+            flush=True,
+        )
         return float(held["top1"])
 
     fp32_metric = eval_fn(model)
