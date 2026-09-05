@@ -248,7 +248,7 @@ def benchmark_visual_region(
             "visual eval has no unbound fallback: the training receipt must name "
             "checkpoint + checkpoint_sha256"
         )
-    expected = expected_checkpoint_sha256(train_receipt, resolved_path, allow_unbound=False)
+    expected = require_bound_visual_train_receipt(train_receipt, resolved_path)
     cfg = _vl_cfg_from_train_receipt(region, train_receipt)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = IJEPA(cfg.jepa).to(device).eval()
@@ -463,6 +463,28 @@ def expected_checkpoint_sha256(
         "--allow-unbound-train-receipt to score it anyway (pre-R9 receipts predate "
         "checkpoint fingerprinting)."
     )
+
+
+def require_bound_visual_train_receipt(train_receipt: dict, receipt_path: Path) -> str:
+    """checkpoint_sha256 for a visual train receipt, or refuse. Does not load.
+
+    Visual eval and quantize have no unbound fallback: missing ``checkpoint`` or
+    ``checkpoint_sha256`` raises :class:`UnboundTrainReceiptError` with the same
+    message shape as ``benchmark_visual_region``.
+    """
+    msg = (
+        f"{receipt_path}: visual has no unbound fallback: the training receipt must name "
+        "checkpoint + checkpoint_sha256"
+    )
+    if not train_receipt.get("checkpoint"):
+        raise UnboundTrainReceiptError(msg)
+    try:
+        sha = expected_checkpoint_sha256(train_receipt, receipt_path, allow_unbound=False)
+    except UnboundTrainReceiptError:
+        raise UnboundTrainReceiptError(msg) from None
+    if not sha:
+        raise UnboundTrainReceiptError(msg)
+    return sha
 
 
 def _region_eval_context(region: str, train_receipt: dict) -> tuple:
@@ -830,6 +852,7 @@ def benchmark_visual_region_quantized(
     if resolved_path is None:
         raise FileNotFoundError(f"no training receipt for {region}")
     train_receipt = json.loads(resolved_path.read_text())
+    checkpoint_sha256 = require_bound_visual_train_receipt(train_receipt, resolved_path)
     packed_sha = sha256_file(quantized_path)
     if quant_receipt_path is not None:
         qrec = json.loads(quant_receipt_path.read_text())
@@ -869,7 +892,7 @@ def benchmark_visual_region_quantized(
         },
         artifacts={
             "checkpoint": train_receipt["checkpoint"],
-            "checkpoint_sha256": str(train_receipt.get("checkpoint_sha256") or ""),
+            "checkpoint_sha256": checkpoint_sha256,
             "quantized_path": str(quantized_path),
             "quantized_sha256": packed_sha,
             "source_training_receipt": {

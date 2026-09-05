@@ -230,6 +230,64 @@ def test_mixed_quantize_summary_print_does_not_raise() -> None:
         )
 
 
+def test_visual_quantize_refuses_missing_sha_before_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A visual train receipt without checkpoint_sha256 must refuse before
+    load_checkpoint. Mutation: restore `expected_sha256=receipt.get(...) or None`
+    and load_checkpoint runs (this test goes red)."""
+    receipt, state, train_path = _train(tmp_path)
+    del receipt["checkpoint_sha256"]
+    train_path.write_text(json.dumps(receipt))
+    n = {"load": 0}
+    import cogsyndelta.regions._checkpoint as ckpt
+
+    orig = ckpt.load_checkpoint
+
+    def counted(*args: object, **kwargs: object) -> object:
+        n["load"] += 1
+        return orig(*args, **kwargs)
+
+    monkeypatch.setattr(ckpt, "load_checkpoint", counted)
+    quant = _load_quantize()
+    with pytest.raises(RuntimeError, match="checkpoint \\+ checkpoint_sha256") as ei:
+        quant.quantize_visual_region(
+            "visual",
+            state,
+            tolerance=1.0,
+            aggressive=8,
+            max_bits=8,
+            train_receipt_path=train_path,
+        )
+    assert ei.value.__class__.__name__ == "UnboundTrainReceiptError"
+    assert n["load"] == 0
+
+
+def test_visual_quantized_eval_refuses_missing_sha_before_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receipt, state, train_path = _train(tmp_path)
+    del receipt["checkpoint_sha256"]
+    train_path.write_text(json.dumps(receipt))
+    n = {"load": 0}
+    from cogsyndelta.quant import ptq
+
+    def counted(*args: object, **kwargs: object) -> object:
+        n["load"] += 1
+        raise AssertionError("load_packed_artifact must not run")
+
+    monkeypatch.setattr(ptq, "load_packed_artifact", counted)
+    bench = _load_benchmark()
+    with pytest.raises(bench.UnboundTrainReceiptError, match="checkpoint \\+ checkpoint_sha256"):
+        bench.benchmark_visual_region_quantized(
+            "visual",
+            state,
+            tmp_path / "missing.ptq.pt",
+            train_receipt_path=train_path,
+        )
+    assert n["load"] == 0
+
+
 def _packed_param_names(path: Path) -> set[str]:
     packed = torch.load(path, weights_only=True, map_location="cpu")
     return set(packed["fp32"]) | set(packed["bits"])

@@ -367,6 +367,7 @@ def quantize_visual_region(
         receipt = json.loads(train_receipt_path.read_text())
     else:
         receipt_path, receipt = _latest_receipt(state, region)
+    expected = bench.require_bound_visual_train_receipt(receipt, receipt_path)
     cfg = bench._vl_cfg_from_train_receipt(region, receipt)
     fingerprint = fingerprint_corpus(cfg.train_shards, columns=[cfg.image_column, cfg.label_column])
     verify_corpus_fingerprint(receipt.get("corpus", {}), fingerprint, region)
@@ -375,7 +376,7 @@ def quantize_visual_region(
     ckpt_sha_out: list[str] = []
     ck = load_checkpoint(
         receipt["checkpoint"],
-        expected_sha256=receipt.get("checkpoint_sha256") or None,
+        expected_sha256=expected,
         map_location=device,
         sha256_out=ckpt_sha_out,
     )
