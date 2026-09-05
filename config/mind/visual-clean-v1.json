@@ -7,7 +7,9 @@
   "shuffle_seed": 20260905,
   "admission_round": "admission-2026-09-05/round3",
   "n_train": 581280,
-  "note": "Train = seven Mix B sources at ACTIVE stamps only. Wikimedia/USGS admitted landings are not Mix B train. Superseded and contaminated processed stamps must never be listed here. Counts are declared; dry-run verifies zip/tree membership.",
+  "fingerprint": "ab5761b65714e4ba4d7c36df095f3599",
+  "fingerprint_scheme": "csd-corpus-fp/v2",
+  "note": "Train = seven Mix B sources at ACTIVE stamps only. Wikimedia/USGS admitted landings are not Mix B train. Superseded and contaminated processed stamps must never be listed here. Counts are declared; dry-run verifies zip/tree membership. fingerprint is the Mix B train pin (csd-visual-corpus-dry.py 2026-09-05); a receipt whose corpus.fingerprint disagrees is not this corpus.",
   "sources": [
     {
       "id": "nyuuzyou/pxhere",
