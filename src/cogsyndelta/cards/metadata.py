@@ -25,6 +25,7 @@ the card's own body would refuse to print.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from huggingface_hub import EvalResult, ModelCardData
@@ -46,10 +47,24 @@ pipeline, whatever `kind` of card this is."""
 LIBRARY_NAME = "cogsyndelta"
 
 
+# Hub dataset ids are `owner/name`. Text receipts often name parquet files
+# (`train-00000-of-00001.parquet`); those must never become `datasets:`.
+_HUB_DATASET_ID = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+_NOT_A_DATASET_SUFFIX = (".parquet", ".json", ".jsonl", ".csv", ".zip", ".pt", ".arrow")
+
+
+def _hub_shaped_dataset_id(ds_id: str) -> bool:
+    """True only for `owner/name` catalogue ids, never a shard filename."""
+    if not _HUB_DATASET_ID.fullmatch(ds_id):
+        return False
+    return not ds_id.lower().endswith(_NOT_A_DATASET_SUFFIX)
+
+
 def datasets_from_train_receipt(train_receipt: dict[str, Any] | None) -> list[str] | None:
     """Corpus catalogue ids for the card front matter, derived from the training
     receipt's `corpus.shards` landing names (`nyuuzyou__pxhere/...` ->
-    `nyuuzyou/pxhere`). `None` when the receipt names no shards -- never guessed.
+    `nyuuzyou/pxhere`). Only Hub-shaped `owner/name` ids are kept -- a parquet
+    shard basename is not a dataset id. `None` when nothing Hub-shaped remains.
     """
     if not train_receipt:
         return None
@@ -66,6 +81,8 @@ def datasets_from_train_receipt(train_receipt: dict[str, Any] | None) -> list[st
         if not landing:
             continue
         ds_id = landing.replace("__", "/", 1)
+        if not _hub_shaped_dataset_id(ds_id):
+            continue
         if ds_id not in seen:
             seen.add(ds_id)
             out.append(ds_id)

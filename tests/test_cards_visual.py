@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from huggingface_hub import ModelCard
 
 from cogsyndelta.cards.render import render_card
 from tests.test_csd_card_cli import cli
@@ -115,8 +116,19 @@ def test_render_visual_fixture_card_states_h1_fail_and_deployed_params(tmp_path:
     assert "parameters (training I-JEPA module)" in card
     assert "22.905 M" in card
     assert "compression ratio (storage, not speed)" in card
+    assert "measured, `quant.compression_ratio`" in card
     assert "nyuuzyou/pxhere" in card  # datasets front matter
     assert "facebookresearch/clevr" in card
+    data = ModelCard(card).data
+    assert data.datasets == [
+        "nyuuzyou/pxhere",
+        "biglam/british-library-book-images",
+        "basveeling/pcam",
+        "google-deepmind/3d-shapes",
+        "facebookresearch/clevr",
+        "zalando/fashion-mnist",
+        "phelber/eurosat-rgb-128",
+    ]
     assert "Anisotropy is a representation-geometry diagnostic" in card
     # smoke 24-step: trained 0.6246 < threshold ~0.635; do not invent a pass
     assert "| H1 | PASS |" not in card
@@ -200,8 +212,6 @@ def test_visual_footnotes_print_only_the_probe_branch(tmp_path: Path) -> None:
 
 def test_visual_model_index_splits_eurosat_and_fashion(tmp_path: Path) -> None:
     """(4) one model-index dataset per probe set, named from the receipt."""
-    from huggingface_hub import ModelCard
-
     card = render_card(
         "region_variant",
         region="visual",
