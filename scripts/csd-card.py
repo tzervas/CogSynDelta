@@ -299,6 +299,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     ap.add_argument("--out", type=Path, default=Path("README.md"))
     ap.add_argument("--repo", default=None, help="owner/name, printed in the card header")
+    ap.add_argument(
+        "--how-chosen-file",
+        type=Path,
+        default=None,
+        help="region_main only (required there): a text file stating how the promoted "
+        "variant was chosen; file it under docs/design/evidence/ so the selection is "
+        "reviewable. The catalogue (config/mind/csd-regions.json) is typed and carries no "
+        "per-promotion text, and the matrix yaml is never read by this CLI.",
+    )
     return ap.parse_args(argv)
 
 
@@ -309,6 +318,20 @@ def main(argv: list[str] | None = None) -> int:
         region, receipts = _build_receipts_and_region(args, pub_mod)
         train_receipt = receipts.get("train")
         region_cfg = _region_cfg(pub_mod, region, args.kind, train_receipt=train_receipt)
+        # A promoted card must state its selection; the template otherwise prints
+        # "(not recorded ...)", which is not a card anyone should publish. Fail closed.
+        if args.kind == "region_main":
+            if args.how_chosen_file is None:
+                raise CardCliError(
+                    "--kind region_main needs --how-chosen-file: a promoted card must state "
+                    "how its variant was chosen (file the text under docs/design/evidence/)"
+                )
+            how_chosen = args.how_chosen_file.read_text().strip()
+            if not how_chosen:
+                raise CardCliError(f"--how-chosen-file {args.how_chosen_file} is empty")
+            region_cfg["how_chosen"] = how_chosen
+        elif args.how_chosen_file is not None:
+            raise CardCliError("--how-chosen-file applies to --kind region_main only")
         attr_lines = pub_mod.visual_attribution_block(train_receipt)
         if attr_lines:
             region_cfg["attribution_md"] = "\n".join(attr_lines).strip()
