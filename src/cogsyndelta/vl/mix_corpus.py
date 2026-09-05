@@ -51,6 +51,7 @@ class ZipPngReader:
     """Keep zip handles open across a training step. Never extracts members to disk."""
 
     def __init__(self) -> None:
+        """Create an empty zip-handle cache."""
         self._zips: dict[Path, zipfile.ZipFile] = {}
 
     def read(self, ref: ImageRef) -> bytes:
@@ -180,15 +181,18 @@ def load_manifest(path: str | Path | None = None) -> dict[str, Any]:
 
 
 def train_sources(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return Mix B sources whose ``role`` is ``train``."""
     return [s for s in manifest["sources"] if s.get("role") == "train"]
 
 
 def source_train_path(manifest: dict[str, Any], source: dict[str, Any]) -> Path:
+    """Resolve one source's train zip or PNG tree under ``manifest["root"]``."""
     root = Path(manifest["root"])
     return root / source["landing"] / source["train"]
 
 
 def source_probe_path(manifest: dict[str, Any], source: dict[str, Any]) -> Path | None:
+    """Resolve one source's probe artefact, or ``None`` when the source has no probe."""
     probe = source.get("probe")
     if not probe:
         return None
@@ -318,6 +322,7 @@ def identity_shards(manifest: dict[str, Any]) -> list[str]:
 
 
 def fingerprint_train(manifest: dict[str, Any]) -> str:
+    """``csd-corpus-fp/v2`` hash of Mix B train artefacts (basename+size)."""
     return fingerprint_corpus(identity_shards(manifest), columns=["image", "label"])
 
 
@@ -338,6 +343,7 @@ def list_pngs(store: Path) -> list[ImageRef]:
 
 
 def shuffled_pngs(store: Path, seed: int) -> list[ImageRef]:
+    """``list_pngs`` then shuffle with ``seed``. Not a cryptographic RNG."""
     refs = list_pngs(store)
     rng = random.Random(seed)  # noqa: S311 — corpus shuffle, not crypto
     rng.shuffle(refs)
@@ -345,6 +351,7 @@ def shuffled_pngs(store: Path, seed: int) -> list[ImageRef]:
 
 
 def class_name_from_ref(ref: ImageRef) -> str | None:
+    """EuroSAT-style class folder: zip member's first path part, or the file's parent."""
     if ref.member is not None:
         parts = Path(ref.member).parts
         return parts[0] if len(parts) >= 2 else None
@@ -353,6 +360,7 @@ def class_name_from_ref(ref: ImageRef) -> str | None:
 
 
 def count_source(manifest: dict[str, Any], source: dict[str, Any]) -> dict[str, int]:
+    """Listed vs declared train/probe PNG counts for one Mix B source."""
     train_path = source_train_path(manifest, source)
     n_train = len(list_pngs(train_path)) if train_path.exists() else -1
     probe_path = source_probe_path(manifest, source)
