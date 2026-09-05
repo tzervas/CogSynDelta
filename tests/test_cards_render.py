@@ -227,6 +227,20 @@ def test_renders_placeholder_kind_with_no_receipts() -> None:
     assert "weights: none" in card
 
 
+def test_placeholder_vl_latent_alias_renders_as_visual() -> None:
+    card = render_card(
+        "placeholder",
+        region="vl_latent",
+        region_cfg={"kind": "jepa", "modality": "image"},
+        receipts={},
+        files={},
+    )
+    assert "cogsyndelta-region-visual" in card
+    assert "region:visual" in card
+    assert "# CogSynDelta -- visual (placeholder)" in card
+    assert "formerly `vl_latent`" in card
+
+
 def test_renders_composed_kind_with_no_receipts() -> None:
     card = render_card("composed", region="cogsyndelta", region_cfg={}, receipts={}, files={})
     assert "TBD" in card
