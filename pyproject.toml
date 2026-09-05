@@ -51,6 +51,11 @@ dependencies = [
     # save_file/load_file also refuse arbitrary pickled objects outright (no pickle,
     # unlike torch.save), which is why the export writes ONLY plain tensors.
     "safetensors>=0.4.0,<1.0.0",
+    # cogsyndelta.cards.metadata / cogsyndelta.cards.render import this unconditionally
+    # (ModelCardData, EvalResult, ModelCard) -- it was previously reachable only
+    # transitively through the `rag` extra's llama-index-embeddings-huggingface, so a
+    # base install (no extras) could not import cogsyndelta.cards at all.
+    "huggingface_hub>=1.23.0,<2.0.0",
 ]
 
 [project.optional-dependencies]
