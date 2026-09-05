@@ -84,6 +84,22 @@ def test_licence_tier_fails_refuses_rather_than_guesses_unknown_region() -> None
     assert "no declared tier" in result.detail
 
 
+def test_licence_tier_accepts_either_spelling_of_a_renamed_region() -> None:
+    """`--region code` and `--region language` (cogsyndelta.regions.aliases) must
+    resolve to the SAME REGION_TIER entry -- the table is keyed canonically."""
+    legacy = mod.check_licence_tier("PERMISSIVE_OK", "code", mod.REGION_TIER)
+    canonical = mod.check_licence_tier("PERMISSIVE_OK", "language", mod.REGION_TIER)
+    assert legacy.passed
+    assert canonical.passed
+
+
+def test_licence_tier_accepts_either_spelling_of_visual_too() -> None:
+    legacy = mod.check_licence_tier("PERMISSIVE_OK", "vl_latent", mod.REGION_TIER)
+    canonical = mod.check_licence_tier("PERMISSIVE_OK", "visual", mod.REGION_TIER)
+    assert legacy.passed
+    assert canonical.passed
+
+
 def test_licence_tier_matches_publish_checkpoint() -> None:
     """The transcribed REGION_TIER table must not silently drift from the source of
     truth in scripts/csd-publish-checkpoint.py. Loaded the same way that module's own
