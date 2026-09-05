@@ -33,7 +33,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -42,6 +42,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from cogsyndelta.eval.benchmark import BenchmarkResult, benchmark_embeddings, profile_latency
 from cogsyndelta.pipeline.receipt import Producer, Receipt
 from cogsyndelta.regions.aliases import canonical_region, legacy_names
+
+if TYPE_CHECKING:
+    from cogsyndelta.model.vl_jepa import ViTEncoder
 
 STATE = Path("/akula-data/csd")
 
@@ -106,15 +109,18 @@ class DeployedVisualEncoder(torch.nn.Module):
     context encoder and the predictor were excluded.
     """
 
-    def __init__(self, target_encoder: torch.nn.Module) -> None:
+    # nn.Module attribute access is Tensor | Module; declare so embed/__call__ type-check.
+    target_encoder: ViTEncoder
+
+    def __init__(self, target_encoder: ViTEncoder) -> None:
         super().__init__()
         self.target_encoder = target_encoder
 
     def embed(self, images: torch.Tensor) -> torch.Tensor:
-        return self.target_encoder.embed(images)  # type: ignore[no-any-return]
+        return self.target_encoder.embed(images)
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
-        return self.target_encoder(images)  # type: ignore[no-any-return]
+        return self.target_encoder(images)
 
 
 def wrap_deployed_visual_encoder(ijepa: Any) -> DeployedVisualEncoder:
