@@ -728,6 +728,25 @@ def test_shipped_config_plans_twenty_three_cells_across_six_card_regions() -> No
     assert sum(counts.values()) == 23
 
 
+_ALL_ZERO_SHA = "0" * 40
+
+
+def test_run_code_sha_is_not_the_all_zero_placeholder() -> None:
+    """g37 leaves 40 zeros so Claude can paste the wiring-merge sha at PR time.
+
+    This assertion is designed to fail while the placeholder is in the file; it
+    passes only after that sha is a real 40-hex commit. Do not delete the test
+    to go green -- fill `run.code.sha`.
+    """
+    sha = _raw()["run"]["code"]["sha"]
+    assert isinstance(sha, str) and len(sha) == 40
+    assert set(sha) <= set("0123456789abcdef"), f"run.code.sha is not lowercase hex: {sha!r}"
+    assert sha != _ALL_ZERO_SHA, (
+        "run.code.sha is the all-zero placeholder; CLAUDE FILLS AT PR TIME with the "
+        "visual-wiring merge commit before this PR can merge"
+    )
+
+
 def test_the_card_licence_tier_guard_fires_on_a_diverged_config() -> None:
     """MUTATION. A config that names a tier the publish script's own table disagrees
     with must be caught -- reproduced here by comparing a deliberately wrong table

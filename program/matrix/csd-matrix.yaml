@@ -28,6 +28,11 @@
 #     `null` (H4's convention): the harness's wave 0 probes those before launching any
 #     full cell. This is deliberately a LARGER probe set than a naive first draft would
 #     carry -- see DESIGN.v2 §11.1/§11.2 for the reasoning and the resulting wave plan.
+#   - PIN PLACEHOLDER (g37): `run.code.sha` below is 40 zeros. CLAUDE FILLS AT PR TIME
+#     with the visual-wiring merge commit. The 16 text cells (`*-7bc2699-20260904`) go
+#     stale in harness terms (`sha_expected` ≠ new pin). Cell ids, on-disk artifacts,
+#     and Hub variants are untouched. No text retrain (g21). The visual row is the
+#     first cell family under the new pin.
 
 schema: model-matrix/v2
 
@@ -36,7 +41,7 @@ run:
   project: cogsyndelta
   code:
     repo: /home/kang/code/personal/tzervas/CogSynDelta
-    sha: 7bc2699d9f6b6d19d5f7518c7081853a55d9b015 # main, 2026-09-04 -- PRs #21 (--seed), #25 (per-region shard_limit), #27 (gate_exit_codes) merged
+    sha: "0000000000000000000000000000000000000000" # CLAUDE FILLS AT PR TIME
   state_root: /akula-data/csd/matrix
   finals_root: /akula-data/csd/finals # must be inside retention.prune_roots (loader-enforced)
   events_dir: /akula-data/csd/events
