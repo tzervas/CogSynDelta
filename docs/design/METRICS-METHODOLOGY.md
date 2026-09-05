@@ -317,11 +317,11 @@ Written as `Receipt(kind="eval" | "eval-quantized", ...)`
 
 **Evaluation set, every field in this section:** the same held-out split §2 uses, rebuilt from
 the training receipt's own recorded config and cross-checked by corpus fingerprint
-(`_region_eval_context()`, `scripts/csd-benchmark.py:378-443`) -- **never** re-globbed. `kind:
+(`_region_eval_context()`, `scripts/csd-benchmark.py:462-527`) -- **never** re-globbed. `kind:
 "eval"` scores the fp32 checkpoint; `kind: "eval-quantized"` scores the actual packed `.ptq.pt`
-artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:792-937`), not
+artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:886-1080`), not
 the in-memory quantization plan (§4). `_run_battery()`
-(`scripts/csd-benchmark.py:446-467`) encodes the **whole** holdout as one closed candidate
+(`scripts/csd-benchmark.py:530-551`) encodes the **whole** holdout as one closed candidate
 pool -- identical in shape to §2's `scores = a @ p.T`, `relevant = arange(...)` construction,
 which is why `rank.recall@1` in this battery is numerically identical to `held_out.recall@1`
 in §2 for the same checkpoint (confirmed against a real receipt pair in §10).
@@ -1902,7 +1902,7 @@ the publish script's read-time normalisation: `csd-quantize.py` writes
 `quant.plan_recall@1`, `quant.drop_recall@1`, and `quant.compression_ratio` into the quant
 receipt, and `csd-benchmark.py` writes `quant.artifact_recall@1` into the eval-quantized
 receipt's `metrics` (`scripts/csd-quantize.py:270,271,275`,
-`scripts/csd-benchmark.py:604`). Only `token.*` (§12.2) and `beir.*` (§12.7) remain
+`scripts/csd-benchmark.py:1013`). Only `token.*` (§12.2) and `beir.*` (§12.7) remain
 unwritten by any production receipt; check §15 before assuming an unmarked name below is on
 disk for a given battery.
 
@@ -1941,3 +1941,15 @@ on frozen `IJEPA.encode` features — the EMA target encoder).
 Do not compare `probe.top1` to `rank.recall@1`. Quantize of visual reuses
 `quant.plan_recall@1` as the **plan's probe top-1** (same `eval_fn`), not a retrieval
 score.
+
+### 21.1 Deployed module is the EMA target encoder
+
+Visual quantize and eval-quantized pack **only** `target_encoder.*`
+(`DeployedVisualEncoder` in `scripts/csd-benchmark.py`). `IJEPA.encode` is
+`target_encoder.embed` (`src/cogsyndelta/model/vl_jepa.py:581-587`). The online
+context encoder and the predictor are training-only: they have zero probe
+sensitivity, so a full-IJEPA plan would drive them to the floor for free and
+`fp32_reference_bytes` / `provenance.parameters` would describe an artifact
+nobody deploys. The packed file is still sha-bound to the full training
+checkpoint. `--quantized` eval rebuilds the encoder-only wrapper; it does not
+`load_state_dict` onto a full IJEPA.

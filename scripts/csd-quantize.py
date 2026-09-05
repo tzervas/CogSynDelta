@@ -345,14 +345,15 @@ def quantize_visual_region(
     max_bits: int,
     train_receipt_path: Path | None = None,
 ) -> dict:
-    """PTQ the I-JEPA that visual eval probes.
+    """PTQ the deployed visual module: the EMA target encoder.
 
-    `IJEPA.encode` reads the EMA **target encoder** (`vl_jepa.py:581-587`). The
-    predictor and the online context encoder are not in the probe path, but they
-    live on the same `state_dict` the training receipt bound, so this pass
-    quantizes the **full IJEPA** (same bytes eval loads) rather than a sliced
-    submodule that could no longer round-trip `load_state_dict` on the checkpoint.
-    `eval_fn` is held-out EuroSAT probe top-1, the same measurement training used.
+    ``IJEPA.encode`` reads ``target_encoder.embed`` (``vl_jepa.py:581-587``). The
+    online context encoder and the predictor are training-only: under the probe
+    they have zero sensitivity, so ``build_plan`` would drive them to the floor
+    for free, and ``fp32_reference_bytes`` on the full IJEPA describes an
+    artifact nobody deploys. Packed keys are ``target_encoder.*``; the artifact
+    is sha-bound to the full training checkpoint it was sliced from. ``eval_fn``
+    is held-out EuroSAT probe top-1, the same measurement training used.
     """
     from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
     from cogsyndelta.model.vl_jepa import IJEPA
@@ -379,7 +380,7 @@ def quantize_visual_region(
         sha256_out=ckpt_sha_out,
     )
     model.load_state_dict(ck["model"])
-    model.eval()
+    deployed = bench.wrap_deployed_visual_encoder(model).to(device).eval()
     checkpoint_sha256 = ckpt_sha_out[0]
     splits = bench.load_visual_splits(cfg)
     eval_calls = 0
@@ -396,11 +397,11 @@ def quantize_visual_region(
         )
         return float(held["top1"])
 
-    fp32_metric = eval_fn(model)
+    fp32_metric = eval_fn(deployed)
     recorded_metric = float(receipt["held_out"]["top1"])
     started = time.time()
     plan = build_plan(
-        model,
+        deployed,
         eval_fn,
         baseline=fp32_metric,
         tolerance=tolerance,
@@ -409,7 +410,7 @@ def quantize_visual_region(
     )
     checkpoint_path = Path(receipt["checkpoint"])
     quantized_path = checkpoint_path.with_name(f"{checkpoint_path.stem}.ptq.pt")
-    quantized_sha256 = save_packed_artifact(model, plan, quantized_path)
+    quantized_sha256 = save_packed_artifact(deployed, plan, quantized_path)
     by_width: dict[int, int] = {}
     for bits in plan.bits.values():
         by_width[bits] = by_width.get(bits, 0) + 1
@@ -435,7 +436,7 @@ def quantize_visual_region(
             "quantized_path": str(quantized_path),
             "quantized_sha256": quantized_sha256,
             "artifact_device": "cpu",
-            "quantized_module": "IJEPA (encode uses target_encoder)",
+            "quantized_module": "target_encoder",
         },
         "corpus_fingerprint": fingerprint,
         "tolerance": tolerance,

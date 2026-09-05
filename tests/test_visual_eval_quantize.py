@@ -14,7 +14,7 @@ import pytest
 import torch
 from PIL import Image
 
-from cogsyndelta.model.vl_jepa import JEPAConfig
+from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig
 from cogsyndelta.regions._checkpoint import ChecksumMismatchError
 from cogsyndelta.regions.vl_pretrain import VLPretrainConfig, pretrain_vl_region
 
@@ -128,6 +128,9 @@ def test_visual_eval_writes_gates_and_artifacts(
     assert "path" in rec.artifacts["source_training_receipt"]
     assert rec.metrics["probe.top1"] >= 0.0
     assert rec.provenance["probe_repeatability"] == "not-bitwise"
+    assert rec.provenance["quantized_module"] == "target_encoder"
+    ijepa = IJEPA(JEPAConfig(**receipt["config"]["jepa"]))
+    assert rec.provenance["parameters"] == sum(p.numel() for p in ijepa.target_encoder.parameters())
     printed = capsys.readouterr().out
     assert "untrained top1" in printed
     assert "rep_std" in printed
@@ -159,6 +162,67 @@ def test_visual_quantize_writes_within_budget(tmp_path: Path) -> None:
     assert rec["within_budget"] is True
     assert Path(rec["artifacts"]["quantized_path"]).is_file()
     assert rec["artifacts"]["checkpoint_sha256"]
+    assert rec["artifacts"]["quantized_module"] == "target_encoder"
+
+
+def _packed_param_names(path: Path) -> set[str]:
+    packed = torch.load(path, weights_only=True, map_location="cpu")
+    return set(packed["fp32"]) | set(packed["bits"])
+
+
+def test_quantized_artifact_contains_only_target_encoder_keys(tmp_path: Path) -> None:
+    """Packed artifact is the EMA target encoder. Mutation: pack the full IJEPA
+    and this finds encoder.* / predictor.* keys."""
+    _receipt, state, train_path = _train(tmp_path)
+    quant = _load_quantize()
+    rec = quant.quantize_visual_region(
+        "visual", state, tolerance=1.0, aggressive=8, max_bits=8, train_receipt_path=train_path
+    )
+    names = _packed_param_names(Path(rec["artifacts"]["quantized_path"]))
+    assert names
+    assert all(n.startswith("target_encoder.") for n in names)
+    assert not any(n.startswith("encoder.") or n.startswith("predictor.") for n in names)
+
+
+def test_quantized_eval_reproduces_probe_and_parameter_count(tmp_path: Path) -> None:
+    receipt, state, train_path = _train(tmp_path)
+    quant = _load_quantize()
+    qrec = quant.quantize_visual_region(
+        "visual", state, tolerance=1.0, aggressive=8, max_bits=8, train_receipt_path=train_path
+    )
+    bench = _load_benchmark()
+    rec = bench.benchmark_visual_region_quantized(
+        "visual",
+        state,
+        Path(qrec["artifacts"]["quantized_path"]),
+        train_receipt_path=train_path,
+    )
+    assert rec.kind == "eval-quantized"
+    assert "probe.top1" in rec.metrics
+    ijepa = IJEPA(JEPAConfig(**receipt["config"]["jepa"]))
+    expected = sum(p.numel() for p in ijepa.target_encoder.parameters())
+    full = sum(p.numel() for p in ijepa.parameters())
+    assert expected < full
+    assert rec.provenance["parameters"] == expected
+    assert rec.provenance["quantized_module"] == "target_encoder"
+    fp32 = bench.benchmark_visual_region("visual", state, train_receipt_path=train_path)
+    assert fp32 is not None
+    assert fp32.provenance["parameters"] == expected
+    assert fp32.provenance["fp32_reference_bytes"] == expected * 4
+
+
+def test_packed_artifact_does_not_load_onto_full_ijepa(tmp_path: Path) -> None:
+    receipt, state, train_path = _train(tmp_path)
+    quant = _load_quantize()
+    qrec = quant.quantize_visual_region(
+        "visual", state, tolerance=1.0, aggressive=8, max_bits=8, train_receipt_path=train_path
+    )
+    from cogsyndelta.quant.ptq import load_packed_artifact, unpack_state_dict
+
+    sd = unpack_state_dict(load_packed_artifact(qrec["artifacts"]["quantized_path"]))
+    model = IJEPA(JEPAConfig(**receipt["config"]["jepa"]))
+    with pytest.raises(RuntimeError, match="Missing key"):
+        model.load_state_dict(sd)
 
 
 def _counting_splits(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:

@@ -99,6 +99,33 @@ def _vl_cfg_from_train_receipt(region: str, train_receipt: dict) -> Any:
     )
 
 
+class DeployedVisualEncoder(torch.nn.Module):
+    """The EMA target encoder — the only module ``IJEPA.encode`` reads (vl_jepa.py:581-587).
+
+    Packed artifacts use ``target_encoder.*`` keys so a reader can see the online
+    context encoder and the predictor were excluded.
+    """
+
+    def __init__(self, target_encoder: torch.nn.Module) -> None:
+        super().__init__()
+        self.target_encoder = target_encoder
+
+    def embed(self, images: torch.Tensor) -> torch.Tensor:
+        return self.target_encoder.embed(images)  # type: ignore[no-any-return]
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        return self.target_encoder(images)  # type: ignore[no-any-return]
+
+
+def wrap_deployed_visual_encoder(ijepa: Any) -> DeployedVisualEncoder:
+    """Reparent the EMA target encoder so packed keys are ``target_encoder.*``."""
+    return DeployedVisualEncoder(ijepa.target_encoder)
+
+
+def _visual_parameter_count(module: torch.nn.Module) -> int:
+    return sum(p.numel() for p in module.parameters())
+
+
 @dataclass
 class VisualSplits:
     """Decoded Mix B / probe tensors. Load once per process; eval_fn must not reload."""
@@ -121,24 +148,50 @@ def load_visual_splits(cfg: Any) -> VisualSplits:
     return VisualSplits(x_tr, px_tr, py_tr, px_ev, py_ev, transfer, n_classes)
 
 
+def _visual_embed(module: Any, x_float: torch.Tensor) -> torch.Tensor:
+    if hasattr(module, "embed"):
+        return module.embed(x_float)  # type: ignore[no-any-return]
+    return module.encode(x_float)  # type: ignore[no-any-return]
+
+
+def _visual_latents(
+    module: Any, x_u8: torch.Tensor, device: torch.device, bs: int = 256
+) -> torch.Tensor:
+    from cogsyndelta.regions.vl_pretrain import _to_float
+
+    module.eval()
+    out = []
+    with torch.no_grad():
+        for i in range(0, x_u8.size(0), bs):
+            out.append(_visual_embed(module, _to_float(x_u8[i : i + bs], device)).float().cpu())
+    return torch.cat(out)
+
+
+def _visual_rep_std(
+    module: Any, x_tr: Any, batch_size: int, seed: int, device: torch.device
+) -> float:
+    from cogsyndelta.regions.vl_pretrain import _to_float, collapse_batch_indices
+
+    enc = getattr(module, "target_encoder", module)
+    idx = collapse_batch_indices(int(x_tr.size(0)), batch_size, seed)
+    feats = enc(_to_float(x_tr[idx], device))
+    return float(feats.mean(dim=1).std(dim=0).mean().item())
+
+
 def _measure_visual_probes(
     model: Any,
     cfg: Any,
     device: torch.device,
     splits: VisualSplits | None = None,
 ) -> tuple[dict, dict | None]:
-    from cogsyndelta.regions.vl_pretrain import (
-        _features,
-        _linear_probe,
-        _rep_std_on_mixed_batch,
-    )
+    from cogsyndelta.regions.vl_pretrain import _linear_probe
 
     if splits is None:
         splits = load_visual_splits(cfg)
     held = _linear_probe(
-        _features(model, splits.px_tr, device),
+        _visual_latents(model, splits.px_tr, device),
         splits.py_tr,
-        _features(model, splits.px_ev, device),
+        _visual_latents(model, splits.px_ev, device),
         splits.py_ev,
         splits.n_classes,
         device,
@@ -147,16 +200,14 @@ def _measure_visual_probes(
         cfg.seed,
     )
     with torch.no_grad():
-        held["rep_std"] = _rep_std_on_mixed_batch(
-            model, splits.x_tr, cfg.batch_size, cfg.seed, device
-        )
+        held["rep_std"] = _visual_rep_std(model, splits.x_tr, cfg.batch_size, cfg.seed, device)
     xfer = None
     if splits.transfer:
         ttr, tytr, tev, tyev, tn = splits.transfer
         xfer = _linear_probe(
-            _features(model, ttr, device),
+            _visual_latents(model, ttr, device),
             tytr,
-            _features(model, tev, device),
+            _visual_latents(model, tev, device),
             tyev,
             tn,
             device,
@@ -204,12 +255,14 @@ def benchmark_visual_region(
     )
     model.load_state_dict(ck["model"])
     checkpoint_sha256 = ckpt_sha_out[0]
+    deployed = wrap_deployed_visual_encoder(model).to(device).eval()
     splits = load_visual_splits(cfg)
-    held, xfer = _measure_visual_probes(model, cfg, device, splits)
+    held, xfer = _measure_visual_probes(deployed, cfg, device, splits)
     baseline = train_receipt["untrained_baseline"]
     collapse_ratio = held["rep_std"] / max(1e-9, float(baseline["rep_std"]))
     collapsed = collapse_ratio < 0.1
-    stored = fp32_reference_bytes(model)
+    stored = fp32_reference_bytes(deployed)
+    n_params = _visual_parameter_count(deployed)
     metrics: dict[str, float] = {
         "probe.top1": float(held["top1"]),
         "probe.top5": float(held["top5"]),
@@ -259,6 +312,8 @@ def benchmark_visual_region(
             "eval_target": "fp32",
             "stored_bytes_definition": "weights-only",
             "fp32_reference_bytes": stored,
+            "parameters": n_params,
+            "quantized_module": "target_encoder",
             "collapse_ratio": round(collapse_ratio, 4),
             "probe_repeatability": "not-bitwise",
             "probe_repeatability_reason": (
@@ -754,7 +809,11 @@ def benchmark_visual_region_quantized(
     quant_receipt_path: Path | None = None,
     train_receipt_path: Path | None = None,
 ) -> Receipt:
-    """Score a packed I-JEPA artifact with the same visual probe battery."""
+    """Score a packed EMA-target-encoder artifact with the same visual probe battery.
+
+    Packed keys are ``target_encoder.*``. Do not ``load_state_dict`` onto a full
+    IJEPA — the predictor and online context encoder are not in the artifact.
+    """
     from cogsyndelta.model.vl_jepa import IJEPA
     from cogsyndelta.quant.ptq import load_packed_artifact, unpack_state_dict
     from cogsyndelta.regions._checkpoint import sha256_file
@@ -777,12 +836,13 @@ def benchmark_visual_region_quantized(
     packed = load_packed_artifact(quantized_path)
     cfg = _vl_cfg_from_train_receipt(region, train_receipt)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = IJEPA(cfg.jepa).to(device)
-    model.load_state_dict(unpack_state_dict(packed))
-    model.eval()
+    deployed = wrap_deployed_visual_encoder(IJEPA(cfg.jepa)).to(device)
+    deployed.load_state_dict(unpack_state_dict(packed))
+    deployed.eval()
     splits = load_visual_splits(cfg)
-    held, xfer = _measure_visual_probes(model, cfg, device, splits)
+    held, xfer = _measure_visual_probes(deployed, cfg, device, splits)
     baseline = train_receipt["untrained_baseline"]
+    n_params = _visual_parameter_count(deployed)
     metrics: dict[str, float] = {
         "probe.top1": float(held["top1"]),
         "probe.top5": float(held["top5"]),
@@ -811,7 +871,11 @@ def benchmark_visual_region_quantized(
                 "sha256": sha256_file(resolved_path),
             },
         },
-        provenance={"eval_target": "quantized"},
+        provenance={
+            "eval_target": "quantized",
+            "parameters": n_params,
+            "quantized_module": "target_encoder",
+        },
         detail={"held_out": held, "transfer": xfer},
         started_utc=started_utc,
         seconds=time.time() - t0,
