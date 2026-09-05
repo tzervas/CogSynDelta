@@ -202,6 +202,56 @@ def test_build_training_table_undocumented_key_raises() -> None:
         build_training_table({"held_out": {"totally_unknown_field": 1.0}})
 
 
+def test_build_training_table_skips_visual_identity_keys() -> None:
+    """`source`/`name` name the probe set; they are not scores and must not trip
+    require_documented. The numeric visual keys are documented."""
+    table = build_training_table(
+        {
+            "held_out": {
+                "top1": 0.62,
+                "top5": 0.95,
+                "n_eval": 5400.0,
+                "rep_std": 0.33,
+                "source": "phelber/eurosat-rgb-128",
+                "name": "eurosat-test",
+            },
+            "untrained_baseline": {
+                "top1": 0.63,
+                "top5": 0.95,
+                "n_eval": 5400.0,
+                "rep_std": 0.33,
+                "source": "phelber/eurosat-rgb-128",
+                "name": "eurosat-test",
+            },
+        }
+    )
+    keys = {r.key for r in table.rows}
+    assert keys == {"top1", "top5", "n_eval", "rep_std"}
+    assert "source" not in keys
+    assert table.heading == "Training EuroSAT linear probe (primary)"
+
+
+def test_build_eval_tables_groups_visual_probe_and_transfer() -> None:
+    tables = build_eval_tables(
+        eval_receipt={
+            "metrics": {
+                "probe.top1": 0.62,
+                "probe.top5": 0.95,
+                "repr.rep_std": 0.33,
+                "transfer.top1": 0.71,
+                "transfer.top5": 0.98,
+            },
+            "gates": {"beats_untrained_eval": False, "not_collapsed": True},
+        }
+    )
+    by_cat = {t.category: t for t in tables}
+    assert by_cat["probe"].heading == "Linear probe (EuroSAT primary)"
+    assert {r.key for r in by_cat["probe"].rows} == {"probe.top1", "probe.top5"}
+    assert by_cat["transfer"].heading == "Transfer probe (Fashion t10k)"
+    assert {r.key for r in by_cat["transfer"].rows} == {"transfer.top1", "transfer.top5"}
+    assert {r.key for r in by_cat["repr"].rows} == {"repr.rep_std"}
+
+
 def test_build_gate_table_none_or_empty_returns_none() -> None:
     assert build_gate_table(None) is None
     assert build_gate_table({"gates": {}}) is None
@@ -272,6 +322,14 @@ def test_best_column_none_for_boolean_row() -> None:
 def test_best_column_none_when_fewer_than_two_values() -> None:
     row = MetricRow(key="recall@1", variant=0.9)
     assert _best_column(row) is None
+
+
+def test_best_column_none_for_n_eval_count_row() -> None:
+    """Identity/count rows are not scores -- n_eval must not be bolded as 'better'."""
+    row = MetricRow(key="n_eval", variant=5400.0, baseline=5400.0)
+    assert _best_column(row) is None
+    row_int = MetricRow(key="n_pairs", variant=512, baseline=256)
+    assert _best_column(row_int) is None
 
 
 def test_render_table_markdown_bolds_the_best_value() -> None:

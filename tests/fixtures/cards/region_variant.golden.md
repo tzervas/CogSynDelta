@@ -44,7 +44,7 @@ run) of the `compress` region, not the promoted release -- see the region's
 
 ## Key features
 
-- **Faculty, not a general model.** Triggered by: language=python and a docstring is present..
+- **Faculty, not a general model.** Triggered by: language=python and a docstring is present.
 - **Every metric is reported beside its untrained baseline** -- see the Evaluation
   results tables below; a number with no baseline column next to it is not on this
   card.
@@ -71,7 +71,7 @@ run) of the `compress` region, not the promoted release -- see the region's
 
 | metric | this variant | untrained baseline |
 |---|---|---|
-| `n_pairs`[^1] | **512** | 512 |
+| `n_pairs`[^1] | 512 | 512 |
 | `recall@1`[^2] | **0.707** | 0.037 |
 | `recall@10`[^3] | **0.9199** | 0.068 |
 
@@ -137,7 +137,7 @@ run) of the `compress` region, not the promoted release -- see the region's
 |---|---|---|
 | weights on disk, fp32 | 0.037 MB | measured, `fp32_bytes` |
 | weights on disk, csd-ptq-v1 | 0.009 MB | measured, `stored_bytes` |
-| compression ratio (storage, not speed) | 4.28x | measured |
+| compression ratio (storage, not speed) | 4.28x | measured, `quant.compression_ratio` |
 | bit-width histogram | 3-bit: 1 | measured, `width_histogram` |
 
 ## How to use
@@ -171,6 +171,7 @@ Reproduce the numbers on this card:
 ```bash
 python3 scripts/csd-benchmark.py --region compress --checkpoint final.pt
 ```
+
 
 ## Limitations and out-of-scope use
 

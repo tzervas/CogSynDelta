@@ -17,6 +17,7 @@ from cogsyndelta.cards.methodology import CardError
 from cogsyndelta.cards.sizes import (
     build_size_report,
     compression_ratio,
+    deployed_parameter_count,
     disk_bytes_per_state,
     eval_peak_vram,
     parameter_count,
@@ -33,6 +34,17 @@ def test_parameter_count_reads_the_receipt_field() -> None:
 
 def test_parameter_count_none_when_absent() -> None:
     assert parameter_count({}) is None
+
+
+def test_deployed_parameter_count_prefers_eval_provenance() -> None:
+    train = {"parameters": 22905216}
+    eval_receipt = {"provenance": {"parameters": 10712448}}
+    assert deployed_parameter_count(train, eval_receipt) == 10712448
+
+
+def test_deployed_parameter_count_falls_back_to_train() -> None:
+    assert deployed_parameter_count({"parameters": 16021248}, None) == 16021248
+    assert deployed_parameter_count({"parameters": 16021248}, {"provenance": {}}) == 16021248
 
 
 def test_width_histogram_none_quant_receipt_returns_none() -> None:
@@ -187,6 +199,20 @@ def test_build_size_report_assembles_every_field(tmp_path: Path) -> None:
     assert report.eval_peak_vram["quantized"].value == 498.8
     assert report.training_peak is not None
     assert report.training_peak.value == 11594.0
+    assert report.training_parameters is None  # same as deployed when no eval provenance
+
+
+def test_build_size_report_visual_splits_deployed_from_training_count(tmp_path: Path) -> None:
+    train_receipt = {"parameters": 22905216, "config": {"batch_size": 16}}
+    eval_receipt = {"provenance": {"parameters": 10712448}}
+    report = build_size_report(
+        region="visual",
+        train_receipt=train_receipt,
+        eval_receipt=eval_receipt,
+        budgets_root=tmp_path,
+    )
+    assert report.parameters == 10712448
+    assert report.training_parameters == 22905216
 
 
 def test_build_size_report_no_optional_receipts(tmp_path: Path) -> None:

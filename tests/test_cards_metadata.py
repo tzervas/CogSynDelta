@@ -13,10 +13,76 @@ from __future__ import annotations
 import pytest
 from huggingface_hub import ModelCard
 
-from cogsyndelta.cards.metadata import build_card_data, build_eval_results, region_repo_tags
+from cogsyndelta.cards.metadata import (
+    build_card_data,
+    build_eval_results,
+    datasets_from_train_receipt,
+    region_repo_tags,
+)
 from cogsyndelta.cards.methodology import METRIC_METHODOLOGY, CardError
 
 pytestmark = pytest.mark.cpu
+
+
+def test_datasets_from_train_receipt_converts_shard_landings() -> None:
+    rec = {
+        "corpus": {
+            "shards": [
+                "nyuuzyou__pxhere/processed/20260905T035325Z/train.zip",
+                "facebookresearch__clevr/processed/20260905T063733Z/train.zip",
+                "nyuuzyou__pxhere/processed/20260905T035325Z/train.zip",
+            ]
+        }
+    }
+    assert datasets_from_train_receipt(rec) == [
+        "nyuuzyou/pxhere",
+        "facebookresearch/clevr",
+    ]
+
+
+def test_datasets_from_train_receipt_none_when_absent() -> None:
+    assert datasets_from_train_receipt(None) is None
+    assert datasets_from_train_receipt({}) is None
+    assert datasets_from_train_receipt({"corpus": {}}) is None
+
+
+def test_datasets_from_train_receipt_drops_parquet_shard_filenames() -> None:
+    """Text cells name parquet files, not Hub ids -- must not become datasets:."""
+    rec = {
+        "corpus": {
+            "shards": [
+                "train-00000-of-00001.parquet",
+                "data/train-00000-of-00001.parquet",
+            ]
+        }
+    }
+    assert datasets_from_train_receipt(rec) is None
+
+
+def test_datasets_from_train_receipt_keeps_mix_b_hub_ids() -> None:
+    rec = {
+        "corpus": {
+            "shards": [
+                "nyuuzyou__pxhere/processed/x/train.zip",
+                "biglam__british-library-book-images/processed/x/train.zip",
+                "basveeling__pcam/processed/x/train.zip",
+                "google-deepmind__3d-shapes/processed/x/train.zip",
+                "facebookresearch__clevr/processed/x/train.zip",
+                "zalando__fashion-mnist/processed/x/train.zip",
+                "phelber__eurosat-rgb-128/processed/x/train.zip",
+                "train-00000-of-00001.parquet",
+            ]
+        }
+    }
+    assert datasets_from_train_receipt(rec) == [
+        "nyuuzyou/pxhere",
+        "biglam/british-library-book-images",
+        "basveeling/pcam",
+        "google-deepmind/3d-shapes",
+        "facebookresearch/clevr",
+        "zalando/fashion-mnist",
+        "phelber/eurosat-rgb-128",
+    ]
 
 
 def test_region_repo_tags_base() -> None:

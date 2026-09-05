@@ -78,6 +78,9 @@ def test_every_battery_id_is_canonical_or_empty() -> None:
         ("tolerance", "tolerance"),  # no dot at all
         ("within_budget", "within_budget"),
         ("beats_untrained_eval", "beats_untrained_eval"),
+        ("probe.top1", "probe.top1"),  # not a rank/eff/repr family
+        ("repr.rep_std", "repr.rep_std"),  # exact match wins over prefix strip
+        ("rep_std", "rep_std"),
     ],
 )
 def test_methodology_key(raw: str, expected: str) -> None:
@@ -89,12 +92,18 @@ def test_methodology_key_covers_every_rank_eff_repr_metric_methodology_entry_is_
 ):
     """Every bare key `METRIC_METHODOLOGY` documents under the `rank./eff./repr.`
     convention must be reachable by prefixing it and stripping again -- a sanity check
-    that `methodology_key` and the table's own keying convention actually agree."""
+    that `methodology_key` and the table's own keying convention actually agree.
+    Skip when the prefixed form is itself a documented key (visual `repr.rep_std`
+    vs train `rep_std`): exact match wins before stripping.
+    """
     for key in METRIC_METHODOLOGY:
-        if "." in key:  # quant.* keys are stored WITH their prefix; skip
+        if "." in key:  # quant.* / probe.* / transfer.* / repr.rep_std; skip
             continue
         for prefix in ("rank", "eff", "repr"):
-            assert methodology_key(f"{prefix}.{key}") == key
+            prefixed = f"{prefix}.{key}"
+            if prefixed in METRIC_METHODOLOGY:
+                continue
+            assert methodology_key(prefixed) == key
 
 
 # --------------------------------------------------------------------------- require_documented

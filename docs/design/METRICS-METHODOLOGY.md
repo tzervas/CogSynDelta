@@ -1949,10 +1949,12 @@ predicate every comparison across these names must pass.
 
 ## 21. Visual probe metrics (`kind: eval` on the I-JEPA region)
 
-These names are written by `scripts/csd-benchmark.py` `benchmark_visual_region` for
-`--regions visual`. They are **not** closed-pool `rank.*` scores. The battery is the
-same linear probe training used (`src/cogsyndelta/regions/vl_pretrain.py` `_linear_probe`
-on frozen `IJEPA.encode` features — the EMA target encoder).
+These names are written by `benchmark_visual_region()`
+(`scripts/csd-benchmark.py:227-337`) for `--regions visual`. They are **not**
+closed-pool `rank.*` scores. The battery is the same linear probe training used:
+`_linear_probe()` (`src/cogsyndelta/regions/vl_pretrain.py:367-421`) on frozen
+`IJEPA.encode` features — the EMA target encoder. Collapse std is
+`_rep_std_on_mixed_batch()` (`src/cogsyndelta/regions/vl_pretrain.py:333-343`).
 
 | field | battery | formula | file |
 |---|---|---|---|
@@ -1977,3 +1979,13 @@ sensitivity, so a full-IJEPA plan would drive them to the floor for free and
 nobody deploys. The packed file is still sha-bound to the full training
 checkpoint. `--quantized` eval rebuilds the encoder-only wrapper; it does not
 `load_state_dict` onto a full IJEPA.
+
+### 21.2 H1 threshold (operator PREREG, not a harness gate)
+
+H1 passes when trained EuroSAT `held_out.top1` exceeds
+`max(untrained_baseline.top1, 0.1) + 0.01` **and** `collapsed` is false, on both
+seeds. The harness `beats_untrained.probe_top1` gate is a separate unmargined `>`
+check (`benchmark_visual_region()` writes `gates.beats_untrained_eval` the same
+way). A card must print untrained vs trained vs this threshold honestly; a 24-step
+smoke that fails H1 is a FAIL, not a pass. Transfer Fashion t10k (`n_eval` 2000)
+is a named set, not H1.

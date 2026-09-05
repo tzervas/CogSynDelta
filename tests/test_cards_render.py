@@ -109,6 +109,25 @@ def test_renders_the_full_fixture_trio(tmp_path: Path, kind: str) -> None:
     assert "## Sizes" in card
 
 
+def test_text_card_datasets_match_main_when_shards_are_parquet(tmp_path: Path) -> None:
+    """g44-fix2: parquet shard basenames must not become Hub `datasets:` on a
+    text cell -- same list as main (absent / empty)."""
+    receipts = _full_fixture_receipts(tmp_path)
+    receipts["train"]["corpus"] = {"shards": ["train-00000-of-00001.parquet"]}
+    card = render_card(
+        "region_variant",
+        region="compress",
+        region_cfg=region_cfg(),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+    )
+    data = ModelCard(card).data
+    assert not data.datasets
+    assert "train-00000-of-00001.parquet" not in card
+    assert "measured, `quant.compression_ratio`" in card
+
+
 def test_renders_train_only_fp32_card(tmp_path: Path) -> None:
     receipts = {"train": _full_fixture_receipts(tmp_path)["train"]}
     card = render_card(

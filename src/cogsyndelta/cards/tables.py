@@ -42,16 +42,46 @@ CATEGORY_HEADINGS: dict[str, str] = {
     "rank": "Retrieval",
     "eff": "Efficiency",
     "repr": "Representation",
+    "probe": "Linear probe (EuroSAT primary)",
+    "transfer": "Transfer probe (Fashion t10k)",
     "quant": "Quantization",
     "beir": "External retrieval (BEIR-style)",
     "token": "Token-aware",
 }
-CATEGORY_ORDER: tuple[str, ...] = ("rank", "eff", "repr", "quant", "beir", "token")
+CATEGORY_ORDER: tuple[str, ...] = (
+    "rank",
+    "eff",
+    "repr",
+    "probe",
+    "transfer",
+    "quant",
+    "beir",
+    "token",
+)
+
+#: `held_out` / `untrained_baseline` keys that name the probe set, not a score.
+#: Dropped from the numeric training table (they still feed the visual H1 /
+#: transfer identity block in `render.py`).
+TRAINING_TABLE_IDENTITY_KEYS: frozenset[str] = frozenset({"source", "name"})
 
 #: Metrics where a SMALLER number is the better one -- the default is "larger is
 #: better" (recall, mrr, throughput, ...); this is the deliberately short exception
 #: list. `within_budget`/booleans are excluded entirely from "best" bolding (see
 #: `_is_boolean`).
+#: Counts and identity fields -- never "better" in a two-column comparison.
+NOT_A_SCORE_KEYS: frozenset[str] = frozenset(
+    {
+        "n_eval",
+        "n_pairs",
+        "candidates",
+        "dimensions",
+        "parameters",
+        "fp32_bytes",
+        "stored_bytes",
+        "tolerance",
+    }
+)
+
 LOWER_IS_BETTER: frozenset[str] = frozenset(
     {
         "eff.latency_p50_ms",
@@ -296,10 +326,13 @@ def build_training_table(
     """
     held_out = train_receipt.get("held_out", {})
     baseline = train_receipt.get("untrained_baseline", {})
-    keys = sorted(set(held_out) | set(baseline))
+    keys = sorted((set(held_out) | set(baseline)) - TRAINING_TABLE_IDENTITY_KEYS)
     require_documented(keys, methodology=methodology)
     rows = [MetricRow(key=k, variant=held_out.get(k), baseline=baseline.get(k)) for k in keys]
-    return MetricTable(category="held_out", heading="Training held-out battery", rows=rows)
+    heading = "Training held-out battery"
+    if "top1" in keys:
+        heading = "Training EuroSAT linear probe (primary)"
+    return MetricTable(category="held_out", heading=heading, rows=rows)
 
 
 def build_quant_table(
@@ -365,6 +398,9 @@ def _best_column(row: MetricRow) -> str | None:
         if isinstance(v, int | float) and not _is_boolean(v):
             candidates[name] = float(v)
     if len(candidates) < 2:
+        return None
+    bare = methodology_key(row.key)
+    if row.key in NOT_A_SCORE_KEYS or bare in NOT_A_SCORE_KEYS:
         return None
     lower_is_better = row.key in LOWER_IS_BETTER
     return (

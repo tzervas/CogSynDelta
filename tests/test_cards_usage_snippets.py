@@ -185,6 +185,35 @@ def test_load_quantized_snippet_actually_unpacks_the_fixture(
 # =====================================================================================
 
 
+def test_visual_card_has_no_exec_blocks_because_there_is_no_tiny_ijepa_fixture(
+    tmp_path: Path,
+) -> None:
+    """Visual how-to is IJEPA / DeployedVisualEncoder, not TextEncoder. It is not
+    marked `<!-- exec -->` because tests/fixtures/cards/tiny_checkpoint.pt is a
+    4x8 linear layer, not an I-JEPA state dict -- running the visual snippet
+    against that fixture would be a false green."""
+    from tests.test_cards_visual import FIXTURES, _visual_cfg
+
+    receipts = {
+        "train": json.loads((FIXTURES / "visual-20260905T202258Z.json").read_text()),
+        "eval": json.loads(
+            (FIXTURES / "cogsyndelta-visual-eval-20260905T202332Z.json").read_text()
+        ),
+        "quant": json.loads((FIXTURES / "visual-quant-20260905T205025Z.json").read_text()),
+    }
+    card = render_card(
+        "region_variant",
+        region="visual",
+        region_cfg=_visual_cfg(),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert _exec_blocks(card) == []
+    assert "TextEncoder" not in card
+    assert "IJEPA" in card
+
+
 def test_exec_harness_catches_a_broken_snippet(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

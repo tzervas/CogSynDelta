@@ -1,0 +1,217 @@
+{
+  "region": "visual",
+  "objective": "I-JEPA latent prediction; gated on linear probe, never on loss",
+  "masking": "random-permutation",
+  "corpus": {
+    "corpus_source": "visual-clean-v1",
+    "shards": [
+      "nyuuzyou__pxhere/processed/20260905T035325Z/train.zip",
+      "biglam__british-library-book-images/processed/20260905T035325Z/train.zip",
+      "basveeling__pcam/processed/20260905T045655Z/train.zip",
+      "google-deepmind__3d-shapes/processed/20260905T062637Z/train.zip",
+      "facebookresearch__clevr/processed/20260905T063733Z/train.zip",
+      "zalando__fashion-mnist/processed/20260905T062523Z/train.zip",
+      "phelber__eurosat-rgb-128/processed/20260905T031650Z/train.zip"
+    ],
+    "fingerprint": "ab5761b65714e4ba4d7c36df095f3599",
+    "fingerprint_scheme": "csd-corpus-fp/v2",
+    "image_column": "image",
+    "label_column": "label",
+    "probe_sets": [
+      "eurosat-test",
+      "fashion-t10k",
+      "shapes3d-probe",
+      "clevr-val-probe"
+    ]
+  },
+  "started_utc": "2026-09-05T20:22:29Z",
+  "seconds": 1.2,
+  "device": "cuda",
+  "parameters": 22905216,
+  "checkpoint": "/akula-data/session-backup-staging/reviews/g43-orch/smoke/receipts/visual-checkpoints/step-24.pt",
+  "checkpoint_sha256": "c5afe115739b88b3c85bc115a20c5dcd25b02058cd33cd4f9a97c69b3f8d8566",
+  "train_images": 581280,
+  "probe_classes": 10,
+  "config": {
+    "jepa": {
+      "image_size": 128,
+      "patch_size": 8,
+      "in_channels": 3,
+      "dim": 384,
+      "depth": 6,
+      "n_heads": 6,
+      "predictor_dim": 192,
+      "predictor_depth": 3,
+      "ema_base": 0.996,
+      "ema_final": 1.0,
+      "context_keep": 0.4,
+      "n_target_blocks": 4,
+      "target_scale": [
+        0.15,
+        0.2
+      ],
+      "pos_kind": "sincos2d"
+    },
+    "steps": 24,
+    "batch_size": 16,
+    "seed": 0,
+    "probe_steps": 600,
+    "probe_lr": 0.001,
+    "trainer_defaults": {
+      "steps": 24,
+      "batch_size": 16,
+      "lr": 0.00015,
+      "bf16": null,
+      "max_len": null
+    }
+  },
+  "untrained_baseline": {
+    "top1": 0.6251851916313171,
+    "top5": 0.9546296000480652,
+    "n_eval": 5400.0,
+    "rep_std": 0.3357669711112976,
+    "source": "phelber/eurosat-rgb-128",
+    "name": "eurosat-test"
+  },
+  "held_out": {
+    "top1": 0.6246296167373657,
+    "top5": 0.9544444680213928,
+    "n_eval": 5400.0,
+    "rep_std": 0.33545392751693726,
+    "source": "phelber/eurosat-rgb-128",
+    "name": "eurosat-test"
+  },
+  "untrained_transfer": {
+    "top1": 0.7100000381469727,
+    "top5": 0.9810000658035278,
+    "n_eval": 2000.0,
+    "source": "zalando/fashion-mnist",
+    "name": "fashion-t10k"
+  },
+  "transfer": {
+    "top1": 0.7105000615119934,
+    "top5": 0.9810000658035278,
+    "n_eval": 2000.0,
+    "source": "zalando/fashion-mnist",
+    "name": "fashion-t10k"
+  },
+  "probe_protocol": {
+    "jepa_train_shards": [
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/nyuuzyou__pxhere/processed/20260905T035325Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/biglam__british-library-book-images/processed/20260905T035325Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/basveeling__pcam/processed/20260905T045655Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/google-deepmind__3d-shapes/processed/20260905T062637Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/facebookresearch__clevr/processed/20260905T063733Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/zalando__fashion-mnist/processed/20260905T062523Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/phelber__eurosat-rgb-128/processed/20260905T031650Z/train.zip"
+    ],
+    "linear_train_shards": [
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/phelber__eurosat-rgb-128/processed/20260905T031650Z/train.zip"
+    ],
+    "linear_eval_shards": [
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/phelber__eurosat-rgb-128/processed/20260905T031650Z/probe.zip"
+    ],
+    "transfer_shards": [
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/zalando__fashion-mnist/processed/20260905T062523Z/probe.zip"
+    ],
+    "image_backend": "png_zip",
+    "image_column": "image",
+    "label_column": "label",
+    "transfer_image_column": "image",
+    "transfer_label_column": "label",
+    "sets": [
+      {
+        "name": "eurosat-test",
+        "source": "phelber/eurosat-rgb-128",
+        "n": 5400,
+        "role": "primary"
+      },
+      {
+        "name": "fashion-t10k",
+        "source": "zalando/fashion-mnist",
+        "n": 10000,
+        "role": "transfer"
+      },
+      {
+        "name": "shapes3d-probe",
+        "source": "google-deepmind/3d-shapes",
+        "n": 5000,
+        "role": "held_out"
+      },
+      {
+        "name": "clevr-val-probe",
+        "source": "facebookresearch/clevr",
+        "n": 5000,
+        "role": "held_out"
+      }
+    ],
+    "cache_dir": "/akula-data/session-backup-staging/reviews/g43-orch/smoke/vl-cache"
+  },
+  "collapse_ratio": 0.9991,
+  "collapsed": false,
+  "history": [
+    {
+      "step": 3,
+      "loss": 0.5114999413490295,
+      "rep_std": 0.3316904306411743,
+      "lr": 9e-06
+    },
+    {
+      "step": 6,
+      "loss": 0.4981193244457245,
+      "rep_std": 0.44431447982788086,
+      "lr": 1.8e-05
+    },
+    {
+      "step": 9,
+      "loss": 0.46536892652511597,
+      "rep_std": 0.42943859100341797,
+      "lr": 2.6999999999999996e-05
+    },
+    {
+      "step": 12,
+      "loss": 0.4321262240409851,
+      "rep_std": 0.3962929844856262,
+      "lr": 3.6e-05
+    },
+    {
+      "step": 15,
+      "loss": 0.4283004105091095,
+      "rep_std": 0.3634191155433655,
+      "lr": 4.4999999999999996e-05
+    },
+    {
+      "step": 18,
+      "loss": 0.40544092655181885,
+      "rep_std": 0.4792104959487915,
+      "lr": 5.399999999999999e-05
+    },
+    {
+      "step": 21,
+      "loss": 0.3790516257286072,
+      "rep_std": 0.3735712468624115,
+      "lr": 6.299999999999999e-05
+    },
+    {
+      "step": 24,
+      "loss": 0.37892740964889526,
+      "rep_std": 0.4582810401916504,
+      "lr": 7.2e-05
+    }
+  ],
+  "resumed": false,
+  "resumed_from_step": 0,
+  "beats_untrained": {
+    "probe_top1": false,
+    "probe_top5": false,
+    "not_collapsed": true,
+    "transfer_top1": true
+  },
+  "code_revision": {
+    "git_sha": "eaa2de16436d95fdbd6b3df48265fb073e4f2cf2",
+    "dirty": false,
+    "branch": "feat/visual-eval-quant-stages",
+    "describe": "v0.2.0-156-geaa2de1"
+  },
+  "metrics_schema": "csd-metrics/v2"
+}

@@ -31,7 +31,7 @@ this region ships under `main.pt` / the region's Hub repo default revision.
 
 ## Key features
 
-- **Faculty, not a general model.** Triggered by: {{ router_trigger }}.
+- **Faculty, not a general model.** Triggered by: {{ (router_trigger or "").rstrip(".") }}.
 - **Every metric is reported beside its untrained baseline** -- see the Evaluation
   results tables below; a number with no baseline column next to it is not on this
   card.
@@ -45,15 +45,7 @@ this region ships under `main.pt` / the region's Hub repo default revision.
 
 ## Model overview
 
-| field | value |
-|---|---|
-| type | {{ region_cfg.get("kind", "(not recorded)") }} |
-| parameters | {{ "%.3f M"|format(parameters / 1e6) if parameters else "(not recorded)" }} |
-| stream_dim | {{ region_cfg.get("stream_dim", "(not recorded)") }} |
-| hidden_dim | {{ region_cfg.get("hidden_dim", "(not recorded)") }} |
-| modality | {{ modality }} |
-| precision | fp32{{ ", csd-ptq-v1 (packed, sub-byte)" if has_quant else "" }} |
-| release | `{{ release_tag }}` |
+{{ overview_md }}
 
 ## Evaluation results
 
@@ -76,6 +68,43 @@ git checkout {{ code_revision }}
 uv sync --group dev
 ```
 
+{% if region == "visual" -%}
+The published artifact is the EMA target encoder (`IJEPA.encode` /
+`target_encoder.embed`). `wrap_deployed_visual_encoder` / `DeployedVisualEncoder`
+live in `scripts/csd-benchmark.py` and wrap that same module so packed keys are
+`target_encoder.*`. This block is not an executable card snippet: there is no
+tiny I-JEPA checkpoint fixture in the card-snippet harness.
+
+```python
+import torch
+from cogsyndelta.model.vl_jepa import IJEPA
+
+# Reconstruct JEPAConfig from the training receipt's config.jepa, then:
+# model = IJEPA(cfg).eval()
+# ckpt = torch.load("<train receipt checkpoint>", map_location="cpu", weights_only=True)
+# model.load_state_dict(ckpt["model"])
+# z = model.encode(images)  # [B, D] -- EMA target encoder
+# deployed = wrap_deployed_visual_encoder(model)  # scripts/csd-benchmark.py
+# z = deployed.embed(images)  # [B, D]
+```
+
+{% if has_quant -%}
+```python
+from cogsyndelta.quant.ptq import load_packed_artifact, unpack_state_dict
+
+packed = load_packed_artifact("<quantized>.ptq.pt")
+state_dict = unpack_state_dict(packed)  # keys: target_encoder.*
+```
+{%- endif %}
+
+Reproduce the numbers on this card (cwd = this CogSynDelta checkout):
+
+```bash
+python3 scripts/csd-benchmark.py --regions visual --state <cell_dir> --train-receipt <train_receipt.json>
+python3 scripts/csd-quantize.py --regions visual --state <cell_dir> --train-receipt <train_receipt.json>
+python3 scripts/csd-benchmark.py --regions visual --state <cell_dir> --train-receipt <train_receipt.json> --quantized <artifact.ptq.pt> --quant-receipt <quant_receipt.json>
+```
+{% else -%}
 <!-- exec -->
 ```python
 import torch
@@ -100,6 +129,7 @@ Reproduce the numbers on this card:
 ```bash
 python3 scripts/csd-benchmark.py --region {{ region }} --checkpoint final.pt
 ```
+{% endif %}
 
 ## Limitations and out-of-scope use
 
