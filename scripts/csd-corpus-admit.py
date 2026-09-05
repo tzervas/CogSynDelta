@@ -123,6 +123,13 @@ VERDICT_TIER: dict[str, str | None] = {
 
 B1_MAX_SHARE = 0.40
 
+# g9-kaggle/PROCESS.md §1 plus admission-round held_seed/aux: only `train` contributes
+# to provenance-group concentration. A missing role on a legacy factory record is
+# treated as train (those records never carried the field). Explicit non-train roles
+# are excluded even if they would dominate by `total_bytes`.
+TRAIN_ROLE = "train"
+EXCLUDED_CONCENTRATION_ROLES: frozenset[str] = frozenset({"probe", "aux", "refuse", "held_seed"})
+
 # docs/design/DATASET-FACTORY-CATALOGUE-2026-09-03.md S8: "4 bytes per token" for text
 # measured on disk, the catalogue's own stated INFERRED assumption for row/token
 # estimates. Real provenance.json never emits `row_count`/`count` (confirmed against
@@ -317,12 +324,46 @@ def check_licence_tier(verdict: str, region: str, region_tier: dict[str, str]) -
     )
 
 
+def landing_role(provenance: dict[str, Any]) -> str | None:
+    """Landing role from provenance.json: top-level `role`, else `catalogue_entry.role`.
+
+    None means the record predates the field (g9 PROCESS.md / factory regenerate) and is
+    treated as train for concentration. Do not parse `why` prose.
+    """
+    raw = provenance.get("role")
+    if raw is None:
+        entry = provenance.get("catalogue_entry")
+        if isinstance(entry, dict):
+            raw = entry.get("role")
+    if raw is None or raw == "":
+        return None
+    return str(raw)
+
+
+def contributes_to_train_concentration(role: str | None) -> bool:
+    """True for `train` and for a missing role (legacy records). False for every other
+    explicit role, including probe/aux/refuse/held_seed."""
+    if role is None:
+        return True
+    return role == TRAIN_ROLE
+
+
+def largest_source(shares: dict[str, int]) -> tuple[str, float]:
+    """`(group, share)` of the group with the most rows. `("", 0.0)` when empty."""
+    total = sum(shares.values())
+    if total <= 0 or not shares:
+        return "", 0.0
+    group = max(shares, key=lambda g: shares[g])
+    return str(group), shares[group] / total
+
+
 def check_b1_share(
     provenance_group: str,
     added_count: int,
     existing_shares: dict[str, int],
     max_share: float = B1_MAX_SHARE,
     estimated: bool = False,
+    measure_note: str = "",
 ) -> CheckResult:
     """Check 2: post-admission share of `provenance_group` must stay <= B1's 0.40 cap.
 
@@ -331,6 +372,11 @@ def check_b1_share(
     `estimated=True` (see `resolve_added_count`) means `added_count` was derived from
     `total_bytes` rather than read from a factory-emitted row/token count, and the detail
     string says so -- the share number is only ever as trustworthy as that count.
+
+    The refuse rule is unchanged: FAIL iff this group's post-admission share exceeds
+    `max_share`. The detail also names the largest source in the post-admission mix
+    (its share and the cap) so a run reports concentration even when a different group
+    is the one that dominates.
     """
     if added_count < 0:
         return CheckResult("b1_share", False, f"added_count={added_count} is negative")
@@ -342,9 +388,15 @@ def check_b1_share(
     share = group_after / total_after
     passed = share <= max_share
     count_note = " [ESTIMATED from total_bytes]" if estimated else ""
+    if measure_note:
+        count_note = f"{count_note} [{measure_note}]"
+    post = dict(existing_shares)
+    post[provenance_group] = group_after
+    largest_group, largest = largest_source(post)
     detail = (
         f"group={provenance_group!r} share after admission = {share:.4f} "
-        f"({group_after}/{total_after}), cap={max_share}{count_note}"
+        f"({group_after}/{total_after}), cap={max_share}{count_note}; "
+        f"largest source={largest_group!r} share={largest:.4f} cap={max_share}"
     )
     return CheckResult("b1_share", passed, detail)
 
@@ -371,6 +423,25 @@ def resolve_added_count(provenance: dict[str, Any]) -> tuple[int, bool]:
     if total_bytes is None:
         return 0, False
     return int(total_bytes) // BYTES_PER_TOKEN, True
+
+
+def resolve_concentration_count(provenance: dict[str, Any]) -> tuple[int, bool, str]:
+    """Row/image count that this landing contributes to B1 concentration.
+
+    Non-train roles (probe, aux, refuse, held_seed, and any other explicit non-train
+    token) contribute 0. When `active_train_set.train_files` is present (g24), that
+    image count is used rather than `total_bytes`. Otherwise the existing
+    `resolve_added_count` fallback applies, and the note records that
+    `active_train_set` was absent.
+    """
+    role = landing_role(provenance)
+    if not contributes_to_train_concentration(role):
+        return 0, False, f"role={role!r} excluded from train concentration"
+    ats = provenance.get("active_train_set")
+    if isinstance(ats, dict) and ats.get("train_files") is not None:
+        return int(ats["train_files"]), False, "active_train_set.train_files"
+    count, estimated = resolve_added_count(provenance)
+    return count, estimated, "active_train_set absent"
 
 
 def check_verified(verification_status: str) -> CheckResult:
@@ -627,11 +698,30 @@ def run_checklist(
     tier_table = REGION_TIER if region_tier is None else region_tier
     verdict = provenance.get("verdict", "")
     provenance_group = provenance.get("provenance_group", "")
-    added_count, estimated = resolve_added_count(provenance)
+    added_count, estimated, measure_note = resolve_concentration_count(provenance)
     verification_status = provenance.get("verification_status", "")
+    role = landing_role(provenance)
+    if not contributes_to_train_concentration(role):
+        largest_group, largest = largest_source(existing_shares)
+        b1 = CheckResult(
+            "b1_share",
+            True,
+            f"role={role!r} excluded from train concentration "
+            f"({'/'.join(sorted(EXCLUDED_CONCENTRATION_ROLES))} do not count), "
+            f"cap={B1_MAX_SHARE}; "
+            f"largest source={largest_group!r} share={largest:.4f} cap={B1_MAX_SHARE}",
+        )
+    else:
+        b1 = check_b1_share(
+            provenance_group,
+            added_count,
+            existing_shares,
+            estimated=estimated,
+            measure_note=measure_note,
+        )
     results = [
         check_licence_tier(verdict, region, tier_table),
-        check_b1_share(provenance_group, added_count, existing_shares, estimated=estimated),
+        b1,
         check_verified(verification_status),
     ]
     if catalogue_index is not None:
@@ -644,15 +734,17 @@ def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def resolve_existing_shares_from_corpus_root(root: Path) -> dict[str, int]:
+def resolve_existing_shares_from_corpus_root(
+    root: Path, exclude: Path | None = None
+) -> dict[str, int]:
     """Derive `--existing-shares` by scanning every `provenance.json` under `root`
     (recursive), for `--corpus-root` -- the alternative to hand-typing the JSON.
 
-    Each dataset's contribution is `resolve_added_count`'s own result (a real
-    `row_count`/`count` when the factory emits one, else the ESTIMATED
-    `total_bytes // BYTES_PER_TOKEN` fallback) -- the existing-shares baseline is measured
-    exactly the same way the candidate being admitted is, so the two sides of the B1 share
-    computation are not silently apples-to-oranges.
+    Each train landing's contribution is `resolve_concentration_count` (g24
+    `active_train_set.train_files` when present, else `resolve_added_count`). Probe, aux,
+    refuse, and held_seed landings are skipped. `exclude` is the candidate
+    `provenance.json` under check -- compared by resolved path so a `--corpus-root` that
+    contains the candidate does not count it once in the scan and again as `added_count`.
 
     A `provenance.json` that fails to parse (corrupt or a partial fetch) is skipped rather
     than crashing the whole scan; a dataset with no `provenance_group` on either the
@@ -662,17 +754,30 @@ def resolve_existing_shares_from_corpus_root(root: Path) -> dict[str, int]:
     skipped should scan `root` itself.
     """
     shares: dict[str, int] = {}
+    seen: set[Path] = set()
+    exclude_resolved = exclude.resolve() if exclude is not None else None
     for prov_path in sorted(root.rglob("provenance.json")):
+        try:
+            resolved = prov_path.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if exclude_resolved is not None and resolved == exclude_resolved:
+            continue
         try:
             provenance = _load_json(prov_path)
         except (json.JSONDecodeError, OSError):
+            continue
+        if not contributes_to_train_concentration(landing_role(provenance)):
             continue
         group = provenance.get("provenance_group") or provenance.get("catalogue_entry", {}).get(
             "provenance_group"
         )
         if not group:
             continue
-        added_count, _estimated = resolve_added_count(provenance)
+        added_count, _estimated, _note = resolve_concentration_count(provenance)
         shares[str(group)] = shares.get(str(group), 0) + added_count
     return shares
 
@@ -738,7 +843,9 @@ def main(argv: list[str] | None = None) -> int:
 
     provenance = _load_json(args.provenance)
     if args.corpus_root is not None:
-        existing_shares = resolve_existing_shares_from_corpus_root(args.corpus_root)
+        existing_shares = resolve_existing_shares_from_corpus_root(
+            args.corpus_root, exclude=args.provenance
+        )
     else:
         try:
             existing_shares = json.loads(args.existing_shares)
@@ -759,6 +866,13 @@ def main(argv: list[str] | None = None) -> int:
         status = "PASS" if result.passed else "FAIL"
         all_passed = all_passed and result.passed
         print(f"  [{status}] {result.name}: {result.detail}")
+    added_count, _estimated, _note = resolve_concentration_count(provenance)
+    post_shares = dict(existing_shares)
+    if contributes_to_train_concentration(landing_role(provenance)):
+        group = str(provenance.get("provenance_group") or "")
+        post_shares[group] = post_shares.get(group, 0) + added_count
+    largest_group, largest = largest_source(post_shares)
+    print(f"Largest source: {largest_group or '<none>'} share={largest:.4f} cap={B1_MAX_SHARE}")
     print(f"Result: {'ADMIT' if all_passed else 'REFUSE'}")
     return 0 if all_passed else 1
 
