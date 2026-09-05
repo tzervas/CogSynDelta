@@ -1363,6 +1363,13 @@ def run_vl_region(
     )
     started = time.time()
     receipt = pretrain_vl_region(cfg)
+    if receipt.get("probe"):
+        print(
+            f"    probe_peak steps={receipt['steps']} batch={receipt['batch_size']} "
+            f"(no training receipt, no checkpoint, {time.time() - started:.0f}s)",
+            flush=True,
+        )
+        return receipt
     if receipt.get("resumed"):
         print(
             f"    resumed from step {receipt['resumed_from_step']}/{steps} "

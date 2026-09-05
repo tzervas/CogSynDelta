@@ -49,6 +49,7 @@ class ZipPngReader:
         self._zips: dict[Path, zipfile.ZipFile] = {}
 
     def read(self, ref: ImageRef) -> bytes:
+        """Return PNG bytes for `ref` without extracting the zip."""
         if ref.member is None:
             return ref.store.read_bytes()
         handle = self._zips.get(ref.store)
@@ -58,6 +59,7 @@ class ZipPngReader:
         return handle.read(ref.member)
 
     def close(self) -> None:
+        """Close cached zip handles."""
         for handle in self._zips.values():
             handle.close()
         self._zips.clear()

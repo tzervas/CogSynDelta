@@ -469,6 +469,61 @@ def _checkpoint_payload(
     }
 
 
+def _probe_peak_vl(cfg: VLPretrainConfig) -> dict[str, Any]:
+    """Harness `GPU_PACK_PROBE` path: train steps only, no receipt, no checkpoint.
+
+    Peak VRAM is the train loop (forward + backward + EMA), not the linear probe.
+    Writes nothing under `cfg.out_dir`. Prints `GPU_PACK_PEAK_MIB=` via `report_peak`
+    when CUDA is on and the env opted in -- silent on CPU.
+    """
+    from cogsyndelta.util.gpu_budget import PROBE_STEPS, report_peak
+
+    steps = min(int(cfg.steps), PROBE_STEPS)
+    device = _resolve_device(cfg.device)
+    size = cfg.jepa.image_size
+    if cfg.image_backend == "png_zip":
+        x_tr: torch.Tensor | _PngTrain = _PngTrain(
+            cfg.train_shards, size, cfg.seed, cfg.train_limit
+        )
+    else:
+        x_tr, _ = _decode_split(
+            cfg.train_shards,
+            cfg.image_column,
+            cfg.label_column,
+            size,
+            cfg.train_limit,
+            Path(cfg.cache_dir),
+        )
+    n = x_tr.size(0)
+    if n <= 0:
+        raise ValueError("visual probe_peak: train set is empty")
+    model = IJEPA(cfg.jepa).to(device)
+    opt = torch.optim.AdamW(
+        [p for p in model.parameters() if p.requires_grad],
+        lr=cfg.lr,
+        weight_decay=cfg.weight_decay,
+    )
+    gen = torch.Generator().manual_seed(cfg.seed)
+    model.train()
+    bs = min(cfg.batch_size, n)
+    for _step in range(1, steps + 1):
+        idx = torch.randint(0, n, (bs,), generator=gen)
+        loss, _stats = model(_to_float(x_tr[idx], device))
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+        opt.step()
+        model.update_target(_ema_at(_step, cfg))
+    report_peak()
+    return {
+        "probe": True,
+        "region": cfg.region,
+        "steps": steps,
+        "batch_size": bs,
+        "parameters": sum(p.numel() for p in model.parameters()),
+    }
+
+
 def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     """Train the visual region and return a receipt. Never gates on the loss.
 
@@ -477,7 +532,15 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     (sampled batch order, a second RNG stream feeding both mask sampling and the linear
     probe's head init) and why the EMA target encoder and the decoded-image cache need no
     special handling.
+
+    `GPU_PACK_PROBE`: short train loop only (`_probe_peak_vl`); no receipt, no checkpoint.
     """
+    from cogsyndelta.util.gpu_budget import apply_budget_from_env, probe_requested
+
+    apply_budget_from_env()
+    if probe_requested():
+        return _probe_peak_vl(cfg)
+
     torch.manual_seed(cfg.seed)
     device = _resolve_device(cfg.device)
     cache = Path(cfg.cache_dir)
