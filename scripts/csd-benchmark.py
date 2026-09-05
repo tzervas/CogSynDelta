@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from cogsyndelta.eval.benchmark import BenchmarkResult, benchmark_embeddings, profile_latency
 from cogsyndelta.pipeline.receipt import Producer, Receipt
+from cogsyndelta.regions.aliases import canonical_region, legacy_names
 
 STATE = Path("/akula-data/csd")
 
@@ -81,19 +82,38 @@ def _find_train_receipt(
 
     Returns `None` when nothing matches, same as the original behaviour: the caller
     prints "no training receipt" and skips the region.
+
+    ALIAS-AWARE GLOB (round-2 review, blocking). `region` may be spelled either way for
+    a renamed region (`code`/`language`, `vl_latent`/`visual`) -- a receipt on disk
+    carries whichever spelling was current when `csd-train-all.py` wrote it, and that
+    writer deliberately never rewrites its own spelling in place afterwards (see
+    `cogsyndelta.regions.aliases`'s module docstring). Resolving `region` to canonical
+    and searching every spelling that maps back to it (`canonical_region(region)` plus
+    `legacy_names(...)` of it) means a caller can pass either spelling and still find a
+    receipt filed under the other one. Without this, `--regions language` against a
+    state root that only has `receipts/code-*.json` (every cell on disk right now)
+    silently matched nothing and `benchmark_region` reported "no training receipt" --
+    the reader never resolved the name DEC-78 says every reader resolves. A region that
+    was never renamed has no legacy spellings, so this is a no-op for it -- identical
+    glob, identical result, to before this fix.
     """
     if train_receipt_path is not None:
         if not train_receipt_path.is_file():
             raise FileNotFoundError(f"--train-receipt {train_receipt_path} does not exist")
         return train_receipt_path
-    receipts = sorted(state.glob(f"receipts/{region}-2*.json"))
+    canonical = canonical_region(region)
+    spellings = (canonical, *legacy_names(canonical))
+    receipts = sorted(
+        {path for name in spellings for path in state.glob(f"receipts/{name}-2*.json")}
+    )
     if not receipts:
         return None
     if len(receipts) > 1:
         listed = "\n  ".join(str(path) for path in receipts)
         raise AmbiguousTrainReceiptError(
-            f"{len(receipts)} training receipts match region {region!r} under "
-            f"{state}/receipts and no --train-receipt was given:\n  {listed}\n"
+            f"{len(receipts)} training receipts match region {region!r} (spellings "
+            f"{spellings}) under {state}/receipts and no --train-receipt was given:\n"
+            f"  {listed}\n"
             "Pass --train-receipt PATH to name the one this eval is about."
         )
     return receipts[0]
@@ -751,6 +771,14 @@ def main() -> int:
             failures.append(region)
             continue
         if rec is None:
+            # A silent `continue` here used to let a region with no matching training
+            # receipt fall out of the loop uncounted -- `main()` then printed "0
+            # failure(s)" and exited 0 having scored nothing (round-2 review, blocking:
+            # exactly what an unresolved alias produced for `--regions language` before
+            # `_find_train_receipt` above searched every spelling). A region that
+            # genuinely has no training receipt yet is not a pass; it is reported the
+            # same as any other failure to score it.
+            failures.append(region)
             continue
         path = rec.write(state / "receipts")
         status = "PASS" if rec.passed else "GATE FAIL"
