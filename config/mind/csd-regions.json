@@ -117,18 +117,18 @@
     },
     {
       "name": "visual",
-      "kind": "jepa_predictor",
+      "kind": "i-jepa",
       "stream_dim": 512,
       "hidden_dim": 1024,
       "latent_dim": 64,
-      "modality": "latent",
-      "role": "Latent visual reasoning. Consumes visual latents, NOT tokens; predicts representations rather than reconstructing pixels. Enters the same shared stream as the text regions, which is why the [B, D] activate surface is modality-agnostic.",
-      "router_trigger": "Stream carrying visual latents.",
+      "modality": "vision",
+      "role": "I-JEPA EMA target encoder over RGB images; maps an image to a [B, D] stream vector. Does not reconstruct pixels and is not a generative decoder.",
+      "router_trigger": "RGB image input",
       "pretrain": {
-        "corpus": "unbound",
-        "objective": "jepa-predictive",
-        "available": false,
-        "notes": "NOT on disk: /vision is empty (0 bytes). core/vl_jepa_extension.py has modules but no EMA target encoder, no masking, and no predictor loss, so there is currently no JEPA training path at all. Legacy region id `vl_latent` (see cogsyndelta.regions.aliases) -- the Hub repo suffix and receipts on disk still use that spelling."
+        "corpus": "visual-clean-v1",
+        "objective": "i-jepa",
+        "available": true,
+        "notes": "Deployed module is the EMA target encoder (IJEPA.encode / target_encoder.embed). Encoder geometry (image_size, patch_size, dim, depth, n_heads, pos_kind) is on the training receipt's config.jepa, not this row. Mix B pin in config/mind/visual-clean-v1.json. Legacy id `vl_latent`."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": true},
       "live": false

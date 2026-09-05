@@ -155,10 +155,11 @@ def test_catalogue_records_the_dec02_merge() -> None:
     assert not by_name["memory"].live
 
 
-def test_catalogue_records_vl_as_latent_not_text() -> None:
-    """VL regions consume visual latents, not tokens. If this flips to 'text' someone has
-    misunderstood the architecture -- the whole point of the [B, D] activate surface is
-    that a vision region is a peer of a text region, fed by a different encoder.
+def test_catalogue_records_vl_as_vision_not_text() -> None:
+    """The visual faculty consumes RGB images through an I-JEPA EMA target encoder and
+    emits [B, D] stream latents -- not tokens. `modality` is `vision` (catalogue
+    vocab), never `text`. `kind` is `i-jepa` (the deployed module), not the training
+    predictor.
 
     Looks the region up by canonical id (`visual`, renamed from `vl_latent` per the
     2026-09-04 naming rule) via the alias module rather than a literal name, so this
@@ -166,7 +167,10 @@ def test_catalogue_records_vl_as_latent_not_text() -> None:
     spec = MindSpec.from_json(CATALOGUE)
     vl = [r for r in spec.regions if canonical_region(r.name) == "visual"]
     assert vl, "expected a visual (nee vl_latent) region in the catalogue"
-    assert vl[0].modality == "latent"
+    assert vl[0].modality == "vision"
+    assert vl[0].kind == "i-jepa"
+    assert "latent" not in vl[0].router_trigger.lower()
+    assert "RGB" in vl[0].router_trigger or "image" in vl[0].router_trigger.lower()
     assert not vl[0].live
 
 
