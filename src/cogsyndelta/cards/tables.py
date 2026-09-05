@@ -42,11 +42,27 @@ CATEGORY_HEADINGS: dict[str, str] = {
     "rank": "Retrieval",
     "eff": "Efficiency",
     "repr": "Representation",
+    "probe": "Linear probe (EuroSAT primary)",
+    "transfer": "Transfer probe (Fashion t10k)",
     "quant": "Quantization",
     "beir": "External retrieval (BEIR-style)",
     "token": "Token-aware",
 }
-CATEGORY_ORDER: tuple[str, ...] = ("rank", "eff", "repr", "quant", "beir", "token")
+CATEGORY_ORDER: tuple[str, ...] = (
+    "rank",
+    "eff",
+    "repr",
+    "probe",
+    "transfer",
+    "quant",
+    "beir",
+    "token",
+)
+
+#: `held_out` / `untrained_baseline` keys that name the probe set, not a score.
+#: Dropped from the numeric training table (they still feed the visual H1 /
+#: transfer identity block in `render.py`).
+TRAINING_TABLE_IDENTITY_KEYS: frozenset[str] = frozenset({"source", "name"})
 
 #: Metrics where a SMALLER number is the better one -- the default is "larger is
 #: better" (recall, mrr, throughput, ...); this is the deliberately short exception
@@ -296,10 +312,13 @@ def build_training_table(
     """
     held_out = train_receipt.get("held_out", {})
     baseline = train_receipt.get("untrained_baseline", {})
-    keys = sorted(set(held_out) | set(baseline))
+    keys = sorted((set(held_out) | set(baseline)) - TRAINING_TABLE_IDENTITY_KEYS)
     require_documented(keys, methodology=methodology)
     rows = [MetricRow(key=k, variant=held_out.get(k), baseline=baseline.get(k)) for k in keys]
-    return MetricTable(category="held_out", heading="Training held-out battery", rows=rows)
+    heading = "Training held-out battery"
+    if "top1" in keys:
+        heading = "Training EuroSAT linear probe (primary)"
+    return MetricTable(category="held_out", heading=heading, rows=rows)
 
 
 def build_quant_table(

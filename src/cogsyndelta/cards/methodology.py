@@ -139,7 +139,10 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         "rank.recall@1 (eval battery) > the training receipt's untrained_baseline "
         "recall@1, unmargined -- a different, simpler predicate than the training "
         "receipt's own beats_untrained_train gate, which is why g7 gives the two "
-        "separate names instead of sharing 'beats_untrained' across receipt kinds",
+        "separate names instead of sharing 'beats_untrained' across receipt kinds. "
+        "Visual eval receipts reuse this gate name for probe.top1 > "
+        "untrained_baseline.top1 (METRICS-METHODOLOGY.md §21), still unmargined; "
+        "H1's +0.01 margin is operator-side, not this gate",
         "eval battery",
         "scripts/csd-benchmark.py",
         battery_id="eval_holdout",
@@ -340,8 +343,10 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
     # `normalize_quant_receipt_v1` below -- still resolves every key a card might
     # print, old or new.
     "fp32_metric_recomputed": MetricMethodology(
-        "recall@1 measured fresh on the loaded fp32 checkpoint -- the training held-out "
-        "battery, NOT the eval battery's rank.recall@1 (see METRICS-METHODOLOGY.md §4)",
+        "task metric measured fresh on the loaded fp32 checkpoint -- recall@1 on the "
+        "training held-out battery for text (NOT the eval battery's rank.recall@1; "
+        "see METRICS-METHODOLOGY.md §4), or EuroSAT linear-probe top-1 for visual "
+        "(§12.8.1)",
         "training held-out battery (quantize stage)",
         "scripts/csd-quantize.py",
         battery_id="train_holdout",
@@ -428,7 +433,8 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         battery_id="quant_plan",
     ),
     "within_budget": MetricMethodology(
-        "quant.drop_recall@1 <= tolerance",
+        "quant.drop_recall@1 <= tolerance (text) or quant.drop_probe_top1 <= "
+        "tolerance (visual, METRICS-METHODOLOGY.md §12.8.1)",
         "quant_plan battery (quantize stage)",
         "scripts/csd-quantize.py",
         battery_id="quant_plan",
@@ -559,6 +565,92 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         "src/cogsyndelta/eval/benchmark.py",
         battery_id="eval_holdout",
     ),
+    # Visual I-JEPA linear-probe battery (METRICS-METHODOLOGY.md §21). Train
+    # `held_out` uses the bare names; eval receipts use `probe.*` / `transfer.*`
+    # / `repr.rep_std`. `methodology_key` keeps a full `repr.rep_std` key when
+    # that exact name is in this table, so the eval battery is not footnoted as
+    # the train battery.
+    "top1": MetricMethodology(
+        "EuroSAT official-test linear-probe top-1 on frozen EMA-target-encoder "
+        "latents (10-way, chance 0.1). Not closed-pool recall@1",
+        "training EuroSAT linear probe, n_eval=5400 (primary)",
+        "src/cogsyndelta/regions/vl_pretrain.py",
+        battery_id="train_holdout",
+        pooling="linear_probe",
+    ),
+    "top5": MetricMethodology(
+        "EuroSAT official-test linear-probe top-5 on frozen EMA-target-encoder "
+        "latents. Not closed-pool recall@5",
+        "training EuroSAT linear probe, n_eval=5400 (primary)",
+        "src/cogsyndelta/regions/vl_pretrain.py",
+        battery_id="train_holdout",
+        pooling="linear_probe",
+    ),
+    "n_eval": MetricMethodology(
+        "number of labelled eval images the linear probe was scored on (EuroSAT "
+        "test 5400 on the primary set; Fashion t10k 2000 on the transfer set)",
+        "training linear-probe battery",
+        "src/cogsyndelta/regions/vl_pretrain.py",
+        battery_id="train_holdout",
+        pooling="linear_probe",
+    ),
+    "rep_std": MetricMethodology(
+        "mean per-feature std of EMA-target-encoder latents on a mixed I-JEPA "
+        "train batch -- the visual collapse signal (train-receipt held_out.rep_std)",
+        "training collapse diagnostic",
+        "src/cogsyndelta/regions/vl_pretrain.py",
+        battery_id="train_holdout",
+        pooling="anchor",
+    ),
+    "probe.top1": MetricMethodology(
+        "EuroSAT official-test linear-probe top-1 on the loaded checkpoint's "
+        "deployed EMA target encoder. Same formula as train held_out.top1; eval "
+        "battery, not train_holdout. Do not compare to rank.recall@1",
+        "eval EuroSAT linear probe, n_eval=5400, 10-way, chance 0.1",
+        "scripts/csd-benchmark.py",
+        battery_id="eval_holdout",
+        pooling="linear_probe",
+    ),
+    "probe.top5": MetricMethodology(
+        "EuroSAT official-test linear-probe top-5 on the loaded checkpoint's "
+        "deployed EMA target encoder. Same formula as train held_out.top5",
+        "eval EuroSAT linear probe, n_eval=5400",
+        "scripts/csd-benchmark.py",
+        battery_id="eval_holdout",
+        pooling="linear_probe",
+    ),
+    "transfer.top1": MetricMethodology(
+        "Fashion-MNIST t10k linear-probe top-1 (probe role transfer, n_eval=2000). "
+        "Same probe protocol as EuroSAT primary; a different labelled set. Not H1",
+        "eval Fashion t10k transfer probe, n_eval=2000",
+        "scripts/csd-benchmark.py",
+        battery_id="eval_holdout",
+        pooling="linear_probe",
+    ),
+    "transfer.top5": MetricMethodology(
+        "Fashion-MNIST t10k linear-probe top-5 (probe role transfer, n_eval=2000)",
+        "eval Fashion t10k transfer probe, n_eval=2000",
+        "scripts/csd-benchmark.py",
+        battery_id="eval_holdout",
+        pooling="linear_probe",
+    ),
+    "repr.rep_std": MetricMethodology(
+        "mean per-feature std of EMA-target-encoder latents on a mixed I-JEPA "
+        "train batch -- the visual collapse signal, eval-battery counterpart of "
+        "train held_out.rep_std",
+        "eval collapse diagnostic",
+        "src/cogsyndelta/regions/vl_pretrain.py",
+        battery_id="eval_holdout",
+        pooling="anchor",
+    ),
+    "not_collapsed": MetricMethodology(
+        "rep_std / untrained_baseline.rep_std >= 0.1 -- visual collapse gate; "
+        "the same predicate the training receipt records as collapsed=false",
+        "eval battery",
+        "scripts/csd-benchmark.py",
+        battery_id="eval_holdout",
+        pooling="anchor",
+    ),
 }
 
 #: `rank.*` keys `docs/design/METRICS-METHODOLOGY.md` §13 retires as independently
@@ -644,12 +736,20 @@ EVAL_GATE_ALIASES_V1: dict[str, str] = {
 _BARE_KEY_PREFIXES = frozenset({"rank", "eff", "repr"})
 
 
-def methodology_key(key: str) -> str:
+def methodology_key(key: str, *, methodology: dict[str, MetricMethodology] | None = None) -> str:
     """The `METRIC_METHODOLOGY` dict key a receipt field `key` resolves to: the bare
     name for `rank.*`/`eff.*`/`repr.*`, or `key` unchanged for everything else
-    (`quant.*`, and every prefix-free key -- gates, held_out, contamination, quant
-    plain fields).
+    (`quant.*`, `probe.*`, `transfer.*`, and every prefix-free key -- gates, held_out,
+    contamination, quant plain fields).
+
+    An exact match in the table wins before prefix-stripping: visual eval writes
+    `repr.rep_std` as its own eval-battery metric, while the train receipt's
+    `held_out.rep_std` is the train-battery counterpart -- stripping first would
+    footnote both as the same battery.
     """
+    table = METRIC_METHODOLOGY if methodology is None else methodology
+    if key in table:
+        return key
     prefix, sep, rest = key.partition(".")
     return rest if sep and prefix in _BARE_KEY_PREFIXES else key
 

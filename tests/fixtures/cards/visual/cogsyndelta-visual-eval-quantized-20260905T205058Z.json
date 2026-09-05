@@ -1,0 +1,62 @@
+{
+  "producer": {
+    "project": "cogsyndelta",
+    "component": "visual",
+    "architecture": "i-jepa"
+  },
+  "stage": "eval",
+  "metrics": {
+    "probe.top1": 0.6281481385231018,
+    "probe.top5": 0.9548147916793823,
+    "repr.rep_std": 0.3431398272514343,
+    "quant.artifact_probe_top1": 0.6281481385231018,
+    "transfer.top1": 0.7145000100135803
+  },
+  "baseline": {
+    "probe.top1": 0.6251851916313171
+  },
+  "gates": {
+    "beats_untrained_eval": true,
+    "not_collapsed": true
+  },
+  "artifacts": {
+    "checkpoint": "/akula-data/session-backup-staging/reviews/g43-orch/smoke/receipts/visual-checkpoints/step-24.pt",
+    "checkpoint_sha256": "c5afe115739b88b3c85bc115a20c5dcd25b02058cd33cd4f9a97c69b3f8d8566",
+    "quantized_path": "/akula-data/session-backup-staging/reviews/g43-orch/smoke/receipts/visual-checkpoints/step-24.ptq.pt",
+    "quantized_sha256": "a9e769e29370a2273cf8d4c95424e492e6ac389b5d253db764eb5b30a7f29c80",
+    "source_training_receipt": {
+      "path": "/akula-data/session-backup-staging/reviews/g43-orch/smoke/receipts/visual-20260905T202258Z.json",
+      "sha256": "fd4053b74764aba0604e53ac9a3caf3aa3e00d77b7f9c89747c4e28a66d33ff7"
+    }
+  },
+  "provenance": {
+    "eval_target": "quantized",
+    "parameters": 10712448,
+    "quantized_module": "target_encoder"
+  },
+  "detail": {
+    "held_out": {
+      "top1": 0.6281481385231018,
+      "top5": 0.9548147916793823,
+      "n_eval": 5400.0,
+      "rep_std": 0.3431398272514343
+    },
+    "transfer": {
+      "top1": 0.7145000100135803,
+      "top5": 0.9800000190734863,
+      "n_eval": 2000.0
+    }
+  },
+  "started_utc": "2026-09-05T20:50:26Z",
+  "seconds": 31.84521222114563,
+  "device": "cuda",
+  "schema": "model-pipeline-receipt/v1",
+  "metrics_schema": "csd-metrics/v2",
+  "kind": "eval-quantized",
+  "code_revision": {
+    "git_sha": "2feeb4af2d391ecad72bf04f0fc6f66b6f5d305d",
+    "dirty": false,
+    "branch": "feat/visual-eval-quant-stages",
+    "describe": "v0.2.0-157-g2feeb4a"
+  }
+}

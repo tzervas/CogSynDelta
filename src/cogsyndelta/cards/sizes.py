@@ -51,15 +51,35 @@ class SizeReport:
     """`{"fp32": MeasuredValue(...), "quantized": MeasuredValue(...)}` -- absent keys
     mean no eval(-quantized) receipt was supplied, not that memory was zero."""
     training_peak: MeasuredValue | None = None
+    training_parameters: int | None = None
+    """Full training-module count from the train receipt (`parameters`). Set when it
+    differs from `parameters` (visual: I-JEPA 22.9M vs deployed EMA target encoder
+    10.7M). `None` when the two are the same or the train receipt has no count."""
 
 
 def parameter_count(train_receipt: dict[str, Any]) -> int | None:
     """`parameters` on a training receipt -- the total parameter count `csd-train-all.py`
     counted for this checkpoint. `None` (never a guessed number) if the receipt does not
-    carry it.
+    carry it. Visual cards should prefer `deployed_parameter_count` (eval
+    `provenance.parameters` is the EMA target encoder).
     """
     v = train_receipt.get("parameters")
     return int(v) if v is not None else None
+
+
+def deployed_parameter_count(
+    train_receipt: dict[str, Any],
+    eval_receipt: dict[str, Any] | None = None,
+) -> int | None:
+    """Parameter count the card prints as `parameters`: eval `provenance.parameters`
+    when present (visual: deployed EMA target encoder), else the train receipt's
+    `parameters`. Never guesses.
+    """
+    if eval_receipt is not None:
+        prov = eval_receipt.get("provenance")
+        if isinstance(prov, dict) and prov.get("parameters") is not None:
+            return int(prov["parameters"])
+    return parameter_count(train_receipt)
 
 
 def width_histogram(quant_receipt: dict[str, Any] | None) -> dict[str, int] | None:
@@ -202,9 +222,11 @@ def build_size_report(
     batch_size, max_len = _train_batch_and_max_len(train_receipt)
     holdout_pairs = train_receipt.get("config", {}).get("holdout_pairs")
     disk = disk_bytes_per_state(train_receipt, quant_receipt)
+    deployed = deployed_parameter_count(train_receipt, eval_receipt)
+    training = parameter_count(train_receipt)
     return SizeReport(
         region=region,
-        parameters=parameter_count(train_receipt),
+        parameters=deployed,
         fp32_bytes=disk.get("fp32"),
         quantized_stored_bytes=disk.get("csd-ptq-v1"),
         compression_ratio=compression_ratio(quant_receipt),
@@ -213,4 +235,5 @@ def build_size_report(
             eval_receipt, eval_quantized_receipt, max_len=max_len, holdout_pairs=holdout_pairs
         ),
         training_peak=training_peak(region, batch_size, max_len=max_len, root=budgets_root),
+        training_parameters=training if training is not None and training != deployed else None,
     )

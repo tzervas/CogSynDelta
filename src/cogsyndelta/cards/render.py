@@ -34,7 +34,7 @@ from typing import Any
 
 from huggingface_hub import ModelCard
 
-from cogsyndelta.cards.metadata import build_card_data
+from cogsyndelta.cards.metadata import build_card_data, datasets_from_train_receipt
 from cogsyndelta.cards.methodology import (
     METHODOLOGY_DOC,
     METRIC_METHODOLOGY,
@@ -163,7 +163,20 @@ def _render_tables_block(
 def _sizes_block(sizes: SizeReport) -> str:
     lines = ["| quantity | value | label |", "|---|---|---|"]
     if sizes.parameters is not None:
-        lines.append(f"| parameters | {sizes.parameters / 1e6:.3f} M | measured, `parameters` |")
+        training = sizes.training_parameters
+        if training is not None and training != sizes.parameters:
+            lines.append(
+                f"| parameters (deployed EMA target encoder) | {sizes.parameters / 1e6:.3f} M | "
+                "measured, eval `provenance.parameters` |"
+            )
+            lines.append(
+                f"| parameters (training I-JEPA module) | {training / 1e6:.3f} M | "
+                "measured, train receipt `parameters` |"
+            )
+        else:
+            lines.append(
+                f"| parameters | {sizes.parameters / 1e6:.3f} M | measured, `parameters` |"
+            )
     if sizes.fp32_bytes is not None:
         lines.append(
             f"| weights on disk, fp32 | {sizes.fp32_bytes / 1e6:.3f} MB | measured, `fp32_bytes` |"
@@ -379,7 +392,10 @@ def render_card(
         tables.append(quant_table)
 
     footnote_numbers = _assign_footnotes(tables, METRIC_METHODOLOGY)
-    tables_md = _render_tables_block(tables, footnote_numbers, METRIC_METHODOLOGY)
+    tables_md = _append_markdown(
+        _render_tables_block(tables, footnote_numbers, METRIC_METHODOLOGY),
+        _visual_h1_and_transfer_markdown(train_receipt),
+    )
     footnotes_md = _footnotes_markdown(footnote_numbers)
 
     sizes = build_size_report(
@@ -393,6 +409,9 @@ def render_card(
     sizes_md = _sizes_block(sizes)
 
     tier, licence_line = _licence_block(region_cfg, kind=kind)
+    licence_line = _append_markdown(
+        licence_line, str(region_cfg.get("attribution_md") or ""), sep="\n\n"
+    )
 
     checkpoint_sha256 = None
     if train_receipt is not None:
@@ -415,6 +434,7 @@ def render_card(
         tier=tier or "other",
         eval_receipt=eval_receipt,
         quantized=quant_receipt is not None,
+        datasets=datasets_from_train_receipt(train_receipt),
     )
 
     placeholder_referent = PLACEHOLDER_REFERENT.get(region, "(no design-doc referent recorded)")
@@ -471,3 +491,114 @@ def render_card(
     if not text.endswith("\n"):
         text += "\n"
     return text
+
+
+# Visual H1 is operator-side (PREREG), not a harness gate: trained EuroSAT probe
+# top-1 must exceed max(untrained, chance) + margin, and collapsed must be false.
+# Hardcoded here because the receipts record the numbers, not this threshold.
+_H1_CHANCE = 0.1
+_H1_MARGIN = 0.01
+
+
+def _append_markdown(base: str, extra: str, *, sep: str = "\n") -> str:
+    """Join `extra` onto `base` when `extra` is non-blank; otherwise `base`."""
+    extra = extra.strip()
+    if not extra:
+        return base
+    return f"{base}{sep}{extra}\n" if sep == "\n" else f"{base}{sep}{extra}"
+
+
+def _fmt_h1_bool(v: bool) -> str:
+    return "yes" if v else "no"
+
+
+def _fmt_h1_float(v: float) -> str:
+    return f"{v:.6g}"
+
+
+def _n_eval_cell(value: Any) -> str:
+    if value is None:
+        return "(not recorded)"
+    return str(int(value))
+
+
+def _visual_h1_markdown(train_receipt: dict[str, Any] | None) -> str:
+    """H1 table from the training receipt. Empty when not the visual probe shape.
+
+    A 24-step smoke that fails H1 is reported as FAIL -- this never invents a pass.
+    """
+    if not train_receipt:
+        return ""
+    held = train_receipt.get("held_out")
+    base = train_receipt.get("untrained_baseline")
+    if not isinstance(held, dict) or not isinstance(base, dict):
+        return ""
+    if "top1" not in held or "top1" not in base:
+        return ""
+    trained = float(held["top1"])
+    untrained = float(base["top1"])
+    threshold = max(untrained, _H1_CHANCE) + _H1_MARGIN
+    collapsed = bool(train_receipt.get("collapsed", False))
+    h1_pass = (not collapsed) and trained > threshold
+    return "\n".join(
+        [
+            "### H1 (operator PREREG, not a harness gate)",
+            "",
+            "EuroSAT official-test linear probe, 10-way, chance 0.1. Passes when trained "
+            "top-1 exceeds `max(untrained_baseline.top1, 0.1) + 0.01` **and** `collapsed` "
+            "is false. The harness `beats_untrained.probe_top1` gate is a separate, "
+            "unmargined `>` check.",
+            "",
+            "| field | value |",
+            "|---|---|",
+            f"| set | `{held.get('name') or '(name not recorded)'}` "
+            f"(`{held.get('source') or '(source not recorded)'}`) |",
+            f"| n_eval | {_n_eval_cell(held.get('n_eval'))} |",
+            f"| untrained top1 | {_fmt_h1_float(untrained)} |",
+            f"| trained top1 | {_fmt_h1_float(trained)} |",
+            f"| threshold | {_fmt_h1_float(threshold)} |",
+            f"| collapsed | {_fmt_h1_bool(collapsed)} |",
+            f"| H1 | {'PASS' if h1_pass else 'FAIL'} |",
+            "",
+            "**Deployed module:** EMA target encoder (`target_encoder.*` / "
+            "`DeployedVisualEncoder`). The training I-JEPA parameter count is listed "
+            "separately under Sizes when it differs.",
+        ]
+    )
+
+
+def _visual_transfer_markdown(train_receipt: dict[str, Any] | None) -> str:
+    """Fashion t10k transfer identity from the training receipt. Empty if absent."""
+    if not train_receipt:
+        return ""
+    xfer = train_receipt.get("transfer")
+    if not isinstance(xfer, dict) or "top1" not in xfer:
+        return ""
+    untrained_xfer = train_receipt.get("untrained_transfer")
+    xu = None
+    if isinstance(untrained_xfer, dict) and "top1" in untrained_xfer:
+        xu = float(untrained_xfer["top1"])
+    lines = [
+        "### Transfer (Fashion t10k)",
+        "",
+        "Named transfer set; not part of H1.",
+        "",
+        "| field | value |",
+        "|---|---|",
+        f"| set | `{xfer.get('name') or 'fashion-t10k'}` "
+        f"(`{xfer.get('source') or 'zalando/fashion-mnist'}`) |",
+        f"| n_eval | {_n_eval_cell(xfer.get('n_eval'))} |",
+    ]
+    if xu is not None:
+        lines.append(f"| untrained top1 | {_fmt_h1_float(xu)} |")
+    lines.append(f"| trained top1 | {_fmt_h1_float(float(xfer['top1']))} |")
+    return "\n".join(lines)
+
+
+def _visual_h1_and_transfer_markdown(train_receipt: dict[str, Any] | None) -> str:
+    """H1 table + Fashion t10k transfer identity, from the training receipt."""
+    return _append_markdown(
+        _visual_h1_markdown(train_receipt),
+        _visual_transfer_markdown(train_receipt),
+        sep="\n\n",
+    ).rstrip("\n")

@@ -44,6 +44,32 @@ pipeline, whatever `kind` of card this is."""
 LIBRARY_NAME = "cogsyndelta"
 
 
+def datasets_from_train_receipt(train_receipt: dict[str, Any] | None) -> list[str] | None:
+    """Corpus catalogue ids for the card front matter, derived from the training
+    receipt's `corpus.shards` landing names (`nyuuzyou__pxhere/...` ->
+    `nyuuzyou/pxhere`). `None` when the receipt names no shards -- never guessed.
+    """
+    if not train_receipt:
+        return None
+    corpus = train_receipt.get("corpus")
+    if not isinstance(corpus, dict):
+        return None
+    shards = corpus.get("shards")
+    if not isinstance(shards, list) or not shards:
+        return None
+    seen: set[str] = set()
+    out: list[str] = []
+    for shard in shards:
+        landing = str(shard).split("/", 1)[0].strip()
+        if not landing:
+            continue
+        ds_id = landing.replace("__", "/", 1)
+        if ds_id not in seen:
+            seen.add(ds_id)
+            out.append(ds_id)
+    return out or None
+
+
 def region_repo_tags(region: str, *, quantized: bool) -> list[str]:
     """`["cogsyndelta", "region:<region>"]`, plus `"csd-ptq-v1"` when a packed
     quantized artifact is part of this publish (CARD SPEC: "csd-ptq-v1 when packed").

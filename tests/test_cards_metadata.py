@@ -13,10 +13,37 @@ from __future__ import annotations
 import pytest
 from huggingface_hub import ModelCard
 
-from cogsyndelta.cards.metadata import build_card_data, build_eval_results, region_repo_tags
+from cogsyndelta.cards.metadata import (
+    build_card_data,
+    build_eval_results,
+    datasets_from_train_receipt,
+    region_repo_tags,
+)
 from cogsyndelta.cards.methodology import METRIC_METHODOLOGY, CardError
 
 pytestmark = pytest.mark.cpu
+
+
+def test_datasets_from_train_receipt_converts_shard_landings() -> None:
+    rec = {
+        "corpus": {
+            "shards": [
+                "nyuuzyou__pxhere/processed/20260905T035325Z/train.zip",
+                "facebookresearch__clevr/processed/20260905T063733Z/train.zip",
+                "nyuuzyou__pxhere/processed/20260905T035325Z/train.zip",
+            ]
+        }
+    }
+    assert datasets_from_train_receipt(rec) == [
+        "nyuuzyou/pxhere",
+        "facebookresearch/clevr",
+    ]
+
+
+def test_datasets_from_train_receipt_none_when_absent() -> None:
+    assert datasets_from_train_receipt(None) is None
+    assert datasets_from_train_receipt({}) is None
+    assert datasets_from_train_receipt({"corpus": {}}) is None
 
 
 def test_region_repo_tags_base() -> None:
