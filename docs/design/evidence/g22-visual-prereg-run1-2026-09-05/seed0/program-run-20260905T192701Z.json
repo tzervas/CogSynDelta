@@ -1,0 +1,34 @@
+{
+  "started": "2026-09-05T19:15:24Z",
+  "steps": 4000,
+  "batch": 128,
+  "seed": 0,
+  "regions": {
+    "visual": {
+      "receipt": "/akula-data/csd/matrix/visual-b128-s0-198074a-20260905/receipts/visual-20260905T192701Z.json",
+      "untrained": {
+        "top1": 0.6246296167373657,
+        "top5": 0.9540740847587585,
+        "n_eval": 5400.0,
+        "rep_std": 0.4215286374092102
+      },
+      "held_out": {
+        "top1": 0.7190740704536438,
+        "top5": 0.9809259176254272,
+        "n_eval": 5400.0,
+        "rep_std": 0.3555629849433899
+      },
+      "beats_untrained": {
+        "probe_top1": true,
+        "probe_top5": true,
+        "not_collapsed": true,
+        "transfer_top1": true
+      },
+      "gate": "pass",
+      "resumed": false,
+      "resumed_from_step": 0
+    }
+  },
+  "finished": "2026-09-05T19:27:01Z",
+  "gate_failures": []
+}
