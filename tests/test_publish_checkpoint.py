@@ -289,7 +289,8 @@ def git_blob_sha1(data: bytes) -> str:
 
 
 def test_default_repo_matches_csd_hf_repos_convention() -> None:
-    assert mod.default_repo("code") == "tzervas/cogsyndelta-region-code"
+    # `code` canonicalizes to `language`: the Hub repo was renamed 2026-09-05.
+    assert mod.default_repo("code") == "tzervas/cogsyndelta-region-language"
     assert mod.default_repo("compress") == "tzervas/cogsyndelta-region-compress"
     assert mod.default_repo("retrieve") == "tzervas/cogsyndelta-region-retrieve"
     assert mod.default_repo("residual_mlp") == "tzervas/cogsyndelta-region-residual"
@@ -363,13 +364,14 @@ def test_vl_latent_blocks_full_plan_before_any_file_read(tmp_path: Path) -> None
 # ------------------------------------------------- region rename (naming rule 2026-09-04)
 
 
-def test_default_repo_of_the_canonical_language_name_is_the_future_hub_repo() -> None:
-    """`default_repo` does not canonicalize: `code` (today's live Hub repo) and
-    `language` (the future one, once the orchestrator's rename lands) compute
-    DIFFERENT names on purpose -- see that function's own docstring."""
-    assert mod.default_repo("language") == "tzervas/cogsyndelta-region-language"
-    assert mod.default_repo("code") == "tzervas/cogsyndelta-region-code"
-    assert mod.default_repo("language") != mod.default_repo("code")
+def test_default_repo_of_language_and_code_agree_post_rename() -> None:
+    """The Hub repo was renamed 2026-09-05 (`move_repo`, old id redirects); `default_repo`
+    canonicalizes, so both spellings resolve to the one live repo."""
+    assert (
+        mod.default_repo("language")
+        == mod.default_repo("code")
+        == "tzervas/cogsyndelta-region-language"
+    )
 
 
 def test_default_repo_of_visual_matches_vl_latent() -> None:
@@ -1163,7 +1165,8 @@ def test_dry_run_default_repo_used_when_omitted(tmp_path: Path, capsys: Any) -> 
     rc = mod.main(["--region", "code", "--receipt", str(receipt_path), "--dry-run"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "tzervas/cogsyndelta-region-code" in out
+    # `--region code` canonicalizes to the renamed Hub repo, not the legacy name.
+    assert "tzervas/cogsyndelta-region-language" in out
 
 
 # ------------------------------------------------------------------- idempotency
