@@ -46,7 +46,7 @@ run:
   project: cogsyndelta
   code:
     repo: /home/kang/code/personal/tzervas/CogSynDelta
-    sha: "198074a00615ef2cf8f1c40719607aea12e3649f" # visual-wiring merge (#46) on main
+    sha: "3ce18dbc4e0bd669e2391fc43e267b5cd3c1c0d0" # visual eval/quantize stages merge (g43) on main
   state_root: /akula-data/csd/matrix
   finals_root: /akula-data/csd/finals # must be inside retention.prune_roots (loader-enforced)
   events_dir: /akula-data/csd/events
