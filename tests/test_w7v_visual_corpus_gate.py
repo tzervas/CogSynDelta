@@ -14,7 +14,9 @@ back to -- see OD-4 in `g8-visual-faculty-design.md` ("Operator decisions", row
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -114,3 +116,52 @@ def test_setting_corpus_source_lifts_the_refusal(
     # VisualCorpusUnsetError -- proving the OD-4 gate, specifically, is what lifted.
     result = mod.run_vl_region(name="vl_latent", state=tmp_path, steps=1, batch=1, dry=True)
     assert result is None
+
+
+def test_run_vl_region_refuses_listed_not_declared(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """B2: a missing zip is SystemExit with both counts, not a later MixCorpusError."""
+    png = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf\xc0"
+        b"\x00\x00\x00\x03\x00\x01\x00\x05\xfe\xd4\xef\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    root = tmp_path / "visual"
+    sources = [("aa", 2), ("bb", 2), ("cc", 2)]
+    for name, n in sources:
+        zpath = root / f"{name}__{name}" / "processed" / "s" / "train.zip"
+        zpath.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zpath, "w") as zf:
+            for i in range(n):
+                zf.writestr(f"{name}/{i:02d}.png", png)
+    body = {
+        "id": "visual-clean-v1",
+        "schema": "csd-visual-corpus-manifest/v1",
+        "root": str(root),
+        "concentration_cap": 0.4,
+        "shuffle_seed": 7,
+        "n_train": 6,
+        "sources": [
+            {
+                "id": f"{name}/{name}",
+                "landing": f"{name}__{name}",
+                "stamp": "s",
+                "train": "processed/s/train.zip",
+                "probe": None,
+                "n_train": n,
+                "n_probe": 0,
+                "licence_tier": "cc0_pd",
+                "verdict": "PERMISSIVE_OK",
+                "role": "train",
+            }
+            for name, n in sources
+        ],
+        "probe_sets": [],
+    }
+    man_path = tmp_path / "visual-clean-v1.json"
+    man_path.write_text(json.dumps(body), encoding="utf-8")
+    (root / "bb__bb" / "processed" / "s" / "train.zip").unlink()
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "manifest", str(man_path))
+    with pytest.raises(SystemExit, match=r"bb/bb listed_train=-1 declared_train=2"):
+        mod.run_vl_region(name="vl_latent", state=tmp_path, steps=1, batch=1, dry=True)
