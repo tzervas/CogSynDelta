@@ -12,7 +12,7 @@
       "latent_dim": null,
       "modality": "any",
       "role": "Residual update on the shared [B, D] stream; keeps the residual path competent.",
-      "router_trigger": "Tokens not tagged code/retrieve/compress.",
+      "router_trigger": "Tokens not tagged language/retrieve/compress.",
       "pretrain": {
         "corpus": "synthetic",
         "objective": "reconstruction",
@@ -41,19 +41,20 @@
       "live": true
     },
     {
-      "name": "code",
+      "name": "language",
+      "specialisation": "code",
       "kind": "contrastive_encoder",
       "stream_dim": 512,
       "hidden_dim": 1024,
       "latent_dim": null,
       "modality": "text",
-      "role": "Docstring <-> function, search and generation. Explicitly NOT next-token over all of GitHub.",
+      "role": "Language centre. Docstring <-> function, search and generation (specialisation: code -- its current corpus and battery are code-flavoured; the faculty is not domain-scoped). Explicitly NOT next-token over all of GitHub.",
       "router_trigger": "language=python and a docstring is present.",
       "pretrain": {
         "corpus": "codesearchnet-python",
         "objective": "contrastive-pair",
         "available": false,
-        "notes": "NOT on disk. /pretrain/code/codesearchnet holds only metadata.json; download-status.json shows 2 of 6 sets completed. MBPP and HumanEval are eval, not pretrain."
+        "notes": "NOT on disk. /pretrain/code/codesearchnet holds only metadata.json; download-status.json shows 2 of 6 sets completed. MBPP and HumanEval are eval, not pretrain. Legacy region id `code` (see cogsyndelta.regions.aliases) -- on-disk corpus paths, matrix cell dirs, and the Hub repo still use that spelling until their own follow-ups land."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
       "live": false
@@ -115,7 +116,7 @@
       "live": false
     },
     {
-      "name": "vl_latent",
+      "name": "visual",
       "kind": "jepa_predictor",
       "stream_dim": 512,
       "hidden_dim": 1024,
@@ -127,7 +128,7 @@
         "corpus": "unbound",
         "objective": "jepa-predictive",
         "available": false,
-        "notes": "NOT on disk: /vision is empty (0 bytes). core/vl_jepa_extension.py has modules but no EMA target encoder, no masking, and no predictor loss, so there is currently no JEPA training path at all."
+        "notes": "NOT on disk: /vision is empty (0 bytes). core/vl_jepa_extension.py has modules but no EMA target encoder, no masking, and no predictor loss, so there is currently no JEPA training path at all. Legacy region id `vl_latent` (see cogsyndelta.regions.aliases) -- the Hub repo suffix and receipts on disk still use that spelling."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": true},
       "live": false
@@ -139,7 +140,7 @@
       "hidden_dim": 1024,
       "latent_dim": null,
       "modality": "text",
-      "role": "Question <-> worked derivation retrieval: match a question to its own step-by-step solution among candidates. Does NOT generate reasoning steps -- same bi-encoder shape as code/compress/retrieve, trained the same way.",
+      "role": "Question <-> worked derivation retrieval: match a question to its own step-by-step solution among candidates. Does NOT generate reasoning steps -- same bi-encoder shape as language/compress/retrieve, trained the same way.",
       "router_trigger": "A question paired with a pool of candidate worked solutions to rank (arithmetic or algebraic word problems). Not a trigger for open-ended step generation, which this region cannot do.",
       "pretrain": {
         "corpus": "gsm8k-main(7473) + aqua_rat-raw sampled to 4982 (seed 0, docs/design/CORPUS-CONTRACT.md B4)",

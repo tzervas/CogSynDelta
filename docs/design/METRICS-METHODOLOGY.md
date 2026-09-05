@@ -1209,7 +1209,7 @@ legitimate "before vs. after" comparison.
    they exist to catch the case where a ranking metric looks fine while the space has
    quietly collapsed, per `src/cogsyndelta/eval/benchmark.py:21-26`.
 3. **A licence tier follows the corpus, not the metric.** `licence_tier()`
-   (`scripts/csd-publish-checkpoint.py:282-297`) is derived entirely from
+   (`scripts/csd-publish-checkpoint.py:310-325`) is derived entirely from
    `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`'s per-region table (section "Decision
    2026-09-02") -- a region's training data provenance -- and has no dependency on anything in
    this document. A region whose numbers on this page look identical to another's can still

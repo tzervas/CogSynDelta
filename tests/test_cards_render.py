@@ -270,6 +270,67 @@ def test_repo_omitted_by_default_is_byte_identical_to_golden(tmp_path: Path) -> 
     assert default_card == explicit_none_card
 
 
+# --------------------------------------------------------- region rename (2026-09-04)
+
+
+def test_faculty_line_shown_when_region_cfg_carries_a_different_canonical_name(
+    tmp_path: Path,
+) -> None:
+    """A cell recorded under the legacy `code` id, rendered with `region_cfg` loaded
+    from the (now-renamed) catalogue -- which carries `name: "language"` and
+    `specialisation: "code"` -- must show BOTH the faculty name and the specialisation,
+    and say which legacy id the receipts were recorded under."""
+    receipts = _full_fixture_receipts(tmp_path)
+    card = render_card(
+        "region_variant",
+        region="code",
+        region_cfg=region_cfg(name="language", specialisation="code"),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert "**Faculty:** `language`" in card
+    assert "specialisation: `code`" in card
+    assert "legacy region id `code`" in card
+
+
+def test_specialisation_shown_with_no_alias_note_when_name_matches(tmp_path: Path) -> None:
+    """When `region_cfg["name"]` already equals `region` (a canonical receipt, no
+    rename involved), the specialisation still shows but there is nothing to call a
+    legacy alias -- no 'legacy region id' text."""
+    receipts = _full_fixture_receipts(tmp_path)
+    card = render_card(
+        "region_variant",
+        region="language",
+        region_cfg=region_cfg(name="language", specialisation="code"),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert "**Specialisation:** `code`" in card
+    assert "legacy region id" not in card
+
+
+def test_no_faculty_or_specialisation_line_when_region_cfg_carries_neither(
+    tmp_path: Path,
+) -> None:
+    """The base fixture `region_cfg()` (no `name`, no `specialisation` -- what every
+    other test in this file, including the golden snapshot, renders with) must add
+    NEITHER line -- this is the regression the golden snapshot itself already pins,
+    stated explicitly here so its intent survives a future golden-file update."""
+    receipts = _full_fixture_receipts(tmp_path)
+    card = render_card(
+        "region_variant",
+        region="compress",
+        region_cfg=region_cfg(),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert "**Faculty:**" not in card
+    assert "**Specialisation:**" not in card
+
+
 def test_unknown_kind_raises_card_error() -> None:
     with pytest.raises(CardError, match="unknown card kind"):
         render_card(

@@ -80,17 +80,27 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+_SRC = str(Path(__file__).resolve().parents[1] / "src")
+if _SRC not in sys.path:
+    # cogsyndelta.regions.aliases has no heavy dependency -- see
+    # scripts/csd-train-all.py's identical shim for the full reasoning.
+    sys.path.append(_SRC)
+
+from cogsyndelta.regions.aliases import canonical_region  # noqa: E402
+
 # Transcribed from scripts/csd-publish-checkpoint.py's LICENCE_TIER, restricted to the
 # ordering that matters here: how strict a tier is, not which regions exist. Kept in sync
-# by test_licence_tier_matches_publish_checkpoint.
+# by test_licence_tier_matches_publish_checkpoint. Keyed CANONICALLY (`language`, not
+# `code`; `visual`, not `vl_latent`) to match LICENCE_TIER exactly; check_licence_tier()
+# resolves its `region` argument through canonical_region() first.
 TIER_ORDER: tuple[str, ...] = ("mit", "cc-by-sa-4.0", "cc-by-nc-sa-4.0")
 
 REGION_TIER: dict[str, str] = {
-    "code": "mit",
+    "language": "mit",
     "classify_banking77": "mit",
     "classify_go_emotions": "mit",
     "reason": "mit",
-    "vl_latent": "mit",
+    "visual": "mit",
     "compress": "cc-by-sa-4.0",
     "retrieve": "cc-by-nc-sa-4.0",
     "memory": "cc-by-nc-sa-4.0",
@@ -264,6 +274,10 @@ def check_licence_tier(verdict: str, region: str, region_tier: dict[str, str]) -
     csd-publish-checkpoint.py's stated discipline of refusing rather than guessing a
     licence for an unaudited region -- an unknown region tier FAILs here too, loudly,
     rather than silently defaulting to `mit`.
+
+    `region` is resolved through `canonical_region` first, so `--region code` and
+    `--region language` (cogsyndelta.regions.aliases) look up the identical entry in
+    `region_tier`, which is keyed canonically.
     """
     required = VERDICT_TIER.get(verdict)
     if required is None:
@@ -273,7 +287,7 @@ def check_licence_tier(verdict: str, region: str, region_tier: dict[str, str]) -
             f"verdict={verdict!r} is inadmissible outright (REFUSE/BLOCKING/UNVERIFIED "
             "carry no tier)",
         )
-    current = region_tier.get(region)
+    current = region_tier.get(canonical_region(region))
     if current is None:
         return CheckResult(
             "licence_tier",

@@ -360,6 +360,80 @@ def test_vl_latent_blocks_full_plan_before_any_file_read(tmp_path: Path) -> None
         mod.build_plan("vl_latent", "tzervas/cogsyndelta-vl-jepa", receipt, None, None)
 
 
+# ------------------------------------------------- region rename (naming rule 2026-09-04)
+
+
+def test_default_repo_of_the_canonical_language_name_is_the_future_hub_repo() -> None:
+    """`default_repo` does not canonicalize: `code` (today's live Hub repo) and
+    `language` (the future one, once the orchestrator's rename lands) compute
+    DIFFERENT names on purpose -- see that function's own docstring."""
+    assert mod.default_repo("language") == "tzervas/cogsyndelta-region-language"
+    assert mod.default_repo("code") == "tzervas/cogsyndelta-region-code"
+    assert mod.default_repo("language") != mod.default_repo("code")
+
+
+def test_default_repo_of_visual_matches_vl_latent() -> None:
+    """Unlike `code`/`language`, the vl-jepa repo suffix was never derived from the
+    region's own spelling, so both spellings resolve to the identical Hub repo."""
+    assert (
+        mod.default_repo("visual") == mod.default_repo("vl_latent") == "tzervas/cogsyndelta-vl-jepa"
+    )
+
+
+def test_licence_tier_accepts_the_canonical_names_too() -> None:
+    """LICENCE_TIER is keyed canonically; licence_tier() must still resolve `language`
+    and `visual` (not just their legacy spellings, already covered above)."""
+    assert mod.licence_tier("language") == mod.licence_tier("code") == "mit"
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier("visual")
+
+
+def test_load_region_config_accepts_both_spellings(tmp_path: Path) -> None:
+    """`config/mind/csd-regions.json` stores the language centre under `language`
+    (specialisation: code); load_region_config must find that ONE entry whether asked
+    for `code` or `language`."""
+    by_legacy = mod.load_region_config("code")
+    by_canonical = mod.load_region_config("language")
+    assert by_legacy == by_canonical
+    assert by_legacy["name"] == "language"
+    assert by_legacy["specialisation"] == "code"
+
+
+def test_load_region_config_visual_by_either_name() -> None:
+    by_legacy = mod.load_region_config("vl_latent")
+    by_canonical = mod.load_region_config("visual")
+    assert by_legacy == by_canonical
+    assert by_legacy["name"] == "visual"
+
+
+def test_assert_region_matches_across_the_rename(tmp_path: Path) -> None:
+    """A receipt written before the rename (`region: "code"`) must still match
+    `--region language`, and the reverse -- the rename must not turn every existing
+    receipt into a forced mismatch."""
+    checkpoint = make_checkpoint(tmp_path)
+    legacy_receipt = json.loads(
+        make_training_receipt(tmp_path, checkpoint, region="code").read_text()
+    )
+    mod.assert_region_matches(legacy_receipt, "language", "training")  # must not raise
+
+    canonical_receipt = json.loads(
+        make_training_receipt(
+            tmp_path,
+            checkpoint,
+            region="language",
+            name="language-20260902T211539Z.json",
+        ).read_text()
+    )
+    mod.assert_region_matches(canonical_receipt, "code", "training")  # must not raise too
+
+
+def test_assert_region_matches_still_rejects_a_genuine_mismatch(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    receipt = json.loads(make_training_receipt(tmp_path, checkpoint, region="code").read_text())
+    with pytest.raises(mod.PublishAbortError, match="does not match"):
+        mod.assert_region_matches(receipt, "retrieve", "training")
+
+
 def test_unknown_tier_aborts_full_plan_before_any_file_read(tmp_path: Path) -> None:
     checkpoint = make_checkpoint(tmp_path)
     receipt = make_training_receipt(tmp_path, checkpoint, region="stream_vae")
