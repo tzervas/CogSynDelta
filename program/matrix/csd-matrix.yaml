@@ -28,6 +28,11 @@
 #     `null` (H4's convention): the harness's wave 0 probes those before launching any
 #     full cell. This is deliberately a LARGER probe set than a naive first draft would
 #     carry -- see DESIGN.v2 §11.1/§11.2 for the reasoning and the resulting wave plan.
+#   - PIN (g40): `run.code.sha` below is the visual-wiring merge on main
+#     (`198074a00615ef2cf8f1c40719607aea12e3649f`, CogSynDelta #46). The 16 text cells
+#     (`*-7bc2699-20260904`) go stale in harness terms (`sha_expected` ≠ new pin). Cell
+#     ids, on-disk artifacts, and Hub variants are untouched. No text retrain (g21).
+#     The visual row is the first cell family under the new pin.
 
 schema: model-matrix/v2
 
@@ -41,7 +46,7 @@ run:
   project: cogsyndelta
   code:
     repo: /home/kang/code/personal/tzervas/CogSynDelta
-    sha: 7bc2699d9f6b6d19d5f7518c7081853a55d9b015 # main, 2026-09-04 -- PRs #21 (--seed), #25 (per-region shard_limit), #27 (gate_exit_codes) merged
+    sha: "198074a00615ef2cf8f1c40719607aea12e3649f" # visual-wiring merge (#46) on main
   state_root: /akula-data/csd/matrix
   finals_root: /akula-data/csd/finals # must be inside retention.prune_roots (loader-enforced)
   events_dir: /akula-data/csd/events
@@ -499,6 +504,56 @@ regions:
           "BeIR/fiqa",
           "sentence-transformers/natural-questions",
           "sentence-transformers/gooaq",
+        ]
+
+  visual:
+    # First real visual experiment (DEC-82 / OD-4). Mix B train is 581280 after
+    # official CLEVR 70k + Fashion 60k splits -- config/mind/visual-clean-v1.json,
+    # fingerprint ab5761b65714e4ba4d7c36df095f3599. H1 is operator-side on the
+    # receipt (docs/design/evidence visual PREREG), not a harness gate.
+    # corpus_source=visual-clean-v1 is VL_REGIONS in csd-train-all.py, not a
+    # harness key (DESIGN.v2 unknown live keys refuse).
+    aliases: [vl_latent]
+    # publish.repo_pattern would mint tzervas/cogsyndelta-region-visual; the live
+    # Hub slug is tzervas/cogsyndelta-vl-jepa (REGION_REPO_SUFFIX visual/vl_latent).
+    hub_repo_name: tzervas/cogsyndelta-vl-jepa
+    steps: 4000
+    hosts: [akula-prime]  # PREREG exclusive-seq; 5080 idle for visual; 1080 Ti excluded
+    axes: {batch: [128], seed: [0, 1]}
+    budget_axes: [batch]
+    budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
+    budgets:
+      "batch=128": {mib: null, source: probe}  # wave 0 probe_peak; no visual peak on disk
+    primary_metric: "train:$.held_out.top1"
+    references: [untrained]
+    eval_key:
+      [
+        "train:$.corpus.fingerprint",
+        "train:$.config.steps",
+        "train:$.config.batch_size",
+        "train:$.config.jepa.image_size",
+      ]
+    gates_read:
+      beats_untrained: "train:$.beats_untrained.probe_top1"
+      not_collapsed: "train:$.beats_untrained.not_collapsed"
+      eval_pass: "test:$.gates.*"
+      quant_budget: "quantize:$.within_budget"
+    card:
+      language: en
+      tags: [cogsyndelta, "region:visual"]
+      # Mix B standalone weights are mit (g34). CLEVR is CC BY 4.0 ATTRIBUTION --
+      # the card MUST carry the CLEVR TASL notice at publish (visual_attribution_block);
+      # that notice is not a live yaml key (DESIGN.v2 unknown keys refuse).
+      licence_tier: mit
+      datasets:
+        [
+          "nyuuzyou/pxhere",
+          "biglam/british-library-book-images",
+          "basveeling/pcam",
+          "google-deepmind/3d-shapes",
+          "facebookresearch/clevr",
+          "zalando/fashion-mnist",
+          "phelber/EuroSAT",
         ]
 
 publish:
