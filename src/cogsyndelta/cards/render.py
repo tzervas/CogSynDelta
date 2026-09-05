@@ -98,7 +98,7 @@ PLACEHOLDER_REFERENT: dict[str, str] = {
     "residual_mlp": "no design row exists for this name in the current design "
     "revision -- the repo name predates the ratified region catalogue",
     "visual": "the visual faculty slot (see docs/design; formerly `vl_latent`). "
-    "today's `zh-plus/tiny-imagenet` toy checkpoint is BLOCKING per "
+    "Today's `zh-plus/tiny-imagenet` toy checkpoint is BLOCKING per "
     "docs/design/LICENCE-FOR-OPEN-WEIGHTS.md and is not what this repo, once "
     "populated, is meant to hold",
 }
