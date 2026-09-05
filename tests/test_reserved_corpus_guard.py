@@ -186,6 +186,7 @@ def test_vl_region_run_refuses_to_start_when_resolved_sources_include_a_reserved
     would otherwise mask the reserved-shard guard this test targets.
     """
     monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "corpus_source", "test-corpus")
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "manifest", None)
     monkeypatch.setattr(
         mod,
         "_shards",
@@ -201,6 +202,7 @@ def test_vl_region_dry_run_is_unaffected_when_sources_stay_clean(
 ) -> None:
     """Negative control: an unreserved resolved shard must not trip the VL guard either."""
     monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "corpus_source", "test-corpus")
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "manifest", None)
     monkeypatch.setattr(
         mod,
         "_shards",

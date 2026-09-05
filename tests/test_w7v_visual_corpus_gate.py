@@ -37,9 +37,11 @@ def _load_csd_train_all():
 mod = _load_csd_train_all()
 
 
-def test_vl_latent_corpus_source_is_unset_by_default() -> None:
-    """The gate has nothing to disarm accidentally: the shipped spec starts unset."""
-    assert mod.VL_REGIONS["vl_latent"]["corpus_source"] is None
+def test_visual_corpus_source_is_visual_clean_v1() -> None:
+    """OD-4 Mix B is the admitted corpus; parquet globs stay unset (PNG-in-zip)."""
+    assert mod.VL_REGIONS["vl_latent"]["corpus_source"] == "visual-clean-v1"
+    assert mod.VL_REGIONS["visual"]["corpus_source"] == "visual-clean-v1"
+    assert mod.VL_REGIONS["vl_latent"]["manifest"] == "config/mind/visual-clean-v1.json"
     assert mod.VL_REGIONS["vl_latent"]["train"] is None
     assert mod.VL_REGIONS["vl_latent"]["probe_eval"] is None
 
@@ -52,12 +54,20 @@ def test_vl_latent_no_longer_names_tiny_imagenet_anywhere_in_the_spec() -> None:
     assert "cifar100" not in spec_text
 
 
-def test_run_vl_region_refuses_to_start_with_no_corpus_source(tmp_path: Path) -> None:
+def test_run_vl_region_refuses_to_start_with_no_corpus_source(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "corpus_source", None)
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "manifest", None)
     with pytest.raises(mod.VisualCorpusUnsetError, match="OD-4"):
         mod.run_vl_region(name="vl_latent", state=tmp_path, steps=1, batch=1, dry=True)
 
 
-def test_refusal_names_the_spec_key_it_expects_fixed(tmp_path: Path) -> None:
+def test_refusal_names_the_spec_key_it_expects_fixed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "corpus_source", None)
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "manifest", None)
     with pytest.raises(mod.VisualCorpusUnsetError, match=r"corpus_source"):
         mod.run_vl_region(name="vl_latent", state=tmp_path, steps=1, batch=1, dry=True)
 
@@ -74,6 +84,8 @@ def test_refusal_fires_before_any_shard_is_resolved(
         return ["/mnt/fleet-datasets/csd/vl/tiny-imagenet/data/train-0.parquet"]
 
     monkeypatch.setattr(mod, "_shards", spy)
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "corpus_source", None)
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "manifest", None)
 
     with pytest.raises(mod.VisualCorpusUnsetError):
         mod.run_vl_region(name="vl_latent", state=tmp_path, steps=1, batch=1, dry=True)
@@ -87,7 +99,8 @@ def test_setting_corpus_source_lifts_the_refusal(
     """Positive control: once a corpus is admitted (named here), the gate steps aside
     and normal shard resolution (MISSING-source skip, since no real data is wired in
     this test) takes over instead."""
-    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "corpus_source", "visual-clean-v1")
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "corpus_source", "admitted-placeholder")
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "manifest", None)
     monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "train", "vl/visual-clean-v1/train-*.parquet")
     monkeypatch.setitem(
         mod.VL_REGIONS["vl_latent"], "probe_eval", "vl/visual-clean-v1/valid-*.parquet"

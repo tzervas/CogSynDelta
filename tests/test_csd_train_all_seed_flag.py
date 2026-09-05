@@ -182,6 +182,7 @@ def test_seed_flag_flows_into_vl_pretrain_config(
     # a corpus_source is admitted -- irrelevant to what this test actually checks (that
     # --seed flows into VLPretrainConfig), so name a placeholder to get past it.
     monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "corpus_source", "test-corpus")
+    monkeypatch.setitem(mod.VL_REGIONS["vl_latent"], "manifest", None)
     monkeypatch.setattr(
         mod, "_shards", lambda pattern, root=mod.CORPUS: [str(tmp_path / "shard.parquet")]
     )
