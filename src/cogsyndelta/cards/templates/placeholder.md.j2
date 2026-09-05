@@ -28,10 +28,12 @@ fine-tuned, or cited as a CogSynDelta region.
    `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`) -- `licence_tier()` in `scripts/csd-
    publish-checkpoint.py` refuses to publish an unaudited region, and this card
    inherits that refusal (`region_cfg["licence_tier"]` must be set).
-4. For `vl_latent` specifically: a replacement pretraining corpus. The
+{% if region == "visual" -%}
+4. For `visual` specifically: a replacement pretraining corpus. The
    `zh-plus/tiny-imagenet` checkpoint that exists today is BLOCKING per
    `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` section 4 and cannot become this card's
    weights regardless of how well it measures.
+{% endif -%}
 
 ## Model overview
 

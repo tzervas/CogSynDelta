@@ -53,6 +53,7 @@ if _SRC not in sys.path:
 
 from cogsyndelta.cards.methodology import CardError  # noqa: E402 -- needs sys.path set above
 from cogsyndelta.cards.render import CARD_KINDS, render_card  # noqa: E402
+from cogsyndelta.regions.aliases import canonical_region  # noqa: E402
 
 _PUBLISH_SCRIPT = Path(__file__).resolve().parent / "csd-publish-checkpoint.py"
 
@@ -253,6 +254,8 @@ def _build_receipts_and_region(
             f"--kind {args.kind!r} needs at least a training receipt "
             "(--cell with a done train stage, or --train-receipt)"
         )
+    if args.kind == "placeholder":
+        region = canonical_region(region)
     return region, receipts
 
 
