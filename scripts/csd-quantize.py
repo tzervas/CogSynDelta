@@ -30,6 +30,8 @@ from pathlib import Path
 
 import torch
 
+from cogsyndelta.regions.aliases import canonical_region, legacy_names
+
 DEFAULT_STATE = Path("/akula-data/csd")
 
 
@@ -45,9 +47,30 @@ def _load_regions_spec() -> dict:
 
 
 def _latest_receipt(state: Path, region: str) -> tuple[Path, dict]:
-    found = sorted(state.glob(f"receipts/{region}-2*.json"))
+    """Newest training receipt for `region`, searching every spelling it could be filed
+    under.
+
+    ALIAS-AWARE GLOB (round-2 review, blocking, same defect and fix as
+    `scripts/csd-benchmark.py`'s `_find_train_receipt`). A receipt on disk carries
+    whichever spelling of a renamed region (`code`/`language`, `vl_latent`/`visual`)
+    was current when `csd-train-all.py` wrote it, and that writer deliberately never
+    rewrites its own spelling in place afterwards (see `cogsyndelta.regions.aliases`'s
+    module docstring). Resolving `region` to canonical and globbing every spelling that
+    maps back to it (`canonical_region(region)` plus `legacy_names(...)` of it) means
+    `--regions language` still finds a receipt filed as `code-*.json`. Without this,
+    quantizing the canonical name against real cells raised `FileNotFoundError` for a
+    region that had, in fact, been trained -- loud rather than a silent no-op, but the
+    same unresolved-alias gap `_find_train_receipt` had. A region that was never
+    renamed has no legacy spellings, so this is a no-op for it -- identical glob,
+    identical result, to before this fix.
+    """
+    canonical = canonical_region(region)
+    spellings = (canonical, *legacy_names(canonical))
+    found = sorted({path for name in spellings for path in state.glob(f"receipts/{name}-2*.json")})
     if not found:
-        raise FileNotFoundError(f"no training receipt for {region!r} under {state}/receipts")
+        raise FileNotFoundError(
+            f"no training receipt for {region!r} (spellings {spellings}) under {state}/receipts"
+        )
     return found[-1], json.loads(found[-1].read_text())
 
 
