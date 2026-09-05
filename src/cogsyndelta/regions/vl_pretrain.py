@@ -57,7 +57,12 @@ from torch import nn
 
 from cogsyndelta.corpus import CORPUS_FINGERPRINT_SCHEME, fingerprint_corpus, stable_cache_tag
 from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig, check_checkpoint_grid_compatible
-from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
+from cogsyndelta.regions._checkpoint import (
+    atomic_save,
+    load_resumable,
+    rotate_checkpoints,
+    sha256_file,
+)
 from cogsyndelta.regions._receipt import trainer_defaults, write_receipt
 
 __all__ = ["VLPretrainConfig", "collapse_batch_indices", "pretrain_vl_region"]
@@ -74,8 +79,12 @@ class VLPretrainConfig:
     transfer_shards: list[str] = field(default_factory=list)
     image_column: str = "image"
     label_column: str = "label"
-    transfer_image_column: str = "img"
-    transfer_label_column: str = "fine_label"
+    # Fashion-MNIST (the Mix B transfer probe) uses image/label. CIFAR-100's
+    # img/fine_label are not a live transfer set (PREREG §3). Parquet backends that
+    # still call `_decode_split` for transfer reuse these names; the zip-landed Mix B
+    # path never reads them (`_decode_png_stores` labels from folder names).
+    transfer_image_column: str = "image"
+    transfer_label_column: str = "label"
 
     steps: int = 4000
     batch_size: int = 128
@@ -98,7 +107,37 @@ class VLPretrainConfig:
     out_dir: str = "/akula-data/csd/receipts"
     image_backend: str = "parquet"  # "parquet" | "png_zip"
     probe_set_names: list[str] = field(default_factory=list)
+    probe_sets: list[dict[str, Any]] = field(default_factory=list)
     corpus_source: str = ""
+
+
+def _probe_identity(cfg: VLPretrainConfig, role: str) -> dict[str, str] | None:
+    """`source` + `name` for one probe role, taken from the resolved manifest.
+
+    Never a literal: empty `probe_sets` (parquet unit fixtures) leaves the metric
+    block unstamped rather than inventing cifar100 / tiny-imagenet.
+    """
+    for entry in cfg.probe_sets:
+        if str(entry.get("role") or "") != role:
+            continue
+        source = str(entry.get("source") or "")
+        name = str(entry.get("name") or "")
+        if source and name:
+            return {"source": source, "name": name}
+    return None
+
+
+def _stamp_probe_identity(
+    block: dict[str, Any] | None, identity: dict[str, str] | None
+) -> dict[str, Any] | None:
+    if block is None:
+        return None
+    if not identity:
+        return block
+    out = dict(block)
+    out["source"] = identity["source"]
+    out["name"] = identity["name"]
+    return out
 
 
 def _resolve_device(want: str) -> torch.device:
@@ -811,6 +850,11 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         cfg.train_shards, columns=[cfg.image_column, cfg.label_column]
     )
 
+    final_ckpt = ckpt_dir / f"step-{cfg.steps}.pt"
+    checkpoint_sha256 = sha256_file(final_ckpt)
+    held_out_id = _probe_identity(cfg, "primary")
+    transfer_id = _probe_identity(cfg, "transfer")
+
     receipt = {
         "region": cfg.region,
         "objective": "I-JEPA latent prediction; gated on linear probe, never on loss",
@@ -837,18 +881,35 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         "seconds": round(elapsed_total, 1),
         "device": str(device),
         "parameters": params,
+        "checkpoint": str(final_ckpt),
+        "checkpoint_sha256": checkpoint_sha256,
         "train_images": int(x_tr.size(0)),
         "probe_classes": n_classes,
         "config": {
             "jepa": asdict(cfg.jepa),
             "steps": cfg.steps,
             "batch_size": cfg.batch_size,
+            "seed": cfg.seed,
+            "probe_steps": cfg.probe_steps,
+            "probe_lr": cfg.probe_lr,
             "trainer_defaults": trainer_defaults(cfg),
         },
-        "untrained_baseline": baseline,
-        "held_out": final,
-        "untrained_transfer": baseline_transfer,
-        "transfer": final_transfer,
+        "untrained_baseline": _stamp_probe_identity(baseline, held_out_id),
+        "held_out": _stamp_probe_identity(final, held_out_id),
+        "untrained_transfer": _stamp_probe_identity(baseline_transfer, transfer_id),
+        "transfer": _stamp_probe_identity(final_transfer, transfer_id),
+        "probe": {
+            "jepa_train_shards": list(cfg.train_shards),
+            "linear_train_shards": list(cfg.probe_train_shards),
+            "linear_eval_shards": list(cfg.probe_eval_shards),
+            "transfer_shards": list(cfg.transfer_shards),
+            "image_backend": cfg.image_backend,
+            "image_column": cfg.image_column,
+            "label_column": cfg.label_column,
+            "transfer_image_column": cfg.transfer_image_column,
+            "transfer_label_column": cfg.transfer_label_column,
+            "sets": list(cfg.probe_sets),
+        },
         "collapse_ratio": round(collapse_ratio, 4),
         "collapsed": collapsed,
         "history": history,

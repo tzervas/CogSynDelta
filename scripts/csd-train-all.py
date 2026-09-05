@@ -650,7 +650,9 @@ VL_REGIONS: dict[str, dict] = {
         # to replace it too (Quick Draw / Caltech-256 / EuroSAT test) rather than carry
         # it forward eval-only by default. Left unset for the same reason `train` is.
         "transfer": None,
-        "transfer_columns": ("img", "fine_label"),
+        # Zip-landed Mix B transfer is Fashion t10k PNGs; `_decode_png_stores` labels
+        # from folder names and never reads these columns. Deleted as dead config
+        # (early alpha). Parquet VLPretrainConfig still has image/label defaults.
         "note": (
             "I-JEPA over composite-shaped (128x128/8/256) patches; gated on a linear "
             "probe, never on loss. corpus_source=visual-clean-v1 (OD-4 Mix B, 581280)."
@@ -1305,11 +1307,13 @@ def run_vl_region(
         fashion_probe = source_probe_path(manifest, fashion)
         transfer = [str(fashion_probe)] if fashion_probe is not None else []
         probe_set_names = list(dry_info["probe_sets"])
+        probe_sets = list(manifest.get("probe_sets") or [])
     else:
         train = _shards(spec["train"])
         probe_eval = _shards(spec["probe_eval"])
         transfer = _shards(spec["transfer"])
         probe_train = train
+        probe_sets = []
     # Same fail-closed requirement as `run_region` (see RESERVED_FOR_COMPOSE and
     # `ReservedSourceError`): a reserved shard must never train ANY region, and this VL
     # path resolves its own shards independently of `run_region`'s loop, so it needs its
@@ -1342,8 +1346,8 @@ def run_vl_region(
         transfer_shards=transfer,
         image_column=spec["columns"][0],
         label_column=spec["columns"][1],
-        transfer_image_column=spec["transfer_columns"][0],
-        transfer_label_column=spec["transfer_columns"][1],
+        transfer_image_column=(spec.get("transfer_columns") or spec["columns"])[0],
+        transfer_label_column=(spec.get("transfer_columns") or spec["columns"])[1],
         steps=steps,
         batch_size=batch,
         seed=seed,
@@ -1355,6 +1359,7 @@ def run_vl_region(
         cache_dir=str(state / "vl-cache"),
         image_backend="png_zip" if png_backend else "parquet",
         probe_set_names=probe_set_names,
+        probe_sets=probe_sets,
         corpus_source=str(manifest["id"]) if png_backend else str(corpus_source),
     )
     started = time.time()
@@ -1383,7 +1388,7 @@ def run_vl_region(
     if receipt.get("transfer") and receipt.get("untrained_transfer"):
         tb, th = receipt["untrained_transfer"], receipt["transfer"]
         print(
-            f"    transfer (cifar100)  untrained top1={tb['top1']:.4f}  ->  "
+            f"    transfer ({th.get('name') or 'transfer'})  untrained top1={tb['top1']:.4f}  ->  "
             f"trained top1={th['top1']:.4f}",
             flush=True,
         )
