@@ -421,10 +421,10 @@ def test_visual_unset_corpus_still_blocks() -> None:
         )
 
 
-def test_visual_clean_v1_matching_fingerprint_is_cc_by_4_0() -> None:
-    """Mix B pin: CLEVR is CC BY 4.0 so the region tag is cc-by-4.0, not mit."""
-    assert mod.licence_tier("visual", receipt=_mix_b_receipt()) == "cc-by-4.0"
-    assert mod.licence_tier("vl_latent", receipt=_mix_b_receipt()) == "cc-by-4.0"
+def test_visual_clean_v1_matching_fingerprint_is_mit() -> None:
+    """Mix B pin: ATTRIBUTION (CLEVR) is MIT-usable with a notice (:98-102)."""
+    assert mod.licence_tier("visual", receipt=_mix_b_receipt()) == "mit"
+    assert mod.licence_tier("vl_latent", receipt=_mix_b_receipt()) == "mit"
 
 
 def test_visual_clean_v1_mismatched_fingerprint_blocks() -> None:
@@ -439,7 +439,7 @@ def test_visual_card_carries_clevr_tasl() -> None:
     card = mod.build_card(
         region="visual",
         region_cfg={"role": "visual cortex", "router_trigger": "image"},
-        tier="cc-by-4.0",
+        tier="mit",
         checkpoint=Path("final.pt"),
         checkpoint_sha256="abc",
         rev="deadbeef",
@@ -450,7 +450,25 @@ def test_visual_card_carries_clevr_tasl() -> None:
     assert "CLEVR" in card
     assert "creativecommons.org/licenses/by/4.0" in card
     assert "modified" in card.lower()
-    assert "cc-by-4.0" in card
+    assert "license: mit" in card
+    assert ":98-102" in card
+
+
+def test_visual_card_refuses_without_clevr_tasl(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mutation: drop the TASL block and Mix B must not publish as silent MIT."""
+    monkeypatch.setattr(mod, "CLEVR_TASL", "attribution omitted")
+    with pytest.raises(mod.PublishAbortError, match="TASL"):
+        mod.build_card(
+            region="visual",
+            region_cfg={"role": "visual cortex", "router_trigger": "image"},
+            tier="mit",
+            checkpoint=Path("final.pt"),
+            checkpoint_sha256="abc",
+            rev="deadbeef",
+            train_receipt=_mix_b_receipt(),
+            eval_receipt=None,
+            quant_receipt=None,
+        )
 
 
 def test_load_region_config_accepts_both_spellings(tmp_path: Path) -> None:

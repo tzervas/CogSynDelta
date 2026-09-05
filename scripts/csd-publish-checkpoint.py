@@ -34,13 +34,12 @@ eventual composite replacement, per Decision 2026-09-02, not today's checkpoint)
 `visual` (nee `vl_latent`) is BLOCKING while its receipt names tiny-imagenet, an
 unset corpus, or a fingerprint that is not the admitted Mix B pin in
 `config/mind/visual-clean-v1.json`. A receipt whose `corpus.corpus_source` and
-`corpus.fingerprint` both match that manifest is publishable. Mix B's most
-restrictive train source is CLEVR (CC BY 4.0, ATTRIBUTION) so the standalone tag is
-`cc-by-4.0` with a TASL block, not MIT -- Rider 1 most-restrictive, LICENCE-FOR-
-OPEN-WEIGHTS.md §"Verdict categories" ATTRIBUTION and the CLEVR row. The Decision
-2026-09-02 table's "MIT, once its corpus is replaced" assumed a fully-permissive
-composite; Mix B as landed includes CC BY. `--region` is still cross-checked against
-every receipt's own declared region.
+`corpus.fingerprint` both match that manifest is publishable under **MIT**, with a
+mandatory attribution notice: Mix B includes CLEVR (CC BY 4.0, ATTRIBUTION), and
+LICENCE-FOR-OPEN-WEIGHTS.md §"Verdict categories" (`:98-102`) says ATTRIBUTION is
+usable for an MIT weights release if the specific notice is carried. The card
+prints the CLEVR TASL block; the region tag stays `mit`. `--region` is still
+cross-checked against every receipt's own declared region.
 
 CHECKPOINT PATH IS CONTAINED, NOT TRUSTED
 A receipt's 'checkpoint' value is attacker-reachable -- anyone who can write a receipt
@@ -203,7 +202,7 @@ LICENCE_TIER: dict[str, str] = {
     "classify_banking77": "mit",
     "classify_go_emotions": "mit",
     "reason": "mit",
-    "visual": "cc-by-4.0",
+    "visual": "mit",
     "compress": "cc-by-sa-4.0",
     "retrieve": "cc-by-nc-sa-4.0",
     "memory": "cc-by-nc-sa-4.0",
@@ -244,8 +243,9 @@ LICENCE_WHY: dict[str, str] = {
     "classify_banking77": "no NC or share-alike input in the catalogue",
     "classify_go_emotions": "no NC or share-alike input in the catalogue",
     "reason": "no NC or share-alike input in the catalogue",
-    "visual": "Mix B most-restrictive train source is CLEVR (CC BY 4.0, ATTRIBUTION); "
-    "TASL on the card. tiny-imagenet remains BLOCKING and is not this corpus",
+    "visual": "Mix B includes CLEVR (CC BY 4.0, ATTRIBUTION); MIT-usable with the "
+    "mandatory TASL notice (LICENCE-FOR-OPEN-WEIGHTS.md :98-102). tiny-imagenet "
+    "remains BLOCKING and is not this corpus",
     "compress": "SNLI (+ government + fiction) repaired corpus is share-alike; "
     "no NC-tagged input identified",
     "retrieve": "GooAQ (NC, accepted 2026-09-02) and Natural Questions / FiQA "
@@ -364,7 +364,41 @@ def _visual_receipt_is_admitted(receipt: dict[str, Any] | None) -> bool:
     return source == admitted_source and fingerprint == admitted_fp
 
 
+def visual_attribution_block(receipt: dict[str, Any] | None) -> list[str]:
+    """CLEVR TASL + the ATTRIBUTION notice LICENCE-FOR-OPEN-WEIGHTS.md :98-102 requires.
+
+    Raises:
+        PublishAbortError: Mix B is admitted but `CLEVR_TASL` no longer names CLEVR
+            and CC BY 4.0 -- the card would then be MIT without the mandatory notice.
+    """
+    if not _visual_receipt_is_admitted(receipt):
+        return []
+    if "CLEVR" not in CLEVR_TASL or "creativecommons.org/licenses/by/4.0" not in CLEVR_TASL:
+        raise PublishAbortError(
+            "Mix B visual card requires the CLEVR CC BY 4.0 TASL block "
+            "(LICENCE-FOR-OPEN-WEIGHTS.md :98-102 ATTRIBUTION notice)"
+        )
+    return [
+        "## Training data attribution",
+        "",
+        "This model was trained on Mix B (`visual-clean-v1`). ATTRIBUTION corpora "
+        "are MIT-usable if the specific notice is carried "
+        "(`docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` :98-102). CLEVR is CC BY 4.0; "
+        "TASL (Title, Author, Source, Licence) follows.",
+        "",
+        "### CC BY 4.0",
+        CLEVR_TASL,
+        "",
+    ]
+
+
 def licence_tier(region: str, receipt: dict[str, Any] | None = None) -> str:
+    """Return the region's standalone licence tag, or abort if BLOCKING/unknown.
+
+    Mix B visual is MIT (LICENCE-FOR-OPEN-WEIGHTS.md :98-102, :1592, :1685-1691,
+    :1867): ATTRIBUTION training data is MIT-usable when the card carries the
+    specific notice. The TASL block is `visual_attribution_block`, not this tag.
+    """
     region = canonical_region(region)
     if region in BLOCKING_REGIONS:
         if region == "visual" and _visual_receipt_is_admitted(receipt):
@@ -1179,18 +1213,7 @@ def build_card(
         'See `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, "Decision 2026-09-02".',
         "",
     ]
-    if canonical_region(region) == "visual" and _visual_receipt_is_admitted(train_receipt):
-        parts += [
-            "## Training data attribution",
-            "",
-            "This model was trained on Mix B (`visual-clean-v1`). Attribution follows "
-            "CC BY 4.0 TASL (Title, Author, Source, Licence) per "
-            "`docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` §3(a) / CLEVR row.",
-            "",
-            "### CC BY 4.0",
-            CLEVR_TASL,
-            "",
-        ]
+    parts += visual_attribution_block(train_receipt)
     parts += [
         "## Metrics",
         "",
