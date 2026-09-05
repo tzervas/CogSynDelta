@@ -275,7 +275,9 @@ def test_region_code_and_language_both_render_the_same_cell_with_the_alias_shown
     assert card_legacy == card_canonical
     assert "**Faculty:** `language`" in card_legacy
     assert "specialisation: `code`" in card_legacy
-    assert "legacy region id `code`" in card_legacy
+    assert "(formerly `code`)" in card_legacy
+    assert "region:language" in card_legacy
+    assert "legacy region id" not in card_legacy
     # LICENCE_WHY is keyed canonically too -- looking it up by the raw (possibly
     # legacy) region would silently fall back to "(reason not recorded)".
     assert "(reason not recorded)" not in card_legacy
@@ -466,6 +468,26 @@ def test_blocking_region_still_renders_as_placeholder(tmp_path: Path) -> None:
     rc = cli.main(["--region", "vl_latent", "--kind", "placeholder", "--out", str(out)])
     assert rc == 0
     assert "weights: none" in out.read_text()
+
+
+def test_vl_latent_and_visual_placeholders_are_byte_identical_and_name_visual(
+    tmp_path: Path,
+) -> None:
+    """DEC-78: --region vl_latent is an alias; the card must print visual everywhere."""
+    out_legacy = tmp_path / "legacy.md"
+    out_canon = tmp_path / "canon.md"
+    assert (
+        cli.main(["--region", "vl_latent", "--kind", "placeholder", "--out", str(out_legacy)]) == 0
+    )
+    assert cli.main(["--region", "visual", "--kind", "placeholder", "--out", str(out_canon)]) == 0
+    a = out_legacy.read_text()
+    b = out_canon.read_text()
+    assert a == b
+    assert "model_name: cogsyndelta-region-visual" in a
+    assert "region:visual" in a
+    assert "# CogSynDelta -- visual (placeholder)" in a
+    assert a.count("vl_latent") == 1
+    assert "formerly `vl_latent`" in a
 
 
 # =====================================================================================

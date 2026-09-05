@@ -17,8 +17,10 @@ run) of the `{{ region }}` region, not the promoted release -- see the region's
 {%- else -%}
 **Role:** {{ role }}
 {%- endif %}
-{%- if region_cfg.get("name") and region_cfg["name"] != region %}
-**Faculty:** `{{ region_cfg["name"] }}`{% if region_cfg.get("specialisation") %} (specialisation: `{{ region_cfg["specialisation"] }}`){% endif %} -- this cell's receipts were recorded under the legacy region id `{{ region }}` (see `cogsyndelta.regions.aliases`).
+{%- if region_legacy %}
+**Faculty:** `{{ region }}`{% if region_cfg.get("specialisation") %} (specialisation: `{{ region_cfg["specialisation"] }}`){% endif %} (formerly `{{ region_legacy }}`)
+{%- elif region_cfg.get("name") and region_cfg["name"] != region %}
+**Faculty:** `{{ region_cfg["name"] }}`{% if region_cfg.get("specialisation") %} (specialisation: `{{ region_cfg["specialisation"] }}`){% endif %} (formerly `{{ region }}`)
 {%- elif region_cfg.get("specialisation") %}
 **Specialisation:** `{{ region_cfg["specialisation"] }}`
 {%- endif %}
