@@ -276,19 +276,14 @@ regions:
     # cogsyndelta.regions.aliases.REGION_ALIASES is the ONE place that mapping lives;
     # this field is a legible restatement for a reader of this config, not a second
     # copy of the logic. EVERYTHING already on disk -- cell dirs (`code-b512-...`),
-    # receipt filenames, the `region/code/...` corpus path below, the Hub repo -- still
-    # uses `code`; only a NEW cell planned against this row uses `language` (see
-    # `hub_repo_name` below for the one place that split is not automatic).
+    # receipt filenames, the `region/code/...` corpus path below -- still uses `code`;
+    # only a NEW cell planned against this row uses `language`.
     aliases: [code]
     specialisation: code
-    # The Hub repo for this region has not been renamed yet (a separate, later step by
-    # the orchestrator -- see cogsyndelta.regions.aliases's module docstring); default
-    # `publish.repo_pattern` templated with THIS row's own `{region}` would now compute
-    # the FUTURE name (`cogsyndelta-region-language`), not the one live today. Every
-    # other region in this file has no override because its row key never changed, so
-    # `repo_pattern` already computes correctly for it -- this is the one row that
-    # needs an explicit pin until the Hub rename lands and this can be deleted.
-    hub_repo_name: tzervas/cogsyndelta-region-code
+    # Hub repo renamed 2026-09-05 (HfApi.move_repo, cogsyndelta-region-code ->
+    # cogsyndelta-region-language; old id redirects; evidence under
+    # /akula-data/session-backup-staging/phase-d/hub-rename/). `publish.repo_pattern`
+    # templated with this row's own key now computes the live name, so no override.
     axes: {batch: [512, 1280], seed: [0, 1]}
     # batch=1280/seed=0 is today's production baseline: held_out.recall@1=0.9863, sha
     # 9df6526, corpus.fingerprint e493273b003f5cf9c239db0ac461b993, 430,931 train pairs
