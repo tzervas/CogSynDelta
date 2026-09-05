@@ -1359,6 +1359,7 @@ def run_vl_region(
         cache_dir=str(state / "vl-cache"),
         image_backend="png_zip" if png_backend else "parquet",
         probe_set_names=probe_set_names,
+        corpus_source=str(corpus_source),
     )
     started = time.time()
     receipt = pretrain_vl_region(cfg)

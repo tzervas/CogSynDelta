@@ -388,6 +388,71 @@ def test_licence_tier_accepts_the_canonical_names_too() -> None:
         mod.licence_tier("visual")
 
 
+def _mix_b_receipt(fingerprint: str | None = None, source: str | None = None) -> dict[str, Any]:
+    admitted_source, admitted_fp = mod.admitted_visual_identity()
+    return {
+        "corpus": {
+            "corpus_source": admitted_source if source is None else source,
+            "fingerprint": admitted_fp if fingerprint is None else fingerprint,
+        }
+    }
+
+
+def test_visual_tiny_imagenet_receipt_still_blocks() -> None:
+    """Mutation: naming tiny-imagenet must not ride Mix B's fingerprint into a publish."""
+    _, fp = mod.admitted_visual_identity()
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier("visual", receipt=_mix_b_receipt(fingerprint=fp, source="tiny-imagenet"))
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier(
+            "vl_latent",
+            receipt=_mix_b_receipt(fingerprint=fp, source="zh-plus/tiny-imagenet"),
+        )
+
+
+def test_visual_unset_corpus_still_blocks() -> None:
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier("visual")
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier("visual", receipt={"corpus": {}})
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier(
+            "visual", receipt={"corpus": {"fingerprint": "ab5761b65714e4ba4d7c36df095f3599"}}
+        )
+
+
+def test_visual_clean_v1_matching_fingerprint_is_cc_by_4_0() -> None:
+    """Mix B pin: CLEVR is CC BY 4.0 so the region tag is cc-by-4.0, not mit."""
+    assert mod.licence_tier("visual", receipt=_mix_b_receipt()) == "cc-by-4.0"
+    assert mod.licence_tier("vl_latent", receipt=_mix_b_receipt()) == "cc-by-4.0"
+
+
+def test_visual_clean_v1_mismatched_fingerprint_blocks() -> None:
+    """Mutation: same corpus_source, wrong fingerprint, must stay BLOCKING."""
+    bad = "0" * 32
+    assert bad != mod.admitted_visual_identity()[1]
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier("visual", receipt=_mix_b_receipt(fingerprint=bad))
+
+
+def test_visual_card_carries_clevr_tasl() -> None:
+    card = mod.build_card(
+        region="visual",
+        region_cfg={"role": "visual cortex", "router_trigger": "image"},
+        tier="cc-by-4.0",
+        checkpoint=Path("final.pt"),
+        checkpoint_sha256="abc",
+        rev="deadbeef",
+        train_receipt=_mix_b_receipt(),
+        eval_receipt=None,
+        quant_receipt=None,
+    )
+    assert "CLEVR" in card
+    assert "creativecommons.org/licenses/by/4.0" in card
+    assert "modified" in card.lower()
+    assert "cc-by-4.0" in card
+
+
 def test_load_region_config_accepts_both_spellings(tmp_path: Path) -> None:
     """`config/mind/csd-regions.json` stores the language centre under `language`
     (specialisation: code); load_region_config must find that ONE entry whether asked

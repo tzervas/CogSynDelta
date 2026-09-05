@@ -96,6 +96,7 @@ class VLPretrainConfig:
     out_dir: str = "/akula-data/csd/receipts"
     image_backend: str = "parquet"  # "parquet" | "png_zip"
     probe_set_names: list[str] = field(default_factory=list)
+    corpus_source: str = ""
 
 
 def _resolve_device(want: str) -> torch.device:
@@ -713,6 +714,7 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
             "shards": [Path(s).name for s in cfg.train_shards],
             "fingerprint": corpus_fingerprint,
             "fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
+            "corpus_source": cfg.corpus_source or None,
             "image_column": cfg.image_column,
             "label_column": cfg.label_column,
             "probe_sets": list(cfg.probe_set_names),

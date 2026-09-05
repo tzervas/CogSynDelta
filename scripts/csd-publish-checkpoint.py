@@ -31,10 +31,16 @@ input turns out to need one). `vl_latent` is BLOCKING, not merely a tier: sectio
 states it is unreleasable as trained, so `licence_tier()` refuses it outright before
 ever consulting `LICENCE_TIER`'s "mit" entry for it (that entry is for the region's
 eventual composite replacement, per Decision 2026-09-02, not today's checkpoint).
-`--region` is also cross-checked against every receipt's own declared region before
-anything else is read from them -- the licence tier is derived from `--region`, and an
-unchecked mismatch would let a receipt's real licence tier be laundered under whatever
-`--region` claims.
+`visual` (nee `vl_latent`) is BLOCKING while its receipt names tiny-imagenet, an
+unset corpus, or a fingerprint that is not the admitted Mix B pin in
+`config/mind/visual-clean-v1.json`. A receipt whose `corpus.corpus_source` and
+`corpus.fingerprint` both match that manifest is publishable. Mix B's most
+restrictive train source is CLEVR (CC BY 4.0, ATTRIBUTION) so the standalone tag is
+`cc-by-4.0` with a TASL block, not MIT -- Rider 1 most-restrictive, LICENCE-FOR-
+OPEN-WEIGHTS.md §"Verdict categories" ATTRIBUTION and the CLEVR row. The Decision
+2026-09-02 table's "MIT, once its corpus is replaced" assumed a fully-permissive
+composite; Mix B as landed includes CC BY. `--region` is still cross-checked against
+every receipt's own declared region.
 
 CHECKPOINT PATH IS CONTAINED, NOT TRUSTED
 A receipt's 'checkpoint' value is attacker-reachable -- anyone who can write a receipt
@@ -197,7 +203,7 @@ LICENCE_TIER: dict[str, str] = {
     "classify_banking77": "mit",
     "classify_go_emotions": "mit",
     "reason": "mit",
-    "visual": "mit",
+    "visual": "cc-by-4.0",
     "compress": "cc-by-sa-4.0",
     "retrieve": "cc-by-nc-sa-4.0",
     "memory": "cc-by-nc-sa-4.0",
@@ -216,20 +222,30 @@ ALLOWED_CHECKPOINT_SUFFIXES: frozenset[str] = frozenset({".pt", ".safetensors"})
 
 # Regions whose training data has no licence grant anywhere in the provenance chain at
 # all -- BLOCKING per docs/design/LICENCE-FOR-OPEN-WEIGHTS.md section 4, strictly worse
-# than "unknown". Checked inside licence_tier() before the tier lookup below, so a
-# BLOCKING region refuses regardless of what LICENCE_TIER says for it (visual's entry
-# there is for its eventual composite replacement -- Decision 2026-09-02 -- not for the
-# tiny-imagenet checkpoint that exists today, which is why the tier value alone is not
-# a safe gate). Canonical key; licence_tier() canonicalizes its input before this check.
+# than "unknown". `visual` stays in this set as the DEFAULT: licence_tier() only takes
+# it out when the training receipt names the admitted Mix B corpus (see
+# `admitted_visual_identity` / `_visual_receipt_is_admitted`). A tiny-imagenet,
+# unset, or fingerprint-mismatched receipt is still BLOCKING. Canonical key;
+# licence_tier() canonicalizes its input before this check.
 BLOCKING_REGIONS: frozenset[str] = frozenset({"visual"})
+
+ADMITTED_VISUAL_MANIFEST = REPO_ROOT / "config" / "mind" / "visual-clean-v1.json"
+TINY_IMAGENET_MARKERS = ("tiny-imagenet", "zh-plus/tiny-imagenet")
+
+CLEVR_TASL = (
+    "- **CLEVR** — Johnson et al. / Facebook, Inc. (c) 2017. "
+    "Source: https://cs.stanford.edu/people/jcjohns/clevr/ "
+    "Licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). "
+    "Images were resized to 128×128 PNG for this corpus (modified)."
+)
 
 LICENCE_WHY: dict[str, str] = {
     "language": "no NC or share-alike input in the catalogue, once GitHub-licence-filtered",
     "classify_banking77": "no NC or share-alike input in the catalogue",
     "classify_go_emotions": "no NC or share-alike input in the catalogue",
     "reason": "no NC or share-alike input in the catalogue",
-    "visual": "no NC or share-alike input in the catalogue (corpus's own BLOCKING "
-    "grant problem is separate from licence family and is not resolved by this tag)",
+    "visual": "Mix B most-restrictive train source is CLEVR (CC BY 4.0, ATTRIBUTION); "
+    "TASL on the card. tiny-imagenet remains BLOCKING and is not this corpus",
     "compress": "SNLI (+ government + fiction) repaired corpus is share-alike; "
     "no NC-tagged input identified",
     "retrieve": "GooAQ (NC, accepted 2026-09-02) and Natural Questions / FiQA "
@@ -307,14 +323,58 @@ def default_repo(region: str, owner: str = DEFAULT_OWNER, base: str = DEFAULT_BA
     return f"{owner}/{base}{suffix}"
 
 
-def licence_tier(region: str) -> str:
+def admitted_visual_identity(manifest_path: Path | None = None) -> tuple[str, str]:
+    """`(corpus_source, fingerprint)` pinned in `config/mind/visual-clean-v1.json`."""
+    path = manifest_path if manifest_path is not None else ADMITTED_VISUAL_MANIFEST
+    data = json.loads(path.read_text(encoding="utf-8"))
+    source = data.get("id")
+    fingerprint = data.get("fingerprint")
+    if not source or not fingerprint:
+        raise PublishAbortError(
+            f"{path}: admitted visual manifest missing id or fingerprint -- refusing "
+            "rather than treating an incomplete pin as Mix B"
+        )
+    return str(source), str(fingerprint)
+
+
+def _visual_receipt_source_and_fingerprint(
+    receipt: dict[str, Any] | None,
+) -> tuple[str | None, str | None]:
+    if not isinstance(receipt, dict):
+        return None, None
+    corpus = receipt.get("corpus")
+    corpus_d = corpus if isinstance(corpus, dict) else {}
+    raw_source = (
+        corpus_d.get("corpus_source") or corpus_d.get("source") or receipt.get("corpus_source")
+    )
+    raw_fp = corpus_d.get("fingerprint")
+    source = str(raw_source) if raw_source else None
+    fingerprint = str(raw_fp) if raw_fp else None
+    return source, fingerprint
+
+
+def _visual_receipt_is_admitted(receipt: dict[str, Any] | None) -> bool:
+    """True only when the receipt names Mix B id AND the pinned fingerprint."""
+    source, fingerprint = _visual_receipt_source_and_fingerprint(receipt)
+    if source is None or fingerprint is None:
+        return False
+    if any(marker in source for marker in TINY_IMAGENET_MARKERS):
+        return False
+    admitted_source, admitted_fp = admitted_visual_identity()
+    return source == admitted_source and fingerprint == admitted_fp
+
+
+def licence_tier(region: str, receipt: dict[str, Any] | None = None) -> str:
     region = canonical_region(region)
     if region in BLOCKING_REGIONS:
+        if region == "visual" and _visual_receipt_is_admitted(receipt):
+            return LICENCE_TIER["visual"]
         raise PublishAbortError(
             f"region {region!r} is BLOCKING per docs/design/LICENCE-FOR-OPEN-WEIGHTS.md "
             "section 4 -- unreleasable as trained (no licence grant anywhere in the "
-            "provenance chain). Refusing regardless of any licence tier value on record "
-            "for it; BLOCKING is strictly worse than unknown."
+            "provenance chain, or visual receipt is not the admitted Mix B pin). "
+            "Refusing regardless of any licence tier value on record for it; BLOCKING "
+            "is strictly worse than unknown."
         )
     tier = LICENCE_TIER.get(region)
     if tier is None:
@@ -1118,6 +1178,20 @@ def build_card(
         f"{LICENCE_WHY.get(canonical_region(region), '(reason not recorded)')}. "
         'See `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, "Decision 2026-09-02".',
         "",
+    ]
+    if canonical_region(region) == "visual" and _visual_receipt_is_admitted(train_receipt):
+        parts += [
+            "## Training data attribution",
+            "",
+            "This model was trained on Mix B (`visual-clean-v1`). Attribution follows "
+            "CC BY 4.0 TASL (Title, Author, Source, Licence) per "
+            "`docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` §3(a) / CLEVR row.",
+            "",
+            "### CC BY 4.0",
+            CLEVR_TASL,
+            "",
+        ]
+    parts += [
         "## Metrics",
         "",
         "### held_out",
@@ -1310,9 +1384,12 @@ def build_plan(
     regions_config: Path = DEFAULT_REGIONS_CONFIG,
     want_safetensors: bool = False,
 ) -> Plan:
-    tier = licence_tier(region)  # fail fast, before touching any file we don't need to
-    region_cfg = load_region_config(region, regions_config)
+    # Visual's BLOCKING status depends on the training receipt's corpus pin, so the
+    # receipt is loaded before licence_tier(). Other regions still fail closed on
+    # region name alone; a visual receipt that is not Mix B stays BLOCKING.
     train_receipt = load_json(train_receipt_path)
+    tier = licence_tier(region, receipt=train_receipt)
+    region_cfg = load_region_config(region, regions_config)
     eval_receipt = load_json(eval_receipt_path) if eval_receipt_path else None
     quant_receipt = load_json(quant_receipt_path) if quant_receipt_path else None
     if quant_receipt is not None:

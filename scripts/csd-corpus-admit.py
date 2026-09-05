@@ -93,14 +93,14 @@ from cogsyndelta.regions.aliases import canonical_region  # noqa: E402
 # by test_licence_tier_matches_publish_checkpoint. Keyed CANONICALLY (`language`, not
 # `code`; `visual`, not `vl_latent`) to match LICENCE_TIER exactly; check_licence_tier()
 # resolves its `region` argument through canonical_region() first.
-TIER_ORDER: tuple[str, ...] = ("mit", "cc-by-sa-4.0", "cc-by-nc-sa-4.0")
+TIER_ORDER: tuple[str, ...] = ("mit", "cc-by-4.0", "cc-by-sa-4.0", "cc-by-nc-sa-4.0")
 
 REGION_TIER: dict[str, str] = {
     "language": "mit",
     "classify_banking77": "mit",
     "classify_go_emotions": "mit",
     "reason": "mit",
-    "visual": "mit",
+    "visual": "cc-by-4.0",
     "compress": "cc-by-sa-4.0",
     "retrieve": "cc-by-nc-sa-4.0",
     "memory": "cc-by-nc-sa-4.0",
