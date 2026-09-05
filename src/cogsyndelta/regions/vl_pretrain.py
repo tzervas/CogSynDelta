@@ -60,6 +60,8 @@ from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig, check_checkpoint_grid_c
 from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
 from cogsyndelta.regions._receipt import trainer_defaults, write_receipt
 
+__all__ = ["VLPretrainConfig", "collapse_batch_indices", "pretrain_vl_region"]
+
 
 @dataclass
 class VLPretrainConfig:
@@ -94,6 +96,9 @@ class VLPretrainConfig:
     jepa: JEPAConfig = field(default_factory=JEPAConfig)
     cache_dir: str = "/akula-data/csd/vl-cache"
     out_dir: str = "/akula-data/csd/receipts"
+    image_backend: str = "parquet"  # "parquet" | "png_zip"
+    probe_set_names: list[str] = field(default_factory=list)
+    corpus_source: str = ""
 
 
 def _resolve_device(want: str) -> torch.device:
@@ -187,6 +192,116 @@ def _decode_split(
         tmp_x.unlink(missing_ok=True)
         tmp_y.unlink(missing_ok=True)
     return torch.from_numpy(x), torch.from_numpy(y)
+
+
+def _decode_png_ref(ref: Any, size: int, reader: Any) -> np.ndarray:
+    from PIL import Image
+
+    raw = reader.read(ref)
+    with Image.open(io.BytesIO(raw)) as handle:
+        rgb = handle.convert("RGB")
+        if rgb.size != (size, size):
+            rgb = rgb.resize((size, size), Image.Resampling.BICUBIC)
+        return np.asarray(rgb, dtype=np.uint8)
+
+
+def _decode_png_stores(
+    shards: list[str], size: int, limit: int, seed: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Decode PNG zips/trees to uint8 ``[N,3,size,size]`` and labels from folder names."""
+    from cogsyndelta.vl.mix_corpus import (
+        ZipPngReader,
+        class_name_from_ref,
+        shuffled_pngs,
+    )
+
+    refs: list[Any] = []
+    for shard in shards:
+        refs.extend(shuffled_pngs(Path(shard), seed))
+        if limit and len(refs) >= limit:
+            refs = refs[:limit]
+            break
+    names = [class_name_from_ref(r) or "_" for r in refs]
+    classes = sorted(set(names))
+    class_to_i = {c: i for i, c in enumerate(classes)}
+    reader = ZipPngReader()
+    try:
+        images = [_decode_png_ref(r, size, reader) for r in refs]
+    finally:
+        reader.close()
+    x = np.stack(images).transpose(0, 3, 1, 2)
+    y = np.asarray([class_to_i[n] for n in names], dtype=np.int64)
+    return torch.from_numpy(x), torch.from_numpy(y)
+
+
+class PngTrain:
+    """Lazy Mix B train set: stream zip members, never extract, never hold 581k tensors."""
+
+    def __init__(self, shards: list[str], size: int, seed: int, limit: int) -> None:
+        """Index ``shards`` (zip or PNG tree) shuffled with ``seed``; ``limit`` 0 keeps all."""
+        from cogsyndelta.vl.mix_corpus import ZipPngReader, shuffled_pngs
+
+        refs: list[Any] = []
+        for shard in shards:
+            refs.extend(shuffled_pngs(Path(shard), seed))
+        if limit:
+            refs = refs[:limit]
+        self.refs = refs
+        self.size_px = size
+        self.reader = ZipPngReader()
+
+    def size(self, dim: int = 0) -> int:
+        """Return the image count (``dim`` must be 0, matching a 1-D tensor API)."""
+        if dim != 0:
+            raise IndexError(dim)
+        return len(self.refs)
+
+    def __getitem__(self, idx: Any) -> torch.Tensor:
+        """Decode one image, a slice, or a 1-D index tensor to CHW float tensors."""
+        if isinstance(idx, slice):
+            chosen = self.refs[idx]
+            arr = np.stack([_decode_png_ref(r, self.size_px, self.reader) for r in chosen])
+            return torch.from_numpy(arr.transpose(0, 3, 1, 2))
+        if isinstance(idx, torch.Tensor):
+            chosen = [self.refs[int(i)] for i in idx.tolist()]
+            arr = np.stack([_decode_png_ref(r, self.size_px, self.reader) for r in chosen])
+            return torch.from_numpy(arr.transpose(0, 3, 1, 2))
+        rgb = _decode_png_ref(self.refs[int(idx)], self.size_px, self.reader)
+        return torch.from_numpy(rgb.transpose(2, 0, 1))
+
+
+def collapse_batch_indices(n: int, batch_size: int, seed: int) -> torch.Tensor:
+    """Draw a diagnostic batch the same way the train loop draws.
+
+    Training uses ``torch.randint`` over all refs with a Generator seeded from
+    the run seed. The F2 collapse diagnostic used to slice ``x_tr[:batch_size]``,
+    which after per-shard listing is the first 128 Mix B images -- all pxhere.
+    This helper uses a *fresh* Generator at ``seed`` so it does not consume the
+    training RNG; baseline and final therefore see the same mixed-batch indices.
+
+    Args:
+        n: Train-set length (``x_tr.size(0)``).
+        batch_size: Same ``cfg.batch_size`` the train loop passes to randint.
+        seed: ``cfg.seed``.
+
+    Returns:
+        Int64 index tensor of length ``batch_size``.
+    """
+    gen = torch.Generator().manual_seed(seed)
+    return torch.randint(0, n, (batch_size,), generator=gen)
+
+
+def _rep_std_on_mixed_batch(
+    model: IJEPA,
+    x_tr: torch.Tensor | PngTrain,
+    batch_size: int,
+    seed: int,
+    device: torch.device,
+) -> float:
+    """EMA-target ``rep_std`` on a mixed batch. Ratio definition is unchanged."""
+    idx = collapse_batch_indices(int(x_tr.size(0)), batch_size, seed)
+    feats = model.target_encoder(_to_float(x_tr[idx], device))
+    return feats.mean(dim=1).std(dim=0).mean().item()
 
 
 def _to_float(batch_u8: torch.Tensor, device: torch.device) -> torch.Tensor:
@@ -323,6 +438,7 @@ def _resume_fields(cfg: VLPretrainConfig) -> dict[str, Any]:
         "label_column": cfg.label_column,
         "transfer_image_column": cfg.transfer_image_column,
         "transfer_label_column": cfg.transfer_label_column,
+        "image_backend": cfg.image_backend,
         "steps": cfg.steps,
         "batch_size": cfg.batch_size,
         "lr": cfg.lr,
@@ -392,6 +508,50 @@ def _checkpoint_payload(
     }
 
 
+def _load_visual_splits(
+    cfg: VLPretrainConfig, size: int, cache: Path
+) -> tuple[
+    torch.Tensor | PngTrain,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int] | None,
+]:
+    """Decode train/probe/transfer tensors (or a lazy PNG train set). No training."""
+    x_tr: torch.Tensor | PngTrain
+    if cfg.image_backend == "png_zip":
+        x_tr = PngTrain(cfg.train_shards, size, cfg.seed, cfg.train_limit)
+        px_tr, py_tr = _decode_png_stores(cfg.probe_train_shards, size, cfg.probe_limit, cfg.seed)
+        px_ev, py_ev = _decode_png_stores(cfg.probe_eval_shards, size, 0, cfg.seed)
+    else:
+        x_tr, _ = _decode_split(
+            cfg.train_shards, cfg.image_column, cfg.label_column, size, cfg.train_limit, cache
+        )
+        px_tr, py_tr = _decode_split(
+            cfg.probe_train_shards, cfg.image_column, cfg.label_column, size, cfg.probe_limit, cache
+        )
+        px_ev, py_ev = _decode_split(
+            cfg.probe_eval_shards, cfg.image_column, cfg.label_column, size, 0, cache
+        )
+    transfer = None
+    if cfg.transfer_shards:
+        if cfg.image_backend == "png_zip":
+            tx, ty = _decode_png_stores(cfg.transfer_shards, size, cfg.probe_limit, cfg.seed)
+        else:
+            tx, ty = _decode_split(
+                cfg.transfer_shards,
+                cfg.transfer_image_column,
+                cfg.transfer_label_column,
+                size,
+                cfg.probe_limit,
+                cache,
+            )
+        cut = int(tx.size(0) * 0.8)
+        transfer = (tx[:cut], ty[:cut], tx[cut:], ty[cut:], int(ty.max().item()) + 1)
+    return x_tr, px_tr, py_tr, px_ev, py_ev, transfer
+
+
 def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     """Train the visual region and return a receipt. Never gates on the loss.
 
@@ -406,29 +566,8 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     cache = Path(cfg.cache_dir)
     size = cfg.jepa.image_size
 
-    x_tr, _ = _decode_split(
-        cfg.train_shards, cfg.image_column, cfg.label_column, size, cfg.train_limit, cache
-    )
-    px_tr, py_tr = _decode_split(
-        cfg.probe_train_shards, cfg.image_column, cfg.label_column, size, cfg.probe_limit, cache
-    )
-    px_ev, py_ev = _decode_split(
-        cfg.probe_eval_shards, cfg.image_column, cfg.label_column, size, 0, cache
-    )
+    x_tr, px_tr, py_tr, px_ev, py_ev, transfer = _load_visual_splits(cfg, size, cache)
     n_classes = int(max(py_tr.max().item(), py_ev.max().item())) + 1
-
-    transfer = None
-    if cfg.transfer_shards:
-        tx, ty = _decode_split(
-            cfg.transfer_shards,
-            cfg.transfer_image_column,
-            cfg.transfer_label_column,
-            size,
-            cfg.probe_limit,
-            cache,
-        )
-        cut = int(tx.size(0) * 0.8)
-        transfer = (tx[:cut], ty[:cut], tx[cut:], ty[cut:], int(ty.max().item()) + 1)
 
     model = IJEPA(cfg.jepa).to(device)
     params = sum(p.numel() for p in model.parameters())
@@ -466,9 +605,8 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
             cfg.seed,
         )
         with torch.no_grad():
-            probe_batch = _to_float(x_tr[: cfg.batch_size], device)
-            baseline["rep_std"] = (
-                model.target_encoder(probe_batch).mean(dim=1).std(dim=0).mean().item()
+            baseline["rep_std"] = _rep_std_on_mixed_batch(
+                model, x_tr, cfg.batch_size, cfg.seed, device
             )
 
         baseline_transfer = None
@@ -568,13 +706,7 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         cfg.seed,
     )
     with torch.no_grad():
-        final["rep_std"] = (
-            model.target_encoder(_to_float(x_tr[: cfg.batch_size], device))
-            .mean(dim=1)
-            .std(dim=0)
-            .mean()
-            .item()
-        )
+        final["rep_std"] = _rep_std_on_mixed_batch(model, x_tr, cfg.batch_size, cfg.seed, device)
 
     final_transfer = None
     if transfer:
@@ -592,7 +724,8 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         )
 
     # Collapse is judged against this run's own untrained spread, not a magic constant --
-    # what counts as "low" depends on the architecture and the data.
+    # what counts as "low" depends on the architecture and the data. Baseline and
+    # final rep_std use the same mixed-batch indices (collapse_batch_indices).
     collapse_ratio = final["rep_std"] / max(1e-9, baseline["rep_std"])
     collapsed = collapse_ratio < 0.1
 
@@ -611,6 +744,8 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     # under labels for the probe; `probe_eval_shards`/`transfer_shards` are held out,
     # not trained on, so they do not belong in a corpus-identity hash any more than a
     # text region's holdout split does).
+    from cogsyndelta.vl.mix_corpus import receipt_shard_tail
+
     corpus_fingerprint = fingerprint_corpus(
         cfg.train_shards, columns=[cfg.image_column, cfg.label_column]
     )
@@ -624,12 +759,16 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         # "receipts that still use randperm must print masking: random-permutation").
         # Multi-block masking is NOT implemented in this increment.
         "masking": "random-permutation",
+        # csd-corpus-fp/v2 hashes basename+size per shard (not the landing-qualified
+        # tail below). corpus_source names the admitted Mix B id when wired.
         "corpus": {
-            "shards": [Path(s).name for s in cfg.train_shards],
+            "corpus_source": cfg.corpus_source,
+            "shards": [receipt_shard_tail(s) for s in cfg.train_shards],
             "fingerprint": corpus_fingerprint,
             "fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
             "image_column": cfg.image_column,
             "label_column": cfg.label_column,
+            "probe_sets": list(cfg.probe_set_names),
         },
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at)),
         # Cumulative TRAINING time across every session, not wall time since

@@ -636,12 +636,12 @@ VL_REGIONS: dict[str, dict] = {
         # clean fraction to carve out. It is no longer wired below as `train`/
         # `probe_eval`/`transfer` globs a careless `--regions vl_latent` could hit by
         # accident. `corpus_source` names the landed, ADMITTED replacement corpus
-        # (recommended: option B, `visual-clean-v1`, ~601.6k images, ingest §5.2) --
-        # None means nothing has been admitted yet, and `run_vl_region` below refuses to
-        # start rather than falling back to any default. Set this (and the `train`/
-        # `probe_eval`/`transfer`/`columns`/`transfer_*` globs it implies) once OD-4
-        # lands; that is a separate, later increment, not this one.
-        "corpus_source": None,
+        # (recommended: option B, `visual-clean-v1`, Mix B 581280 images, ingest §5.2).
+        # Round-3 admit wired the manifest at `config/mind/visual-clean-v1.json`.
+        # `run_vl_region` still refuses when `corpus_source` is unset (no tiny-imagenet
+        # fallback). parquet `train`/`probe_eval` globs stay None: Mix B is PNG-in-zip.
+        "corpus_source": "visual-clean-v1",
+        "manifest": "config/mind/visual-clean-v1.json",
         "train": None,
         "probe_eval": None,
         "columns": ("image", "label"),
@@ -653,8 +653,7 @@ VL_REGIONS: dict[str, dict] = {
         "transfer_columns": ("img", "fine_label"),
         "note": (
             "I-JEPA over composite-shaped (128x128/8/256) patches; gated on a linear "
-            "probe, never on loss. corpus_source is unset pending OD-4 -- see "
-            "run_vl_region's refusal."
+            "probe, never on loss. corpus_source=visual-clean-v1 (OD-4 Mix B, 581280)."
         ),
     },
 }
@@ -1260,26 +1259,69 @@ def run_vl_region(
             f"-- see OD-4 in /akula-data/session-backup-staging/tools/grok-jobs/"
             f"g8-visual-faculty-design.md ('Operator decisions' table, row 'OD-4 mix'). "
             f"Land and admit a visual corpus (recommended: option B, visual-clean-v1, "
-            f"~601.6k images, ingest §5.2), then set VL_REGIONS[{name!r}]['corpus_source'] "
-            f"and its 'train'/'probe_eval'/'transfer' globs before training this region. "
+            f"Mix B 581280 images, ingest §5.2), then set VL_REGIONS[{name!r}]['corpus_source'] "
+            f"and its manifest before training this region. "
             f"Refusing to start."
         )
 
-    train = _shards(spec["train"])
-    probe_eval = _shards(spec["probe_eval"])
-    transfer = _shards(spec["transfer"])
+    manifest_rel = spec.get("manifest")
+    png_backend = False
+    probe_train: list[str] = []
+    probe_set_names: list[str] = []
+    if manifest_rel:
+        from cogsyndelta.vl.mix_corpus import (
+            MixCorpusError,
+            refuse_unless_manifest_consistent,
+            source_probe_path,
+            source_train_path,
+            train_sources,
+        )
+
+        repo_root = Path(__file__).resolve().parent.parent
+        try:
+            manifest, dry_info = refuse_unless_manifest_consistent(repo_root / str(manifest_rel))
+        except MixCorpusError as exc:
+            raise SystemExit(f"visual corpus refused: {exc}") from exc
+        print(
+            f"    visual-clean-v1  listed_train={dry_info['listed_train']}  "
+            f"fingerprint={dry_info['fingerprint']}  "
+            f"largest_share={dry_info['concentration_largest_share']}",
+            flush=True,
+        )
+        for row in dry_info["sources"]:
+            print(
+                f"    {row['id']:<42} train {row['listed_train']:>7}  "
+                f"probe {row['listed_probe']:>5}",
+                flush=True,
+            )
+        if dry:
+            return dry_info
+        png_backend = True
+        train = [str(source_train_path(manifest, s)) for s in train_sources(manifest)]
+        eurosat = next(s for s in manifest["sources"] if s["id"] == "phelber/eurosat-rgb-128")
+        probe_eval = [str(source_probe_path(manifest, eurosat))]
+        probe_train = [str(source_train_path(manifest, eurosat))]
+        fashion = next(s for s in manifest["sources"] if s["id"] == "zalando/fashion-mnist")
+        fashion_probe = source_probe_path(manifest, fashion)
+        transfer = [str(fashion_probe)] if fashion_probe is not None else []
+        probe_set_names = list(dry_info["probe_sets"])
+    else:
+        train = _shards(spec["train"])
+        probe_eval = _shards(spec["probe_eval"])
+        transfer = _shards(spec["transfer"])
+        probe_train = train
     # Same fail-closed requirement as `run_region` (see RESERVED_FOR_COMPOSE and
     # `ReservedSourceError`): a reserved shard must never train ANY region, and this VL
     # path resolves its own shards independently of `run_region`'s loop, so it needs its
     # own call, ahead of the MISSING check and dry-run's early return below.
-    for label, glob_pat, got in (
-        ("train", spec["train"], train),
-        ("probe_eval", spec["probe_eval"], probe_eval),
-        ("transfer", spec["transfer"], transfer),
-    ):
-        _refuse_reserved_shards(name, glob_pat, got)
+    glob_for = spec.get("train") or spec.get("manifest") or "visual"
     for label, got in (("train", train), ("probe_eval", probe_eval), ("transfer", transfer)):
+        _refuse_reserved_shards(name, str(glob_for), got)
         print(f"    {len(got):>2} shard(s)  {label}", flush=True)
+    required = ("train", train), ("probe_eval", probe_eval)
+    if not png_backend:
+        required = (*required, ("transfer", transfer))
+    for label, got in required:
         if not got:
             print(f"    source MISSING for {label} — skipping {name}", flush=True)
             return None
@@ -1293,9 +1335,9 @@ def run_vl_region(
     cfg = VLPretrainConfig(
         region=name,
         train_shards=train,
-        # The probe trains on labelled pretraining images and is scored on the valid
-        # split, which pretraining never touches.
-        probe_train_shards=train,
+        # Mix B: I-JEPA trains on the seven unlabeled zips; the linear probe trains on
+        # labelled EuroSAT train.zip and is scored on EuroSAT probe.zip (H1).
+        probe_train_shards=probe_train or train,
         probe_eval_shards=probe_eval,
         transfer_shards=transfer,
         image_column=spec["columns"][0],
@@ -1311,6 +1353,9 @@ def run_vl_region(
         jepa=JEPAConfig(),
         out_dir=str(state / "receipts"),
         cache_dir=str(state / "vl-cache"),
+        image_backend="png_zip" if png_backend else "parquet",
+        probe_set_names=probe_set_names,
+        corpus_source=str(manifest["id"]) if png_backend else str(corpus_source),
     )
     started = time.time()
     receipt = pretrain_vl_region(cfg)
