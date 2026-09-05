@@ -9,8 +9,23 @@ the Hub -- receipts, matrix cell directories, variant ids, Hub repo/branch names
 fingerprints, licence tiers -- still uses the legacy spelling, and stays that way; only
 callers are expected to accept both. A mapping duplicated across every reader is a
 mapping that drifts the first time a third name gets renamed, so it lives here exactly
-once: every reader resolves a region name through ``canonical_region`` before comparing
-or dispatching on it, and every writer emits the canonical id returned from it.
+once: every reader resolves a region name through ``canonical_region`` before comparing,
+dispatching, or looking up config on it.
+
+Disclosure of a resolved legacy name to a downstream consumer, and whether a WRITER
+canonicalizes before persisting, are each a per-caller choice this module does not
+impose -- it resolves names, it does not decide who echoes which spelling where.
+Concretely: ``cogsyndelta.contracts.region_spec.MindSpec.from_dict`` records a
+``region_alias_of`` field (with a ``DeprecationWarning``) when it ingests a legacy id;
+``cogsyndelta.cards``' Jinja templates print a **Faculty** line naming the canonical id
+and the legacy id a cell's receipts were recorded under;
+``scripts/csd-publish-checkpoint.py``'s hand-built card adds no such field, because its
+shape is pinned byte-for-byte against every already-published Hub README (see
+``docs/technical/model-card-pipeline.md``). ``scripts/csd-train-all.py`` deliberately
+does NOT canonicalize the ``region`` it writes into ``PretrainConfig``/a training
+receipt: ``cogsyndelta.regions.pretrain.pretrain_region`` derives the checkpoint
+directory and receipt filename from that value, and canonicalizing it mid-run would
+split one region's on-disk history across two directories.
 
 This module owns the RENAME, not the full region catalogue. ``config/mind/csd-regions.json``
 is the source of truth for which region ids exist at all; this module only needs to know
