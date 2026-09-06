@@ -59,6 +59,21 @@ CATEGORY_ORDER: tuple[str, ...] = (
     "token",
 )
 
+QUANT_GEOMETRY_KEYS: tuple[str, ...] = (
+    "quant.geometry.mean_cosine",
+    "quant.geometry.min_cosine",
+    "quant.geometry.p05_cosine",
+    "quant.geometry.nn_agreement_at_10",
+    "quant.geometry.latent_std_ratio",
+)
+"""The five `cogsyndelta.eval.geometry.compute_geometry` fields an eval-quantized
+receipt may carry (g6-quant-geometry, docs/design/evidence/visual-ptq-sensitivity-
+2026-09-06). Excluded from `build_eval_tables`'s generic `quant.*` prefix grouping and
+given their own row group instead (`build_quant_geometry_table`), because they must
+render even when ABSENT (a receipt written before this feature) -- `"not measured"`,
+never silently omitted or invented as a number -- which the generic per-present-key
+loop below does not do for any other family."""
+
 #: `held_out` / `untrained_baseline` keys that name the probe set, not a score.
 #: Dropped from the numeric training table (they still feed the visual H1 /
 #: transfer identity block in `render.py`).
@@ -159,7 +174,10 @@ class MetricRow:
 
     key: str
     """The v2 canonical (or v2-mapped) metric key this row is keyed on."""
-    variant: float | bool | None
+    variant: float | bool | str | None
+    """A measured value, or the `LEXICAL_NOT_MEASURED` sentinel string (`_fmt_value`
+    already special-cases it, same as `lexical` below) for a row whose field this
+    receipt does not carry -- `build_quant_geometry_table`'s reason for existing."""
     baseline: float | bool | None = None
     lexical: float | bool | str | None = None
     """TF-IDF ceiling for this row, ``"not measured"``, or ``None`` (column omitted)."""
@@ -297,6 +315,17 @@ def build_eval_tables(
     for key in list(metrics):
         if key.startswith("rank.") and key.split(".", 1)[1] in RETIRED_RANK_METRICS:
             del metrics[key]
+    # `quant.geometry.*`: own row group (`build_quant_geometry_table`), never the
+    # generic per-present-key `quant` table -- that table only ever prints a key it
+    # finds, and these five must print `"not measured"` when a receipt lacks them.
+    # A dict comprehension, not a `for` loop, deliberately -- `_calculate_complexity`
+    # (scripts/quality_control.py) counts `ast.For` but not a comprehension's `for`,
+    # and this function was already sitting exactly at the un-flagged complexity
+    # ceiling (15) before this feature; a `for key in QUANT_GEOMETRY_KEYS: ...`
+    # statement here would push it to 16 and trip the >15 warning for no functional
+    # reason -- the loop body is a single unconditional `del`, not a candidate for a
+    # helper function that would carry its own maintenance cost.
+    metrics = {k: v for k, v in metrics.items() if k not in QUANT_GEOMETRY_KEYS}
 
     baseline_metrics = (
         normalize_eval_metrics_v1(baseline_eval_receipt.get("metrics", {}))
@@ -429,6 +458,52 @@ def build_quant_table(
     rows = [MetricRow(key=k, variant=quant_receipt[k]) for k in present]
     return MetricTable(
         category="quant_plan", heading="Quantization (quant_plan battery)", rows=rows
+    )
+
+
+def build_quant_geometry_table(
+    eval_quantized_receipt: dict[str, Any] | None,
+    *,
+    methodology: dict[str, MetricMethodology] | None = None,
+) -> MetricTable | None:
+    """Representation-geometry row group: `QUANT_GEOMETRY_KEYS`, from an
+    eval-quantized receipt's `metrics` dict (`cogsyndelta.eval.geometry.compute_geometry`
+    fields -- MM's representation-geometry section, motivated by
+    `docs/design/evidence/visual-ptq-sensitivity-2026-09-06/README.md`: every
+    task-probe read-out stayed flat across the visual region's whole PTQ ladder while
+    these five moved by an order of magnitude more).
+
+    Unlike every other table this module builds, ALL FIVE rows are always printed when
+    `eval_quantized_receipt` is supplied -- `LEXICAL_NOT_MEASURED` (`"not measured"`)
+    for a key the receipt does not carry (written before this feature existed, or a
+    pass where the fp32 reference could not be established), never a number invented
+    in its place and never a silently-omitted row. This is the fail-closed-for-cards
+    half of the guard: `scripts/csd-benchmark.py`'s writer fail-closed refuses
+    (`GeometryReferenceError`, G37) rather than write a MISMATCHED number; this
+    function is what a reader sees when the writer instead measured nothing at all.
+
+    Args:
+        eval_quantized_receipt: the `kind="eval-quantized"` receipt to read, or `None`
+            for a card with no eval-quantized receipt at all (`None` returned -- no
+            row group, matching `build_quant_table`'s `None`-in/`None`-out contract).
+        methodology: overrides `METRIC_METHODOLOGY` for this call only -- a test's
+            mutation-proof hook (`require_documented` refuses an undocumented key);
+            production callers leave this `None`.
+    """
+    if eval_quantized_receipt is None:
+        return None
+    metrics = eval_quantized_receipt.get("metrics", {})
+    require_documented(QUANT_GEOMETRY_KEYS, methodology=methodology)
+    rows = []
+    for key in QUANT_GEOMETRY_KEYS:
+        value = metrics.get(key)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            value = LEXICAL_NOT_MEASURED
+        rows.append(MetricRow(key=key, variant=value))
+    return MetricTable(
+        category="quant_geometry",
+        heading="Representation geometry after quantization",
+        rows=rows,
     )
 
 

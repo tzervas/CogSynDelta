@@ -423,6 +423,64 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         battery_id="quant_plan",
         pooling="linear_probe",
     ),
+    # Representation-geometry family (docs/design/evidence/visual-ptq-sensitivity-
+    # 2026-09-06/README.md): every task-probe read-out (pooled, transfer, pre-pool
+    # token-surface) stays flat within noise across the visual region's 3-to-8-bit PTQ
+    # ladder while the encoder's OUTPUT geometry moves by an order of magnitude more
+    # over the same ladder -- these five fields are that measurement, made routine.
+    # Measured on the eval_quantized_holdout battery (the SAME fp32 and packed-artifact
+    # models `quant.artifact_recall@1`/`quant.artifact_probe_top1` already score) by
+    # `cogsyndelta.eval.geometry.compute_geometry`, comparing this pass's latents
+    # row-for-row against a freshly-loaded fp32 reference computed in the SAME process
+    # (`quant.geometry.reference`, in `provenance`, names which fp32 checkpoint/receipt
+    # that reference was). `pooling="matched"`: row `i` of the fp32 side is compared
+    # against row `i` of the quantized side (the same item), not a retrieval pool.
+    "quant.geometry.mean_cosine": MetricMethodology(
+        "mean over held-out items of cosine_similarity(fp32_latent_i, "
+        "quantized_latent_i) -- 1.0 means the quantized encoder's output did not move "
+        "at all for that item; NOT a task-probe score",
+        "eval_quantized_holdout battery, representation geometry",
+        "src/cogsyndelta/eval/geometry.py",
+        battery_id="eval_quantized_holdout",
+        pooling="matched",
+    ),
+    "quant.geometry.min_cosine": MetricMethodology(
+        "the single worst-item cosine_similarity(fp32_latent_i, quantized_latent_i) "
+        "over the held-out set -- can be an outlier; see quant.geometry.p05_cosine "
+        "for a percentile that is not",
+        "eval_quantized_holdout battery, representation geometry",
+        "src/cogsyndelta/eval/geometry.py",
+        battery_id="eval_quantized_holdout",
+        pooling="matched",
+    ),
+    "quant.geometry.p05_cosine": MetricMethodology(
+        "5th-percentile (linear interpolation) of per-item "
+        "cosine_similarity(fp32_latent_i, quantized_latent_i) over the held-out set",
+        "eval_quantized_holdout battery, representation geometry",
+        "src/cogsyndelta/eval/geometry.py",
+        battery_id="eval_quantized_holdout",
+        pooling="matched",
+    ),
+    "quant.geometry.nn_agreement_at_10": MetricMethodology(
+        "mean over held-out items of |top-10 cosine neighbours(fp32_latent_i) intersect "
+        "top-10 cosine neighbours(quantized_latent_i)| / 10 -- IDENTITY agreement (both "
+        "neighbour sets have exactly 10 members, so this is simultaneously each set's "
+        "precision and recall against the other), NOT Jaccard (|intersection|/|union|), "
+        "which would read smaller whenever the sets differ",
+        "eval_quantized_holdout battery, representation geometry",
+        "src/cogsyndelta/eval/geometry.py",
+        battery_id="eval_quantized_holdout",
+        pooling="matched",
+    ),
+    "quant.geometry.latent_std_ratio": MetricMethodology(
+        "quantized_latents.std(dim=0).mean() / fp32_latents.std(dim=0).mean() over the "
+        "held-out set -- a second, cheap collapse signal on this exact population; "
+        "1.0 means the quantized population is exactly as spread out as the fp32 one",
+        "eval_quantized_holdout battery, representation geometry",
+        "src/cogsyndelta/eval/geometry.py",
+        battery_id="eval_quantized_holdout",
+        pooling="matched",
+    ),
     "drop": MetricMethodology(
         "LEGACY name for quant.drop_recall@1 (pre-g7 quant receipts); "
         "fp32_metric_recomputed - quantized_metric",

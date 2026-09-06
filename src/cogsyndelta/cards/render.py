@@ -56,6 +56,7 @@ from cogsyndelta.cards.tables import (
     assert_schemas_agree,
     build_eval_tables,
     build_gate_table,
+    build_quant_geometry_table,
     build_quant_table,
     build_training_table,
     render_table_markdown,
@@ -472,6 +473,9 @@ def render_card(
     quant_table = build_quant_table(quant_receipt, methodology=meth)
     if quant_table is not None:
         tables.append(quant_table)
+    quant_geometry_table = build_quant_geometry_table(eval_quantized_receipt, methodology=meth)
+    if quant_geometry_table is not None:
+        tables.append(quant_geometry_table)
 
     footnote_numbers = _assign_footnotes(tables, meth)
     if show_lexical and "lexical_baseline" in meth:
