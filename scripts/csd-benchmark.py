@@ -581,6 +581,19 @@ def _region_eval_context(region: str, train_receipt: dict) -> tuple:
     return cfg, enc, holdout, tok, device, meta
 
 
+def _lexical_baseline_block(holdout: list, split_meta: dict) -> dict:
+    """TF-IDF / BM25 ceiling on this pass's manifested holdout (g49).
+
+    CPU-cheap, deterministic, same scorer as the 2026-09-06 diagnosis. Bound to
+    `split.sha256` so a later reader can refuse a mismatch (G26). Visual eval
+    never calls this -- there is no bag-of-words instrument on images.
+    """
+    from cogsyndelta.eval.lexical import build_lexical_baseline
+
+    split = split_meta.get("split") if isinstance(split_meta.get("split"), dict) else {}
+    return build_lexical_baseline(holdout, str(split.get("sha256") or ""))
+
+
 def _run_battery(
     model: torch.nn.Module, tok, holdout: list, cfg, device: torch.device, stored_bytes: int
 ) -> BenchmarkResult:
@@ -807,6 +820,14 @@ def benchmark_region(
     _apply_metrics_v2_renames(res)
     r, e, rep = res.ranking, res.efficiency, res.representation
     _print_battery(res, size_note="fp32")
+    lexical = _lexical_baseline_block(holdout, split_meta)
+    tfidf_r1 = lexical["tfidf"]["recall@1"]
+    bm25_r1 = lexical["bm25"]["recall@1"]
+    print(
+        f"    lexical  tfidf r@1={tfidf_r1:.4f}  bm25 r@1={bm25_r1:.4f}  "
+        f"scorer={lexical['scorer_version']}",
+        flush=True,
+    )
 
     return Receipt(
         producer=Producer("cogsyndelta", region, "dense-transformer"),
@@ -814,6 +835,7 @@ def benchmark_region(
         kind="eval",
         metrics=res.flat(),
         baseline={"rank.recall@1": train_receipt["untrained_baseline"]["recall@1"]},
+        lexical_baseline=lexical,
         gates={
             # g7 §3.2: "two names because two predicates" -- this receipt's own
             # unmargined `rank.recall@1 > untrained_baseline.recall@1` (MM §3.13(f))
@@ -1090,6 +1112,7 @@ def benchmark_region_quantized(
         kind="eval-quantized",
         metrics=metrics,
         baseline={"rank.recall@1": train_receipt["untrained_baseline"]["recall@1"]},
+        lexical_baseline=_lexical_baseline_block(holdout, split_meta),
         gates={
             # See `benchmark_region`'s identical gate for the g7 §3.2 rename rationale
             # (two predicates, two names) and the `not_anisotropic` demotion.
