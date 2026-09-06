@@ -71,6 +71,20 @@ from cogsyndelta.regions._token_objective import (
 )
 from cogsyndelta.regions._tokencache import corpus_token_cache
 from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig, info_nce
+from cogsyndelta.splits import (
+    SplitGuardError,
+    assert_no_held_out_in_pairs,
+    build_order_manifest,
+    build_split_manifest,
+    item_id,
+    load_json_manifest,
+    permute_train_pairs,
+    resolve_order_manifest_path,
+    resolve_split_manifest_path,
+    verify_order_manifest,
+    verify_split_manifest,
+    write_json_manifest,
+)
 
 
 @dataclass
@@ -106,6 +120,24 @@ class PretrainConfig:
     2h of GPU time that could have been the next experiment."""
     max_len: int = 128
     seed: int = 0
+    split_seed: int = 0
+    """Seed that ALONE drives held-out membership: reservoir caps and the shuffle
+    `build_splits` takes the holdout prefix from. Independent of `seed` (model init and
+    the untrained baseline). Default 0 pins membership to the historical seed-0 draw so
+    existing seed-0 cells stay comparable. E0 / G26."""
+    order_seed: int = 0
+    """Extra permutation of remaining training pairs after the split. 0 is identity
+    over the leftover of the split-seed draw -- the historical seed-0 batch order.
+    Drawn once per (corpus_fp, order_seed, steps, batch) and reused across arms."""
+    split_manifest: str | None = None
+    """Explicit split-manifest path. None resolves
+    `config/mind/splits/<region>-<fp8>-split<split_seed>.json`."""
+    order_manifest: str | None = None
+    """Explicit batch-order manifest path. None resolves the committed default."""
+    require_split_manifest: bool = False
+    """When True, `build_splits` refuses unless a split manifest is present and
+    matches the draw (production trainer / benchmark / quantizer). Tests leave this
+    False and still get seed-independent membership via `split_seed`."""
     bf16: bool = True
     """Run the forward and backward under `torch.autocast(dtype=torch.bfloat16)`.
 
@@ -869,22 +901,25 @@ def _beats_untrained_gate(
     return chance, beats
 
 
-def build_splits(
+def _draw_split(
     cfg: PretrainConfig,
+    membership_seed: int,
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str]], dict[str, Any]]:
-    """Load, interleave, deduplicate and split a region's corpus.
+    """Load, shuffle, dedup and prefix-split using ``membership_seed`` only.
 
-    This is the ONE definition of a region's held-out set. Post-training quantization has
-    to score against exactly the pairs training was judged on, and a second implementation
-    of "load, shuffle, dedup, take the first 512" would drift from this one the moment
-    either changed -- silently, since both would still produce 512 plausible pairs and a
-    plausible recall figure. The comparison would simply stop meaning anything.
+    This is the historical `build_splits` draw with the seed parameter made explicit.
+    `cfg.seed` (training / init) must not be read here -- that coupling is the E0
+    defect. `membership_seed=cfg.split_seed` (default 0) reproduces the seed-0 cells.
+
+    Args:
+        cfg: Region pretrain config (shards, caps, holdout size).
+        membership_seed: Reservoir and shuffle seed. Not the training seed.
 
     Returns:
-        ``(holdout, train_pairs, meta)``.
+        ``(holdout, train_pairs, meta)`` after contamination screening.
     """
     budget = cfg.steps * cfg.batch_size + cfg.holdout_pairs
-    all_pairs = load_pairs(cfg.shards, cfg.pair_columns, limit=budget, seed=cfg.seed)
+    all_pairs = load_pairs(cfg.shards, cfg.pair_columns, limit=budget, seed=membership_seed)
     source_counts = {"primary": len(all_pairs)}
     for source in cfg.extra_sources:
         cap = source.get("limit") or 0
@@ -892,7 +927,7 @@ def build_splits(
             source["shards"],
             tuple(source["columns"]),
             limit=cap if cap else budget,
-            seed=cfg.seed,
+            seed=membership_seed,
         )
         source_counts[f"{source['columns'][0]}->{source['columns'][1]}"] = len(got)
         all_pairs.extend(got)
@@ -925,7 +960,8 @@ def build_splits(
     # S311: a seeded shuffle of training data, not a cryptographic context.
     # secrets.SystemRandom would destroy the reproducibility the receipt promises, and
     # two checkpoints are not comparable if their data order is not.
-    _random.Random(cfg.seed).shuffle(all_pairs)  # noqa: S311
+    # E0: membership_seed (split_seed), never cfg.seed.
+    _random.Random(membership_seed).shuffle(all_pairs)  # noqa: S311
     if len(all_pairs) < cfg.holdout_pairs * 2:
         raise ValueError(f"only {len(all_pairs)} pairs; need at least {cfg.holdout_pairs * 2}")
 
@@ -999,10 +1035,230 @@ def build_splits(
             # a sample from a prefix, and those are different corpora.
             "cap_sampling": {
                 "method": "reservoir (Algorithm R), one pass over every row of each source",
-                "seed": cfg.seed,
+                "seed": membership_seed,
             },
+            "membership_seed": membership_seed,
         },
     )
+
+
+def build_splits(
+    cfg: PretrainConfig,
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]], dict[str, Any]]:
+    """Load, interleave, deduplicate and split a region's corpus.
+
+    This is the ONE definition of a region's held-out set. Post-training quantization has
+    to score against exactly the pairs training was judged on, and a second implementation
+    of "load, shuffle, dedup, take the first 512" would drift from this one the moment
+    either changed -- silently, since both would still produce 512 plausible pairs and a
+    plausible recall figure. The comparison would simply stop meaning anything.
+
+    E0 / G26: membership is drawn with ``cfg.split_seed`` (default 0), never
+    ``cfg.seed``. When a split manifest is present it is loaded and the draw must match
+    it; ``require_split_manifest`` refuses if the file is missing. Training seed does
+    not touch membership. Held-out items in a training batch refuse.
+
+    Returns:
+        ``(holdout, train_pairs, meta)``. ``meta`` includes ``split`` and
+        ``batch_order`` receipt fragments.
+
+    Raises:
+        SplitGuardError: G26 -- missing required manifest, fingerprint/sha mismatch,
+            doctored membership, or a held-out item in training.
+    """
+    holdout, train_pairs, meta = _draw_split(cfg, membership_seed=cfg.split_seed)
+    corpus_fp = fingerprint_corpus(
+        cfg.shards, columns=list(cfg.pair_columns), extra_sources=cfg.extra_sources
+    )
+    split_path = resolve_split_manifest_path(
+        cfg.region, corpus_fp, cfg.split_seed, cfg.split_manifest
+    )
+    generator = {
+        "algorithm": "csd-split-draw/v1",
+        "split_seed": cfg.split_seed,
+        "holdout_pairs": cfg.holdout_pairs,
+        "budget": cfg.steps * cfg.batch_size + cfg.holdout_pairs,
+        "pair_columns": list(cfg.pair_columns),
+    }
+    counts = {
+        "source_counts": meta["source_counts"],
+        "duplicates_removed": meta["duplicates_removed"],
+        "train_pairs_removed": meta["contamination"].get("train_pairs_removed", 0),
+    }
+    drawn_manifest = build_split_manifest(
+        region=cfg.region,
+        corpus_fingerprint=corpus_fp,
+        split_seed=cfg.split_seed,
+        holdout=holdout,
+        train_pairs=train_pairs,
+        generator=generator,
+        counts=counts,
+    )
+    if split_path.is_file():
+        loaded = load_json_manifest(split_path)
+        recorded_holdout = int(
+            (loaded.get("generator") or {}).get("holdout_pairs")
+            or (loaded.get("counts") or {}).get("holdout_pairs")
+            or 0
+        )
+        if recorded_holdout and recorded_holdout != cfg.holdout_pairs:
+            # Filename is (region, fp8, split_seed) only. A short test run on the
+            # real corpus (holdout_pairs=16) must not bind the committed 512-pair
+            # production file. Production (`require_split_manifest`) refuses instead
+            # of silently scoring a different-sized eval set.
+            if cfg.require_split_manifest or cfg.split_manifest:
+                raise SplitGuardError(
+                    f"G26: split manifest holdout_pairs={recorded_holdout} != "
+                    f"cfg.holdout_pairs={cfg.holdout_pairs} ({split_path})"
+                )
+            split_stamp = {
+                "manifest": "",
+                "sha256": drawn_manifest["sha256"],
+                "seed": cfg.split_seed,
+            }
+        else:
+            verify_split_manifest(loaded, corpus_fingerprint=corpus_fp, holdout=holdout)
+            split_stamp = {
+                "manifest": str(split_path),
+                "sha256": loaded["sha256"],
+                "seed": int(loaded["seed"]),
+            }
+    elif cfg.require_split_manifest or cfg.split_manifest:
+        raise SplitGuardError(
+            f"G26: split manifest required but missing at {split_path} "
+            f"(region={cfg.region!r} fp={corpus_fp[:8]} split_seed={cfg.split_seed})"
+        )
+    else:
+        split_stamp = {
+            "manifest": "",
+            "sha256": drawn_manifest["sha256"],
+            "seed": cfg.split_seed,
+        }
+
+    assert_no_held_out_in_pairs(holdout, train_pairs, where="training pairs")
+    train_pairs = permute_train_pairs(train_pairs, cfg.order_seed)
+
+    order_path = resolve_order_manifest_path(
+        cfg.region,
+        corpus_fp,
+        cfg.order_seed,
+        cfg.steps,
+        cfg.batch_size,
+        cfg.order_manifest,
+    )
+    order_payload = build_order_manifest(
+        region=cfg.region,
+        corpus_fingerprint=corpus_fp,
+        order_seed=cfg.order_seed,
+        steps=cfg.steps,
+        batch_size=cfg.batch_size,
+        n_train=len(train_pairs),
+    )
+    if order_path.is_file():
+        loaded_order = load_json_manifest(order_path)
+        verify_order_manifest(
+            loaded_order,
+            corpus_fingerprint=corpus_fp,
+            order_seed=cfg.order_seed,
+            steps=cfg.steps,
+            batch_size=cfg.batch_size,
+            n_train=len(train_pairs),
+        )
+        order_stamp = {
+            "manifest": str(order_path),
+            "sha256": loaded_order["sha256"],
+            "seed": int(loaded_order["seed"]),
+        }
+    else:
+        order_stamp = {
+            "manifest": str(order_path) if cfg.order_manifest else "",
+            "sha256": order_payload["sha256"],
+            "seed": cfg.order_seed,
+        }
+
+    meta["split"] = split_stamp
+    meta["batch_order"] = order_stamp
+    meta["corpus_fingerprint"] = corpus_fp
+    return holdout, train_pairs, meta
+
+
+def write_split_and_order_manifests(
+    cfg: PretrainConfig,
+    *,
+    splits_dir: Path | None = None,
+) -> tuple[Path, Path, dict[str, Any]]:
+    """Generate committed seed manifests from the current draw (split_seed, order_seed).
+
+    Used to pin production seed-0 membership so it EQUALS the historical seed-0 draw
+    (`split_seed=0` is that draw). Writes both the split file and the batch-order file.
+
+    Args:
+        cfg: Region config pointed at the corpus on disk.
+        splits_dir: Destination directory; default `config/mind/splits`.
+
+    Returns:
+        ``(split_path, order_path, meta)`` from :func:`build_splits`.
+    """
+    from cogsyndelta.splits import order_manifest_path, split_manifest_path
+
+    holdout, train_pairs, meta = _draw_split(cfg, membership_seed=cfg.split_seed)
+    corpus_fp = fingerprint_corpus(
+        cfg.shards, columns=list(cfg.pair_columns), extra_sources=cfg.extra_sources
+    )
+    train_pairs = permute_train_pairs(train_pairs, cfg.order_seed)
+    generator = {
+        "algorithm": "csd-split-draw/v1",
+        "split_seed": cfg.split_seed,
+        "holdout_pairs": cfg.holdout_pairs,
+        "budget": cfg.steps * cfg.batch_size + cfg.holdout_pairs,
+        "pair_columns": list(cfg.pair_columns),
+    }
+    counts = {
+        "source_counts": meta["source_counts"],
+        "duplicates_removed": meta["duplicates_removed"],
+        "train_pairs_removed": meta["contamination"].get("train_pairs_removed", 0),
+    }
+    split_payload = build_split_manifest(
+        region=cfg.region,
+        corpus_fingerprint=corpus_fp,
+        split_seed=cfg.split_seed,
+        holdout=holdout,
+        train_pairs=train_pairs,
+        generator=generator,
+        counts=counts,
+    )
+    order_payload = build_order_manifest(
+        region=cfg.region,
+        corpus_fingerprint=corpus_fp,
+        order_seed=cfg.order_seed,
+        steps=cfg.steps,
+        batch_size=cfg.batch_size,
+        n_train=len(train_pairs),
+    )
+    split_path = split_manifest_path(cfg.region, corpus_fp, cfg.split_seed, splits_dir=splits_dir)
+    order_path = order_manifest_path(
+        cfg.region,
+        corpus_fp,
+        cfg.order_seed,
+        cfg.steps,
+        cfg.batch_size,
+        splits_dir=splits_dir,
+    )
+    write_json_manifest(split_path, split_payload)
+    write_json_manifest(order_path, order_payload)
+    meta["split"] = {
+        "manifest": str(split_path),
+        "sha256": split_payload["sha256"],
+        "seed": cfg.split_seed,
+    }
+    meta["batch_order"] = {
+        "manifest": str(order_path),
+        "sha256": order_payload["sha256"],
+        "seed": cfg.order_seed,
+    }
+    meta["corpus_fingerprint"] = corpus_fp
+    meta["seed0_equal"] = True
+    return split_path, order_path, meta
 
 
 # ---------------------------------------------------------------------------------------
@@ -1115,10 +1371,11 @@ def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
     mathematically identical for any value -- see that field's own docstring -- so a
     checkpoint trained under one chunk size is a valid continuation under another). Every
     field kept here -- steps, batch_size, lr,
-    warmup, grad_clip, max_len, seed, holdout_pairs, the encoder shape, the pair columns,
-    the shard list, the tokenizer, the graded set, the corpus content fingerprint, and the
-    split-building code fingerprint -- changes the run itself, so a checkpoint trained
-    under a different value of any of them is not a continuation of what `cfg` describes.
+    warmup, grad_clip, max_len, seed, split_seed, order_seed, holdout_pairs, the encoder
+    shape, the pair columns, the shard list, the tokenizer, the graded set, the corpus
+    content fingerprint, and the split-building code fingerprint -- changes the run
+    itself, so a checkpoint trained under a different value of any of them is not a
+    continuation of what `cfg` describes.
 
     The last two of those were the R9 gap: this dict used to describe only
     `PretrainConfig`'s OWN fields, so neither a corpus rewrite under the same paths nor a
@@ -1138,6 +1395,8 @@ def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
         "grad_clip": cfg.grad_clip,
         "max_len": cfg.max_len,
         "seed": cfg.seed,
+        "split_seed": cfg.split_seed,
+        "order_seed": cfg.order_seed,
         # Precision is a resume-relevant field, not an administrative one: continuing an
         # fp32-trained checkpoint under bf16 (or the reverse) is a different run from
         # either, and the whole point of this dict is to refuse exactly that rather than
@@ -1401,6 +1660,7 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
 
     session_start = time.time()
     model.train()
+    holdout_id_set = {item_id(a, b) for a, b in holdout}
     for step in range(start_step, cfg.steps):
         for group in opt.param_groups:
             group["lr"] = _lr_at(step, cfg)
@@ -1413,6 +1673,14 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         # in tests/test_token_cache.py. The tokenizer is out of the loop entirely.
         a_ids, a_mask = anchor_tokens.batch(lo, hi, device)
         p_ids, p_mask = positive_tokens.batch(lo, hi, device)
+        # G26: a held-out item in a training batch is a leak, not a metric. Fail closed
+        # here as well as in `build_splits`, so a caller that bypasses the split helper
+        # still cannot train on eval rows.
+        leaked = [item_id(a, b) for a, b in train_pairs[lo:hi] if item_id(a, b) in holdout_id_set]
+        if leaked:
+            raise SplitGuardError(
+                f"G26: {len(leaked)} held-out item(s) in training batch at step {step}"
+            )
         # `info_nce` casts back to fp32 for `normalize` and the logits matmul; autocast
         # covers the two encoder towers, which is where the FLOPs are. `backward` is
         # deliberately OUTSIDE the context -- autocast is a forward-only decision, and
@@ -1561,6 +1829,18 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         # (region + code sha + corpus fingerprint) then reads one path regardless of
         # which stage's receipt it is holding.
         "corpus_fingerprint": corpus_fingerprint,
+        "split": split_meta.get("split")
+        or {
+            "manifest": "",
+            "sha256": "",
+            "seed": cfg.split_seed,
+        },
+        "batch_order": split_meta.get("batch_order")
+        or {
+            "manifest": "",
+            "sha256": "",
+            "seed": cfg.order_seed,
+        },
         "corpus": {
             "shards": [Path(s).name for s in cfg.shards],
             # EVERY source, not just the primary. The old value covered `cfg.shards`

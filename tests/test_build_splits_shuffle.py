@@ -12,8 +12,9 @@ MULTIPLE sources. That is always false for a single-source region, so `code` and
     list, so the entire held-out eval set was whatever group happened to sort first --
     on `code`, 512 held-out pairs spanning only 2 of the corpus's 13,581 repositories.
 
-The fix makes the shuffle unconditional (still seeded on `cfg.seed`, so it stays
-deterministic and reproducible). This test would have failed against the pre-fix code:
+The fix makes the shuffle unconditional (seeded on `cfg.split_seed`, default 0 -- E0
+separated this from the training seed -- so it stays deterministic and reproducible).
+This test would have failed against the pre-fix code:
 it builds a small single-source corpus whose on-disk order is grouped -- exactly the
 shape a real single-source corpus has -- and asserts the resulting holdout is not
 confined to a single group. Asserting "shuffle was called" would not catch the original
@@ -109,6 +110,16 @@ def test_holdout_is_not_confined_to_a_single_group(grouped_cfg: PretrainConfig) 
     holdout_anchors = {a for a, _ in holdout}
     train_anchors = {a for a, _ in train_pairs}
     assert holdout_anchors.isdisjoint(train_anchors)
+
+
+def test_training_seed_does_not_change_holdout_membership(grouped_cfg: PretrainConfig) -> None:
+    """E0: two training seeds must share byte-identical held-out membership."""
+    from dataclasses import replace
+
+    holdout_0, _, meta_0 = build_splits(grouped_cfg)
+    holdout_1, _, meta_1 = build_splits(replace(grouped_cfg, seed=1))
+    assert holdout_0 == holdout_1
+    assert meta_0["split"]["sha256"] == meta_1["split"]["sha256"]
 
 
 def test_shuffle_is_deterministic_across_repeated_calls(grouped_cfg: PretrainConfig) -> None:

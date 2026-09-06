@@ -1,0 +1,68 @@
+[
+  {
+    "region": "code",
+    "corpus_fingerprint": "e493273b003f5cf9c239db0ac461b993",
+    "split_path": "config/mind/splits/code-e493273b-split0.json",
+    "order_path": "config/mind/splits/code-e493273b-order0-s4000-b256.json",
+    "split_sha256": "6a2c9a4cbedb178c4d755d11207bdae5fd96d912535be1e11395a3b1a415fc8f",
+    "holdout_pairs": 512,
+    "train_pairs": 430931,
+    "duplicates_removed": 23800,
+    "seed0_equal": true
+  },
+  {
+    "region": "language",
+    "corpus_fingerprint": "e493273b003f5cf9c239db0ac461b993",
+    "split_path": "config/mind/splits/language-e493273b-split0.json",
+    "order_path": "config/mind/splits/language-e493273b-order0-s4000-b256.json",
+    "split_sha256": "6a2c9a4cbedb178c4d755d11207bdae5fd96d912535be1e11395a3b1a415fc8f",
+    "holdout_pairs": 512,
+    "train_pairs": 430931,
+    "duplicates_removed": 23800,
+    "seed0_equal": true
+  },
+  {
+    "region": "compress",
+    "corpus_fingerprint": "65a9938192b5040beda5e92eb4078dbc",
+    "split_path": "config/mind/splits/compress-65a99381-split0.json",
+    "order_path": "config/mind/splits/compress-65a99381-order0-s4000-b256.json",
+    "split_sha256": "d9b58df6fb685b8757809d3a1b244476a605061f730a2c13888057f2ecb22920",
+    "holdout_pairs": 512,
+    "train_pairs": 277268,
+    "duplicates_removed": 36534,
+    "seed0_equal": true
+  },
+  {
+    "region": "retrieve",
+    "corpus_fingerprint": "af4bb36f6f5dcacd0bf7f211df6ef63a",
+    "split_path": "config/mind/splits/retrieve-af4bb36f-split0.json",
+    "order_path": "config/mind/splits/retrieve-af4bb36f-order0-s4000-b256.json",
+    "split_sha256": "ad50988eae2c08afecc5fc3e96371ded3ec03ec385d90ddc98b49c40913b9064",
+    "holdout_pairs": 512,
+    "train_pairs": 505166,
+    "duplicates_removed": 8634,
+    "seed0_equal": true
+  },
+  {
+    "region": "reason",
+    "corpus_fingerprint": "ca364a92d2c6c5fd259404e0ab6f52a1",
+    "split_path": "config/mind/splits/reason-ca364a92-split0.json",
+    "order_path": "config/mind/splits/reason-ca364a92-order0-s4000-b256.json",
+    "split_sha256": "77d2c0e1ac02db40c49fd1258785c005b202da184622acaccc7c3f73144baa13",
+    "holdout_pairs": 512,
+    "train_pairs": 11811,
+    "duplicates_removed": 132,
+    "seed0_equal": true
+  },
+  {
+    "region": "memory",
+    "corpus_fingerprint": "6fc0cf23ff8591ff2241278f82c001d2",
+    "split_path": "config/mind/splits/memory-6fc0cf23-split0.json",
+    "order_path": "config/mind/splits/memory-6fc0cf23-order0-s4000-b256.json",
+    "split_sha256": "e07a5891ec71afbc58383c3ea00f51240b07949725dac77e45bc7d686a650d9a",
+    "holdout_pairs": 512,
+    "train_pairs": 782959,
+    "duplicates_removed": 45168,
+    "seed0_equal": true
+  }
+]
