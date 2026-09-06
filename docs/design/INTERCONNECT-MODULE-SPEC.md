@@ -135,12 +135,12 @@ scatter-adds over one static shape `[spec]`.
 ### 2.3 Parameters
 
 Table 4 — parameter count per component, derived from the dimensions above, beside the
-taxonomy's row (TAX:1275-1284, TAX:6435-6446). Biases are counted; a LayerNorm affine pair is
-`2·D`.
+taxonomy's row (TAX:1275-1284, TAX:6435-6446). Biases are counted except where a row says
+otherwise; a LayerNorm affine pair is `2·D`.
 
 | component | arithmetic | this spec | taxonomy | Δ |
 |---|---|---:|---:|---:|
-| workspace blocks ×4, attention and MLP | per block `4·(512²+512)` self + `4·(512²+512)` cross + `(512·2048+2048) + (2048·512+512)` = 4,200,960 | 16,803,840 | 16,803,840 | 0 |
+| workspace blocks ×4, attention and MLP | per block `4·512²` self + `4·512²` cross (no bias, amendment A1 below) + `(512·2048+2048) + (2048·512+512)` = 4,196,864 | 16,787,456 | 16,803,840 | −16,384 |
 | workspace LayerNorms | 4 blocks × 4 norms × 1,024 | 16,384 | not counted | +16,384 |
 | frontal read-out | query 512 + attention 1,050,624 + MLP 2,099,712 | 3,150,848 | 3,150,848 | 0 |
 | thalamic controller | 2 blocks @256 (2 × 788,736) + norms 2,048 + summary and heads 104,458 | 1,683,978 | 1,588,007 | +95,971 |
@@ -150,16 +150,36 @@ taxonomy's row (TAX:1275-1284, TAX:6435-6446). Biases are counted; a LayerNorm a
 | top-k scorers | `3·(256+1) + (384+1)` | 1,156 | not counted | +1,156 |
 | store projections `W_k`, `W_v` | `2·512²`, no bias | 524,288 | 524,288 | 0 |
 | latent bank, final norm, type embeddings | `64·512 + 1,024 + R·512` at `R = 5` | 36,352 | 37,376 | −1,024 |
-| **white matter core, `R = 5`** | | **27,538,574** | **27,424,039** | **+114,535** |
-| **white matter core, `R = 4`** | one type row and one controller slot row fewer (−768); `W_k`/`W_v` and the store summary stay instantiated and receive no gradient in W5 | **27,537,806** | | |
+| **white matter core, `R = 5`** | | **27,522,190** | **27,424,039** | **+98,151** |
+| **white matter core, `R = 4`** | one type row and one controller slot row fewer (−768); `W_k`/`W_v` and the store summary stay instantiated and receive no gradient in W5 | **27,521,422** | | |
 | rank head (DEC-41) | `512·512 + 512` | 262,656 | not in the table | — |
 | `NULL` candidate embedding (DEC-41) | one learned vector of 512 | 512 | not in the table | — |
 | unify probes (DEC-20) | `3·(512·256+256) + (512·384+384)` | 590,976 | not in the table | — |
-| **trainable in phase A, heads included, `R = 5`** | | **28,392,718** | | |
+| **trainable in phase A, heads included, `R = 5`** | | **28,376,334** | | |
 | candidate encoder, only under Q7 option (a) | `Linear(1152, 512)` over the concatenated frozen pooled outputs | 590,336 | not in the table | — |
-| **with Q7 (a)** | | **28,983,054** | | |
+| **with Q7 (a)** | | **28,966,670** | | |
 
-Five rows reproduce the taxonomy exactly from its own dimensions. Two rows do not. The taxonomy's
+**Amendment A1 (2026-09-06): the workspace blocks' attention projections carry no bias.**
+`WorkspaceBlock` (`workspace.py`) builds all six attention projections -- `cross_q`, `cross_k`,
+`cross_v`, `cross_out`, `self_qkv` (fused Q/K/V) and `self_out` -- with `bias=False`, which is
+standard practice for a pre-norm transformer block: a `LayerNorm` immediately upstream of each
+projection already supplies a learned shift, so the projection's own bias is redundant, and
+dropping it removes 4,096 parameters per block for no measured loss. This table originally
+counted them. The code is the version kept; the arithmetic above is amended to match, rather
+than adding biases back to satisfy a table.
+
+Re-derivation, per block: self-attention `4·512² = 1,048,576`, cross-attention
+`4·512² = 1,048,576`, MLP `(512·2048 + 2048) + (2048·512 + 512) = 2,099,712`; total
+`4,196,864`, and `×4 blocks = 16,787,456`. The dropped biases are `4·512` (cross q/k/v/out)
+`+ 3·512` (fused self QKV) `+ 512` (self out) `= 4,096` per block, `16,384` over the four
+blocks. Every total below the workspace row falls by that same 16,384: the `R = 5` core to
+27,522,190, the `R = 4` core to 27,521,422, phase-A trainable to 28,376,334, and the Q7 (a)
+figure to 28,966,670. The MLP's two `Linear`s keep their biases, as do the read-out, the
+controller, the adapters and the conditioning prefixes; only the workspace attention
+projections are affected. Measured against the code at `R = 5`: 27,522,190.
+
+Four rows reproduce the taxonomy exactly from its own dimensions. Three rows do not: the
+workspace row now differs from it by exactly amendment A1's 16,384. The taxonomy's
 controller figure was measured at three heads and names no dimensions for its summary or heads, so
 its 10,535-parameter residual over two blocks cannot be rebuilt from the text; Table 5 fixes the
 heads explicitly and lands inside the taxonomy's own ±0.1M (TAX:1279). The taxonomy's type-embedding
