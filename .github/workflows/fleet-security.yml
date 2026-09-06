@@ -45,9 +45,12 @@ jobs:
           # branch then fails main and every open PR. PR runs scan only the
           # PR commits; push/schedule/dispatch scan HEAD's history only.
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            git fetch origin "$BASE_REF"
-            gitleaks detect --source . --redact --verbose \
-              --log-opts="origin/${BASE_REF}..HEAD"
+            BASE="${BASE_REF#refs/heads/}"
+            [ -n "$BASE" ] || { echo "base ref empty on a pull_request event" >&2; exit 1; }
+            git fetch --no-tags origin "+refs/heads/${BASE}:refs/remotes/origin/${BASE}"
+            git rev-parse --verify -q "origin/${BASE}^{commit}" >/dev/null || {
+              echo "origin/${BASE} did not resolve after fetch" >&2; exit 1; }
+            gitleaks detect --source . --redact --verbose --log-opts="origin/${BASE}..HEAD"
           else
             gitleaks detect --source . --redact --verbose --log-opts=HEAD
           fi
