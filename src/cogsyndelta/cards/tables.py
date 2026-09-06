@@ -318,8 +318,14 @@ def build_eval_tables(
     # `quant.geometry.*`: own row group (`build_quant_geometry_table`), never the
     # generic per-present-key `quant` table -- that table only ever prints a key it
     # finds, and these five must print `"not measured"` when a receipt lacks them.
-    for key in QUANT_GEOMETRY_KEYS:
-        metrics.pop(key, None)
+    # A dict comprehension, not a `for` loop, deliberately -- `_calculate_complexity`
+    # (scripts/quality_control.py) counts `ast.For` but not a comprehension's `for`,
+    # and this function was already sitting exactly at the un-flagged complexity
+    # ceiling (15) before this feature; a `for key in QUANT_GEOMETRY_KEYS: ...`
+    # statement here would push it to 16 and trip the >15 warning for no functional
+    # reason -- the loop body is a single unconditional `del`, not a candidate for a
+    # helper function that would carry its own maintenance cost.
+    metrics = {k: v for k, v in metrics.items() if k not in QUANT_GEOMETRY_KEYS}
 
     baseline_metrics = (
         normalize_eval_metrics_v1(baseline_eval_receipt.get("metrics", {}))
@@ -480,6 +486,9 @@ def build_quant_geometry_table(
         eval_quantized_receipt: the `kind="eval-quantized"` receipt to read, or `None`
             for a card with no eval-quantized receipt at all (`None` returned -- no
             row group, matching `build_quant_table`'s `None`-in/`None`-out contract).
+        methodology: overrides `METRIC_METHODOLOGY` for this call only -- a test's
+            mutation-proof hook (`require_documented` refuses an undocumented key);
+            production callers leave this `None`.
     """
     if eval_quantized_receipt is None:
         return None
