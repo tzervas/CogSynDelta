@@ -176,10 +176,10 @@ def test_quant_receipt_carries_battery_id_pooling_and_seed(
 
     assert rec["battery_id"] == "quant_plan"
     assert rec["pooling"] == "matched"
-    # The corpus/holdout-construction seed the training receipt recorded -- the same
-    # split quantize_text_region rebuilt via build_splits(cfg), never a fresh one.
-    assert rec["seed"] == 7
-    assert rec["seed"] == trained_receipt["config"]["seed"]
+    # The corpus/holdout-construction seed (split_seed, E0) -- not the training-init
+    # seed. The same split quantize_text_region rebuilt via build_splits(cfg).
+    assert rec["seed"] == trained_receipt["split"]["seed"]
+    assert rec["seed"] == trained_receipt["config"]["split_seed"]
 
 
 # =============================================================== metrics_schema stamp

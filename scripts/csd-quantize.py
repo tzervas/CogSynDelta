@@ -122,6 +122,7 @@ def quantize_text_region(
     from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
     from cogsyndelta.regions.pretrain import PretrainConfig, build_splits, evaluate
     from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
+    from cogsyndelta.splits import verify_receipt_split
 
     started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     if train_receipt_path is not None:
@@ -175,6 +176,14 @@ def quantize_text_region(
     verify_corpus_fingerprint(receipt.get("corpus", {}), fingerprint, region)
 
     enc_d = cfg_d["encoder"]
+    split_block = receipt.get("split") if isinstance(receipt.get("split"), dict) else {}
+    order_block = receipt.get("batch_order") if isinstance(receipt.get("batch_order"), dict) else {}
+    split_manifest = split_block.get("manifest") or None
+    if split_manifest == "":
+        split_manifest = None
+    order_manifest = order_block.get("manifest") or None
+    if order_manifest == "":
+        order_manifest = None
     cfg = PretrainConfig(
         region=region,
         pair_columns=tuple(cfg_d["pair_columns"]),
@@ -185,10 +194,18 @@ def quantize_text_region(
         max_len=cfg_d["max_len"],
         holdout_pairs=cfg_d["holdout_pairs"],
         seed=cfg_d["seed"],
+        split_seed=int(cfg_d.get("split_seed", split_block.get("seed", 0))),
+        order_seed=int(cfg_d.get("order_seed", order_block.get("seed", 0))),
+        split_manifest=split_manifest,
+        order_manifest=order_manifest,
         tokenizer_path=cfg_d["tokenizer_path"],
         encoder=TextEncoderConfig(**enc_d),
     )
-    holdout, _train, _meta = build_splits(cfg)
+    holdout, _train, meta = build_splits(cfg)
+    verify_receipt_split(
+        receipt,
+        {"sha256": meta["split"]["sha256"], "seed": meta["split"]["seed"]},
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tok = Tokenizer.from_file(cfg.tokenizer_path)
@@ -298,6 +315,8 @@ def quantize_text_region(
             "artifact_device": "cpu",
         },
         "corpus_fingerprint": fingerprint,
+        "split": meta.get("split"),
+        "batch_order": meta.get("batch_order"),
         "tolerance": tolerance,
         "aggressive_bits": aggressive,
         "max_bits": max_bits,
@@ -327,13 +346,14 @@ def quantize_text_region(
         # single-positive diagonal" pool §2.1/§3.1 of MM describe for `rank.*` /
         # `held_out.*`) -- so `quant.plan_recall@1` and `quant.drop_recall@1` share one
         # battery_id/pooling/seed rather than each needing its own. `seed` is the
-        # corpus/holdout-construction seed the training receipt recorded (`cfg.seed`),
-        # NOT a re-randomised one -- `build_splits(cfg)` above rebuilds the identical
-        # split training used from it, which is the entire point of quantizing against
-        # the SAME holdout.
+        # corpus/holdout-construction seed the training receipt recorded
+        # (`cfg.split_seed` / `split.seed`), NOT the training-init seed and NOT a
+        # re-randomised one -- `build_splits(cfg)` above rebuilds the identical split
+        # training used from the split manifest, which is the entire point of
+        # quantizing against the SAME holdout.
         "battery_id": "quant_plan",
         "pooling": "matched",
-        "seed": cfg.seed,
+        "seed": cfg.split_seed,
     }
 
 

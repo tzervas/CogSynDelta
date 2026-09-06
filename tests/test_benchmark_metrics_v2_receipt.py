@@ -172,7 +172,7 @@ def test_fp32_receipt_metric_groups(tmp_path: Path, trained_receipt: dict) -> No
     for family in ("rank", "eff"):
         assert groups[family]["battery_id"] == "eval_holdout"
         assert groups[family]["pooling"] == "matched"
-        assert groups[family]["seed"] == 3
+        assert groups[family]["seed"] == trained_receipt["split"]["seed"]
     assert groups["repr"]["battery_id"] == "eval_holdout"
     assert groups["repr"]["pooling"] == "pooled_both"
     assert groups["repr"]["seed"] == 0

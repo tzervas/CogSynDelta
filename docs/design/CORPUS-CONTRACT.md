@@ -1213,8 +1213,30 @@ order, and `build_splits` shuffles *after* the cap. GooAQ's 400,000 is therefore
 non-representative prefix.
 
 **Check:** caps are applied by strided or reservoir sampling over the whole source, and the
-receipt records the sampling method and the seed. A cap whose method is unrecorded is not a
-cap.
+receipt records the sampling method and the seed (`corpus.cap_sampling.seed` is the
+**split seed**, not the training seed). A cap whose method is unrecorded is not a cap.
+
+## B3.1 — The held-out split is a hashed manifest, independent of the training seed
+
+**Prevents:** the reason-region diagnosis (2026-09-05): `cfg.seed` drove reservoir
+sampling, the holdout-defining shuffle, model init, *and* the untrained baseline, so a
+"seed" axis was three experiments at once and untrained r@1 differed per seed because
+the test set differed.
+
+A region's held-out membership is generated once from the corpus fingerprint plus a
+`split_seed` (default 0), written as
+`config/mind/splits/<region>-<corpus_fp8>-split<seed>.json` (sorted item ids, counts,
+generator params, sha256 of membership), and loaded by the trainer, the benchmark and
+the quantizer. The training seed does not touch membership. The receipt stamps
+`split.manifest`, `split.sha256`, `split.seed`. Batch order is the same shape: drawn
+once per `(corpus_fp, order_seed, steps, batch)`, hashed, reused across arms.
+
+Guard **G26** (fail closed): training refuses if the split sha does not match the
+corpus fingerprint it was generated from, or if a held-out item appears in a training
+batch; the benchmark refuses a receipt whose `split.sha256` differs from the manifest
+it is scoring. Seed-0 manifests are pinned to the historical seed-0 draw so existing
+seed-0 cells stay comparable; seed-1 cells drawn before this rule are retired from
+comparison.
 
 ## B5 — Within-source concentration
 

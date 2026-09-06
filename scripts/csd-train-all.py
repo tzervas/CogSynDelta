@@ -788,11 +788,10 @@ def run_region(
             table for every region, including one `SHARED_EMBEDDING_TABLE_SOURCE` names
             as DESIGNED to inherit one -- intent alone applies nothing.
         seed: Forwarded to `PretrainConfig.seed` -- governs the model's initial weights
-            (`torch.manual_seed(cfg.seed)`), a cap's reservoir sample (`load_pairs`'s
-            `sampling_rng`) and the pre-training pair shuffle (`_random.Random(cfg.seed)`
-            -- see `regions/pretrain.py`'s `pretrain_region`). Default 0 matches
-            `PretrainConfig.seed`'s own default, so omitting `--seed` on the command
-            line trains byte-identically to every run before this parameter existed.
+            (`torch.manual_seed(cfg.seed)`) and the untrained baseline. Held-out
+            membership is `PretrainConfig.split_seed` (default 0) plus the committed
+            split manifest (E0 / G26); this seed must not redraw the eval set. Default 0
+            matches `PretrainConfig.seed`'s own default.
             Recorded in the written receipt at `receipt["config"]["seed"]` (every
             `PretrainConfig` field is folded into `receipt["config"]` via `asdict(cfg)`
             -- already true for every region trained through `pretrain_region`) and
@@ -944,6 +943,8 @@ def run_region(
             "lr": lr_for_batch(batch),
             "max_len": resolved_max_len,
             "seed": seed,
+            "split_seed": 0,
+            "order_seed": 0,
             "holdout_pairs": 512,
             "graded_shards": graded_shards,
             "graded_columns": list(graded_cols) if graded_cols is not None else None,
@@ -995,6 +996,9 @@ def run_region(
         # old length, so the encoder's extra positional capacity would never be exercised.
         max_len=resolved_max_len,
         seed=seed,
+        split_seed=0,
+        order_seed=0,
+        require_split_manifest=True,
         holdout_pairs=512,
         eval_every=max(1, steps // 6),
         warmup_steps=max(50, steps // 15),

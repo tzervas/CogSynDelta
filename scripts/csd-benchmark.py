@@ -502,6 +502,7 @@ def _region_eval_context(region: str, train_receipt: dict) -> tuple:
     from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
     from cogsyndelta.regions.pretrain import PretrainConfig, build_splits
     from cogsyndelta.regions.text_encoder import TextEncoderConfig
+    from cogsyndelta.splits import verify_receipt_split
 
     spec = _regions_spec()
     entry = spec["region_spec"](region)
@@ -535,6 +536,18 @@ def _region_eval_context(region: str, train_receipt: dict) -> tuple:
     verify_corpus_fingerprint(train_receipt.get("corpus", {}), fingerprint, region)
 
     enc = TextEncoderConfig(**cfg_d["encoder"])
+    split_block = train_receipt.get("split") if isinstance(train_receipt.get("split"), dict) else {}
+    order_block = (
+        train_receipt.get("batch_order")
+        if isinstance(train_receipt.get("batch_order"), dict)
+        else {}
+    )
+    split_manifest = split_block.get("manifest") or None
+    if split_manifest == "":
+        split_manifest = None
+    order_manifest = order_block.get("manifest") or None
+    if order_manifest == "":
+        order_manifest = None
     cfg = PretrainConfig(
         region=region,
         pair_columns=tuple(cfg_d["pair_columns"]),
@@ -545,14 +558,27 @@ def _region_eval_context(region: str, train_receipt: dict) -> tuple:
         max_len=cfg_d["max_len"],
         holdout_pairs=cfg_d["holdout_pairs"],
         seed=cfg_d["seed"],
+        split_seed=int(cfg_d.get("split_seed", split_block.get("seed", 0))),
+        order_seed=int(cfg_d.get("order_seed", order_block.get("seed", 0))),
+        split_manifest=split_manifest,
+        order_manifest=order_manifest,
         tokenizer_path=cfg_d["tokenizer_path"],
         encoder=enc,
     )
-    holdout, _t, _m = build_splits(cfg)
+    holdout, _t, meta = build_splits(cfg)
+    # G26: a receipt whose split.sha256 is not the manifest this pass scored against
+    # is a different eval set. Seed-1 cells without a split block are retired.
+    verify_receipt_split(
+        train_receipt,
+        {
+            "sha256": meta["split"]["sha256"],
+            "seed": meta["split"]["seed"],
+        },
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tok = Tokenizer.from_file(cfg.tokenizer_path)
-    return cfg, enc, holdout, tok, device
+    return cfg, enc, holdout, tok, device, meta
 
 
 def _run_battery(
@@ -650,10 +676,9 @@ def _metric_groups(battery_id: str, seed: int) -> dict:
             are never the same battery even though they run the identical code path,
             because one scores the fp32 checkpoint and the other the packed artifact.
         seed: The corpus/holdout-construction seed this battery's split was rebuilt
-            from (`cfg.seed`, read back from the training receipt) -- what MM §10 item 7
-            calls the seed that "drives the corpus reservoir sample, the shuffle, and
-            the untrained model's initial weights". Applied to the `rank`/`eff` groups;
-            every `repr*` group's own subsample seed is fixed at 0 regardless (see above).
+            from (`cfg.split_seed` / `split.seed`, never the training-init seed) -- E0
+            separated those. Applied to the `rank`/`eff` groups; every `repr*` group's
+            own subsample seed is fixed at 0 regardless (see above).
     """
     return {
         "rank": {"battery_id": battery_id, "pooling": "matched", "seed": seed},
@@ -736,7 +761,7 @@ def benchmark_region(
         return None
     train_receipt = json.loads(resolved_path.read_text())
 
-    cfg, enc, holdout, tok, device = _region_eval_context(region, train_receipt)
+    cfg, enc, holdout, tok, device, split_meta = _region_eval_context(region, train_receipt)
     model = TextEncoder(enc, name=region).to(device).eval()
     # load_checkpoint: `train_receipt["checkpoint"]` is a path read out of a receipt
     # JSON on the NFS-exported receipts tree (rw, no_root_squash) -- anyone who can write
@@ -821,7 +846,9 @@ def benchmark_region(
             # never a checkpoint file's raw `stat().st_size`, which includes optimizer
             # state.
             "stored_bytes_definition": "weights-only",
-            "metric_groups": _metric_groups("eval_holdout", cfg.seed),
+            "metric_groups": _metric_groups("eval_holdout", cfg.split_seed),
+            "split": split_meta.get("split"),
+            "batch_order": split_meta.get("batch_order"),
         },
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
         started_utc=started_utc,
@@ -979,7 +1006,7 @@ def benchmark_region_quantized(
         )
     train_receipt = json.loads(train_receipt_path_final.read_text())
 
-    cfg, enc, holdout, tok, device = _region_eval_context(region, train_receipt)
+    cfg, enc, holdout, tok, device, split_meta = _region_eval_context(region, train_receipt)
 
     quantized_path = Path(quantized_path)
     packed = load_packed_artifact(quantized_path)
@@ -1085,8 +1112,10 @@ def benchmark_region_quantized(
             # fp32 pass, but a DIFFERENT battery: this one scores the packed artifact
             # read off disk, not the in-memory fp32 checkpoint (g7 §3.3's closed
             # `battery_id` set names both separately for exactly this reason).
+            "split": split_meta.get("split"),
+            "batch_order": split_meta.get("batch_order"),
             "metric_groups": {
-                **_metric_groups("eval_quantized_holdout", cfg.seed),
+                **_metric_groups("eval_quantized_holdout", cfg.split_seed),
                 # `quant.artifact_recall@1` above is `rank.recall@1` verbatim (MM
                 # §12.8's plan-vs-artifact sameness special-case, g7 §3.3) -- not an
                 # independent measurement, so it shares the `rank` group's
@@ -1098,7 +1127,7 @@ def benchmark_region_quantized(
                 "quant": {
                     "battery_id": "eval_quantized_holdout",
                     "pooling": "matched",
-                    "seed": cfg.seed,
+                    "seed": cfg.split_seed,
                 },
             },
         },

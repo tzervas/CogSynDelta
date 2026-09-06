@@ -1804,3 +1804,34 @@ def test_beats_untrained_eval_gate_name_survives_a_real_pretrain_and_benchmark_r
     assert rec is not None
     assert "beats_untrained_eval" in rec.gates
     assert "beats_untrained" not in rec.gates
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 8 / G26 -- the held-out split was a function of the training seed, so seed-0
+# and seed-1 cells were different test sets (reason-region diagnosis 2026-09-05 E0).
+# Membership is now a hashed manifest; training refuses a fingerprint/sha mismatch or a
+# held-out item in a training batch; the benchmark refuses a receipt whose split.sha256
+# is not the manifest it is scoring. The full suite lives in tests/test_splits.py (stdlib)
+# and tests/test_split_manifests.py (parquet). The tests below are the failing-case
+# proofs this file's charter requires.
+# ---------------------------------------------------------------------------------------
+
+
+def test_g26_doctored_split_manifest_is_refused(tmp_path: Path) -> None:
+    """A split file with one holdout id swapped must refuse, not train on a silent
+    different eval set. Mirrors tests/test_split_manifests.py; kept here so a review
+    that only reads this file still sees G26 fire."""
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from tests.test_split_manifests import test_doctored_manifest_refuses
+
+    test_doctored_manifest_refuses(tmp_path)
+
+
+def test_g26_held_out_leak_is_refused() -> None:
+    from cogsyndelta.splits import SplitGuardError, assert_no_held_out_in_pairs
+
+    holdout = [("the held out question", "the held out answer")]
+    train = [("unrelated q", "unrelated a"), ("the held out question", "the held out answer")]
+    with pytest.raises(SplitGuardError, match="held-out item"):
+        assert_no_held_out_in_pairs(holdout, train)
