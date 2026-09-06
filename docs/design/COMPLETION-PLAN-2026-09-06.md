@@ -1,9 +1,9 @@
 # CogSynDelta completion plan, 2026-09-06
 
-**Summary.** Wave 1 is complete and merged into `main` at `9cc046f`: the faculty protocol, the
-docs-versus-code hygiene fixes, the interconnect module specification, this plan and its state
-map, and the matrix harness's code pin. One wave-1 chore (the `ci_local.sh` temp-isolation fix)
-sits on an unmerged branch; see the table below. Two wave-2 experiments concluded: E2 found the
+**Summary.** Wave 1 is complete and merged: the faculty protocol, the docs-versus-code hygiene
+fixes, the interconnect module specification, this plan and its state map, and the matrix
+harness's code pin all landed on `main` at `9cc046f`, and the `ci_local.sh` temp-isolation fix
+landed just after, at `main` `d17554e`. Two wave-2 experiments concluded: E2 found the
 reason region's "batch 256 beats 512" result survives an epoch-matched control but is confounded
 with learning rate, and E5 killed the K=1 latent-step objective, leaving the reason region with no
 validated step-sensitive training objective. The invalidated 2.0x rank gate now has a
@@ -25,7 +25,7 @@ OD-17 is settled and the memory region has a checkpoint. Source: the state-versu
 | — | docs/state-vs-plan-and-completion-plan | this plan and the state-versus-plan map | merged, PR #66 |
 | G | chore/pin-run-code-sha-2fdc8b2 | repin `program/matrix/csd-matrix.yaml`'s `run.code.sha` to `main` `2fdc8b2` (split manifests, G26 guards, lexical baselines), so text-region matrix cells plan against the current harness | merged, PR #74 |
 | E | feat/quant-geometry-metrics | `quant.geometry.*` (mean/min/p05 cosine, kNN@10 identity agreement, `latent_std_ratio`) in eval-quantized receipts and cards, fail-closed reference guard (G27), `METRICS-METHODOLOGY.md` §23 | implemented; PR #77 not yet merged — see Wave 2's visual row |
-| H | chore/ci-local-unique-basetemp | private `pytest --basetemp` and a `TMPDIR`-honouring temp root per `ci_local.sh` run, closing a shared-basetemp race between concurrent worktrees and an opaque `torch.save` failure on a full `/tmp` | branch exists (`45c1f4b`), not confirmed merged — this checkout could not reach Forgejo to verify current status; re-check before relying on it |
+| H | chore/ci-local-unique-basetemp | private `pytest --basetemp` and a `TMPDIR`-honouring temp root per `ci_local.sh` run, closing a shared-basetemp race between concurrent worktrees and an opaque `torch.save` failure on a full `/tmp` | merged, PR #75, `main` `d17554e` (`45c1f4b`) |
 
 Table: wave 1 lanes and their merge status. Every merged lane went through a Forgejo PR with a
 second lens; guard-carrying code (lane E's G27, lane F's spec) got an adversarial pass. The E5
