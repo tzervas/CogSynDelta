@@ -16,6 +16,14 @@ Key features:
 - Bandwidth allocation and congestion control
 - Dynamic pathway strength adjustment
 - Multi-hop routing for distant sections
+
+Status: SUPERSEDED (DEC-12, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md ~L1026).
+Not differentiable as written (compute_importance/allocate_bandwidth return tensor.item();
+forward returns dict[tuple[str, str], float] with no gradient path) and imported by no
+training path. Its ideas are harvested into the interconnect module specified in
+docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md section 2 ("White matter — the interconnect
+module specification", DEC-16), which is planned but not yet implemented. This module and its
+tests are kept in place for the record; do not import it from new code.
 """
 
 from collections import defaultdict, deque

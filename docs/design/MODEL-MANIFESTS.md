@@ -260,6 +260,40 @@ appear across five LocalAI YAMLs as prose. The scheduler cannot read prose.
 `conflicts_with: [local/uncensored, local/fast]` plus a `measured` VRAM figure is the same
 statement in a form that can refuse a second load.
 
+### `faculty` and `token_budget` — folded from taxonomy §7.3, 2026-09-06
+
+`docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` §7.3 adds these to a `trained` manifest's
+fields, alongside `specialisation`, `emits`, `native_dim`, `adapter`, `kv_bytes_per_token`,
+`accepts_condition` and `status` (replacing `live`) — this fold applies only `faculty` and
+`token_budget`; the rest are tracked separately and not added here.
+
+`faculty` names the cognitive faculty this region implements (DEC-78's closed vocabulary:
+`language`, `memory`, `reasoning`, `visual`, `episodic_store`, …), distinct from `region`,
+which stays the on-disk/receipt name a run was actually written under — DEC-78 requires a
+writer not to canonicalize mid-run, so `region` and `faculty` can legitimately differ (e.g.
+`region: "code"`, `faculty: "language"`).
+
+`token_budget` records the region's own two DEC-15 budget currencies (taxonomy §2.2) —
+`ctx_r`, consumed *before* the region runs, and `b_r`, consumed *after* it as a
+straight-through top-k over the emitted tokens — so a manifest can state what a region costs
+the interconnect without the interconnect having run yet:
+
+```yaml
+token_budget:
+  ctx_r: 256      # region-internal context tokens; bounded by sum_r(c_r * ctx_r) <= B_kv
+  b_r: 64         # read tokens the interconnect may keep; bounded by sum_r(b_r) <= B_read
+```
+
+### A third manifest kind: `overlay` (DEC-33, folded from taxonomy §7.3)
+
+A memory-gate overlay is a first-class artifact, not a checkpoint variant. `kind: overlay`
+joins `served` and `trained`, with its own required fields: the base checkpoint fingerprint
+it targets (attach refuses on a mismatch), the overlay's shape and rank, its size in bytes at
+each residency tier, the data that trained it, its licence under the strictest-input rule,
+and the tiered-residency policy's measured hit rate, page-in latency and VRAM held. Its gate
+is P5′o's: applied then disconnected reproduces the base receipt exactly, and the disconnect
+is logged.
+
 ---
 
 ## C. Instantiation — how a manifest becomes a running thing
@@ -552,7 +586,7 @@ already treats the LocalAI configs.
     "schema":  { "const": "model-manifest/v1" },
     "id":      { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$",
                  "description": "Fleet-unique. Joins to receipt provenance.manifest." },
-    "kind":    { "enum": ["served", "trained"] },
+    "kind":    { "enum": ["served", "trained", "overlay"] },
     "status":  { "enum": ["active", "on-demand", "benchmark-only",
                           "planned", "convert-pending", "retired"] },
     "owner":   { "type": "string", "description": "Repo that may edit this id." },
@@ -675,6 +709,10 @@ already treats the LocalAI configs.
     {
       "if":   { "properties": { "kind": { "const": "trained" } } },
       "then": { "properties": { "spec": { "$ref": "#/$defs/trainedSpec" } } }
+    },
+    {
+      "if":   { "properties": { "kind": { "const": "overlay" } } },
+      "then": { "properties": { "spec": { "$ref": "#/$defs/overlaySpec" } } }
     }
   ],
 
@@ -739,6 +777,16 @@ already treats the LocalAI configs.
       "additionalProperties": false,
       "properties": {
         "region": { "type": "string", "description": "Region name in csd-regions.json, when this trains one." },
+        "faculty": { "type": "string", "description": "DEC-78 canonical cognitive-faculty id (e.g. language, memory, reasoning, visual, episodic_store). May differ from `region`, which stays the on-disk/receipt name a run was actually written under." },
+        "token_budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "DEC-15 (taxonomy §2.2): the two budget currencies this region costs the interconnect.",
+          "properties": {
+            "ctx_r": { "type": "integer", "minimum": 1, "description": "Region-internal context tokens, consumed before the region runs; bounded by sum_r(c_r * ctx_r) <= B_kv." },
+            "b_r":   { "type": "integer", "minimum": 1, "description": "Read tokens the interconnect may keep, consumed after the region runs via top-k; bounded by sum_r(b_r) <= B_read." }
+          }
+        },
         "objective_family": { "enum": ["contrastive-pair", "jepa-predictive", "reconstruction", "rank"] },
         "objective": { "type": "string" },
         "sources": {
@@ -828,6 +876,55 @@ already treats the LocalAI configs.
             "checkpoint_dir": { "type": "string" },
             "receipt_dir":    { "type": "string" },
             "serves_as":      { "type": "string", "description": "Manifest id this run's artifact feeds, closing the trained→served chain." }
+          }
+        }
+      }
+    },
+
+    "overlaySpec": {
+      "type": "object",
+      "description": "DEC-33 (taxonomy §7.3): a memory-gate overlay is a first-class artifact, not a checkpoint variant.",
+      "required": ["base_fingerprint", "shape", "rank", "residency", "trained_on", "licence_ref", "gate"],
+      "additionalProperties": false,
+      "properties": {
+        "base_fingerprint": { "type": "string", "description": "Fingerprint of the base checkpoint this overlay targets. Attach refuses on a mismatch." },
+        "shape":  { "type": "string", "description": "Overlay architecture, e.g. lora, ia3." },
+        "rank":   { "type": "integer", "minimum": 1 },
+        "residency": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["tier", "bytes"],
+            "additionalProperties": false,
+            "properties": {
+              "tier":  { "type": "string", "description": "e.g. vram, host-ram, disk." },
+              "bytes": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "trained_on":  { "type": "string", "description": "Data (or corpus manifest id) that trained this overlay." },
+        "licence_ref": { "type": "string", "description": "Licence under the strictest-input rule over base checkpoint plus training data." },
+        "measured_residency": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["tier", "hit_rate", "page_in_latency_ms", "vram_held_mib"],
+            "additionalProperties": false,
+            "properties": {
+              "tier": { "type": "string" },
+              "hit_rate": { "type": "number" },
+              "page_in_latency_ms": { "type": "number" },
+              "vram_held_mib": { "type": "number" }
+            }
+          }
+        },
+        "gate": {
+          "type": "object",
+          "required": ["name"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "const": "P5'o" },
+            "description": { "type": "string", "default": "Applied then disconnected reproduces the base receipt exactly, and the disconnect is logged." }
           }
         }
       }

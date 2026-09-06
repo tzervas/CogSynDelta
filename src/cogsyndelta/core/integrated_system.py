@@ -9,6 +9,13 @@ Combines all components:
 - Security hardening and quality assurance
 - Persistent memory with compression and temporal continuity
 - Safeguards against infinite loops and hazards
+
+Status: SUPERSEDED (DEC-12, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md ~L1026), as part
+of the dormant `core/` stack — imported by no training path. Its interconnect role is
+harvested into the interconnect module specified in
+docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md section 2 ("White matter — the interconnect
+module specification", DEC-16), which is planned but not yet implemented. This module and its
+tests are kept in place for the record; do not import it from new code.
 """
 
 from typing import Any

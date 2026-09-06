@@ -511,6 +511,12 @@ at upstream):
 
 ## 1.4 `vl_latent`
 
+**Status 2026-09-06.** This section describes the pre-DEC-02 six-region model and calls
+`vl_latent` unreleasable as trained. `config/mind/csd-regions.json` now names this region
+`visual` (DEC-78, DEC-03) and its `pretrain` block records it as trained on a permissive
+corpus mix. See DEC-02 and DEC-78 in `docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` for
+the current region catalogue and rename; this section is not rewritten to match.
+
 **Declared purpose** — `config/mind/csd-regions.json`:
 
 > `"role": "Latent visual reasoning. Consumes visual latents, NOT tokens; predicts representations rather than reconstructing pixels. Enters the same shared stream as the text regions, which is why the [B, D] activate surface is modality-agnostic."`
@@ -619,6 +625,13 @@ That is the price of the licence-clean requirement, not a rounding error.
 
 ## 1.5 `classify` — planned
 
+**Status 2026-09-06.** This section describes the pre-DEC-02 six-region model, where
+`classify` has no role. `config/mind/csd-regions.json` now carries `classify_banking77` and
+`classify_go_emotions` entries, each with a role, an `objective`, and a WAIVER (B2/B5) noted
+in its `pretrain.notes`. See DEC-02 and DEC-78 in
+`docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` for the current region catalogue; this
+section is not rewritten to match.
+
 **Declared purpose: none exists.** `config/mind/csd-regions.json` contains six regions —
 `residual_mlp`, `stream_vae`, `code`, `retrieve`, `compress`, `vl_latent`. There is no
 `classify` entry, so there is **no `role` line and no `router_trigger`**. The region is
@@ -678,6 +691,12 @@ target asks for have no candidate list, and this document does not invent one.
 ---
 
 ## 1.6 `reason` — planned
+
+**Status 2026-09-06.** This section describes the pre-DEC-02 six-region model, where
+`reason` has no role. `config/mind/csd-regions.json` now carries a `reason` entry with a
+role, a `router_trigger`, and a WAIVER (B2) noted in its `pretrain.notes`. See DEC-02 and
+DEC-78 in `docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` for the current region
+catalogue; this section is not rewritten to match.
 
 **Declared purpose: none exists**, exactly as for `classify`. No entry in
 `config/mind/csd-regions.json`, therefore no `role`, no `router_trigger`.
