@@ -9,6 +9,7 @@ import torch
 import torch.nn.functional as F
 
 from cogsyndelta.interconnect.controller import box_integerise
+from cogsyndelta.interconnect.gates import check_attention_mass_floor
 from cogsyndelta.interconnect.mind import WhiteMatter
 from cogsyndelta.interconnect.schedule import OutputSpec, Schedule, StepBudget
 from tests.interconnect.conftest import make_toy_inputs
@@ -113,6 +114,33 @@ def test_a_is_a_distribution_over_admitted_regions(white_matter, toy_scope) -> N
     out = white_matter(inputs)
     totals = out.a.sum(dim=-1)
     assert torch.allclose(totals, torch.ones_like(totals), atol=1e-4)
+
+
+def test_attention_mass_meets_the_floor_on_every_region(white_matter, toy_scope) -> None:
+    """G29 (`gates.py`), spec section 4 Table 8: every region's mean admitted
+    attention mass over active iterations must be at least `eta / R`. Summing to 1
+    (the test above) alone does not catch a collapse -- a fully collapsed `a` (100% of
+    mass on one region, 0% on the rest) still sums to 1 -- so this test routes the
+    integrated module's own exported `a` through the real G29 guard, the same function
+    the compose-stage script calls over a receipt (IC-R1 skeptic F4: nothing in this
+    module's own test suite previously did). A mutant that collapses attention to one
+    slot (`WorkspaceBlock._cross_attend` forced to slot 0) must fail THIS test, not
+    only the severance-gradient unit tests in `test_workspace.py`.
+
+    Calls `white_matter` twice on the same scope first: `episodic_store` legitimately
+    gets zero mass on the very first read of a scope with nothing written yet (spec,
+    `test_store_mass_only_after_a_write_in_the_same_scope` above) -- that is correct
+    behaviour, not a collapse, and must not make this guard fire on an honest empty
+    store. The second call's store slots have something to read, so all three
+    participants have genuinely earned mass to check the floor against.
+    """
+    inputs = make_toy_inputs(batch_size=3, scope=toy_scope, seed=1)
+    white_matter(inputs)  # primes episodic_store's write in this scope
+    out = white_matter(inputs)
+    r = len(white_matter.participant_names)
+    mean_a = out.a.mean(dim=(0, 1))  # [R]: mean over batch and active iterations
+    for name, mean_mass in zip(white_matter.participant_names, mean_a.tolist(), strict=True):
+        check_attention_mass_floor(name, mean_mass, white_matter.config.floor_eta, r)
 
 
 def test_write_back_changes_h_at_iteration_1_not_0(
