@@ -8,8 +8,11 @@ under `src/cogsyndelta/interconnect/` built an optimizer or took a backward step
 file is that gap: the phase-A trainable/frozen partition, `L_A = L_task + delta*L_unify`,
 the four gates Table 6's row A names that `gates.py` implements, and the Table 7 receipt.
 
-WHY AN ELEVENTH FILE
-Spec section 2.1 Table 2 enumerates ten files and assigns none of them a trainer; section
+WHY THIS FILE IS NOT IN TABLE 2
+Spec section 2.1 Table 2 enumerates twelve filenames across eleven rows -- its ninth row
+names `gates.py` and `receipts.py` together -- and this branch adds two more, `phase_a.py`
+and `cli.py`. The file count is not the argument and never was; what matters is that Table
+2 assigns a trainer no home at all. Section
 1 excludes "the compose-stage driver script, which imports `gates.py` and `receipts.py`
 and runs the phases of section 4" from the module. Those two facts do not agree about
 where an optimizer lives, and the exclusion is narrower than it looks: what section 1
@@ -57,9 +60,10 @@ WHAT PHASE A DOES NOT DO
 Phases B, C and D (Table 6's other rows) need the controller as a student, a distillation
 teacher and straight-through estimators; none of that is here. Table 6 row A's gate column
 also names "G1, G2, G0", which are taxonomy-level gates with no function in `gates.py` and
-no receipt field of their own; this file wires the four Table 8 guards that DO exist --
-G29, G33, G35, G36 -- and records the other three as unimplemented in the receipt's
-verdicts rather than pretending to check them.
+no Table 7 field of their own; this file wires the four Table 8 guards that DO exist --
+G29, G33, G35, G36 -- and names the other three IN THE WRITTEN RECEIPT, under
+`verdicts.unimplemented_gates`, so a reader holding only the JSON can see which gates were
+never evaluated instead of reading the verdict as an unqualified pass.
 """
 
 from __future__ import annotations
@@ -380,7 +384,9 @@ class PhaseAGuardReport:
     unimplemented_gates: tuple[str, ...] = ("G0", "G1", "G2")
     """Table 6 row A's gate column also names G0, G1 and G2. They are taxonomy-level
     gates with no function in `gates.py` and no Table 7 field, so they are declared
-    unevaluated here rather than silently omitted."""
+    unevaluated rather than silently omitted. `build_receipt` writes them into the receipt
+    under `verdicts.unimplemented_gates`; asserting them against this object alone would
+    leave a reader holding only the JSON unable to learn which gates were skipped."""
 
     @property
     def passed(self) -> bool:
@@ -416,14 +422,16 @@ def phase_a_guards(
     G33 is not here: it fires at construction, before a step runs (see
     `check_phase_a_frozen_set` and `PhaseATrainer.__init__`).
 
-    G29 has two independent halves, and the order below matters. The receipt half -- "a
-    receipt whose printed floor != `eta/R` at its own `R`" -- is checked FIRST and is
-    allowed to propagate, because its effect is "the receipt is refused". It is checked
-    against the region carrying the LARGEST mean mass, which cannot itself trip the other
-    half: the masses sum to 1 over `r` regions, so the maximum is at least `1/r`, which is
-    at or above `eta/r` for every `eta <= 1`. Checking it against an arbitrary region
-    instead would let a genuinely collapsed region raise first and be caught as a
-    collapse, silently swallowing a wrong printed floor.
+    G29 has two independent halves and this function evaluates exactly one: the collapse
+    half, whose effect is that a region is NAMED in `collapsed_in_phase_A`. The receipt
+    half -- "a receipt whose printed floor != `eta/R` at its own `R`" -- is NOT checkable
+    from here. No printed floor is in scope yet, only `eta` and `r`, so a check made here
+    could only compare `eta / r` against `eta / r` recomputed from the same two arguments:
+    a tautology that cannot refuse anything. An earlier revision did make that call, with
+    `printed_floor=eta / r`; it has been deleted rather than left standing as coverage it
+    did not provide (memory note `verify-guards-by-making-them-fail`). The receipt half is
+    checked over the BUILT receipt by `check_receipt_collapse_floor`, which
+    `PhaseATrainer.write_receipt` runs before the receipt can reach disk.
 
     Args:
         mean_per_region: `{region: mean(a_r)}` over active iterations.
@@ -438,18 +446,12 @@ def phase_a_guards(
         A `PhaseAGuardReport`.
 
     Raises:
-        GateFailure: The printed floor disagrees with `eta/r` -- the receipt is refused.
         ValueError: `mean_per_region` is empty, so no floor can be checked at all.
     """
     if not mean_per_region:
         raise ValueError("phase_a_guards: mean_per_region is empty; nothing to gate.")
     floor_value = eta / r
     collapse_floor = {"expression": "eta/R", "R": r, "value": floor_value}
-
-    top_region = max(mean_per_region, key=lambda name: mean_per_region[name])
-    check_attention_mass_floor(
-        top_region, mean_per_region[top_region], eta, r, printed_floor=floor_value
-    )
 
     report = PhaseAGuardReport(collapse_floor=collapse_floor)
     for name, mean_a in mean_per_region.items():
@@ -1081,6 +1083,19 @@ class PhaseATrainer:
                 "integration": result.guards.verdict(),
                 "scheduling": "not evaluated: the controller is bypassed in phase A",
                 "trigger_sensitivity": "not evaluated: phase A runs the dense allocation",
+                # `[spec]`: Table 7's verdicts group names three strings and no fourth
+                # field, so this key is this module's own naming. It is written anyway
+                # because the three strings cannot tell a reader holding only the JSON
+                # WHICH of Table 6 row A's gates went unchecked -- "every evaluated gate
+                # clear" hedges, but does not say what was evaluated.
+                "unimplemented_gates": {
+                    "gates": list(result.guards.unimplemented_gates),
+                    "reason": (
+                        "Table 6 row A names these gates; gates.py implements no function "
+                        "for them and Table 7 gives them no field. They were not "
+                        "evaluated and are not claimed to have passed."
+                    ),
+                },
             }
         )
         receipt.set_placement_knobs({"placement": None, "knobs": None})
@@ -1103,8 +1118,23 @@ class PhaseATrainer:
 
         Returns:
             The path written.
+
+        Raises:
+            GateFailure: G29's receipt half -- the built receipt prints a floor that is
+                not `eta/R` at its own `R`, or names no surviving region, or leaves a
+                region below the floor out of `collapsed_in_phase_A`. Nothing is written:
+                Table 8 row G29's effect for this half is that the receipt is REFUSED, so
+                the refusal has to land before the file exists rather than after a reader
+                could already have cited it.
         """
-        return self.build_receipt(result, identity).write(out_dir, filename)
+        receipt = self.build_receipt(result, identity)
+        # G29's receipt half, on the path every caller actually takes. `phase_a_guards`
+        # cannot make this check (see its docstring -- there is no printed floor in scope
+        # during a run, only the two numbers it would be re-derived from); this is the
+        # first point at which the comparison is capable of failing at all. `build()` is
+        # deterministic, so running it here and again inside `write` costs a dict.
+        check_receipt_collapse_floor(receipt.build())
+        return receipt.write(out_dir, filename)
 
 
 def loss_decreased(curve: Sequence[float], *, tail: int = 3) -> bool:
