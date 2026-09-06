@@ -181,9 +181,12 @@ class TextEncoder(nn.Module):
 
 
 def info_nce(
-    anchors: torch.Tensor, positives: torch.Tensor, temperature: float = 0.05
+    anchors: torch.Tensor,
+    positives: torch.Tensor,
+    temperature: float = 0.05,
+    extra_negatives: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, dict[str, float]]:
-    """Symmetric InfoNCE over in-batch negatives.
+    """Symmetric InfoNCE over in-batch negatives, plus any negatives from beyond the batch.
 
     Each anchor's positive is its pair; every other item in the batch is a negative. This
     is what makes a pair corpus trainable without mining hard negatives, and why batch
@@ -198,21 +201,55 @@ def info_nce(
     defensive habit; it is required once the forward runs under bf16 autocast, and the
     comment on the cast below says exactly why.
 
+    NEGATIVES BEYOND THE BATCH, AND WHY THE SYMMETRIC TERM DOES NOT SEE THEM
+    `extra_negatives` appends `K` extra COLUMNS to the logits, so the anchor-to-positive
+    direction ranks its gold against `B - 1 + K` distractors instead of `B - 1`. The
+    transposed direction cannot take them: `logits.T` would be `[B + K, B]`, whose extra
+    rows are negatives with no anchor of their own and no label to point at. So the
+    symmetric term stays restricted to the `[B, B]` in-batch block --
+    `0.5*(CE(logits, labels) + CE(logits[:, :B].T, labels))` -- which at `K = 0` is
+    `logits[:, :B] is logits`, i.e. exactly the line this function has always computed.
+    That identity is the point rather than a convenience: the in-batch-only control arm
+    of a negatives experiment must be a special case of the treatment code, not a second
+    implementation of it, or the arms differ in two things. `tests/test_negatives.py`
+    asserts the bit-identity rather than arguing for it.
+    (Pre-registration: PREREG-RETRIEVAL-NEGATIVES-2026-09-06 rev 3, sections 3 and 2.)
+
     Args:
         anchors: ``[B, D]``.
         positives: ``[B, D]``, aligned with ``anchors``.
         temperature: Softmax temperature. Fixed rather than learned -- a learned
             temperature can shrink toward zero and drive the loss down without improving
             the ranking, which is a quiet way to fake progress.
+        extra_negatives: Optional ``[K, D]`` of encoded texts that are negatives for
+            every anchor -- a cross-batch bank (:class:`NegativeBank`) or mined hard
+            negatives. DETACHED here whatever the caller passes, so they enter the
+            denominator without contributing a gradient of their own; an empty tensor is
+            treated as absent, which is what makes a warm-up step with an empty bank
+            bit-identical to the control.
 
     Returns:
         ``(loss, stats)``. Stats carry in-batch retrieval accuracy, which is the honest
-        signal: a collapsed encoder has low loss and chance-level accuracy.
+        signal: a collapsed encoder has low loss and chance-level accuracy, plus the
+        whole-row `full_acc` and its own `full_chance` denominator -- reporting an
+        accuracy over `B + K` columns against `1/B` would read as a collapse that is
+        really just a bigger denominator.
+
+    Raises:
+        ValueError: If the two towers disagree in shape, if there is only one example
+            (no negatives to speak of), or if `extra_negatives` is not ``[K, D]`` with
+            the same ``D``.
     """
     if anchors.shape != positives.shape:
         raise ValueError(f"shape mismatch: {tuple(anchors.shape)} vs {tuple(positives.shape)}")
     if anchors.size(0) < 2:
         raise ValueError("InfoNCE needs at least 2 examples: with one there are no negatives")
+    if extra_negatives is not None and extra_negatives.numel():
+        if extra_negatives.dim() != 2 or extra_negatives.size(1) != anchors.size(1):
+            raise ValueError(
+                f"extra_negatives must be [K, {anchors.size(1)}], got "
+                f"{tuple(extra_negatives.shape)}"
+            )
 
     # fp32 FOR THE LOSS, ALWAYS -- including under a bf16 autocast around the encoders.
     # bf16 carries 8 mantissa bits, and these logits are divided by temperature=0.05,
@@ -230,16 +267,135 @@ def info_nce(
     p = F.normalize(positives.float(), dim=-1)
     logits = (a @ p.T) / temperature
     labels = torch.arange(a.size(0), device=a.device)
+    if extra_negatives is not None and extra_negatives.numel():
+        # `.detach()` here as well as at the call site: these columns are a denominator,
+        # never a second training signal. A bank vector was encoded by an older copy of
+        # the weights and a mined negative is deliberately no-grad, so a gradient
+        # reaching either would be training on a stale or unintended path.
+        n = F.normalize(extra_negatives.detach().float(), dim=-1)
+        logits = torch.cat([logits, (a @ n.T) / temperature], dim=1)
 
-    loss = 0.5 * (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels))
+    # `logits[:, :B]` is the whole tensor when there are no extra columns -- a narrow
+    # over the full width returns the same storage, sizes and strides -- so this line is
+    # the pre-existing `0.5*(CE(logits, labels) + CE(logits.T, labels))` bit for bit at
+    # K = 0, and the control arm needs no separate code path.
+    in_batch = logits[:, : a.size(0)]
+    loss = 0.5 * (F.cross_entropy(logits, labels) + F.cross_entropy(in_batch.T, labels))
 
     with torch.no_grad():
-        acc = (logits.argmax(dim=-1) == labels).float().mean().item()
+        # Over the [B, B] BLOCK, not the whole row: once extra columns exist, an argmax
+        # over the row answers a different question ("did the gold beat B-1+K
+        # distractors") and would silently redefine a statistic that appears in every
+        # receipt this project has written. That question is `full_acc`, reported
+        # alongside with its own denominator.
+        acc = (in_batch.argmax(dim=-1) == labels).float().mean().item()
         # Chance is 1/B. Accuracy at chance with a falling loss means collapse.
         stats = {
             "loss": loss.item(),
             "in_batch_acc": acc,
             "chance": 1.0 / a.size(0),
+            "full_acc": (logits.argmax(dim=-1) == labels).float().mean().item(),
+            "full_chance": 1.0 / logits.size(1),
+            "negatives_per_query": float(logits.size(1) - 1),
             "emb_std": a.std(dim=0).mean().item(),
         }
     return loss, stats
+
+
+class NegativeBank:
+    """A FIFO bank of the last ``capacity`` encoded positives, kept detached.
+
+    WHY A BANK AT ALL
+    In-batch InfoNCE gives each anchor `B - 1` negatives and nothing else, so on a
+    57,638-passage retrieval pool no gradient ever separates the gold from the 56,000-odd
+    passages the batch never showed. A bank re-uses positives already encoded on previous
+    steps as extra denominator columns: at `capacity = 16384` and batch 1,280 that is
+    17,663 negatives per query instead of 1,279, for the cost of one `16384 x 256` fp32
+    buffer (16.0 MiB) and a wider logits matmul.
+
+    NO MOMENTUM ENCODER, DELIBERATELY
+    MoCo pairs a bank with a slowly-updated key encoder because its vectors go stale.
+    This is the plain version: vectors are whatever the encoder produced when they were
+    pushed, and staleness is a property of the arm being measured, not something a second
+    encoder is introduced to hide. Adding one would be a second variable in a round whose
+    whole design is one variable (PREREG-RETRIEVAL-NEGATIVES-2026-09-06 rev 3, Table 2).
+
+    Attributes:
+        capacity: `K`, the number of vectors retained. The oldest is evicted first.
+    """
+
+    def __init__(self, capacity: int, device: torch.device | str | None = None) -> None:
+        """Create an empty bank.
+
+        The buffer is allocated on the first push rather than here, so the embedding
+        width comes from the encoder that actually ran instead of from a config field
+        that could disagree with it.
+
+        Args:
+            capacity: `K`, maximum vectors retained. Must be positive.
+            device: Where the buffer lives. Defaults to the device of the first push.
+
+        Raises:
+            ValueError: If ``capacity`` is not positive -- "a bank of zero" is spelled by
+                not constructing one, so that the control arm has no bank object at all.
+        """
+        if capacity < 1:
+            raise ValueError(f"capacity must be >= 1, got {capacity}")
+        self.capacity = capacity
+        self._device = torch.device(device) if device is not None else None
+        self._buffer: torch.Tensor | None = None
+        self._cursor = 0
+        self._filled = 0
+
+    def __len__(self) -> int:
+        """Vectors currently held, at most ``capacity``."""
+        return self._filled
+
+    def push(self, vectors: torch.Tensor) -> None:
+        """Append encoded positives, evicting the oldest once full.
+
+        Args:
+            vectors: ``[N, D]``. Detached and cast to fp32 before storage -- fp32 because
+                the bank outlives the autocast region that produced these vectors, and a
+                bf16 buffer would quantise a stored logit source to ~0.125 near the
+                temperature-scaled range (see `info_nce`'s own fp32 comment).
+
+        Raises:
+            ValueError: If ``vectors`` is not ``[N, D]``, or its width disagrees with
+                what the bank already holds.
+        """
+        if vectors.dim() != 2:
+            raise ValueError(f"expected [N, D], got {tuple(vectors.shape)}")
+        rows = vectors.detach().float()
+        if self._buffer is None:
+            device = self._device if self._device is not None else rows.device
+            self._buffer = torch.zeros(self.capacity, rows.size(1), dtype=torch.float32)
+            self._buffer = self._buffer.to(device)
+        elif rows.size(1) != self._buffer.size(1):
+            raise ValueError(f"bank holds width {self._buffer.size(1)}, got {rows.size(1)}")
+        rows = rows.to(self._buffer.device)
+        # More rows than the bank holds: only the last `capacity` of them survive, which
+        # is what a FIFO of this size would contain after pushing them one at a time.
+        if rows.size(0) > self.capacity:
+            rows = rows[-self.capacity :]
+        first = self.capacity - self._cursor
+        head = rows[:first]
+        self._buffer[self._cursor : self._cursor + head.size(0)] = head
+        tail = rows[first:]
+        if tail.numel():
+            self._buffer[: tail.size(0)] = tail
+        self._cursor = (self._cursor + rows.size(0)) % self.capacity
+        self._filled = min(self.capacity, self._filled + rows.size(0))
+
+    def negatives(self) -> torch.Tensor:
+        """The vectors held, as ``[len(self), D]``.
+
+        Returns:
+            A detached view of the filled part of the ring, in no particular order --
+            softmax columns are exchangeable, so only WHICH vectors are present matters,
+            never their order. Empty (``[0, 0]``) before the first push, which
+            `info_nce` treats as "no extra negatives" and therefore as the control.
+        """
+        if self._buffer is None or self._filled == 0:
+            return torch.zeros(0, 0)
+        return self._buffer[: self._filled].detach()

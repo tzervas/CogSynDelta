@@ -390,6 +390,9 @@ def run_memory_pretrain(
     token_loss_weight: float = TOKEN_LOSS_WEIGHT,
     decorr_weight: float = DECORR_WEIGHT,
     token_loss_chunk: int = 2048,
+    negative_bank_size: int = 0,
+    mined_negatives_manifest: str | None = None,
+    mined_negatives_per_anchor: int = 0,
     encoder: TextEncoderConfig | None = None,
     tokenizer_path: str = "/mnt/fleet-datasets/tritter/gpt2_tokenizer.json",
     out_dir: str = "receipts",
@@ -414,6 +417,14 @@ def run_memory_pretrain(
             divergence between the two parents' tables is measured
             (`embedding_table_divergence`) and recorded, even though only `retrieve`'s
             table is the one actually inherited.
+        negative_bank_size: `K` -- forwarded to `PretrainConfig.negative_bank_size`, the
+            T1 arm of PREREG-RETRIEVAL-NEGATIVES-2026-09-06. 0 (the default) is the
+            control's in-batch-only negative set.
+        mined_negatives_manifest: Forwarded to `PretrainConfig.mined_negatives_manifest`,
+            the T2 arm. None (the default) is the control's negative set. Mutually
+            exclusive with `negative_bank_size`, which `pretrain_region` refuses.
+        mined_negatives_per_anchor: `m`, read only with a manifest; it must equal the
+            manifest's own value or G39 refuses the run.
         token_loss_chunk: Forwarded to `PretrainConfig.token_loss_chunk` (see that
             field's own docstring in `regions/pretrain.py` for the chunk-and-checkpoint
             mechanism this controls). Defaults to that field's own default (2048) so
@@ -452,6 +463,9 @@ def run_memory_pretrain(
         token_loss_weight=token_loss_weight,
         decorr_weight=decorr_weight,
         token_loss_chunk=token_loss_chunk,
+        negative_bank_size=negative_bank_size,
+        mined_negatives_manifest=mined_negatives_manifest,
+        mined_negatives_per_anchor=mined_negatives_per_anchor,
         encoder=encoder or TextEncoderConfig(dim=256, depth=4, n_heads=4, max_len=max_len),
         tokenizer_path=tokenizer_path,
         out_dir=out_dir,
@@ -495,13 +509,22 @@ def run_memory_pretrain(
         return tokenize_batch(tok, texts, max_len, device_t)
 
     task = beir_fiqa.build_ranking_task(eval_split, pool="corpus", root=eval_root)
-    full_pool_trained = beir_fiqa.encoder_rank_metrics(trained, tokenize, task)
-    full_pool_untrained = beir_fiqa.encoder_rank_metrics(untrained, tokenize, task)
+    # The `_per_query` variants return the SAME aggregates plus each query's own outcome.
+    # The aggregates below are therefore unchanged (`rank_metrics` is now a delegation to
+    # the same code path), and the vectors are what makes the pre-registered paired
+    # decision rule runnable at all -- a paired bootstrap cannot be run on a mean.
+    full_pool_trained, trained_per_query = beir_fiqa.encoder_rank_metrics_per_query(
+        trained, tokenize, task
+    )
+    full_pool_untrained, untrained_per_query = beir_fiqa.encoder_rank_metrics_per_query(
+        untrained, tokenize, task
+    )
     del untrained
 
     full_pool_bm25: dict[str, float] = {}
+    bm25_per_query: dict[str, list[float]] = {}
     if not skip_lexical:
-        full_pool_bm25 = beir_fiqa.bm25_metrics(task)
+        full_pool_bm25, bm25_per_query = beir_fiqa.bm25_metrics_per_query(task)
 
     receipt["retrieval"] = {
         "eval_split": eval_split,
@@ -510,6 +533,15 @@ def run_memory_pretrain(
             "trained": full_pool_trained,
             "untrained": full_pool_untrained,
             "lexical_bm25": full_pool_bm25,
+            # Position `i` of every vector below is `query_ids[i]`. Two arms are paired
+            # BY THAT ID, never by position: the two runs share a battery today, and an
+            # unpinned position would pair them silently wrong the day one does not.
+            "query_ids": list(task.query_ids),
+            "per_query": {
+                "trained": trained_per_query,
+                "untrained": untrained_per_query,
+                **({"lexical_bm25": bm25_per_query} if bm25_per_query else {}),
+            },
         },
         "licence": "BeIR/fiqa + BeIR/fiqa-qrels, both cc-by-sa-4.0.",
     }
@@ -563,6 +595,28 @@ def main(argv: list[str] | None = None) -> int:
         "to that field's own default; a larger batch size may need this lowered to fit "
         "the card (see docs/design/evidence/w4-masked-token-loss-2026-09-03/README.md).",
     )
+    parser.add_argument(
+        "--negative-bank-size",
+        type=int,
+        default=0,
+        help="K -- FIFO bank of the last K encoded positives appended to the InfoNCE "
+        "denominator (arm T1 of PREREG-RETRIEVAL-NEGATIVES-2026-09-06; the round pins "
+        "16384). 0, the default, is the in-batch-only control.",
+    )
+    parser.add_argument(
+        "--mined-negatives-manifest",
+        default=None,
+        help="Path to a csd-mined-negatives/v1 manifest written by "
+        "scripts/csd-mine-negatives.py (arm T2). Mutually exclusive with "
+        "--negative-bank-size; the run is refused if both are set.",
+    )
+    parser.add_argument(
+        "--mined-negatives-per-anchor",
+        type=int,
+        default=0,
+        help="m -- mined negatives per anchor, read only with a manifest and required to "
+        "equal the manifest's own value (G39). The round pins 8.",
+    )
     parser.add_argument("--eval-split", default="dev", choices=["dev", "test"])
     parser.add_argument("--retrieve-checkpoint", default=None)
     parser.add_argument("--compress-checkpoint", default=None)
@@ -584,6 +638,9 @@ def main(argv: list[str] | None = None) -> int:
         token_loss_weight=args.token_loss_weight,
         decorr_weight=args.decorr_weight,
         token_loss_chunk=args.token_loss_chunk,
+        negative_bank_size=args.negative_bank_size,
+        mined_negatives_manifest=args.mined_negatives_manifest,
+        mined_negatives_per_anchor=args.mined_negatives_per_anchor,
         eval_split=args.eval_split,
         retrieve_checkpoint=args.retrieve_checkpoint,
         compress_checkpoint=args.compress_checkpoint,
