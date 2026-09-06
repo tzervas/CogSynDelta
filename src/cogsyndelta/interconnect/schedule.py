@@ -99,7 +99,34 @@ __all__ = [
     "ScheduleValidatorConfigError",
     "ScheduleViolationError",
     "StepBudget",
+    "read_token_floor",
 ]
+
+
+def read_token_floor(token_budget_min: int, eta: float, r_total: int, b_read: int) -> int:
+    """Spec §3 step 2's `lo_r = max(token_budget.min_r, ceil(eta/R · B_read))`.
+
+    The single definition of that floor for the whole module. Three places enforce it --
+    `ScheduleValidator` (below), `ThalamicController.__init__` (`controller.py`) and
+    `WhiteMatter._dense_schedule` (`mind.py`) -- and they have to agree exactly, because
+    the third BUILDS the schedule the first REFUSES. IC-R2 skeptic, measured:
+    `_dense_schedule` had inlined `max(token_budget_min, 0)`, dropping the
+    `ceil(eta/R · B_read)` term, so the dense fallback the module builds when
+    `schedule=None` was refused by its own validator ("G30: memory: read_tokens=7
+    outside [8, 96]") on any config where that term binds. A shared function makes the
+    divergence impossible to reintroduce silently.
+
+    Args:
+        token_budget_min: The participant's own `token_budget.min_r` (spec Table 1).
+        eta: The collapse floor `eta` (spec §1's `floor_eta`).
+        r_total: `R`, the participant count the floor share is split across.
+        b_read: `B_read`, the bank's total read-token slots.
+
+    Returns:
+        `lo_r`, the smallest `read_tokens` this participant may be given.
+    """
+    return max(token_budget_min, math.ceil(eta / r_total * b_read))
+
 
 #: Table 8a's closed precision vocabulary: "fixed to the checkpoint dtype at v1; any
 #: other value is refused."
@@ -600,7 +627,7 @@ class ScheduleValidator:
 
         r_total = len(self.participants)
         lo = {
-            name: max(p.token_budget_min, math.ceil(eta / r_total * B_read))
+            name: read_token_floor(p.token_budget_min, eta, r_total, B_read)
             for name, p in self.participants.items()
         }
         hi = {name: p.token_budget_max for name, p in self.participants.items()}

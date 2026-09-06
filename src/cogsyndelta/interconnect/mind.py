@@ -154,6 +154,7 @@ from cogsyndelta.interconnect.schedule import (
     Schedule,
     ScheduleValidator,
     StepBudget,
+    read_token_floor,
 )
 from cogsyndelta.interconnect.workspace import Workspace
 
@@ -470,8 +471,21 @@ class WhiteMatter(nn.Module):
         cfg = self.config
         n = len(self.participant_names)
         uniform_target = torch.full((n,), cfg.budget_total_read_tokens / n, dtype=torch.float64)
+        # Spec section 3 step 2's lo_r, through the module-wide definition the
+        # validator and the controller also use -- NOT an inlined variant. An earlier
+        # inlined `max(token_budget_min, 0)` here dropped the `ceil(eta/R * B_read)`
+        # term and made this very schedule fail `self.schedule_validator.validate`
+        # below (`read_token_floor`'s docstring records the measured refusal).
         lo = torch.tensor(
-            [max(cfg.participants[name].token_budget_min, 0) for name in self.participant_names],
+            [
+                read_token_floor(
+                    cfg.participants[name].token_budget_min,
+                    cfg.floor_eta,
+                    n,
+                    cfg.budget_total_read_tokens,
+                )
+                for name in self.participant_names
+            ],
             dtype=torch.float64,
         )
         hi = torch.tensor(

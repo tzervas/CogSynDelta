@@ -87,7 +87,6 @@ G-numbered guard.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import NamedTuple
@@ -95,6 +94,8 @@ from typing import NamedTuple
 import torch
 from torch import Tensor, nn
 from torch.nn import functional
+
+from cogsyndelta.interconnect.schedule import read_token_floor
 
 __all__ = [
     "ControllerConfigError",
@@ -579,7 +580,7 @@ class ThalamicController(nn.Module):
                 )
 
         lo = {
-            name: max(p.token_budget_min, math.ceil(eta / r_total * B_read))
+            name: read_token_floor(p.token_budget_min, eta, r_total, B_read)
             for name, p in self.participants.items()
         }
         hi = {name: p.token_budget_max for name, p in self.participants.items()}
