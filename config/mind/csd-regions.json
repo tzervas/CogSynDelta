@@ -2,6 +2,13 @@
   "stream_dim": 512,
   "top_k": 1,
   "aux_coef": 1.0,
+  "trained_dims": {
+    "_read_by": "nothing -- documentation only, not consumed by any loader",
+    "_status_2026-09-06": "config declares stream_dim 512 / hidden_dim 1024 above and per-region below, but scripts/csd-train-all.py:1007,1478 hardcode TextEncoderConfig(dim=256, depth=4, n_heads=4) and every text-region receipt agrees with the runner, not the config. This field records the measured truth; it does not change stream_dim or hidden_dim, and which side moves (widen the runner to match the config, or shrink the config to match every receipt) is an open operator decision -- see docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md taxonomy section 2.2/2.3 for the workspace-dim design intent this bears on.",
+    "measured_dim": 256,
+    "measured_depth": 4,
+    "measured_n_heads": 4
+  },
   "notes": "Region catalogue from docs/program/CSD-BRAIN-REGIONS.md. `live` reflects what is IMPLEMENTED, not what is intended; `pretrain.available` reflects what is ON DISK, not what is named. Both default to false so that intent can be recorded without it reading as capability. Curriculum order is mandatory: per-region pretrain -> router -> assembled mind -> foundation. Foundation corpora (FineWeb/C4/Pile) are step 4, not step 1.",
   "regions": [
     {
