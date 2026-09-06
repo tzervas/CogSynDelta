@@ -303,6 +303,30 @@ skipped and it is executed as given; this is the frozen-schedule arm of the budg
     `lockstep_groups` come from the two topology derivations only when write-back is enabled,
     otherwise the fields are omitted and `topology: not demonstrated` is recorded (TAX:1443-1490).
 
+**Amendment A2 (2026-09-06): step 1's "without running any region" is not met, and cannot be
+behind the W0 contract.** Table 5's text and visual summary features are a mean over `language`'s
+embedding rows and a mean over `visual`'s patch embedding -- both read a region's own weights. The
+frozen-region protocol this module is built against exposes `tokens()` and `pool()` only, and
+Table 2 states the interconnect "does not reach back into a region's implementation", so no generic
+path to those weights exists from `mind.py`. `WhiteMatter._raw_summary` instead runs each region
+once at its own Table 4a `ctx_min` and takes `pool()`'s output as the raw feature; the widths are
+unchanged (`pooled_dim` already equals Table 5's summary widths). The cost is one minimum-budget
+encode per region per request, on the `schedule=None` arm only. This is recorded as a standing
+spec-versus-code tension, not closed: closing it needs a W0 protocol addition (a declared
+`raw_summary()` a region may implement) or a per-region embedding accessor, either of which is a
+change to the region contract and out of the interconnect's scope. Until then, step 1 reads
+"without running any region beyond one `ctx_min` encode each".
+
+**Amendment A3 (2026-09-06): `intensity` lives on the receipt, not on `ScheduleNode`.** Step 14
+above asks for a per-node `intensity`, the mean of `a[:, :, r]` over active iterations. Table 8a's
+`ScheduleNode` field set has no such field, and adding one would make a `Schedule` carry a result
+of the execution it configures -- which breaks the frozen-schedule arm, where `forward(inputs, s0)`
+must re-emit `s0` byte-identically no matter what the tokens were, and an `intensity` computed from
+those tokens could not. The value itself is not lost: Table 7's receipt already records "`a` mean
+per active iteration and region", which is the same quantity, and `receipts.py` builds it. A
+per-node `intensity` field is deferred until some consumer needs it on the `Schedule` specifically;
+`ScheduleNode` stays a pure input to execution.
+
 **Admission matrix semantics.** `depth(r) = min{i : A[i, r] = 1}`; a region with `depth 0` and
 `A[:, r] ≡ 1` is asynchronous; regions first admitted at the same `i ≥ 1` with `accepts_condition`
 form a lockstep group, because each reads `z_{i−1}` and writes `z_i` (TAX:1443-1456). The

@@ -5,14 +5,21 @@ the clause it covers.
 
 from __future__ import annotations
 
+import dataclasses
+
 import torch
 import torch.nn.functional as F
 
 from cogsyndelta.interconnect.controller import box_integerise
 from cogsyndelta.interconnect.gates import check_attention_mass_floor
 from cogsyndelta.interconnect.mind import WhiteMatter
-from cogsyndelta.interconnect.schedule import OutputSpec, Schedule, StepBudget
-from tests.interconnect.conftest import make_toy_inputs
+from cogsyndelta.interconnect.schedule import (
+    OutputSpec,
+    Schedule,
+    StepBudget,
+    read_token_floor,
+)
+from tests.interconnect.conftest import FakeText, make_toy_inputs
 
 
 def _custom_schedule(
@@ -32,7 +39,18 @@ def _custom_schedule(
         admitted = {name: tuple([True] * cfg.n_iter) for name in names}
     uniform_target = torch.full((n,), cfg.budget_total_read_tokens / n, dtype=torch.float64)
     lo = torch.tensor(
-        [max(cfg.participants[name].token_budget_min, 0) for name in names], dtype=torch.float64
+        # spec section 3 step 2's lo_r, through the same shared definition
+        # `_dense_schedule` uses -- not a second copy that can drift from it.
+        [
+            read_token_floor(
+                cfg.participants[name].token_budget_min,
+                cfg.floor_eta,
+                n,
+                cfg.budget_total_read_tokens,
+            )
+            for name in names
+        ],
+        dtype=torch.float64,
     )
     hi = torch.tensor(
         [cfg.participants[name].token_budget_max for name in names], dtype=torch.float64
@@ -314,3 +332,86 @@ def test_frozen_schedule_reemits_byte_identically_while_f_changes(white_matter, 
 
     assert out_b.schedule.to_json() == s0.to_json()
     assert not torch.allclose(out_a.f, out_b.f)
+
+
+# ---------------------------------------------------------------------------
+# Table 3 shape and mask contracts (IC-R2 skeptic item 4)
+# ---------------------------------------------------------------------------
+
+
+def test_a_is_padded_to_n_iter_so_receipts_stack_across_halt_points(
+    white_matter, toy_scope
+) -> None:
+    """Spec Table 3: `a` is `[B, I, R]`, "all zero where not [active]" -- not
+    `[B, halt_at, R]`. IC-R2 skeptic item 4b: returning only the executed iterations
+    made the second axis request-dependent, so stacking receipts from two items with
+    different `halt_at` values raised instead of producing `[N, I, R]`. This test runs
+    the same module at `halt_at = n_iter` and at `halt_at = 1` and stacks the two.
+    """
+    inputs = make_toy_inputs(batch_size=2, scope=toy_scope, seed=20)
+    full = white_matter(inputs)
+    n_iter = white_matter.config.n_iter
+    assert full.a.shape == (2, n_iter, len(white_matter.participant_names))
+
+    out_early = white_matter(inputs, schedule=_custom_schedule(white_matter, halt_at=1))
+    assert out_early.halt_at == 1
+    assert out_early.a.shape == full.a.shape
+    assert torch.all(out_early.a[:, 1:] == 0), "iterations past halt_at must be zero-padded"
+    assert torch.any(out_early.a[:, 0] != 0), "the executed iteration must carry mass"
+
+    stacked = torch.stack([full.a, out_early.a])
+    assert stacked.shape == (2, *full.a.shape)
+
+
+def test_budget_mask_is_anded_in_before_topkselect_sees_the_mask(
+    toy_config, fake_faculties, fake_store, toy_scope
+) -> None:
+    """Spec Table 3's `budget_mask_r`: "`[B, T_r]` bool, `True` where `t < ctx_r[b]`;
+    ANDed into `mask_r`", consumed by `TopKSelect`. IC-R2 skeptic item 4d: it was never
+    constructed, so nothing but the faculty's own good behaviour kept out-of-budget
+    positions out of the bank -- and the frozen-region contract gives this module no way
+    to verify that behaviour.
+
+    The faculty here deliberately ignores `context_tokens` and returns all eight input
+    positions with an all-`True` mask, while `ctx_max = 4` caps the budget at four. The
+    mask `TopKSelect` actually receives is captured and must be `False` from position
+    four onwards, which can only happen if `WhiteMatter` built the budget mask itself.
+    """
+
+    class IgnoresItsBudget(FakeText):
+        """A `Faculty` that returns every input position regardless of its budget."""
+
+        def tokens(self, inputs, *, context_tokens, condition=None):
+            """Deliberately ignores `context_tokens` (see the test's docstring)."""
+            mask = torch.ones(inputs.shape, dtype=torch.bool, device=inputs.device)
+            return self.embed(inputs), mask
+
+    capped = dataclasses.replace(
+        toy_config,
+        participants={
+            **toy_config.participants,
+            "language": dataclasses.replace(toy_config.participants["language"], ctx_max=4),
+        },
+    )
+    faculties = dict(fake_faculties)
+    faculties["language"] = IgnoresItsBudget()
+    wm = WhiteMatter(capped, faculties, fake_store)
+
+    seen: list[torch.Tensor] = []
+    inner = wm.selectors["language"].forward
+
+    def record(h, mask, b_r):
+        seen.append(mask.clone())
+        return inner(h, mask, b_r)
+
+    wm.selectors["language"].forward = record  # type: ignore[method-assign]
+
+    inputs = make_toy_inputs(batch_size=2, scope=toy_scope, seed=21)
+    assert inputs["language"].shape[1] == 8
+    wm(inputs)
+
+    assert seen, "TopKSelect was never called for `language`"
+    for mask in seen:
+        assert mask.shape[1] == 8
+        assert torch.all(mask[:, :4]), "in-budget positions must stay selectable"
+        assert not torch.any(mask[:, 4:]), "positions past ctx_r must be masked out"

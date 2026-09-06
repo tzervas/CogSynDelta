@@ -25,7 +25,7 @@ call sites. It does not define G27-G29/G33-G36 (`gates.py`, lane IC-10, called b
 compose-stage script over a receipt this module's output feeds, not called from inside
 a forward pass).
 
-FOUR CROSS-LANE TENSIONS THIS FILE RESOLVES (recorded here and repeated in the lane
+SIX CROSS-LANE TENSIONS THIS FILE RESOLVES (recorded here and repeated in the lane
 report, per the task's instruction to record where the spec is silent or lanes
 disagree)
 
@@ -98,6 +98,39 @@ disagree)
    Implementing the substitute-and-retry path is deferred to whichever phase first
    drives `WhiteMatter` with a real (non-dense, non-`None`) caller-supplied `Schedule`
    that can actually fail G30 in production -- spec-vs-code, not spec-vs-taxonomy.
+
+5. **STEP 1'S "WITHOUT RUNNING ANY REGION" CANNOT BE MET BEHIND THE FROZEN-REGION
+   CONTRACT (IC-R2 SKEPTIC 4a).** Spec section 3 step 1 builds the controller summary
+   "from raw inputs without running any region", and Table 5 dimensions the two text
+   and visual features as a bag-of-tokens mean over `language`'s embedding table and a
+   mean over `visual`'s patch embedding. Both reach into a region's OWN WEIGHTS. The
+   `Faculty` protocol (`faculty/protocol.py`, W0) exposes `tokens()` and `pool()` and
+   nothing else, and Table 2 states the interconnect "does not reach back into a
+   region's implementation", so there is no generic path to an embedding table from
+   here. `_raw_summary` (below) therefore runs each region ONCE at its own `ctx_min` --
+   Table 4a's smallest declared budget -- and takes `pool()`'s output as the raw
+   feature; `pooled_dim` already equals Table 5's declared summary widths, so no width
+   changes. This is a REAL deviation from step 1's wording, not a silent one: the cost
+   is one extra minimum-budget encode per region per request, on the `schedule=None`
+   arm only, and the controller's output does not drive execution at v1 anyway (tension
+   1). Closing it properly needs either a W0 protocol addition (a declared
+   `raw_summary()` a region may implement) or a per-region embedding accessor the
+   frozen contract does not have; spec amendment A2 records the tension rather than
+   pretending the wording is met. Spec-vs-code, unresolved by design.
+
+6. **`Schedule.intensity` IS DEFERRED (IC-R2 SKEPTIC 4c).** Spec section 3 step 14 says
+   "`intensity` per node is the mean of `a[:, :, r]` over active iterations", but
+   `ScheduleNode` (`schedule.py`, IC-1) has no `intensity` field, `Schedule`'s frozen
+   key set (`_SCHEDULE_FIELDS`) does not allow one, and the receipt builder
+   (`receipts.py`, IC-10) carries attention mass in the receipt's own attention-mass
+   block instead (spec Table 7's "attention mass" row: "`a` mean per active iteration
+   and region"). So the value step 14 asks for IS produced and IS recorded -- on the
+   receipt, not on the `Schedule`. Putting it on the node as well would make the
+   `Schedule` no longer a pure input to execution (it would carry a result of the
+   execution it configured) and would break the frozen-schedule arm's byte-identical
+   re-emission, since `intensity` depends on the tokens and `s0` must not. Deferred to
+   whichever phase actually consumes a per-node intensity; spec amendment A3 records
+   it.
 
 WHAT `inputs` LOOKS LIKE
 A single `Mapping[str, Any]` for the whole request: one entry per faculty participant
@@ -263,9 +296,12 @@ class WhiteMatterOutput(NamedTuple):
     z: Tensor
     """`[B, L, D_w]` float, the final normed workspace latents `z_N` (tension 2 above)."""
     a: Tensor
-    """`[B, halt_at, R]` float, the per-iteration connection-strength export (spec
-    section 3 step 10); only the executed iterations are present -- an iteration at or
-    beyond `halt_at` is never computed at all (tension 1), so there is nothing to zero."""
+    """`[B, I, R]` float (`I = config.n_iter`), spec Table 3's connection-strength
+    export: `a[b, i, :]` sums to 1 over admitted regions where `active[b, i]`, and is
+    ALL ZERO where it is not. Iterations at or beyond `halt_at` are never computed
+    (tension 1) and are zero-padded rather than dropped, so the second axis has the same
+    length for every request -- IC-R2 skeptic item 4b: returning `[B, halt_at, R]` broke
+    any consumer stacking receipts across items whose `halt_at` differs."""
     z_history: tuple[Tensor, ...]
     """Length-`halt_at` tuple of `[B, L, D_w]`, `z` after each executed block."""
     schedule: Schedule
@@ -765,6 +801,7 @@ class WhiteMatter(nn.Module):
                         inputs[name], context_tokens=ctx[name], condition=cond.get(name)
                     )
                     assert_latent_tokens(h)
+                    mask = mask & self._budget_mask(h, ctx[name])
                     if use_cache:
                         h_cache[name] = (h, mask)
                 selected_h, selected_mask, _idx = self.selectors[name](h, mask, b[name])
@@ -789,7 +826,13 @@ class WhiteMatter(nn.Module):
             z_history.append(z)
 
         z = self.final_norm(z)  # Tension 2: z_N, the final normed latents.
+        # Table 3's `a` is `[B, I, R]`, not `[B, halt_at, R]`: iterations past the halt
+        # point are "all zero where not [active]", not absent. Padding here rather than
+        # at every call site is what lets receipts from items with different `halt_at`
+        # values stack (IC-R2 skeptic item 4b).
         a = torch.stack(a_list, dim=1) if a_list else z.new_zeros(batch_size, 0, n_regions)
+        if a.shape[1] < cfg.n_iter:
+            a = F.pad(a, (0, 0, 0, cfg.n_iter - a.shape[1]))
 
         f = self.frontal_readout(z)
         scores = None
@@ -814,6 +857,29 @@ class WhiteMatter(nn.Module):
             b=b,
             halt_at=halt_at,
         )
+
+    @staticmethod
+    def _budget_mask(h: Tensor, ctx_r: int) -> Tensor:
+        """Table 3's `budget_mask_r`: `[B, T_r]` bool, `True` where `t < ctx_r`.
+
+        Spec Table 3 lists this as a real runtime tensor ANDed into `mask_r` before
+        `TopKSelect` sees it, and spec section 3 step 7 selects "among
+        `mask_r ∧ budget_mask_r` positions". Before IC-R2 skeptic item 4d it was never
+        constructed: per-position budget enforcement rested entirely on each faculty
+        honouring the `context_tokens` argument, which the frozen-region contract
+        (Table 2) gives this module no way to verify. Constructing it makes the bound
+        this module's own -- a faculty that returns more positions than its budget now
+        has the surplus masked out of selection instead of quietly widening the bank.
+
+        Args:
+            h: `[B, T_r, token_dim_r]`, the faculty's token stream.
+            ctx_r: This participant's request-wide `ctx_r` (spec Table 3's `ctx`).
+
+        Returns:
+            `[B, T_r]` bool, broadcastable against `mask_r`.
+        """
+        positions = torch.arange(h.shape[1], device=h.device)
+        return (positions < ctx_r).unsqueeze(0).expand(h.shape[0], -1)
 
     @staticmethod
     def _batch_size(inputs: Mapping[str, Any]) -> int:
