@@ -194,7 +194,8 @@ class VisualFacultyAdapter:
         equals `pooled_dim` (measured: `cogsyndelta.faculty.param_table` reports a
         0-parameter pooling head for `visual`, consistent with `ViTEncoder.pool`'s own
         docstring: 'unlike the text regions, ViTEncoder's output width already is the
-        shared-stream width the catalogue declares')."""
+        shared-stream width the catalogue declares').
+        """
         return self.model.cfg.dim
 
     @property
