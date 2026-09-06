@@ -59,6 +59,11 @@ class PretrainSpec:
     corpora referenced in the docs exist only as empty stub directories, and treating
     'named' as 'present' is how a training plan turns out to be fiction."""
 
+    paths: tuple[str, ...] = ()
+    """Glob patterns, relative to the corpus root, naming the shards `available` claims
+    are on disk. Optional (older entries carry the claim only in `notes`) -- when
+    present, a reader (or a test) can check the claim instead of trusting the prose."""
+
     notes: str = ""
 
 
@@ -197,6 +202,10 @@ class MindSpec:
         for raw in data.get("regions", []):
             raw = dict(raw)
             pre = raw.pop("pretrain", None)
+            if pre is not None and "paths" in pre:
+                # JSON has no tuple; PretrainSpec is frozen (and therefore hashable),
+                # so a list here would make every instance carrying one unhashable.
+                pre = {**pre, "paths": tuple(pre["paths"])}
             quant = raw.pop("quantization", None)
             raw_name = raw["name"]
             canonical = canonical_region(raw_name)
