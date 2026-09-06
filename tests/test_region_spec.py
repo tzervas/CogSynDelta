@@ -36,11 +36,23 @@ def test_duplicate_region_names_rejected() -> None:
         MindSpec(stream_dim=64, regions=[_region("a"), _region("a")])
 
 
-def test_stream_width_mismatch_rejected() -> None:
-    """Every region reads and writes the same stream; a width mismatch is a shape error
-    at the first activate() and is far cheaper to catch at declaration."""
-    with pytest.raises(ValueError, match="stream_dim"):
-        MindSpec(stream_dim=64, regions=[_region("a", stream_dim=128)])
+def test_stream_width_mismatch_warns_not_rejected() -> None:
+    """DEC-14/DEC-15 (taxonomy section 2.2): regions keep their own native widths and
+    adapt into the shared workspace stream_dim via a per-region adapter, so a mismatch
+    is expected -- not a shape error -- and only warns."""
+    with pytest.warns(UserWarning, match="stream_dim"):
+        spec = MindSpec(stream_dim=64, regions=[_region("a", stream_dim=128)])
+    assert spec.regions[0].stream_dim == 128
+    assert spec.stream_dim == 64
+
+
+def test_stream_width_uniform_case_still_passes_with_no_warning() -> None:
+    """The pre-DEC-14 uniform-width case (every region matches the mind's stream_dim)
+    is still valid and must not warn."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        spec = MindSpec(stream_dim=64, regions=[_region("a", stream_dim=64)])
+    assert spec.regions[0].stream_dim == spec.stream_dim == 64
 
 
 def test_latent_vae_requires_latent_dim() -> None:

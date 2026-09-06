@@ -154,8 +154,15 @@ class MindSpec:
     notes: str = ""
 
     def __post_init__(self) -> None:
-        """Reject duplicate region names, stream-width disagreement, and out-of-range
-        top_k -- all of which are shape errors that would otherwise surface much later.
+        """Reject duplicate region names and out-of-range top_k -- shape errors that
+        would otherwise surface much later. Native-width disagreement is warned about,
+        not rejected (DEC-14/DEC-15, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md
+        section 2.2): regions keep their own native widths (e.g. text 256, visual 384)
+        and adapt into the shared workspace ``stream_dim`` via a per-region
+        ``nn.Linear(token_dim, stream_dim)`` adapter, rather than all sharing one global
+        width. The old hard uniformity check "enforces a uniformity that has never been
+        true and would reject the real trained regions ... against the declared
+        catalogue" (taxonomy ~L1194), so a mismatch is expected, not a shape error.
         """
         names = [r.name for r in self.regions]
         dupes = {n for n in names if names.count(n) > 1}
@@ -163,10 +170,13 @@ class MindSpec:
             raise ValueError(f"duplicate region names: {sorted(dupes)}")
         mismatched = [r.name for r in self.regions if r.stream_dim != self.stream_dim]
         if mismatched:
-            # Every region reads and writes the same shared stream; a width mismatch is a
-            # shape error at the first activate() and is far cheaper to catch here.
-            raise ValueError(
-                f"regions {mismatched} disagree with mind stream_dim {self.stream_dim}"
+            warnings.warn(
+                f"regions {mismatched} use a native stream_dim that differs from mind "
+                f"stream_dim {self.stream_dim}; each adapts in via its own per-region "
+                "adapter (DEC-14/DEC-15, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md "
+                "section 2.2) rather than sharing one global width",
+                UserWarning,
+                stacklevel=2,
             )
         if self.top_k < 1 or self.top_k > max(len(self.regions), 1):
             raise ValueError(f"top_k {self.top_k} out of range for {len(self.regions)} regions")
