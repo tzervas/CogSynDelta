@@ -647,6 +647,60 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         battery_id="eval_holdout",
         pooling="anchor",
     ),
+    "derive.recall@1": MetricMethodology(
+        "fraction of eligible held-out gsm8k items whose true derivation ranks first "
+        "among {true, 4 corruptions} (chance 0.20). Not closed-pool rank.recall@1",
+        "E1 corrupted-derivation battery",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.mrr": MetricMethodology(
+        "mean reciprocal rank of the true derivation among {true, 4 corruptions}",
+        "E1 corrupted-derivation battery",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.n_items": MetricMethodology(
+        "count of held-out gsm8k pairs with >= 2 calculator annotations (299 of 320 "
+        "on the E0 reason split)",
+        "E1 corrupted-derivation battery",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.chance": MetricMethodology(
+        "1/(1+K) with K=4 corruptions -- 0.20",
+        "E1 corrupted-derivation battery",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.tfidf.recall@1": MetricMethodology(
+        "TF-IDF overlap recall@1 on the same {true, 4 corruptions} pool (control b; "
+        "must sit within 0.05 of chance)",
+        "E1 corrupted-derivation battery, lexical oracle",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.bm25.recall@1": MetricMethodology(
+        "BM25 recall@1 on the same {true, 4 corruptions} pool (control b; must sit "
+        "within 0.05 of chance)",
+        "E1 corrupted-derivation battery, lexical oracle",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.wrong_problem.tfidf.recall@1": MetricMethodology(
+        "TF-IDF overlap recall@1 of the true derivation vs four other problems' "
+        "derivations (control a; must be >= 0.90)",
+        "E1 wrong-problem control",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
 }
 
 #: `rank.*` keys `docs/design/METRICS-METHODOLOGY.md` §13 retires as independently
