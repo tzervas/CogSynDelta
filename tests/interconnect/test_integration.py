@@ -322,16 +322,69 @@ def test_distinct_z_give_distinct_f(white_matter) -> None:
 def test_frozen_schedule_reemits_byte_identically_while_f_changes(white_matter, toy_scope) -> None:
     """Spec: "the frozen-schedule arm, `forward(inputs, schedule=s0)` with the tokens
     content-swapped, re-emits `s0` byte-identically while `f` changes."
+
+    IC-R2 skeptic item 5: `forward` used to return the injected object itself, so
+    `out_b.schedule.to_json() == s0.to_json()` compared `s0` with `s0` and held however
+    the injected schedule was used -- or ignored. `forward` now re-emits at spec section
+    3 step 14, from the values it actually executed, so the returned object is a
+    DIFFERENT object whose serialised form has to be earned. The identity assertion
+    below pins that; `test_a_stubbed_injection_path_breaks_the_frozen_schedule_claim`
+    proves the comparison can fail.
     """
     inputs_a = make_toy_inputs(batch_size=2, scope=toy_scope, seed=10)
     out_a = white_matter(inputs_a)
     s0 = out_a.schedule
+    s0_json = s0.to_json()
 
     inputs_b = make_toy_inputs(batch_size=2, scope=toy_scope, seed=11)
     out_b = white_matter(inputs_b, schedule=s0)
 
-    assert out_b.schedule.to_json() == s0.to_json()
+    assert out_b.schedule is not s0, "the returned schedule must be a re-emission"
+    assert out_b.schedule.to_json() == s0_json
     assert not torch.allclose(out_a.f, out_b.f)
+
+
+def test_a_stubbed_injection_path_breaks_the_frozen_schedule_claim(white_matter, toy_scope) -> None:
+    """The guard-can-fail half of the test above (`MEMORY.md`: verify a guard by making
+    it fail). `_unpack_schedule` is the whole injection path -- it is what turns the
+    caller's `Schedule` into the `ctx`/`b`/`admitted`/`halt_at` the loop runs on. Stubbed
+    to ignore its argument and hand back a different, equally valid allocation, the
+    re-emitted schedule must stop matching the injected one.
+
+    `s0` here admits `language` at the first iteration only, which the dense allocation
+    does not, so a stub that ignores `s0` is observable in the re-emission.
+    """
+    inputs = make_toy_inputs(batch_size=2, scope=toy_scope, seed=12)
+    n_iter = white_matter.config.n_iter
+    s0 = _custom_schedule(
+        white_matter,
+        halt_at=n_iter,
+        admitted={
+            name: ((True,) + (False,) * (n_iter - 1)) if name == "language" else (True,) * n_iter
+            for name in white_matter.participant_names
+        },
+    )
+    honest = white_matter(inputs, schedule=s0)
+    assert honest.schedule.to_json() == s0.to_json()
+
+    dense = white_matter._dense_schedule()
+    assert dense.to_json() != s0.to_json(), "the stub's allocation must differ from s0"
+
+    real_unpack = white_matter._unpack_schedule
+
+    def ignores_the_injected_schedule(_schedule):
+        return real_unpack(dense)
+
+    white_matter._unpack_schedule = ignores_the_injected_schedule  # type: ignore[method-assign]
+    try:
+        stubbed = white_matter(inputs, schedule=s0)
+    finally:
+        del white_matter._unpack_schedule
+
+    assert stubbed.schedule.to_json() != s0.to_json(), (
+        "with the injection path stubbed out the frozen-schedule assertion must fail; "
+        "if it still passes, the assertion is not testing anything"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -305,10 +305,13 @@ class WhiteMatterOutput(NamedTuple):
     z_history: tuple[Tensor, ...]
     """Length-`halt_at` tuple of `[B, L, D_w]`, `z` after each executed block."""
     schedule: Schedule
-    """The `Schedule` this call executed: the caller's own `schedule` argument,
-    returned unchanged (spec section 3's frozen-schedule arm: `forward(inputs,
-    schedule=s0)` re-emits `s0` byte-identically), or this file's own dense-allocation
-    `Schedule` when `schedule=None` was passed (spec section 3 step 2's fallback)."""
+    """Spec section 3 step 14's finalised `Schedule`: a NEW object, re-emitted from the
+    values this call actually executed (`ctx`, `b`, `admitted`, the realised `halt_at`)
+    and re-validated. On the frozen-schedule arm it serialises byte-identically to the
+    caller's own `s0` -- which is the claim spec section 3 makes and the claim the
+    integration test checks. IC-R2 skeptic item 5: returning the injected object itself
+    made that test vacuous, since `s0.to_json() == s0.to_json()` holds however the
+    injected schedule was used, or ignored."""
     controller: ControllerOutput | None
     """`ThalamicController`'s per-item output over this request's raw summaries, for
     phase B's `L_B` distillation target -- see the module docstring's tension 1. Only
@@ -579,6 +582,79 @@ class WhiteMatter(nn.Module):
         )
         return self.schedule_validator.validate(schedule)
 
+    def _reemit_schedule(
+        self,
+        schedule: Schedule,
+        ctx: Mapping[str, int],
+        b: Mapping[str, int],
+        admitted: Mapping[str, tuple[bool, ...]],
+        halt_at: int,
+    ) -> Schedule:
+        """Spec section 3 step 14: "Finalise the `Schedule`" from what this call ran.
+
+        The four load-bearing fields come from the EXECUTED values, not from the input
+        object: `ctx`, `b` and `admitted` are what `_unpack_schedule` handed the loop and
+        `halt_at` is the realised bound. Everything else (each node's `condition`,
+        `precision`, `priority`, `resident` and `codec`, plus `output` and the budget's
+        `max_iters`/`wall_ms`/`flops_ceiling`) is carried across from `schedule`, since
+        execution neither chooses nor changes those. `kv_bytes`, `read_tokens` and
+        `region_token_flops` are recomputed from the executed `ctx`/`b` by the same
+        arithmetic `_dense_schedule` uses, so the result validates on its own terms
+        rather than inheriting totals that might not describe it.
+
+        On both arms this reproduces the input exactly -- the dense arm because
+        `_dense_schedule` computed those totals the same way, the frozen arm because the
+        executed values ARE the injected ones -- so `forward(inputs, s0).schedule` is a
+        distinct object that serialises byte-identically to `s0`. If the injection path
+        ever stopped honouring `s0`, the two would diverge here, which is what makes the
+        frozen-schedule test able to fail (IC-R2 skeptic item 5).
+
+        Args:
+            schedule: The schedule this call executed, for the fields execution does not
+                choose.
+            ctx: Executed `ctx_r` per participant.
+            b: Executed `b_r` per participant.
+            admitted: Executed `A[:, r]` per participant.
+            halt_at: The realised iteration bound.
+
+        Returns:
+            A validated, newly built `Schedule`.
+
+        Raises:
+            schedule.ScheduleViolationError: G30 -- the executed values do not satisfy a
+                bound (which would mean execution diverged from anything validatable).
+        """
+        cfg = self.config
+        nodes = {node.region: node for node in schedule.nodes}
+        total_kv_bytes = sum(
+            self.faculties[name].kv_bytes_per_token * ctx[name] for name in self.region_names
+        )
+        region_token_flops = cfg.n_iter * sum(
+            cfg.participants[name].phi * ctx[name] for name in self.participant_names
+        )
+        step_budget = StepBudget(
+            max_iters=schedule.step_budget.max_iters,
+            kv_bytes=total_kv_bytes,
+            read_tokens=sum(b[name] for name in self.participant_names),
+            wall_ms=schedule.step_budget.wall_ms,
+            flops_ceiling=schedule.step_budget.flops_ceiling,
+        )
+        reemitted = Schedule.assemble(
+            context_tokens={name: ctx[name] for name in self.participant_names},
+            read_tokens={name: b[name] for name in self.participant_names},
+            admitted={name: admitted[name] for name in self.participant_names},
+            condition={name: nodes[name].condition for name in self.participant_names},
+            precision={name: nodes[name].precision for name in self.participant_names},
+            priority={name: nodes[name].priority for name in self.participant_names},
+            region_token_flops=region_token_flops,
+            step_budget=step_budget,
+            output=schedule.output,
+            halt_at=halt_at,
+            resident={name: nodes[name].resident for name in self.participant_names},
+            codec={name: nodes[name].codec for name in self.participant_names},
+        )
+        return self.schedule_validator.validate(reemitted)
+
     @staticmethod
     def _unpack_schedule(
         schedule: Schedule,
@@ -745,7 +821,8 @@ class WhiteMatter(nn.Module):
                 tension 1; the dense allocation drives execution) and validates the
                 result (G30). A validated `Schedule` skips straight to steps 5-14,
                 executed exactly as given -- the frozen-schedule arm (spec section 3's
-                preamble).
+                preamble). Either way the returned `WhiteMatterOutput.schedule` is
+                step 14's re-emission of what actually ran, not the argument object.
 
         Returns:
             A `WhiteMatterOutput`.
@@ -848,7 +925,7 @@ class WhiteMatter(nn.Module):
             z=z,
             a=a,
             z_history=tuple(z_history),
-            schedule=schedule,
+            schedule=self._reemit_schedule(schedule, ctx, b, admitted, halt_at),
             controller=controller_out,
             probe_outputs=probe_outputs,
             write_receipt=write_receipt,
