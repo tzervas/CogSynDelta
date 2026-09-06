@@ -162,8 +162,20 @@ def test_store_parameters_are_trainable_at_r5() -> None:
 
 def test_state_dicts_agree_on_the_store_keys_across_r4_and_r5() -> None:
     """Why Table 4 keeps the parameters instantiated at `R = 4` rather than merely counting
-    them: the `R = 4` and `R = 5` modules must share the store-projection keys, so a pre-E2
-    checkpoint loads into the post-E2 module.
+    them: the store projections `W_k`/`W_v` carry the same state-dict keys at `R = 4` and at
+    `R = 5`, so those two tensors survive the E2 transition unchanged.
+
+    That is the whole of the claim, and it is narrower than it looks. A pre-E2 checkpoint does
+    NOT plainly load into the post-E2 module: `r5.load_state_dict(r4.state_dict())` raises. The
+    controller's store summary is renamed across the two configurations -- it is
+    `controller.store_summary_proj.{weight,bias}` at `R = 4` and
+    `controller.summary_proj.episodic_store.{weight,bias}` at `R = 5`, the same `[256, 4]` and
+    `[256]` shapes under a different key. The type and slot rows then differ by design:
+    `kv_bank.type_emb` goes `[4, 512]` -> `[5, 512]` and `controller.slot_embed`
+    `[5, 256]` -> `[6, 256]`, which is exactly Table 4's deliberate 768-parameter difference.
+    Moving a checkpoint from `R = 4` to `R = 5` therefore needs a re-key and a row extension,
+    not a plain load; what this test pins is that the store projections are not part of that
+    work.
     """
     keys_r4 = set(_build(with_store=False).state_dict())
     keys_r5 = set(_build(with_store=True).state_dict())
