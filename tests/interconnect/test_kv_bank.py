@@ -107,16 +107,23 @@ def test_kv_bank_rejects_duplicate_participants() -> None:
         KVBank(participants=["language", "language"], D_w=D_W, B_read=B_READ)
 
 
-def test_kv_bank_without_store_has_no_store_projection() -> None:
+def test_kv_bank_without_store_keeps_a_frozen_store_projection() -> None:
+    """Spec section 2.3 Table 4's `R = 4` row: "`W_k`/`W_v` ... stay instantiated and
+    receive no gradient in W5." Without a store participant there is no store slot for
+    `forward` to project into, so the module is unreachable -- but it exists, with the
+    same `state_dict` keys the `R = 5` configuration has, and frozen.
+    """
     bank = KVBank(participants=PARTICIPANTS_NO_STORE, D_w=D_W, B_read=B_READ)
     assert bank.store_index is None
-    assert bank.store_projection is None
+    assert isinstance(bank.store_projection, StoreProjection)
+    assert not any(p.requires_grad for p in bank.store_projection.parameters())
 
 
-def test_kv_bank_with_store_has_a_store_projection() -> None:
+def test_kv_bank_with_store_has_a_trainable_store_projection() -> None:
     bank = KVBank(participants=PARTICIPANTS_WITH_STORE, D_w=D_W, B_read=B_READ)
     assert bank.store_index == len(PARTICIPANTS_WITH_STORE) - 1
     assert isinstance(bank.store_projection, StoreProjection)
+    assert all(p.requires_grad for p in bank.store_projection.parameters())
 
 
 # ---------------------------------------------------------------------------

@@ -181,7 +181,17 @@ class KVBank(nn.Module):
             if STORE_PARTICIPANT in self.participants
             else None
         )
-        self.store_projection = StoreProjection(D_w) if self.store_index is not None else None
+        # Spec section 2.3 Table 4, the `R = 4` row: "`W_k`/`W_v` and the store summary
+        # STAY INSTANTIATED and receive no gradient in W5." So `StoreProjection` is
+        # built unconditionally -- the pre-E2 `R = 4` configuration keeps the 524,288
+        # parameters the table counts for it, and a checkpoint saved at `R = 4` loads
+        # into an `R = 5` module and back without a key mismatch, which is the point of
+        # counting them in the first place. What changes at `R = 4` is that they are
+        # frozen and unreachable: no store participant means no store slots, so
+        # `forward` below never calls this module.
+        self.store_projection = StoreProjection(D_w)
+        if self.store_index is None:
+            self.store_projection.requires_grad_(False)
 
     def forward(
         self,
@@ -277,7 +287,7 @@ class KVBank(nn.Module):
                     raise ValueError(
                         f"store_latents has {z.shape[1]} positions, slot_budget[{name!r}]={b_r}."
                     )
-                k, v = self.store_projection(z)  # type: ignore[misc]
+                k, v = self.store_projection(z)
                 bank_k[:, sl] = k + self.type_emb[r_idx]
                 bank_v[:, sl] = v + self.type_emb[r_idx]
                 key_mask[:, sl] = mask

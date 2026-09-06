@@ -95,6 +95,7 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional
 
+from cogsyndelta.interconnect.kv_bank import STORE_PARTICIPANT
 from cogsyndelta.interconnect.schedule import read_token_floor
 
 __all__ = [
@@ -105,6 +106,11 @@ __all__ = [
     "ThalamicController",
     "box_integerise",
 ]
+
+
+#: Table 5's store-summary width: the four occupancy statistics (resident count,
+#: bytes, oldest age, newest age) its `Linear(4, 256)` reads.
+STORE_SUMMARY_DIM = 4
 
 
 class ControllerConfigError(ValueError):
@@ -629,6 +635,18 @@ class ThalamicController(nn.Module):
                 for name in self.participant_names
             }
         )
+        # Spec section 2.3 Table 4, the `R = 4` row: the store summary "stays
+        # instantiated and receives no gradient in W5" even when `episodic_store` is not
+        # a declared participant. Table 5 dimensions it as `Linear(4, 256)` over the
+        # store's four occupancy statistics. `summary_proj` above is keyed by declared
+        # participants only, so at `R = 4` this holds the same module the `R = 5`
+        # configuration would put there, frozen and never called (`summarise` iterates
+        # `participant_names`). The slot embedding is NOT extended to match: Table 4's
+        # `R = 4` row spends one controller slot row fewer, which is exactly this.
+        self.store_summary_proj: nn.Linear | None = None
+        if STORE_PARTICIPANT not in self.participants:
+            self.store_summary_proj = nn.Linear(STORE_SUMMARY_DIM, d_ctrl)
+            self.store_summary_proj.requires_grad_(False)
         self.slot_embed = nn.Parameter(torch.zeros(r_total + 1, d_ctrl))
         nn.init.normal_(self.slot_embed, std=0.02)
 
