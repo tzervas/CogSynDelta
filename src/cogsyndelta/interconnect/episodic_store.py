@@ -177,6 +177,12 @@ class ContractGap(RuntimeError):  # noqa: N818 -- spec Table 2 fixes this exact 
     """
 
     def __init__(self, dec: str, clause: str) -> None:
+        """Name the unimplemented capability in the exception itself.
+
+        Args:
+            dec: The decision this gap belongs to, e.g. `"DEC-63"`.
+            clause: One sentence naming the specific unimplemented behaviour.
+        """
         self.dec = dec
         """Which decision this gap belongs to, e.g. `"DEC-63"` -- always one of DEC-63..66
         for this module (module docstring, "four named gaps")."""
@@ -206,8 +212,10 @@ class WriteReceipt:
 
 
 @dataclass(slots=True)
-class _Record:
-    """Internal storage row. Not exported: callers see `WriteReceipt` and `read()`'s tensors,
+class Record:
+    """Internal storage row (absent from `__all__`; the leading underscore this class used
+    to carry is what the quality gate's PascalCase rule rejects). Not exported: callers see
+    `WriteReceipt` and `read()`'s tensors,
     never this type, so `caller_cannot_mutate` (Table 9) is enforced by `read()` cloning
     rather than by anything on this class.
     """
@@ -394,7 +402,7 @@ class InMemoryStoreStub:
         self._domain_enum = frozenset(domain_enum)
         self.half_life_s = half_life_s
         self.importance_default = importance_default
-        self._records: dict[tuple[str, str | None, str, str], _Record] = {}
+        self._records: dict[tuple[str, str | None, str, str], Record] = {}
         self._dim: int | None = None
 
     def _check_domain(self, domain: str | None, *, global_query: bool = False) -> None:
@@ -445,7 +453,7 @@ class InMemoryStoreStub:
         now = time.time()
         key = (checked.principal, checked.session, domain, logical_key)
         record_importance = self.importance_default if importance is None else importance
-        self._records[key] = _Record(
+        self._records[key] = Record(
             scope=checked,
             domain=domain,
             logical_key=logical_key,

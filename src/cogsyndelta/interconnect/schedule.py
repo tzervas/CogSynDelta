@@ -282,8 +282,8 @@ class Schedule:
         """Serialise to a JSON string (spec §3's frozen-schedule replay arm)."""
         return json.dumps(self.to_dict(), indent=indent, sort_keys=False)
 
-    @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> Schedule:
+    @staticmethod
+    def from_dict(data: Mapping[str, Any]) -> Schedule:
         """Parse a `Schedule` from a plain dict, refusing anything malformed (G30).
 
         Structural refusals only: a forbidden field at any level (`trace_id`, a store
@@ -306,7 +306,7 @@ class Schedule:
             nodes = tuple(_node_from_dict(n) for n in data["nodes"])
             step_budget = _step_budget_from_dict(data["step_budget"])
             output = _output_from_dict(data["output"])
-            return cls(
+            return Schedule(
                 nodes=nodes,
                 step_budget=step_budget,
                 region_token_flops=float(data["region_token_flops"]),
@@ -316,14 +316,13 @@ class Schedule:
         except KeyError as exc:
             raise ScheduleViolationError(f"G30: schedule is missing required field {exc}.") from exc
 
-    @classmethod
-    def from_json(cls, raw: str) -> Schedule:
+    @staticmethod
+    def from_json(raw: str) -> Schedule:
         """Parse a `Schedule` from a JSON string; see `from_dict`."""
-        return cls.from_dict(json.loads(raw))
+        return Schedule.from_dict(json.loads(raw))
 
-    @classmethod
+    @staticmethod
     def assemble(
-        cls,
         *,
         context_tokens: Mapping[str, int],
         read_tokens: Mapping[str, int],
@@ -406,7 +405,7 @@ class Schedule:
                     codec=CODEC_V1 if codec is None else str(codec[region]),
                 )
             )
-        return cls(
+        return Schedule(
             nodes=tuple(nodes),
             step_budget=step_budget,
             region_token_flops=float(region_token_flops),
@@ -679,78 +678,161 @@ class ScheduleValidator:
                 )
             seen.add(node.region)
             p = self.participants[node.region]
+            self._check_admission(node)
+            total_kv_bytes += self._check_context_tokens(node, p)
+            total_read_tokens += self._check_read_tokens(node)
+            self._check_node_flags(node, p)
+            priorities.append(node.priority)
 
-            if len(node.admitted) != self.n_iter:
-                raise ScheduleViolationError(
-                    f"G30: {node.region}: admitted has length {len(node.admitted)}, "
-                    f"expected n_iter={self.n_iter}."
-                )
-            if not any(node.admitted):
-                raise ScheduleViolationError(
-                    f"G30: {node.region}: admitted is all-zero; every declared "
-                    "participant must be admitted at least once (INTERCONNECT-MODULE-"
-                    "SPEC.md §3 step 3, forced admission)."
-                )
-            expected_depth = next(i for i, a in enumerate(node.admitted) if a)
-            if node.depth != expected_depth:
-                raise ScheduleViolationError(
-                    f"G30: {node.region}: depth={node.depth} disagrees with "
-                    f"min{{i: admitted[i]}}={expected_depth}."
-                )
-            if node.active != any(node.admitted):
-                raise ScheduleViolationError(
-                    f"G30: {node.region}: active={node.active} disagrees with admitted."
-                )
+        self._check_totals(schedule, seen, priorities, total_read_tokens, total_kv_bytes)
+        self._check_step_budget(schedule, total_read_tokens, total_kv_bytes)
+        self._check_output(schedule)
+        return schedule
 
-            if p.ctx_min is not None:
-                if not (p.ctx_min <= node.context_tokens <= (p.ctx_max or p.ctx_min)):
-                    raise ScheduleViolationError(
-                        f"G30: {node.region}: context_tokens={node.context_tokens} "
-                        f"outside [{p.ctx_min}, {p.ctx_max}]."
-                    )
-                total_kv_bytes += (p.kv_bytes_per_token or 0) * node.context_tokens
-            elif node.context_tokens != 0:
+    def _check_admission(self, node: ScheduleNode) -> None:
+        """One node's `admitted`/`depth`/`active` agreement (spec §3, admission-matrix
+        semantics, and §3 step 3's forced admission).
+
+        Args:
+            node: The node to check.
+
+        Raises:
+            ScheduleViolationError: the admission row is the wrong length, is all-zero,
+                or disagrees with the node's own `depth` or `active`.
+        """
+        if len(node.admitted) != self.n_iter:
+            raise ScheduleViolationError(
+                f"G30: {node.region}: admitted has length {len(node.admitted)}, "
+                f"expected n_iter={self.n_iter}."
+            )
+        if not any(node.admitted):
+            raise ScheduleViolationError(
+                f"G30: {node.region}: admitted is all-zero; every declared "
+                "participant must be admitted at least once (INTERCONNECT-MODULE-"
+                "SPEC.md §3 step 3, forced admission)."
+            )
+        expected_depth = next(i for i, a in enumerate(node.admitted) if a)
+        if node.depth != expected_depth:
+            raise ScheduleViolationError(
+                f"G30: {node.region}: depth={node.depth} disagrees with "
+                f"min{{i: admitted[i]}}={expected_depth}."
+            )
+        if node.active != any(node.admitted):
+            raise ScheduleViolationError(
+                f"G30: {node.region}: active={node.active} disagrees with admitted."
+            )
+
+    @staticmethod
+    def _check_context_tokens(node: ScheduleNode, p: ParticipantBudget) -> int:
+        """One node's `context_tokens` against its participant's ctx axis (Table 4a).
+
+        Args:
+            node: The node to check.
+            p: That node's participant budget.
+
+        Returns:
+            This node's KV byte contribution, `c_r · ctx_r`, or `0` when the participant
+            has no ctx axis.
+
+        Raises:
+            ScheduleViolationError: `context_tokens` is outside `[ctx_min, ctx_max]`, or
+                is non-zero for a participant that has no ctx axis (the store).
+        """
+        if p.ctx_min is None:
+            if node.context_tokens != 0:
                 raise ScheduleViolationError(
                     f"G30: {node.region}: has no ctx axis but context_tokens="
                     f"{node.context_tokens} != 0."
                 )
+            return 0
+        if not (p.ctx_min <= node.context_tokens <= (p.ctx_max or p.ctx_min)):
+            raise ScheduleViolationError(
+                f"G30: {node.region}: context_tokens={node.context_tokens} "
+                f"outside [{p.ctx_min}, {p.ctx_max}]."
+            )
+        return (p.kv_bytes_per_token or 0) * node.context_tokens
 
-            lo, hi = self._lo[node.region], self._hi[node.region]
-            if not (lo <= node.read_tokens <= hi):
-                raise ScheduleViolationError(
-                    f"G30: {node.region}: read_tokens={node.read_tokens} outside [{lo}, {hi}]."
-                )
-            total_read_tokens += node.read_tokens
+    def _check_read_tokens(self, node: ScheduleNode) -> int:
+        """One node's `read_tokens` against its `[lo_r, hi_r]` box (spec §3 step 2).
 
-            if node.condition and not p.accepts_condition:
-                raise ScheduleViolationError(
-                    f"G30: {node.region}: condition=True but this participant's "
-                    "accepts_condition is False."
-                )
-            if node.precision not in PRECISIONS:
-                raise ScheduleViolationError(
-                    f"G30: {node.region}: precision {node.precision!r} outside "
-                    f"{sorted(PRECISIONS)}."
-                )
-            if not node.resident:
-                raise ScheduleViolationError(
-                    f"G30: {node.region}: resident=False is not supported at v1 (Table 8a)."
-                )
-            if node.codec != CODEC_V1:
-                raise ScheduleViolationError(
-                    f"G30: {node.region}: codec {node.codec!r} != {CODEC_V1!r}, the only "
-                    "v1 value (Table 8a)."
-                )
-            priorities.append(node.priority)
+        Args:
+            node: The node to check.
 
-        missing = set(self.participants) - seen
+        Returns:
+            This node's `read_tokens`, for the caller's running total.
+
+        Raises:
+            ScheduleViolationError: `read_tokens` is outside the box.
+        """
+        lo, hi = self._lo[node.region], self._hi[node.region]
+        if not (lo <= node.read_tokens <= hi):
+            raise ScheduleViolationError(
+                f"G30: {node.region}: read_tokens={node.read_tokens} outside [{lo}, {hi}]."
+            )
+        return node.read_tokens
+
+    @staticmethod
+    def _check_node_flags(node: ScheduleNode, p: ParticipantBudget) -> None:
+        """One node's declared-value fields: `condition`, `precision`, `resident`, `codec`.
+
+        Args:
+            node: The node to check.
+            p: That node's participant budget.
+
+        Raises:
+            ScheduleViolationError: `condition` is set on a participant that does not
+                accept one, `precision` is outside `PRECISIONS`, or `resident`/`codec`
+                carries a value v1 does not implement (Table 8a).
+        """
+        if node.condition and not p.accepts_condition:
+            raise ScheduleViolationError(
+                f"G30: {node.region}: condition=True but this participant's "
+                "accepts_condition is False."
+            )
+        if node.precision not in PRECISIONS:
+            raise ScheduleViolationError(
+                f"G30: {node.region}: precision {node.precision!r} outside {sorted(PRECISIONS)}."
+            )
+        if not node.resident:
+            raise ScheduleViolationError(
+                f"G30: {node.region}: resident=False is not supported at v1 (Table 8a)."
+            )
+        if node.codec != CODEC_V1:
+            raise ScheduleViolationError(
+                f"G30: {node.region}: codec {node.codec!r} != {CODEC_V1!r}, the only "
+                "v1 value (Table 8a)."
+            )
+
+    def _check_totals(
+        self,
+        schedule: Schedule,
+        seen: Collection[str],
+        priorities: Sequence[int],
+        total_read_tokens: int,
+        total_kv_bytes: int,
+    ) -> None:
+        """The schedule-wide sums the per-node loop accumulated.
+
+        Args:
+            schedule: The schedule being validated.
+            seen: Every participant name the nodes named.
+            priorities: Every node's declared priority, in node order.
+            total_read_tokens: `Σ_r b_r`.
+            total_kv_bytes: `Σ_r c_r · ctx_r`.
+
+        Raises:
+            ScheduleViolationError: a declared participant has no node, the priorities
+                are not a `0..R-1` permutation, `Σ_r b_r != B_read`, or the KV total
+                exceeds `B_kv`.
+        """
+        missing = set(self.participants) - set(seen)
         if missing:
             raise ScheduleViolationError(
                 f"G30: schedule omits declared participant(s) {sorted(missing)}."
             )
         if sorted(priorities) != list(range(len(schedule.nodes))):
             raise ScheduleViolationError(
-                f"G30: node priorities {priorities} are not a 0..R-1 permutation."
+                f"G30: node priorities {list(priorities)} are not a 0..R-1 permutation."
             )
         if total_read_tokens != self.B_read:
             raise ScheduleViolationError(
@@ -761,6 +843,21 @@ class ScheduleValidator:
                 f"G30: total kv bytes {total_kv_bytes} exceeds B_kv={self.B_kv}."
             )
 
+    def _check_step_budget(
+        self, schedule: Schedule, total_read_tokens: int, total_kv_bytes: int
+    ) -> None:
+        """`step_budget`, `halt_at` and the two FLOPs bounds (spec §2.1, Table 3).
+
+        Args:
+            schedule: The schedule being validated.
+            total_read_tokens: The total the nodes actually declare.
+            total_kv_bytes: The KV total the nodes actually declare.
+
+        Raises:
+            ScheduleViolationError: `max_iters` or `halt_at` is out of range, a declared
+                budget total disagrees with the computed one, `wall_ms` is not positive,
+                or either FLOPs figure exceeds its ceiling.
+        """
         sb = schedule.step_budget
         if not (1 <= sb.max_iters <= self.n_iter):
             raise ScheduleViolationError(
@@ -799,6 +896,17 @@ class ScheduleValidator:
                 f"flops_ceiling={self.flops_ceiling}."
             )
 
+    def _check_output(self, schedule: Schedule) -> None:
+        """`schedule.output` against the allowed modalities, resident heads and Table 8a's
+        v1 defaults.
+
+        Args:
+            schedule: The schedule being validated.
+
+        Raises:
+            ScheduleViolationError: a modality is not allowed or has no resident head, or
+                `stream`/`first_token_ms`/`speech_frame_ms` carries a non-v1 value.
+        """
         for modality in schedule.output.modalities:
             if modality not in self.allowed_modalities:
                 raise ScheduleViolationError(
@@ -819,5 +927,3 @@ class ScheduleValidator:
             raise ScheduleViolationError(
                 "G30: first_token_ms and speech_frame_ms must be null at v1 (Table 8a)."
             )
-
-        return schedule

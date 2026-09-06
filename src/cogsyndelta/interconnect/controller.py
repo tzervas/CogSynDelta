@@ -44,7 +44,7 @@ SPEC SILENCES THIS FILE RESOLVES (recorded per the lane's operating instructions
     `mlp_ratio: 4`. The parameter arithmetic settles the ratio unambiguously: Table 4's
     "thalamic controller ... 1,683,978" reproduces to the digit only at `mlp_ratio=4`,
     biased linears throughout, and each block's two internal LayerNorms held apart from
-    the per-block 788,736 figure (see `_ControllerBlock`'s docstring for the worked
+    the per-block 788,736 figure (see `ControllerBlock`'s docstring for the worked
     arithmetic) -- so `mlp_ratio=4` is hardcoded, not exposed, matching the workspace's
     own default. `epsilon` (section 3 step 3, "reaches `1 - epsilon`") has no numeric
     value anywhere in the spec or taxonomy; `halt_epsilon` is added as a trailing
@@ -87,7 +87,7 @@ G-numbered guard.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -410,7 +410,7 @@ def _halt(halt_logits: Tensor, n_iter: int, epsilon: float) -> tuple[Tensor, Ten
     return halt_at, active
 
 
-class _ControllerBlock(nn.Module):
+class ControllerBlock(nn.Module):
     """One of the controller's two blocks, spec section 2.3 Table 4's "thalamic
     controller" row: `2 blocks @256 (2 x 788,736) + norms 2,048 + summary and heads
     104,458`.
@@ -464,12 +464,126 @@ class _ControllerBlock(nn.Module):
         return x
 
 
+def _check_controller_scalars(
+    participants: Mapping[str, ControllerParticipant],
+    *,
+    d_ctrl: int,
+    depth_ctrl: int,
+    heads_ctrl: int,
+    n_iter: int,
+    B_read: int,  # noqa: N803 -- spec's own constructor arg name (Table 2)
+    B_kv: int,  # noqa: N803 -- spec's own constructor arg name (Table 2)
+    eta: float,
+) -> None:
+    """Refuse a `ThalamicController` configuration whose scalars are out of range.
+
+    Split out of `ThalamicController.__init__` so the constructor reads as construction
+    rather than as a wall of nine guard clauses; each refusal and its message is
+    unchanged.
+
+    Args:
+        participants: The participant set, which may not be empty.
+        d_ctrl: Controller hidden width, positive and divisible by `heads_ctrl`.
+        depth_ctrl: Block count, positive.
+        heads_ctrl: Attention heads per block, positive.
+        n_iter: Iteration count, positive.
+        B_read: Total read-token slots, positive.
+        B_kv: Total KV byte budget, positive.
+        eta: The collapse floor, in `[0, 1]`.
+
+    Raises:
+        ControllerConfigError: any of the above does not hold.
+    """
+    if not participants:
+        raise ControllerConfigError("ThalamicController needs at least one participant.")
+    if d_ctrl < 1:
+        raise ControllerConfigError(f"d_ctrl must be >= 1, got {d_ctrl}.")
+    if depth_ctrl < 1:
+        raise ControllerConfigError(f"depth_ctrl must be >= 1, got {depth_ctrl}.")
+    if heads_ctrl < 1:
+        raise ControllerConfigError(f"heads_ctrl must be >= 1, got {heads_ctrl}.")
+    if d_ctrl % heads_ctrl != 0:
+        raise ControllerConfigError(
+            f"d_ctrl={d_ctrl} must be divisible by heads_ctrl={heads_ctrl}."
+        )
+    if n_iter < 1:
+        raise ControllerConfigError(f"n_iter must be >= 1, got {n_iter}.")
+    if B_read < 1:
+        raise ControllerConfigError(f"B_read must be >= 1, got {B_read}.")
+    if B_kv < 1:
+        raise ControllerConfigError(f"B_kv must be >= 1, got {B_kv}.")
+    if not (0.0 <= eta <= 1.0):
+        raise ControllerConfigError(f"eta must be in [0, 1], got {eta}.")
+
+
+def _check_kv_floor_reaches_ctx_min(
+    participants: Mapping[str, ControllerParticipant],
+    ctx_names: Sequence[str],
+    *,
+    eta: float,
+    B_kv: int,  # noqa: N803 -- spec's own constructor arg name (Table 2)
+) -> None:
+    """Spec section 3 step 2: every encoding participant must reach its own `ctx_min`
+    within its floor share of `B_kv`, or clipping `ctx_r` up could break the byte bound.
+
+    Args:
+        participants: Every participant, by name.
+        ctx_names: The subset with a `ctx_min` (the encoding participants).
+        eta: The collapse floor.
+        B_kv: The total KV byte budget.
+
+    Raises:
+        ControllerConfigError: some participant's floor share is under `c_r · ctx_min`.
+    """
+    r_ctx = len(ctx_names) or 1
+    for name in ctx_names:
+        p = participants[name]
+        floor_bytes = (eta / r_ctx) * B_kv
+        needed_bytes = (p.kv_bytes_per_token or 0) * (p.ctx_min or 0)
+        if floor_bytes < needed_bytes:
+            raise ControllerConfigError(
+                f"ThalamicController: participant {name!r} cannot reach its own "
+                f"ctx_min ({p.ctx_min}) within its floor share of B_kv: "
+                f"eta/R_ctx*B_kv={floor_bytes:.1f} < c_r*ctx_min={needed_bytes} "
+                "(INTERCONNECT-MODULE-SPEC.md section 3 step 2)."
+            )
+
+
+def _check_read_token_box(
+    lo: Mapping[str, int],
+    hi: Mapping[str, int],
+    *,
+    B_read: int,  # noqa: N803 -- spec's own constructor arg name (Table 2)
+) -> None:
+    """Spec section 3 step 2's `b`-box must be able to hold `Σ_r b_r = B_read`.
+
+    Args:
+        lo: `lo_r` per participant.
+        hi: `hi_r` per participant.
+        B_read: The total the box has to sum to exactly.
+
+    Raises:
+        ControllerConfigError: `sum(lo) > B_read` or `sum(hi) < B_read`.
+    """
+    if sum(lo.values()) > B_read:
+        raise ControllerConfigError(
+            f"ThalamicController: sum of token-budget floors {sum(lo.values())} "
+            f"exceeds B_read={B_read} (INTERCONNECT-MODULE-SPEC.md section 3 step 2)."
+        )
+    if sum(hi.values()) < B_read:
+        raise ControllerConfigError(
+            f"ThalamicController: sum of token-budget ceilings {sum(hi.values())} "
+            f"falls short of B_read={B_read} (INTERCONNECT-MODULE-SPEC.md section 3 "
+            "step 2)."
+        )
+
+
 class ThalamicController(nn.Module):
     """The controller block of spec section 2.1 Table 2 / section 2.3 Table 5.
 
     Owns "the cheap summary, two blocks, four heads, both simplexes, admission, halt"
     (Table 2's row for this file): `summarise` builds the pre-block summary `s`
-    (spec section 3 step 1's first half); `forward` runs the two `_ControllerBlock`s,
+    (spec section 3 step 1's first half); `forward` runs the two `ControllerBlock`s,
     the four linear heads, both `FlooredSimplex` budget distributions, `box_integerise`
     for `b`, and the forced-admission / cumulative-halt rules (spec section 3 steps
     1-3 in full).
@@ -513,7 +627,7 @@ class ThalamicController(nn.Module):
                 order, by name.
             d_ctrl: Controller hidden width (spec section 2.1's `controller_dim`,
                 default 256).
-            depth_ctrl: Number of `_ControllerBlock`s (spec section 2.1's
+            depth_ctrl: Number of `ControllerBlock`s (spec section 2.1's
                 `controller_depth`, default 2, "two controller blocks").
             heads_ctrl: Attention heads per block (spec section 2.1's
                 `controller_heads`; taxonomy TAX:1279 fixes this design at 4).
@@ -537,26 +651,16 @@ class ThalamicController(nn.Module):
                 (`sum(lo) > B_read` or `sum(hi) < B_read`).
         """
         super().__init__()
-        if not participants:
-            raise ControllerConfigError("ThalamicController needs at least one participant.")
-        if d_ctrl < 1:
-            raise ControllerConfigError(f"d_ctrl must be >= 1, got {d_ctrl}.")
-        if depth_ctrl < 1:
-            raise ControllerConfigError(f"depth_ctrl must be >= 1, got {depth_ctrl}.")
-        if heads_ctrl < 1:
-            raise ControllerConfigError(f"heads_ctrl must be >= 1, got {heads_ctrl}.")
-        if d_ctrl % heads_ctrl != 0:
-            raise ControllerConfigError(
-                f"d_ctrl={d_ctrl} must be divisible by heads_ctrl={heads_ctrl}."
-            )
-        if n_iter < 1:
-            raise ControllerConfigError(f"n_iter must be >= 1, got {n_iter}.")
-        if B_read < 1:
-            raise ControllerConfigError(f"B_read must be >= 1, got {B_read}.")
-        if B_kv < 1:
-            raise ControllerConfigError(f"B_kv must be >= 1, got {B_kv}.")
-        if not (0.0 <= eta <= 1.0):
-            raise ControllerConfigError(f"eta must be in [0, 1], got {eta}.")
+        _check_controller_scalars(
+            participants,
+            d_ctrl=d_ctrl,
+            depth_ctrl=depth_ctrl,
+            heads_ctrl=heads_ctrl,
+            n_iter=n_iter,
+            B_read=B_read,
+            B_kv=B_kv,
+            eta=eta,
+        )
 
         self.participant_names: tuple[str, ...] = tuple(participants)
         self.participants: dict[str, ControllerParticipant] = dict(participants)
@@ -569,38 +673,16 @@ class ThalamicController(nn.Module):
 
         r_total = len(self.participant_names)
         ctx_names = [n for n in self.participant_names if self.participants[n].ctx_min is not None]
-        r_ctx = len(ctx_names) or 1
         self.R = r_total
         self.R_ctx = len(ctx_names)
 
-        for name in ctx_names:
-            p = self.participants[name]
-            floor_bytes = (eta / r_ctx) * B_kv
-            needed_bytes = (p.kv_bytes_per_token or 0) * (p.ctx_min or 0)
-            if floor_bytes < needed_bytes:
-                raise ControllerConfigError(
-                    f"ThalamicController: participant {name!r} cannot reach its own "
-                    f"ctx_min ({p.ctx_min}) within its floor share of B_kv: "
-                    f"eta/R_ctx*B_kv={floor_bytes:.1f} < c_r*ctx_min={needed_bytes} "
-                    "(INTERCONNECT-MODULE-SPEC.md section 3 step 2)."
-                )
-
+        _check_kv_floor_reaches_ctx_min(self.participants, ctx_names, eta=eta, B_kv=B_kv)
         lo = {
             name: read_token_floor(p.token_budget_min, eta, r_total, B_read)
             for name, p in self.participants.items()
         }
         hi = {name: p.token_budget_max for name, p in self.participants.items()}
-        if sum(lo.values()) > B_read:
-            raise ControllerConfigError(
-                f"ThalamicController: sum of token-budget floors {sum(lo.values())} "
-                f"exceeds B_read={B_read} (INTERCONNECT-MODULE-SPEC.md section 3 step 2)."
-            )
-        if sum(hi.values()) < B_read:
-            raise ControllerConfigError(
-                f"ThalamicController: sum of token-budget ceilings {sum(hi.values())} "
-                f"falls short of B_read={B_read} (INTERCONNECT-MODULE-SPEC.md section 3 "
-                "step 2)."
-            )
+        _check_read_token_box(lo, hi, B_read=B_read)
 
         self.register_buffer(
             "_lo", torch.tensor([lo[n] for n in self.participant_names], dtype=torch.float64)
@@ -651,7 +733,7 @@ class ThalamicController(nn.Module):
         nn.init.normal_(self.slot_embed, std=0.02)
 
         self.blocks = nn.ModuleList(
-            [_ControllerBlock(d_ctrl, heads_ctrl, mlp_ratio=4) for _ in range(depth_ctrl)]
+            [ControllerBlock(d_ctrl, heads_ctrl, mlp_ratio=4) for _ in range(depth_ctrl)]
         )
         self.final_norm = nn.LayerNorm(d_ctrl)
 
