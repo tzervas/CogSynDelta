@@ -1,0 +1,340 @@
+{
+  "kind": "evidence",
+  "topic": "visual-ptq-sensitivity-2026-09-06",
+  "generated_utc": "2026-09-06T03:44:44Z",
+  "device": "cuda",
+  "cell": "/akula-data/csd/matrix/visual-b128-s1-3ce18db-20260905",
+  "inputs": {
+    "train_receipt": {
+      "path": "/akula-data/csd/matrix/visual-b128-s1-3ce18db-20260905/receipts/visual-20260905T222732Z.json",
+      "sha256": "165dc40b56adcc44c78ff6242cfdcbaef3890a14832362df13c6ec1890076682"
+    },
+    "quant_receipt": {
+      "path": "/akula-data/csd/matrix/visual-b128-s1-3ce18db-20260905/receipts/visual-quant-20260905T223452Z.json",
+      "sha256": "51405071cb06ca86539c86edab530b2d46699a09e0309165debc9cb1dfd7739c"
+    },
+    "eval_receipt": {
+      "path": "/akula-data/csd/matrix/visual-b128-s1-3ce18db-20260905/receipts/cogsyndelta-visual-eval-20260905T222806Z.json",
+      "sha256": "e2035eb95faac56714e7a4ec34f8e019838d5efe0b7d03c9a6283be9c72d554b"
+    },
+    "eval_quantized_receipt": {
+      "path": "/akula-data/csd/matrix/visual-b128-s1-3ce18db-20260905/receipts/cogsyndelta-visual-eval-quantized-20260905T223526Z.json",
+      "sha256": "296dea8b97700cfa016a69faf0105a57038cfdec689c9ac4826d8dd76bad369f"
+    },
+    "checkpoint_sha256": "219328ea24df3885f309c575503203778249fc5dd37e58eacd1f9047de651d8e",
+    "packed_3bit_artifact": {
+      "path": "/akula-data/csd/matrix/visual-b128-s1-3ce18db-20260905/receipts/visual-checkpoints/step-4000.ptq.pt",
+      "sha256": "51845d8b0111e927687d4b130df6f45a5646c0f18331f63d9baa1aaa4601b0e2"
+    }
+  },
+  "protocol": {
+    "probe_steps": 600,
+    "probe_lr": 0.001,
+    "seed": 1,
+    "measure_seed": 20260906,
+    "token_probe_k_per_image": 16,
+    "nn_agreement_k": 10,
+    "ladder_bits": [
+      3,
+      4,
+      5,
+      6,
+      8
+    ],
+    "quantized_tensor_names": [
+      "target_encoder.patch_embed.proj.weight",
+      "target_encoder.blocks.0.qkv.weight",
+      "target_encoder.blocks.0.proj.weight",
+      "target_encoder.blocks.0.mlp.0.weight",
+      "target_encoder.blocks.0.mlp.2.weight",
+      "target_encoder.blocks.1.qkv.weight",
+      "target_encoder.blocks.1.proj.weight",
+      "target_encoder.blocks.1.mlp.0.weight",
+      "target_encoder.blocks.1.mlp.2.weight",
+      "target_encoder.blocks.2.qkv.weight",
+      "target_encoder.blocks.2.proj.weight",
+      "target_encoder.blocks.2.mlp.0.weight",
+      "target_encoder.blocks.2.mlp.2.weight",
+      "target_encoder.blocks.3.qkv.weight",
+      "target_encoder.blocks.3.proj.weight",
+      "target_encoder.blocks.3.mlp.0.weight",
+      "target_encoder.blocks.3.mlp.2.weight",
+      "target_encoder.blocks.4.qkv.weight",
+      "target_encoder.blocks.4.proj.weight",
+      "target_encoder.blocks.4.mlp.0.weight",
+      "target_encoder.blocks.4.mlp.2.weight",
+      "target_encoder.blocks.5.qkv.weight",
+      "target_encoder.blocks.5.proj.weight",
+      "target_encoder.blocks.5.mlp.0.weight",
+      "target_encoder.blocks.5.mlp.2.weight"
+    ],
+    "fp32_kept_tensor_names": [
+      "target_encoder.patch_embed.proj.bias",
+      "target_encoder.blocks.0.norm1.weight",
+      "target_encoder.blocks.0.norm1.bias",
+      "target_encoder.blocks.0.norm2.weight",
+      "target_encoder.blocks.0.norm2.bias",
+      "target_encoder.blocks.0.mlp.0.bias",
+      "target_encoder.blocks.0.mlp.2.bias",
+      "target_encoder.blocks.1.norm1.weight",
+      "target_encoder.blocks.1.norm1.bias",
+      "target_encoder.blocks.1.norm2.weight",
+      "target_encoder.blocks.1.norm2.bias",
+      "target_encoder.blocks.1.mlp.0.bias",
+      "target_encoder.blocks.1.mlp.2.bias",
+      "target_encoder.blocks.2.norm1.weight",
+      "target_encoder.blocks.2.norm1.bias",
+      "target_encoder.blocks.2.norm2.weight",
+      "target_encoder.blocks.2.norm2.bias",
+      "target_encoder.blocks.2.mlp.0.bias",
+      "target_encoder.blocks.2.mlp.2.bias",
+      "target_encoder.blocks.3.norm1.weight",
+      "target_encoder.blocks.3.norm1.bias",
+      "target_encoder.blocks.3.norm2.weight",
+      "target_encoder.blocks.3.norm2.bias",
+      "target_encoder.blocks.3.mlp.0.bias",
+      "target_encoder.blocks.3.mlp.2.bias",
+      "target_encoder.blocks.4.norm1.weight",
+      "target_encoder.blocks.4.norm1.bias",
+      "target_encoder.blocks.4.norm2.weight",
+      "target_encoder.blocks.4.norm2.bias",
+      "target_encoder.blocks.4.mlp.0.bias",
+      "target_encoder.blocks.4.mlp.2.bias",
+      "target_encoder.blocks.5.norm1.weight",
+      "target_encoder.blocks.5.norm1.bias",
+      "target_encoder.blocks.5.norm2.weight",
+      "target_encoder.blocks.5.norm2.bias",
+      "target_encoder.blocks.5.mlp.0.bias",
+      "target_encoder.blocks.5.mlp.2.bias",
+      "target_encoder.norm.weight",
+      "target_encoder.norm.bias"
+    ]
+  },
+  "reproduction_check": {
+    "fp32_recomputed": 0.7237036824226379,
+    "fp32_receipt": 0.7237036824226379,
+    "packed_3bit_recomputed": 0.7242592573165894,
+    "packed_3bit_receipt": 0.7242592573165894,
+    "packed_sha256_matches_receipt": true
+  },
+  "rows": [
+    {
+      "condition": "fp32",
+      "bits": null,
+      "primary": {
+        "top1": 0.7237036824226379,
+        "top5": 0.979629635810852,
+        "n_eval": 5400.0
+      },
+      "rep_std": 0.3909284472465515,
+      "transfer": {
+        "top1": 0.8030000329017639,
+        "top5": 0.9955000281333923,
+        "n_eval": 2000.0
+      },
+      "token_surface": {
+        "top1": 0.6107639074325562,
+        "top5": 0.9553588032722473,
+        "n_eval": 86400.0,
+        "k_per_image": 16
+      },
+      "stored_bytes": null,
+      "fp32_bytes": 42849792,
+      "compression_ratio": null,
+      "seconds": 29.64685034751892,
+      "geometry_vs_fp32": null
+    },
+    {
+      "condition": "packed_artifact_3bit",
+      "bits": 3,
+      "primary": {
+        "top1": 0.7242592573165894,
+        "top5": 0.9792592525482178,
+        "n_eval": 5400.0
+      },
+      "rep_std": 0.4016973376274109,
+      "transfer": {
+        "top1": 0.8100000619888306,
+        "top5": 0.9980000257492065,
+        "n_eval": 2000.0
+      },
+      "token_surface": {
+        "top1": 0.6128819584846497,
+        "top5": 0.955289363861084,
+        "n_eval": 86400.0,
+        "k_per_image": 16
+      },
+      "stored_bytes": 4301963,
+      "fp32_bytes": 42849792,
+      "compression_ratio": 9.960520813405415,
+      "seconds": 35.16454815864563,
+      "geometry_vs_fp32": {
+        "mean_cosine": 0.952436089515686,
+        "min_cosine": 0.9140112400054932,
+        "eval_latents_std_ratio": 1.0605417832277724,
+        "nn_agreement_at_k": 0.9084998965263367,
+        "k": 10.0
+      }
+    },
+    {
+      "condition": "ladder_3bit",
+      "bits": 3,
+      "primary": {
+        "top1": 0.7242592573165894,
+        "top5": 0.9792592525482178,
+        "n_eval": 5400.0
+      },
+      "rep_std": 0.4016973376274109,
+      "transfer": {
+        "top1": 0.8100000619888306,
+        "top5": 0.9980000257492065,
+        "n_eval": 2000.0
+      },
+      "token_surface": {
+        "top1": 0.6128819584846497,
+        "top5": 0.955289363861084,
+        "n_eval": 86400.0,
+        "k_per_image": 16
+      },
+      "stored_bytes": 4265472,
+      "fp32_bytes": 42849792,
+      "compression_ratio": 10.045732805185452,
+      "seconds": 35.45510387420654,
+      "geometry_vs_fp32": {
+        "mean_cosine": 0.952436089515686,
+        "min_cosine": 0.9140112400054932,
+        "eval_latents_std_ratio": 1.0605417832277724,
+        "nn_agreement_at_k": 0.9084998965263367,
+        "k": 10.0
+      }
+    },
+    {
+      "condition": "ladder_4bit",
+      "bits": 4,
+      "primary": {
+        "top1": 0.7253703474998474,
+        "top5": 0.9794444441795349,
+        "n_eval": 5400.0
+      },
+      "rep_std": 0.39135703444480896,
+      "transfer": {
+        "top1": 0.8045000433921814,
+        "top5": 0.9945000410079956,
+        "n_eval": 2000.0
+      },
+      "token_surface": {
+        "top1": 0.6113888621330261,
+        "top5": 0.9551388621330261,
+        "n_eval": 86400.0,
+        "k_per_image": 16
+      },
+      "stored_bytes": 5601792,
+      "fp32_bytes": 42849792,
+      "compression_ratio": 7.649300795174116,
+      "seconds": 31.936912536621094,
+      "geometry_vs_fp32": {
+        "mean_cosine": 0.9900542497634888,
+        "min_cosine": 0.9744296669960022,
+        "eval_latents_std_ratio": 1.0099407710663506,
+        "nn_agreement_at_k": 0.9520741105079651,
+        "k": 10.0
+      }
+    },
+    {
+      "condition": "ladder_5bit",
+      "bits": 5,
+      "primary": {
+        "top1": 0.7238888740539551,
+        "top5": 0.9794444441795349,
+        "n_eval": 5400.0
+      },
+      "rep_std": 0.3917008340358734,
+      "transfer": {
+        "top1": 0.8055000305175781,
+        "top5": 0.9960000514984131,
+        "n_eval": 2000.0
+      },
+      "token_surface": {
+        "top1": 0.6102662086486816,
+        "top5": 0.9555671215057373,
+        "n_eval": 86400.0,
+        "k_per_image": 16
+      },
+      "stored_bytes": 6938112,
+      "fp32_bytes": 42849792,
+      "compression_ratio": 6.176001771087004,
+      "seconds": 34.95146870613098,
+      "geometry_vs_fp32": {
+        "mean_cosine": 0.9979640245437622,
+        "min_cosine": 0.9960946440696716,
+        "eval_latents_std_ratio": 1.001123378840298,
+        "nn_agreement_at_k": 0.9713332653045654,
+        "k": 10.0
+      }
+    },
+    {
+      "condition": "ladder_6bit",
+      "bits": 6,
+      "primary": {
+        "top1": 0.7225925922393799,
+        "top5": 0.979629635810852,
+        "n_eval": 5400.0
+      },
+      "rep_std": 0.3910956382751465,
+      "transfer": {
+        "top1": 0.8030000329017639,
+        "top5": 0.9960000514984131,
+        "n_eval": 2000.0
+      },
+      "token_surface": {
+        "top1": 0.6105555295944214,
+        "top5": 0.9552314877510071,
+        "n_eval": 86400.0,
+        "k_per_image": 16
+      },
+      "stored_bytes": 8274432,
+      "fp32_bytes": 42849792,
+      "compression_ratio": 5.178578058288473,
+      "seconds": 32.29947638511658,
+      "geometry_vs_fp32": {
+        "mean_cosine": 0.9994940161705017,
+        "min_cosine": 0.9990924596786499,
+        "eval_latents_std_ratio": 0.9994836894378523,
+        "nn_agreement_at_k": 0.9887222647666931,
+        "k": 10.0
+      }
+    },
+    {
+      "condition": "ladder_8bit",
+      "bits": 8,
+      "primary": {
+        "top1": 0.7240740656852722,
+        "top5": 0.9798148274421692,
+        "n_eval": 5400.0
+      },
+      "rep_std": 0.3908784091472626,
+      "transfer": {
+        "top1": 0.8035000562667847,
+        "top5": 0.9955000281333923,
+        "n_eval": 2000.0
+      },
+      "token_surface": {
+        "top1": 0.6106018424034119,
+        "top5": 0.955289363861084,
+        "n_eval": 86400.0,
+        "k_per_image": 16
+      },
+      "stored_bytes": 10947072,
+      "fp32_bytes": 42849792,
+      "compression_ratio": 3.9142696786866846,
+      "seconds": 29.161203145980835,
+      "geometry_vs_fp32": {
+        "mean_cosine": 0.9999721646308899,
+        "min_cosine": 0.9999426603317261,
+        "eval_latents_std_ratio": 0.9996672217079907,
+        "nn_agreement_at_k": 0.9962592124938965,
+        "k": 10.0
+      }
+    }
+  ]
+}
