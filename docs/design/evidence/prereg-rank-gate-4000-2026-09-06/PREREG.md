@@ -84,9 +84,9 @@ coincide only when `2.0 * n / 100` is not an integer (`n` not a multiple of 50),
 W1d's own validity floor cannot stand: its spread `< 2.0 pp` sits at 0.91x the effect bar, at that boundary a
 two-seed AND rule false-passes 7.9 percent under no effect, and a single spread draw certifies a retrieve-grade
 instrument (2.54 pp, Table 3) as valid 47 percent of the time [RG3]. Three read-out seeds and a floor of `k* / 3`
-on the standard error of each mean bring `sd(D)` under 0.95 pp and the no-effect false pass under 1.2 percent per
-seed. A true effect sitting exactly on the bar is still KILLed with probability 0.25 by any two-seed AND rule, so
-a KILL whose `A` lies within one item of `k*` on both seeds is flagged `boundary` in GO_KILL.
+on the standard error of each mean (kept in items: 3.667 items = 0.7161 pp at `n = 512`, not 2.0 / 3 pp) bring `sd(D)`
+under 1.02 pp and the no-effect false pass under 1.7 percent per seed, 0.03 percent for both. A true effect sitting
+exactly on the bar is still KILLed with probability 0.25 by any two-seed AND rule, so a KILL whose `A` lies within one item of `k*` on both seeds is flagged `boundary` in GO_KILL.
 
 | region | delta(a - b) pp | read-out seed spread pp | W1d verdict |
 |---|---:|---:|---|
@@ -105,7 +105,7 @@ receipt and the probe both report; k* = ceil(2.0 * n / 100) items (11 at n = 512
   per checkpoint X and read-out seed k in {0, 1, 2}: a_k = arm(a) recall@1 hits, b_k = arm(b) hits (items)
   a(X) = mean_k a_k;  b(X) = mean_k b_k;  delta(X) = a(X) - b(X)
   se_a(X) = sd_k(a_k) / sqrt(3);  se_delta(X) = sd_k(a_k - b_k) / sqrt(3)     (sample sd over the 3 seeds)
-  valid(X) = se_a(X) < k* / 3 and se_delta(X) < k* / 3                          (0.67 pp at n = 512)
+  valid(X) = se_a(X) < k* / 3 and se_delta(X) < k* / 3            (3.667 items = 0.7161 pp at n = 512)
   D(R, s) = delta(T) - delta(C);   A(R, s) = a(T) - a(C)
   pass_s = D(R, s) >= k* and A(R, s) >= k* and delta(T) >= k*
   kill_s = A(R, s) < k*
@@ -233,8 +233,8 @@ The grading script refuses before it grades: every identity check below fails cl
 replicate is INCONCLUSIVE with reason `IDENTITY` (the run, not the model, is at fault); `beats_untrained` is a verdict input, not a refusal.
 
 ```text
-PIN = the one code sha all twelve receipts must carry; RESUME_KEYS = _resume_fields(cfg).keys() minus
-      {token_loss_weight, decorr_weight} (pretrain.py) -- NOT the receipt's whole config block
+PIN = the one code sha all twelve receipts must carry; RESUME_KEYS = _resume_fields(cfg).keys() minus {token_loss_weight,
+      decorr_weight} (pretrain.py), NOT the receipt's whole config block; shards, corpus_fingerprint and split_code_fingerprint are not config keys and are covered by r.corpus.{shards, fingerprint} and PIN
 for R in (memory, language, reason):
   for s in (0, 1):
     for A in (control, treatment):
@@ -246,7 +246,8 @@ for R in (memory, language, reason):
       assert r.code_revision.git_sha == PIN and not r.code_revision.dirty
       assert r.checkpoint_sha256 == p.checkpoint_sha256 == e.artifacts.checkpoint_sha256
       assert p.n_items == r.held_out.n_pairs;  n = p.n_items;  k_star = ceil(2.0 * n / 100)
-    assert C.config[k] == T.config[k] for every k in RESUME_KEYS;  C.init_sha256 == T.init_sha256;  C.batch_order.sha256 == T.batch_order.sha256
+    assert C.config[k] == T.config[k] for every k in RESUME_KEYS & r.config.keys();  C.corpus.shards == T.corpus.shards
+    assert C.init_sha256 == T.init_sha256;  C.batch_order.sha256 == T.batch_order.sha256
     a[A], b[A], delta[A], se_a[A], se_delta[A] = p_A's item-unit means and standard errors (section 3)
     valid[A] = se_a[A] < k_star / 3 and se_delta[A] < k_star / 3;  baseline[A] = r_A.beats_untrained["recall@1"]
     D[s] = delta[T] - delta[C];  Aeff[s] = a[T] - a[C]
