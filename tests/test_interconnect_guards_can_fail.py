@@ -350,6 +350,27 @@ def test_g33_fires_on_a_parametric_region_claiming_nonparametric_store() -> None
         )
 
 
+def test_g33_fires_on_a_nonparametric_store_row_missing_parametric() -> None:
+    """IC-R1 skeptic F1: a row that declares `kind: "nonparametric_store"` but omits
+    `parametric` entirely must not get the store's identity exemption for free -- the
+    guard used to read both fields with `.get(...)`, so a missing `parametric` silently
+    evaluated as falsy and the row was ACCEPTED. Fails closed now: refused.
+    """
+    sha = "ee" * 32
+    with pytest.raises(GateFailure, match="G33"):
+        check_frozen_set_identity(
+            [
+                {
+                    "name": "language",
+                    "checkpoint_sha256": sha,
+                    "receipt_checkpoint_sha256": sha,
+                    "kind": "nonparametric_store",
+                    # "parametric" deliberately omitted
+                }
+            ]
+        )
+
+
 def test_g33_positive_control_matching_sha_and_honest_kind_passes() -> None:
     sha = "dd" * 32
     check_frozen_set_identity(
@@ -400,6 +421,17 @@ def test_g35_fires_on_a_6_point_gap() -> None:
 
 def test_g35_positive_control_a_3_point_gap_passes() -> None:
     check_overfit_gate(train_metric=0.80, held_out_metric=0.77)
+
+
+def test_g35_fires_on_a_float_noisy_exact_5_point_gap() -> None:
+    """IC-R1 skeptic F2: `0.35 - 0.30 == 0.049999999999999996` in IEEE 754 float
+    subtraction -- one ulp under the 5.00-point threshold, not over it. The bare
+    `gap >= 5 * POINT` comparison this guard used to make read that as a passing 4.9999
+    -point gap and ACCEPTED it; G27 already carries an `isclose` tolerance at this exact
+    boundary (`gates.py:104`) for exactly this reason. Must fire.
+    """
+    with pytest.raises(GateFailure, match="G35"):
+        check_overfit_gate(train_metric=0.35, held_out_metric=0.30)
 
 
 # ----------------------------------------------------------------------------------

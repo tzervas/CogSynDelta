@@ -195,10 +195,16 @@ def check_frozen_set_identity(participants: Sequence[Mapping[str, Any]]) -> None
         participants: One mapping per participant, each with `name`, `checkpoint_sha256`
             (measured from the checkpoint file on disk), `receipt_checkpoint_sha256` (the
             sha256 the cited region receipt recorded), `kind`, and `parametric` (bool).
+            `kind` and `parametric` are both required -- a row that omits either is
+            refused rather than silently read as "not claiming the exemption" (a row
+            missing `parametric` while declaring `kind: "nonparametric_store"` must not
+            get the store's identity exemption for free).
 
     Raises:
         GateFailure: Naming the first offending participant and which half of the check
-            failed. Effect (applied by the caller): phase A and E2 refuse to start.
+            failed -- a sha mismatch, a missing `kind`/`parametric` field, or an honest
+            `parametric: True` participant claiming `nonparametric_store`. Effect
+            (applied by the caller): phase A and E2 refuse to start.
     """
     for p in participants:
         name = p["name"]
@@ -209,7 +215,13 @@ def check_frozen_set_identity(participants: Sequence[Mapping[str, Any]]) -> None
                 f"G33: participant {name!r} checkpoint sha256 {measured} does not match "
                 f"the sha256 {cited} its receipt cites"
             )
-        if p.get("kind") == "nonparametric_store" and p.get("parametric"):
+        if "kind" not in p or "parametric" not in p:
+            raise GateFailure(
+                f"G33: participant {name!r} omits 'kind' or 'parametric'; both are "
+                "required to check the nonparametric_store exemption, and a row that "
+                "omits one does not get the exemption by default"
+            )
+        if p["kind"] == "nonparametric_store" and p["parametric"]:
             raise GateFailure(
                 f"G33: participant {name!r} declares kind 'nonparametric_store' but is "
                 "a parametric region"
@@ -260,7 +272,13 @@ def check_overfit_gate(train_metric: float, held_out_metric: float) -> None:
             the caller): the phase-A receipt is marked FAIL.
     """
     gap = train_metric - held_out_metric
-    if gap >= 5 * POINT:
+    threshold = 5 * POINT
+    # `>=`, not `>` -- exactly five points must fire (spec: "gap >= 5 points"). The
+    # `isclose` half catches the boundary from the OTHER side G27's tolerance guards:
+    # a gap that is mathematically exactly the threshold can land a few ulps UNDER it
+    # after float subtraction (e.g. 0.35 - 0.30 == 0.049999999999999996, just below
+    # 0.05) and must still fire rather than silently pass on subtraction noise.
+    if gap >= threshold or math.isclose(gap, threshold, rel_tol=1e-9, abs_tol=1e-12):
         raise GateFailure(
             f"G35: train/held-out gap {gap / POINT:.2f} points >= the 5.00 point ceiling "
             f"(train={train_metric:.4f}, held_out={held_out_metric:.4f})"
