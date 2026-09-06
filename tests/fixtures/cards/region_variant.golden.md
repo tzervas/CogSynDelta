@@ -67,6 +67,8 @@ run) of the `compress` region, not the promoted release -- see the region's
 
 ## Evaluation results
 
+lexical baseline: not measured
+
 ### Training held-out battery
 
 | metric | this variant | untrained baseline |
@@ -85,9 +87,9 @@ run) of the `compress` region, not the promoted release -- see the region's
 
 ### Retrieval
 
-| metric | this variant | untrained baseline |
-|---|---|---|
-| `rank.recall@1`[^2] | 0.49 | _(n/a)_ |
+| metric | this variant | untrained baseline | lexical baseline (TF-IDF)[^17] |
+|---|---|---|---|
+| `rank.recall@1`[^2] | 0.49 | _(n/a)_ | not measured |
 
 ### Representation
 
@@ -111,7 +113,6 @@ run) of the `compress` region, not the promoted release -- see the region's
 
 ^v1^ v1 receipt; names mapped to csd-metrics/v2 (see `docs/design/METRICS-METHODOLOGY.md` §15, the v1 -> v2 deprecation map).
 
-
 [^1]: size of the closed held-out pool this row's numbers were computed over -- battery_id=`train_holdout`, pooling=`matched`, `src/cogsyndelta/regions/pretrain.py`.
 [^2]: recall@k (k=1): fraction of queries whose matched positive is the top-scored candidate in the closed held-out pool -- battery_id=`train_holdout`, pooling=`matched`, `src/cogsyndelta/eval/metrics.py`.
 [^3]: recall@k (k=10): fraction of queries whose matched positive is in the top-10 of the closed held-out pool -- battery_id=`train_holdout`, pooling=`matched`, `src/cogsyndelta/eval/metrics.py`.
@@ -128,6 +129,7 @@ run) of the `compress` region, not the promoted release -- see the region's
 [^14]: fp32_bytes / stored_bytes -- a PAYLOAD/STORAGE ratio, NOT a speed or throughput claim (renamed from compression_ratio, g7 §3.1) -- battery_id=`quant_plan`, pooling=_(n/a)_, `src/cogsyndelta/quant/ptq.py`.
 [^15]: sum(parameter.numel() * 4) -- weights only, never optimizer or RNG state -- battery_id=`quant_plan`, pooling=_(n/a)_, `src/cogsyndelta/quant/ptq.py`.
 [^16]: packed codes + per-channel scale/zero-point for quantized tensors, plus 4 bytes/element for fp32-kept tensors -- battery_id=`quant_plan`, pooling=_(n/a)_, `src/cogsyndelta/quant/ptq.py`.
+[^17]: TF-IDF cosine / BM25 (csd-lexical/v1: diagnosis word regex, log-tf * smoothed idf cosine, BM25 k1=1.5 b=0.75, seed-0 1e-9 tie-break) over the identical closed holdout; split_sha256 must equal split.sha256 (G26) -- battery_id=`eval_holdout`, pooling=`matched`, `src/cogsyndelta/eval/lexical.py`.
 
 - **Metrics schema:** `csd-metrics/v1 (not recorded)`
 
