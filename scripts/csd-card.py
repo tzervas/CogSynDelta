@@ -61,7 +61,11 @@ sys.path.insert(0, _SRC)
 
 from cogsyndelta.cards.methodology import CardError  # noqa: E402 -- needs sys.path set above
 from cogsyndelta.cards.render import CARD_KINDS, render_card  # noqa: E402
-from cogsyndelta.regions.aliases import canonical_region  # noqa: E402
+from cogsyndelta.eval.lexical import (  # noqa: E402
+    receipt_split_sha256,
+    verify_lexical_baseline_split,
+)
+from cogsyndelta.regions.aliases import canonical_region, legacy_names  # noqa: E402
 
 _PUBLISH_SCRIPT = Path(__file__).resolve().parent / "csd-publish-checkpoint.py"
 
@@ -149,7 +153,51 @@ def _receipts_from_cell(cell_dir: Path) -> tuple[str, dict[str, dict[str, Any] |
         if not p.is_file():
             continue
         receipts[kind] = _load_json(p)
+    _merge_lexical_sidecar(cell_dir, str(region), receipts)
     return str(region), receipts
+
+
+def _merge_lexical_sidecar(
+    cell_dir: Path, region: str, receipts: dict[str, dict[str, Any] | None]
+) -> None:
+    """Attach a g49 lexical sidecar onto the in-memory eval receipt, never on disk.
+
+    Existing seed-0 cells were scored before eval receipts carried `lexical_baseline`.
+    The backfill writes `cogsyndelta-<region>-lexical-*.json` beside them; a card for
+    those cells must still print the TF-IDF column. The original eval JSON is not
+    rewritten (g49: do not mutate existing receipts).
+
+    Args:
+        cell_dir: Matrix cell directory (sidecar lives under ``receipts/``).
+        region: Cell region id (legacy spelling is searched too).
+        receipts: In-memory receipts dict; ``eval`` is replaced with a shallow copy
+            carrying ``lexical_baseline`` when a sidecar is found.
+    """
+    receipts_dir = cell_dir / "receipts"
+    if not receipts_dir.is_dir():
+        return
+    spellings = (region, canonical_region(region), *legacy_names(canonical_region(region)))
+    sidecars: list[Path] = []
+    for name in spellings:
+        sidecars.extend(receipts_dir.glob(f"cogsyndelta-{name}-lexical-2*.json"))
+    if not sidecars:
+        return
+    side_path = sorted(set(sidecars))[-1]
+    side = _load_json(side_path)
+    lex = side.get("lexical_baseline")
+    if not isinstance(lex, dict):
+        return
+    split = side.get("split") or (side.get("provenance") or {}).get("split")
+    for kind in ("eval", "eval_quantized"):
+        current = receipts.get(kind)
+        if not isinstance(current, dict) or current.get("lexical_baseline"):
+            continue
+        merged = dict(current)
+        merged["lexical_baseline"] = lex
+        if receipt_split_sha256(merged) is None and isinstance(split, dict):
+            merged["split"] = split
+        verify_lexical_baseline_split(merged)
+        receipts[kind] = merged
 
 
 def _load_comparators(path: Path | None) -> dict[str, dict[str, Any]] | None:

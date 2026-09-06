@@ -31,7 +31,12 @@ import pytest
 from huggingface_hub import ModelCard
 
 from cogsyndelta.cards.methodology import METRIC_METHODOLOGY, CardError
-from cogsyndelta.cards.render import CARD_KINDS, render_card
+from cogsyndelta.cards.render import (
+    CARD_KINDS,
+    _assert_text_card_has_lexical_column,
+    render_card,
+)
+from cogsyndelta.cards.tables import LEXICAL_COLUMN
 from tests.test_publish_checkpoint import (
     make_checkpoint,
     make_eval_receipt,
@@ -588,6 +593,100 @@ def test_v1_receipt_renders_through_the_alias_map_with_footnote(tmp_path: Path) 
     # make_quant_receipt's quantized_metric/drop/compression_ratio are v1 names too
     assert "quant.plan_recall@1" in card
     assert "quant.compression_ratio" in card
+
+
+# =====================================================================================
+# g49 lexical baseline column on text cards.
+# =====================================================================================
+
+
+def test_text_card_without_lexical_field_prints_not_measured(tmp_path: Path) -> None:
+    receipts = _full_fixture_receipts(tmp_path)
+    card = render_card(
+        "region_variant",
+        region="compress",
+        region_cfg=region_cfg(),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert LEXICAL_COLUMN in card
+    assert "lexical baseline: not measured" in card
+
+
+def test_text_card_with_lexical_field_prints_tfidf_column_and_reading(tmp_path: Path) -> None:
+    receipts = _full_fixture_receipts(tmp_path)
+    receipts["eval"]["split"] = {"sha256": "aaa"}
+    receipts["eval"]["lexical_baseline"] = {
+        "scorer_version": "csd-lexical/v1",
+        "split_sha256": "aaa",
+        "n_pairs": 512,
+        "tfidf": {"recall@1": 0.713},
+        "bm25": {"recall@1": 0.701},
+    }
+    card = render_card(
+        "region_variant",
+        region="compress",
+        region_cfg=region_cfg(),
+        receipts=receipts,
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert LEXICAL_COLUMN in card
+    assert "0.713" in card
+    assert "bag-of-words ceiling" in card
+    assert "lexical baseline: not measured" not in card
+
+
+def test_text_card_missing_lexical_column_fails_once_receipt_carries_the_field(
+    tmp_path: Path,
+) -> None:
+    """Guard: a renderer that drops the column while the field is present must refuse."""
+    receipts = _full_fixture_receipts(tmp_path)
+    receipts["eval"]["split"] = {"sha256": "aaa"}
+    receipts["eval"]["lexical_baseline"] = {
+        "scorer_version": "csd-lexical/v1",
+        "split_sha256": "aaa",
+        "tfidf": {"recall@1": 0.713},
+    }
+    with pytest.raises(CardError, match="lexical baseline"):
+        _assert_text_card_has_lexical_column(
+            "region_variant", "compress", receipts["eval"], "# a card with no ranking table\n"
+        )
+
+
+def test_text_card_refuses_lexical_field_whose_split_sha_disagrees(tmp_path: Path) -> None:
+    receipts = _full_fixture_receipts(tmp_path)
+    receipts["eval"]["split"] = {"sha256": "aaa"}
+    receipts["eval"]["lexical_baseline"] = {
+        "scorer_version": "csd-lexical/v1",
+        "split_sha256": "bbb",
+        "tfidf": {"recall@1": 0.713},
+    }
+    with pytest.raises(Exception, match=r"split\.sha256"):
+        render_card(
+            "region_variant",
+            region="compress",
+            region_cfg=region_cfg(),
+            receipts=receipts,
+            files={},
+            budgets_root=tmp_path,
+        )
+
+
+def test_visual_card_does_not_print_lexical_column(tmp_path: Path) -> None:
+    from tests.test_cards_visual import _fixture_receipts, _visual_cfg
+
+    card = render_card(
+        "region_variant",
+        region="visual",
+        region_cfg=_visual_cfg(),
+        receipts=_fixture_receipts(),
+        files={},
+        budgets_root=tmp_path,
+    )
+    assert LEXICAL_COLUMN not in card
+    assert "bag-of-words ceiling" not in card
 
 
 # =====================================================================================
