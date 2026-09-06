@@ -84,9 +84,12 @@ Table 2 — files under `src/cogsyndelta/interconnect/`, their classes and const
 `n_iter 4`, `heads 8`, `mlp_ratio 4`, `budget_total_read_tokens 256`,
 `budget_total_kv_bytes 3221225472`, `floor_eta 0.15` — plus `n_cond 8`, `controller_dim 256`,
 `controller_depth 2`, `controller_heads 4`, `flops_ceiling`, `write_back True`, `k_candidates 32`
-and `unify_probes_trainable True` (TAX:736-741, TAX:1428, TAX:1684-1688). **One name for the
-iteration count.** `n_iter` is the number of workspace blocks and the upper bound on iterations; `I`
-in formulas is `n_iter`; a request's `step_budget.max_iters ≤ n_iter` is the bound the validator
+and `unify_probes_trainable True` (TAX:736-741, TAX:1428, TAX:1684-1688). `flops_ceiling` defaults
+to the dense schedule's own `region_token_flops`, `Σ_i Σ_r φ_r · ctx_max_r` over `n_iter`
+iterations, the worst case B1 can reach (TAX:5832-5834); construction refuses a smaller value, so
+G30's dense fallback can never be refused by its own validator. **One name for the iteration
+count.** `n_iter` is the number of workspace blocks and the upper bound on iterations; `I` in
+formulas is `n_iter`; a request's `step_budget.max_iters ≤ n_iter` is the bound the validator
 checks; `halt_at ≤ max_iters` is the realised value. Iteration `i` runs block `i` with untied
 weights, so halting at iteration 2 skips blocks 3 and 4 (TAX:1563-1568). Tying the blocks is the
 recurrent-depth seam and is not built (TAX:4612-4614).
@@ -170,7 +173,7 @@ Table 4a — context budgets per encoding participant `[spec]`; the taxonomy nam
 
 | region | `ctx_min` | `ctx_max` | why |
 |---|---:|---:|---|
-| `language`, `memory` | 8 | 96 | trained at `max_len 96` (TAX:2505) |
+| `language`, `memory` | 8 | 96 | trained at `max_len 96` (TAX:2506) |
 | `reasoning` | 8 | 256 | trained at `max_len 256` (TAX:132-133) |
 | `visual` | 8 | 64 | `n_patches` today; 256 after W7v (TAX:1236-1242) |
 
@@ -210,9 +213,13 @@ skipped and it is executed as given; this is the frozen-schedule arm of the budg
    `η/R_ctx · B_kv < c_r · ctx_min` for any `r`. `β_b = η/R + (1−η)·softmax(s_b)` over all five,
    then `b = box_integerise(B_read · β_b, lo, hi)` with
    `lo_r = max(token_budget.min_r, ceil(η/R · B_read))` and `hi_r = token_budget.max_r`: start every
-   region at `lo_r`, distribute `B_read − Σ lo` by largest remainder in proportion to `β_b`, cap at
-   `hi_r`, and redistribute any capped surplus among the uncapped regions. `Σ b_r = B_read` exactly,
-   every `b_r` is inside its box, and construction refuses `Σ lo > B_read` or `Σ hi < B_read`
+   region at `lo_r`; share the pool `B_read − Σ lo` among the uncapped regions in proportion to
+   `β_b`, as real values; cap any region whose share would carry it past `hi_r` at `hi_r` and return
+   its unused share to the pool; repeat until no region is newly capped or every region is at
+   `hi_r`, which terminates because each round caps at least one more region; then integerise the
+   uncapped shares by largest remainder over the remaining integer pool, ties on equal remainders
+   going to the earlier participant in Table 1 order. `Σ b_r = B_read` exactly, every `b_r` is
+   inside its box, and construction refuses `Σ lo > B_read` or `Σ hi < B_read`
    (TAX:1401-1416, TAX:5824-5825). At `R = 5` every `lo_r` is 8, the store's floor; at `R = 4` it is
    10. **Phase A and the fallback `Schedule` use the dense allocation** `[spec]`: `A ≡ 1`,
    `ctx = ctx_max`, `halt_at = max_iters = n_iter`, and `b = box_integerise(uniform)`, which is
@@ -230,9 +237,9 @@ skipped and it is executed as given; this is the frozen-schedule arm of the budg
    and `flops_ceiling`; the schedule carries its predicted `region_token_flops`; `output.modalities`
    is checked against the request's `allowed_modalities` and the resident heads
    (TAX:1494-1518, TAX:1616-1626). A `Schedule` carrying a `trace_id`, a store namespace, a modality
-   with no resident head, a malformed `admitted`, a `region_token_flops` over the ceiling, or any
-   bound violation is refused before execution and the dense fallback runs
-   (TAX:1521-1524, TAX:5827-5828, TAX:5854); Table 8a disposes of the rest.
+   with no resident head, a malformed `admitted` or a `depth` that is not `min{i : admitted[i]}`, a
+   `region_token_flops` over the ceiling, or any bound violation is refused before execution and the
+   dense fallback runs (TAX:1521-1524, TAX:5827-5828, TAX:5854); Table 8a disposes of the rest.
 5. **Condition.** For `i ≥ 1` and every admitted region with `accepts_condition`,
    `cond_r = reshape(Linear_r(pool_r(z_{i−1})), [n_cond, d_r])`, where `pool_r` is the region's
    attention pool over the latents (TAX:1427-1431). With `write_back = False` the argument is `None`
@@ -359,7 +366,7 @@ Table 8 — guards, proposed G-numbers, what fires them and what firing does.
 | G27 | W5b write-back gate, `gates.py` | a conditioned region's own-bin score drops > 1 point, or the composed metric does not improve | write-back disabled for that region; `edges` and `lockstep_groups` omitted; `topology: not demonstrated` (TAX:1435-1439) |
 | G28 | topology agreement, `gates.py` | the two derivations agree on < 95% of items | the disagreement is reported as a bug; void, and declared void, under the no-write-back fallback (TAX:1469-1490) |
 | G29 | attention-mass floor, `gates.py` | any region's `mean(a_r) < η/R` in phase A; `mean(a_store) < η/R` in E2; a receipt whose printed floor ≠ `η/R` at its own `R` | the region is named in `collapsed_in_phase_A` and excluded from B's targets; the store is reverted in E2; the receipt is refused (TAX:1659-1669, TAX:2661-2662) |
-| G30 | `Schedule` validator, `schedule.py` | any B1 bound violated, including `region_token_flops > flops_ceiling` and a malformed `admitted`; `trace_id` present; a store namespace named; a modality outside `allowed_modalities` or with no resident head | the `Schedule` is refused before execution and the dense fallback runs (TAX:5822-5830, TAX:1616-1626) |
+| G30 | `Schedule` validator, `schedule.py` | any B1 bound violated, including `region_token_flops > flops_ceiling`, a malformed `admitted` and a `depth ≠ min{i : admitted[i]}`; `trace_id` present; a store namespace named; a modality outside `allowed_modalities` or with no resident head | the `Schedule` is refused before execution and the dense fallback runs (TAX:5822-5830, TAX:1616-1626) |
 | G31 | latent-tract assertion, `adapters.py` and `kv_bank.py` | an integer-typed or vocabulary-indexed payload on `h_r`, the adapted tokens, `z` or `cond_r` | raises at the boundary (TAX:2667) |
 | G32 | store scope, `episodic_store.py` | a read or write with no server-derived scope, or a scope supplied by the request | refused; an unknown principal reads an empty partition (TAX:5854-5857) |
 | G33 | frozen-set identity, `gates.py` | a participant's checkpoint sha ≠ the receipt it cites, or a parametric region declaring `kind: nonparametric_store` | phase A and E2 refuse to start (TAX:2598-2626) |
@@ -388,12 +395,12 @@ Table 9 — unit tests per component, one file each under `tests/interconnect/`.
 
 | component | tests |
 |---|---|
-| `schedule.py` | every Table 3 bound accepted at the boundary and refused one past it, including `region_token_flops` and a malformed `admitted`; `trace_id` refused; modality refusal in both directions; JSON round-trip equality; the validator is pure and deterministic |
+| `schedule.py` | every Table 3 bound accepted at the boundary and refused one past it, including `region_token_flops`, a malformed `admitted` and a `depth` that disagrees with `admitted`; `trace_id` refused; modality refusal in both directions; JSON round-trip equality; the validator is pure and deterministic |
 | `adapters.py` | output shapes for `d_r ∈ {256, 384}`; top-k returns exactly `b_r` positions that are both real and inside the budget mask, never a masked one, ties by position; the straight-through gate passes gradient to the scorer; prefix shape `[B, 8, d_r]`; a uniform query reproduces the mean pool to 1e-6 |
 | `kv_bank.py` | the dense and 10,000 random allocations pack without overflow; `slot_region` and `key_mask` agree; an unadmitted region's slots are masked at iteration `i`; an empty store partition yields zero unmasked store slots; `bank_k == bank_v` off the store slots; `W_k` and `W_v` carry no bias |
 | `workspace.py` | `z` keeps its shape across iterations; `a[b, i, :]` sums to 1 over admitted regions on active iterations and is zero otherwise; SDPA and explicit-softmax paths agree to 1e-4; the severance mask gives zero gradient through the masked slots |
 | `readout.py` | `f` shape; two distinct `z` give distinct `f`; cosine scores inside `[−1, 1]`; the `NULL` candidate sits at index 0 and receives gradient; probe outputs at each `pooled_dim`; the `z_affect` gate is zero and adds no parameter |
-| `controller.py` | both simplexes stay inside their bounds for 10,000 random inputs and for adversarial inputs built to starve a region; `box_integerise` sums to `B_read` exactly and respects every box, including the draft-1 counter-example `[8, 8, 222, 11, 7]`; the dense allocation is `[64, 64, 64, 64]` and `[52, 51, 51, 51, 51]`; `Σ_i A[i, r] ≥ 1`; `halt_at ≤ max_iters` for any logits; an input exists whose `halt_at < n_iter` |
+| `controller.py` | both simplexes stay inside their bounds for 10,000 random inputs and for adversarial inputs built to starve a region; `box_integerise` sums to `B_read` exactly and respects every box: the draft-1 counter-example `β_b = [8, 8, 222, 11, 7] / 256` yields `[15, 15, 195, 17, 14]`, the cascading-cap case `β_b = [0.7766, 0.0313, 0.0317, 0.108, 0.0524]` yields `[96, 27, 28, 64, 41]` after two rounds of capping, and the dense allocation is `[64, 64, 64, 64]` and `[52, 51, 51, 51, 51]` with the tie-break landing on `language`; `Σ_i A[i, r] ≥ 1`; `halt_at ≤ max_iters` for any logits; an input exists whose `halt_at < n_iter` |
 | `episodic_store.py` | scope isolation on the stub; a mis-derived scope key produces a crossing in the negative test; each `ContractGap` names its DEC; E0's nine ported fixtures run and fail red on the clauses the stub does not implement |
 | `losses.py` | each loss is finite on random inputs; `L_B` is zero when `ŝ = a`; the FLOPs penalty is zero at target and positive above it |
 | `gates.py`, `receipts.py` | each gate passes its positive control; `ComposeReceipt` writes every Table 7 group and a receipt missing any group fails a schema test |
@@ -418,12 +425,13 @@ on 10% of items (G28); a phase-A run with one region's keys masked so its mass i
 printing 3.75% at `R = 5`, and the in-contract store falsifier of TAX:2662, `b_store` pinned at its
 legal floor of 8 on episodes with no recall dependency, asserting `mean(a_store) < 3.0%` (G29); a
 `Schedule` one token over `B_read`, one over the FLOP ceiling, one with an `admitted` row of all
-zeros, one carrying `trace_id`, one naming `speech` with no head (G30); a region wrapper returning
-`argmax` ids and a prefix built from ids (G31); a request carrying its own scope (G32); a checkpoint
-with one flipped byte against its receipt, and a parametric region claiming `nonparametric_store`
-(G33); a D receipt worse than C (G34); a 6-point gap (G35); a general-bin `NULL` recall of 0.40 and
-an off-bin `NULL` false-positive rate of 0.10 (G36). Each test also asserts the positive control
-passes, so a guard that refuses everything is caught.
+zeros, one whose `depth` disagrees with `admitted`, one carrying `trace_id`, one naming `speech`
+with no head (G30); a region wrapper returning `argmax` ids and a prefix built from ids (G31); a
+request carrying its own scope (G32); a checkpoint with one flipped byte against its receipt, and a
+parametric region claiming `nonparametric_store` (G33); a D receipt worse than C (G34); a 6-point
+gap (G35); a general-bin `NULL` recall of 0.40 and an off-bin `NULL` false-positive rate of 0.10
+(G36). Each test also asserts the positive control passes, so a guard that refuses everything is
+caught.
 
 **CPU smoke.** `tests/interconnect/test_smoke.py::test_forward_backward_under_30s` runs one forward
 and backward on the integration configuration at `B = 4`, asserts every trainable parameter received
