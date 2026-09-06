@@ -60,6 +60,28 @@ for arg in "$@"; do
     esac
 done
 
+# --- isolation: fail fast on a near-full temp filesystem -----------------------------
+# HAZARD (observed 2026-09-06 05:28Z, continued): once the shared /tmp actually filled to
+# 0 bytes free, the failure did not stop at pytest's basetemp race above -- `torch.save`
+# inside the "poc cli train" step raised `RuntimeError: basic_ios::clear: iostream error`,
+# an opaque C++ streambuf error with no mention of disk space. Catch the low-space
+# condition here, before minutes are spent on venv sync and lint, with a message that
+# names the actual cause.
+#
+# Resolved once, up front, and reused by every mktemp call below (PYTEST_BASETEMP,
+# SMOKE_DIR) so the filesystem checked here is exactly the filesystem those directories
+# land on -- not merely "whatever TMPDIR happened to be at check time".
+CI_LOCAL_TMPROOT="${TMPDIR:-/tmp}"
+mkdir -p "${CI_LOCAL_TMPROOT}"
+echo "== temp root: ${CI_LOCAL_TMPROOT} =="
+CI_LOCAL_TMP_AVAIL_KB="$(df --output=avail -k "${CI_LOCAL_TMPROOT}" | tail -n1 | tr -d '[:space:]')"
+CI_LOCAL_TMP_MIN_KB=$((2 * 1024 * 1024)) # 2 GiB
+if [[ "${CI_LOCAL_TMP_AVAIL_KB}" -lt "${CI_LOCAL_TMP_MIN_KB}" ]]; then
+    echo "ci_local: REFUSING to run -- ${CI_LOCAL_TMPROOT} has $((CI_LOCAL_TMP_AVAIL_KB / 1024)) MiB free, need >= 2048 MiB." >&2
+    echo "  Set TMPDIR to a filesystem with more room, or free space on ${CI_LOCAL_TMPROOT}, then retry." >&2
+    exit 1
+fi
+
 export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
 
 if ! command -v uv >/dev/null 2>&1; then
@@ -222,6 +244,39 @@ PY
 export CUDA_VISIBLE_DEVICES=""
 echo "== CUDA_VISIBLE_DEVICES=\"\" for test execution (CI runner has no GPU) =="
 
+# --- isolation: private pytest basetemp per ci_local run ------------------------------
+# HAZARD (observed 2026-09-06 05:28Z): pytest's default basetemp is a numbered directory
+# shared by uid, `${TMPDIR:-/tmp}/pytest-of-<user>/pytest-NN`. Five concurrent
+# invocations of this script (several agent worktrees plus a pre-push hook, all the same
+# user) raced to create the next numbered dir there; pytest gave up after 10 tries
+# (`OSError: could not create numbered dir with prefix test_... after 10 tries`), failing
+# the full-suite step with an error that has nothing to do with the code under test -- a
+# docs-only push was blocked by an unrelated race between unrelated worktrees.
+#
+# Fix: give every pytest invocation in this script its own private basetemp, created
+# fresh with `mktemp -d` and removed on exit, so two concurrent runs of this script have
+# nothing to race over -- same shape of fix as the CI_VENV / CI_LOCK_PROJECT isolation
+# above (an isolated target the hazard cannot reach), not a retry/lock around the shared
+# default.
+#
+# PYTEST_ADDOPTS carries it (rather than a --basetemp arg on each call site) so one
+# directory covers every pytest invocation below -- poc pytest and the full tests/ run --
+# without editing each call, and any basetemp/opts a caller already exported are kept:
+# appended to, never clobbered, so a deliberate override still applies.
+CI_LOCAL_TMP_DIRS=()
+ci_local_cleanup() {
+    local dir
+    for dir in "${CI_LOCAL_TMP_DIRS[@]:-}"; do
+        [[ -n "${dir}" ]] && rm -rf "${dir}"
+    done
+}
+trap ci_local_cleanup EXIT
+
+PYTEST_BASETEMP="$(mktemp -d "${CI_LOCAL_TMPROOT}/csd-ci-local-pytest.XXXXXX")"
+CI_LOCAL_TMP_DIRS+=("${PYTEST_BASETEMP}")
+export PYTEST_ADDOPTS="${PYTEST_ADDOPTS:+${PYTEST_ADDOPTS} }--basetemp=${PYTEST_BASETEMP}"
+echo "== pytest basetemp: ${PYTEST_BASETEMP} (private to this run) =="
+
 fail=0
 run() {
     local title="$1"
@@ -272,8 +327,8 @@ fi
 
 run "poc pytest" uv run --no-sync pytest "${POC_PYTESTS[@]}" -q --tb=short
 
-SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/csd-ci-local.XXXXXX")"
-trap 'rm -rf "${SMOKE_DIR}"' EXIT
+SMOKE_DIR="$(mktemp -d "${CI_LOCAL_TMPROOT}/csd-ci-local.XXXXXX")"
+CI_LOCAL_TMP_DIRS+=("${SMOKE_DIR}")
 # --stream synthetic mirrors CI exactly: the GitHub runners have no dataset export, so
 # the smoke must pass without one. The real-data path is covered by the corpus tests in
 # `pytest tests/`, which skip when the mount is absent.
