@@ -509,13 +509,22 @@ def run_memory_pretrain(
         return tokenize_batch(tok, texts, max_len, device_t)
 
     task = beir_fiqa.build_ranking_task(eval_split, pool="corpus", root=eval_root)
-    full_pool_trained = beir_fiqa.encoder_rank_metrics(trained, tokenize, task)
-    full_pool_untrained = beir_fiqa.encoder_rank_metrics(untrained, tokenize, task)
+    # The `_per_query` variants return the SAME aggregates plus each query's own outcome.
+    # The aggregates below are therefore unchanged (`rank_metrics` is now a delegation to
+    # the same code path), and the vectors are what makes the pre-registered paired
+    # decision rule runnable at all -- a paired bootstrap cannot be run on a mean.
+    full_pool_trained, trained_per_query = beir_fiqa.encoder_rank_metrics_per_query(
+        trained, tokenize, task
+    )
+    full_pool_untrained, untrained_per_query = beir_fiqa.encoder_rank_metrics_per_query(
+        untrained, tokenize, task
+    )
     del untrained
 
     full_pool_bm25: dict[str, float] = {}
+    bm25_per_query: dict[str, list[float]] = {}
     if not skip_lexical:
-        full_pool_bm25 = beir_fiqa.bm25_metrics(task)
+        full_pool_bm25, bm25_per_query = beir_fiqa.bm25_metrics_per_query(task)
 
     receipt["retrieval"] = {
         "eval_split": eval_split,
@@ -524,6 +533,15 @@ def run_memory_pretrain(
             "trained": full_pool_trained,
             "untrained": full_pool_untrained,
             "lexical_bm25": full_pool_bm25,
+            # Position `i` of every vector below is `query_ids[i]`. Two arms are paired
+            # BY THAT ID, never by position: the two runs share a battery today, and an
+            # unpinned position would pair them silently wrong the day one does not.
+            "query_ids": list(task.query_ids),
+            "per_query": {
+                "trained": trained_per_query,
+                "untrained": untrained_per_query,
+                **({"lexical_bm25": bm25_per_query} if bm25_per_query else {}),
+            },
         },
         "licence": "BeIR/fiqa + BeIR/fiqa-qrels, both cc-by-sa-4.0.",
     }
