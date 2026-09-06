@@ -79,7 +79,7 @@
         "corpus": "fiqa",
         "objective": "rank",
         "available": false,
-        "notes": "NOT on disk. SciFact and NFCorpus are eval-only per license (NC / ToS) and must not be trained on. MERGED (DEC-02, W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W4) into `memory`'s retrieval head -- see this entry's own `merged_into`. Kept readable for old receipts (e.g. the 2026-09-02 FiQA BEIR-pool receipt W4's own gates compare against); not retrained standalone after W4 lands."
+        "notes": "NOT on disk. SciFact and NFCorpus are eval-only per license (NC / ToS) and must not be trained on. MERGED (DEC-02, W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W4) into `memory`'s retrieval head -- see this entry's own `merged_into`. Kept readable for old receipts (e.g. the 2026-09-02 FiQA BEIR-pool receipt W4's own gates compare against); not retrained standalone after W4 lands. Status 2026-09-06: a standalone `retrieve` matrix cell with a full receipt (retrieve-b512-s1-7bc2699-20260904) also exists; this and any other standalone cells predate or run beside the merge, not superseded by it."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
       "live": false,
@@ -98,7 +98,7 @@
         "corpus": "stsb+allnli-10k",
         "objective": "contrastive-pair",
         "available": false,
-        "notes": "NOT on disk. WikiText-2 is later-assembly reconstruction, not first pretrain. MERGED (DEC-02, W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W4) into `memory`'s consolidation head -- see this entry's own `merged_into`. Kept readable for old receipts (e.g. the 2026-09-02 STS-B/AllNLI receipt W4's own gates compare against); not retrained standalone after W4 lands."
+        "notes": "NOT on disk. WikiText-2 is later-assembly reconstruction, not first pretrain. MERGED (DEC-02, W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W4) into `memory`'s consolidation head -- see this entry's own `merged_into`. Kept readable for old receipts (e.g. the 2026-09-02 STS-B/AllNLI receipt W4's own gates compare against); not retrained standalone after W4 lands. Status 2026-09-06: standalone `compress` matrix cells with full receipts (compress-b512/b1280-s0/s1-7bc2699-20260904) also exist; these and any other standalone cells predate or run beside the merge, not superseded by it."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
       "live": false,
