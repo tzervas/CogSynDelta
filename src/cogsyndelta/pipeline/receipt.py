@@ -75,7 +75,10 @@ QUANT_METRIC_ALIASES_V1: dict[str, str] = {
 
 # Stages a pipeline may report. Open by convention rather than enforced, because a new
 # architecture may have a stage nobody anticipated; the reader groups by whatever it finds.
-STAGES = ("pretrain", "finetune", "eval", "quantize", "compose", "publish")
+# "schedule" (interconnect lane IC-10, docs/design/INTERCONNECT-MODULE-SPEC.md section 4)
+# is the envelope stage for DEC-50 phases B, C and D, alongside "compose" for A, W5b and E2
+# -- both written through `cogsyndelta.interconnect.receipts.ComposeReceipt`.
+STAGES = ("pretrain", "finetune", "eval", "quantize", "compose", "schedule", "publish")
 
 
 @dataclass

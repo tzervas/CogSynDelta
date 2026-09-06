@@ -12,8 +12,8 @@ taxonomy leaves open, the sentence is tagged `[spec]`. `TAX` below means
 twelve files, a shape for every tensor boundary, a parameter table reconciled against the taxonomy's
 27,424,039, the forward pass as numbered steps, the DEC-50 training contract with its receipts and
 fail-closed guards, a test plan with a sub-30-second CPU smoke, four operator questions, and a
-file-disjoint lane plan. Five of the taxonomy's seven parameter rows reproduce exactly from their
-stated dimensions; the controller and type-embedding rows do not (section 2.3).
+file-disjoint lane plan. Four of the taxonomy's seven parameter rows reproduce exactly from their
+stated dimensions; the workspace, controller and type-embedding rows do not (section 2.3).
 
 **What the module is.** White matter is a bounded Perceiver workspace: `L = 64` latents of width
 `D_w = 512` cross-attend over a key/value bank built from every admitted region's position latents,
@@ -135,12 +135,12 @@ scatter-adds over one static shape `[spec]`.
 ### 2.3 Parameters
 
 Table 4 — parameter count per component, derived from the dimensions above, beside the
-taxonomy's row (TAX:1275-1284, TAX:6435-6446). Biases are counted; a LayerNorm affine pair is
-`2·D`.
+taxonomy's row (TAX:1275-1284, TAX:6435-6446). Biases are counted except where a row says
+otherwise; a LayerNorm affine pair is `2·D`.
 
 | component | arithmetic | this spec | taxonomy | Δ |
 |---|---|---:|---:|---:|
-| workspace blocks ×4, attention and MLP | per block `4·(512²+512)` self + `4·(512²+512)` cross + `(512·2048+2048) + (2048·512+512)` = 4,200,960 | 16,803,840 | 16,803,840 | 0 |
+| workspace blocks ×4, attention and MLP | per block `4·512²` self + `4·512²` cross (no bias, amendment A1 below) + `(512·2048+2048) + (2048·512+512)` = 4,196,864 | 16,787,456 | 16,803,840 | −16,384 |
 | workspace LayerNorms | 4 blocks × 4 norms × 1,024 | 16,384 | not counted | +16,384 |
 | frontal read-out | query 512 + attention 1,050,624 + MLP 2,099,712 | 3,150,848 | 3,150,848 | 0 |
 | thalamic controller | 2 blocks @256 (2 × 788,736) + norms 2,048 + summary and heads 104,458 | 1,683,978 | 1,588,007 | +95,971 |
@@ -150,16 +150,36 @@ taxonomy's row (TAX:1275-1284, TAX:6435-6446). Biases are counted; a LayerNorm a
 | top-k scorers | `3·(256+1) + (384+1)` | 1,156 | not counted | +1,156 |
 | store projections `W_k`, `W_v` | `2·512²`, no bias | 524,288 | 524,288 | 0 |
 | latent bank, final norm, type embeddings | `64·512 + 1,024 + R·512` at `R = 5` | 36,352 | 37,376 | −1,024 |
-| **white matter core, `R = 5`** | | **27,538,574** | **27,424,039** | **+114,535** |
-| **white matter core, `R = 4`** | one type row and one controller slot row fewer (−768); `W_k`/`W_v` and the store summary stay instantiated and receive no gradient in W5 | **27,537,806** | | |
+| **white matter core, `R = 5`** | | **27,522,190** | **27,424,039** | **+98,151** |
+| **white matter core, `R = 4`** | one type row and one controller slot row fewer (−768); `W_k`/`W_v` and the store summary stay instantiated and receive no gradient in W5 | **27,521,422** | | |
 | rank head (DEC-41) | `512·512 + 512` | 262,656 | not in the table | — |
 | `NULL` candidate embedding (DEC-41) | one learned vector of 512 | 512 | not in the table | — |
 | unify probes (DEC-20) | `3·(512·256+256) + (512·384+384)` | 590,976 | not in the table | — |
-| **trainable in phase A, heads included, `R = 5`** | | **28,392,718** | | |
+| **trainable in phase A, heads included, `R = 5`** | | **28,376,334** | | |
 | candidate encoder, only under Q7 option (a) | `Linear(1152, 512)` over the concatenated frozen pooled outputs | 590,336 | not in the table | — |
-| **with Q7 (a)** | | **28,983,054** | | |
+| **with Q7 (a)** | | **28,966,670** | | |
 
-Five rows reproduce the taxonomy exactly from its own dimensions. Two rows do not. The taxonomy's
+**Amendment A1 (2026-09-06): the workspace blocks' attention projections carry no bias.**
+`WorkspaceBlock` (`workspace.py`) builds all six attention projections -- `cross_q`, `cross_k`,
+`cross_v`, `cross_out`, `self_qkv` (fused Q/K/V) and `self_out` -- with `bias=False`, which is
+standard practice for a pre-norm transformer block: a `LayerNorm` immediately upstream of each
+projection already supplies a learned shift, so the projection's own bias is redundant, and
+dropping it removes 4,096 parameters per block for no measured loss. This table originally
+counted them. The code is the version kept; the arithmetic above is amended to match, rather
+than adding biases back to satisfy a table.
+
+Re-derivation, per block: self-attention `4·512² = 1,048,576`, cross-attention
+`4·512² = 1,048,576`, MLP `(512·2048 + 2048) + (2048·512 + 512) = 2,099,712`; total
+`4,196,864`, and `×4 blocks = 16,787,456`. The dropped biases are `4·512` (cross q/k/v/out)
+`+ 3·512` (fused self QKV) `+ 512` (self out) `= 4,096` per block, `16,384` over the four
+blocks. Every total below the workspace row falls by that same 16,384: the `R = 5` core to
+27,522,190, the `R = 4` core to 27,521,422, phase-A trainable to 28,376,334, and the Q7 (a)
+figure to 28,966,670. The MLP's two `Linear`s keep their biases, as do the read-out, the
+controller, the adapters and the conditioning prefixes; only the workspace attention
+projections are affected. Measured against the code at `R = 5`: 27,522,190.
+
+Four rows reproduce the taxonomy exactly from its own dimensions. Three rows do not: the
+workspace row now differs from it by exactly amendment A1's 16,384. The taxonomy's
 controller figure was measured at three heads and names no dimensions for its summary or heads, so
 its 10,535-parameter residual over two blocks cannot be rebuilt from the text; Table 5 fixes the
 heads explicitly and lands inside the taxonomy's own ±0.1M (TAX:1279). The taxonomy's type-embedding
@@ -282,6 +302,30 @@ skipped and it is executed as given; this is the frozen-schedule arm of the budg
     `a[:, :, r]` over active iterations; `halt_at` is the realised value; `edges`, `stages` and
     `lockstep_groups` come from the two topology derivations only when write-back is enabled,
     otherwise the fields are omitted and `topology: not demonstrated` is recorded (TAX:1443-1490).
+
+**Amendment A2 (2026-09-06): step 1's "without running any region" is not met, and cannot be
+behind the W0 contract.** Table 5's text and visual summary features are a mean over `language`'s
+embedding rows and a mean over `visual`'s patch embedding -- both read a region's own weights. The
+frozen-region protocol this module is built against exposes `tokens()` and `pool()` only, and
+Table 2 states the interconnect "does not reach back into a region's implementation", so no generic
+path to those weights exists from `mind.py`. `WhiteMatter._raw_summary` instead runs each region
+once at its own Table 4a `ctx_min` and takes `pool()`'s output as the raw feature; the widths are
+unchanged (`pooled_dim` already equals Table 5's summary widths). The cost is one minimum-budget
+encode per region per request, on the `schedule=None` arm only. This is recorded as a standing
+spec-versus-code tension, not closed: closing it needs a W0 protocol addition (a declared
+`raw_summary()` a region may implement) or a per-region embedding accessor, either of which is a
+change to the region contract and out of the interconnect's scope. Until then, step 1 reads
+"without running any region beyond one `ctx_min` encode each".
+
+**Amendment A3 (2026-09-06): `intensity` lives on the receipt, not on `ScheduleNode`.** Step 14
+above asks for a per-node `intensity`, the mean of `a[:, :, r]` over active iterations. Table 8a's
+`ScheduleNode` field set has no such field, and adding one would make a `Schedule` carry a result
+of the execution it configures -- which breaks the frozen-schedule arm, where `forward(inputs, s0)`
+must re-emit `s0` byte-identically no matter what the tokens were, and an `intensity` computed from
+those tokens could not. The value itself is not lost: Table 7's receipt already records "`a` mean
+per active iteration and region", which is the same quantity, and `receipts.py` builds it. A
+per-node `intensity` field is deferred until some consumer needs it on the `Schedule` specifically;
+`ScheduleNode` stays a pure input to execution.
 
 **Admission matrix semantics.** `depth(r) = min{i : A[i, r] = 1}`; a region with `depth 0` and
 `A[:, r] ≡ 1` is asynchronous; regions first admitted at the same `i ≥ 1` with `accepts_condition`
