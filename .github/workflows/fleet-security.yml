@@ -28,6 +28,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Run gitleaks
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
           # The job container ships no gitleaks, docker or podman, so the previous
@@ -38,7 +41,19 @@ jobs:
           command -v gitleaks >/dev/null 2>&1 || {
             echo "gitleaks missing — job image is not fleet-ci-base" >&2; exit 1; }
           gitleaks version
-          gitleaks detect --source . --verbose --redact
+          # Default detect walks every fetched ref. A docstring on an unmerged
+          # branch then fails main and every open PR. PR runs scan only the
+          # PR commits; push/schedule/dispatch scan HEAD's history only.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="${BASE_REF#refs/heads/}"
+            [ -n "$BASE" ] || { echo "base ref empty on a pull_request event" >&2; exit 1; }
+            git fetch --no-tags origin "+refs/heads/${BASE}:refs/remotes/origin/${BASE}"
+            git rev-parse --verify -q "origin/${BASE}^{commit}" >/dev/null || {
+              echo "origin/${BASE} did not resolve after fetch" >&2; exit 1; }
+            gitleaks detect --source . --redact --verbose --log-opts="origin/${BASE}..HEAD"
+          else
+            gitleaks detect --source . --redact --verbose --log-opts=HEAD
+          fi
 
   trivy-fs:
     name: trivy filesystem (vuln+secret+license)

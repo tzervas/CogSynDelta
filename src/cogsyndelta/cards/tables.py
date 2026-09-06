@@ -135,6 +135,22 @@ def assert_schemas_agree(receipts: dict[str, dict[str, Any] | None]) -> str:
     return next(iter(schemas))
 
 
+LEXICAL_COLUMN = "lexical baseline (TF-IDF)"
+"""Ranking-table column header for the bag-of-words ceiling (g49)."""
+
+LEXICAL_NOT_MEASURED = "not measured"
+"""Cell text when a text ranking table has no `lexical_baseline` field."""
+
+RANK_TO_LEXICAL: dict[str, str] = {
+    "rank.recall@1": "recall@1",
+    "rank.recall@5": "recall@5",
+    "rank.recall@10": "recall@10",
+    "rank.mrr": "mrr",
+    "rank.ndcg@10": "ndcg@10",
+}
+"""Eval `rank.*` keys that have a same-named score under `lexical_baseline.tfidf`."""
+
+
 @dataclass(frozen=True)
 class MetricRow:
     """One printed row: a metric key, this variant's value, and what it is compared
@@ -145,6 +161,8 @@ class MetricRow:
     """The v2 canonical (or v2-mapped) metric key this row is keyed on."""
     variant: float | bool | None
     baseline: float | bool | None = None
+    lexical: float | bool | str | None = None
+    """TF-IDF ceiling for this row, ``"not measured"``, or ``None`` (column omitted)."""
     comparators: dict[str, float | bool] | None = None
     is_v1_mapped: bool = False
     """True iff this row's key was reached by aliasing a v1 receipt field name to its
@@ -161,6 +179,8 @@ class MetricTable:
     """One of `CATEGORY_ORDER`."""
     heading: str
     rows: list[MetricRow]
+    show_lexical: bool = False
+    """True on a text ranking table: print the TF-IDF column even when unmeasured."""
 
 
 def _is_boolean(v: Any) -> bool:
@@ -195,6 +215,32 @@ def normalize_eval_gates_v1(gates: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _lexical_cell(
+    key: str, tfidf: dict[str, Any] | None, *, show_lexical: bool
+) -> float | str | None:
+    """TF-IDF number for a ranking-table row, or the not-measured sentinel.
+
+    Args:
+        key: The v2 metric key this row will print.
+        tfidf: `lexical_baseline.tfidf` from the eval receipt, or None if absent.
+        show_lexical: Whether this table prints the lexical column at all.
+
+    Returns:
+        A float, ``"not measured"``, or ``None`` (omit the column on this row's table).
+    """
+    if not show_lexical:
+        return None
+    mapped = RANK_TO_LEXICAL.get(key)
+    if mapped is None:
+        return None
+    if not tfidf or mapped not in tfidf:
+        return LEXICAL_NOT_MEASURED
+    value = tfidf[mapped]
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return LEXICAL_NOT_MEASURED
+    return float(value)
+
+
 def build_eval_tables(
     *,
     eval_receipt: dict[str, Any] | None,
@@ -202,6 +248,7 @@ def build_eval_tables(
     comparators: dict[str, dict[str, Any]] | None = None,
     methodology: dict[str, MetricMethodology] | None = None,
     heading_suffix: str = "",
+    show_lexical_column: bool = False,
 ) -> list[MetricTable]:
     """Grouped `rank.*` / `eff.*` / `repr.*` / `quant.*` / `beir.*` tables from an eval
     (or eval-quantized) receipt's `metrics` dict, each row carrying this variant's
@@ -228,6 +275,10 @@ def build_eval_tables(
             `" (quantized artifact)"`) -- required whenever a caller renders BOTH an
             eval and an eval-quantized receipt's tables on one card, so two otherwise
             identically-headed "Retrieval" tables are distinguishable.
+        show_lexical_column: text `region_variant` / `region_main` ranking tables
+            print a third column "lexical baseline (TF-IDF)". Visual cards leave
+            this False (the visual card is unchanged). Missing field still prints
+            the column, with ``"not measured"`` cells rather than omitting it.
     """
     if eval_receipt is None:
         return []
@@ -259,23 +310,30 @@ def build_eval_tables(
 
     require_documented((methodology_key(k) for k in metrics), methodology=methodology)
 
+    tfidf_raw = (eval_receipt.get("lexical_baseline") or {}).get("tfidf")
+    tfidf = tfidf_raw if isinstance(tfidf_raw, dict) else None
+
     tables: dict[str, list[MetricRow]] = {}
     for key in sorted(metrics):
         was_v1 = any(EVAL_METRIC_ALIASES_V1.get(old) == key and old in v1_keys for old in v1_keys)
+        category = _category_of(key)
+        lexical_on = show_lexical_column and category == "rank"
         row = MetricRow(
             key=key,
             variant=metrics[key],
             baseline=baseline_metrics.get(key),
+            lexical=_lexical_cell(key, tfidf, show_lexical=lexical_on),
             comparators={n: m[key] for n, m in comparator_metrics.items() if key in m} or None,
             is_v1_mapped=was_v1,
         )
-        tables.setdefault(_category_of(key), []).append(row)
+        tables.setdefault(category, []).append(row)
 
     return [
         MetricTable(
             category=cat,
             heading=CATEGORY_HEADINGS.get(cat, cat.title()) + heading_suffix,
             rows=tables[cat],
+            show_lexical=show_lexical_column and cat == "rank",
         )
         for cat in (*CATEGORY_ORDER, "other")
         if cat in tables
@@ -374,9 +432,11 @@ def build_quant_table(
     )
 
 
-def _fmt_value(v: float | bool | None) -> str:
+def _fmt_value(v: float | bool | str | None) -> str:
     if v is None:
         return "_(n/a)_"
+    if v == LEXICAL_NOT_MEASURED:
+        return LEXICAL_NOT_MEASURED
     if isinstance(v, bool):
         return "yes" if v else "no"
     if isinstance(v, float):
@@ -424,7 +484,18 @@ def render_table_markdown(
     """
     lookup = METRIC_METHODOLOGY if methodology is None else methodology
     comparator_names = sorted({n for r in table.rows for n in (r.comparators or {})})
-    header = ["metric", "this variant", "untrained baseline", *comparator_names]
+    show_lexical = table.show_lexical or any(r.lexical is not None for r in table.rows)
+    header = ["metric", "this variant", "untrained baseline"]
+    if show_lexical:
+        lex_m = lookup.get("lexical_baseline")
+        if lex_m is not None:
+            lex_fn = footnote_numbers.get(
+                (lex_m.definition, lex_m.battery_id, lex_m.pooling, lex_m.source)
+            )
+            header.append(f"{LEXICAL_COLUMN}[^{lex_fn}]" if lex_fn else LEXICAL_COLUMN)
+        else:
+            header.append(LEXICAL_COLUMN)
+    header.extend(comparator_names)
     lines = [
         "| " + " | ".join(header) + " |",
         "|" + "|".join(["---"] * len(header)) + "|",
@@ -439,6 +510,8 @@ def render_table_markdown(
         for col, val in (("variant", row.variant), ("baseline", row.baseline)):
             text = _fmt_value(val)
             cells.append(f"**{text}**" if best == col else text)
+        if show_lexical:
+            cells.append(_fmt_value(row.lexical))
         for name in comparator_names:
             val = (row.comparators or {}).get(name)
             text = _fmt_value(val)

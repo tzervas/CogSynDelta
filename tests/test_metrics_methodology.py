@@ -115,6 +115,8 @@ def test_doc_cites_every_file_the_task_named() -> None:
         "src/cogsyndelta/regions/pretrain.py",
         "scripts/csd-benchmark.py",
         "scripts/csd-quantize.py",
+        "src/cogsyndelta/eval/lexical.py",
+        "scripts/csd-lexical-baseline.py",
     ):
         assert required in cited, f"{DOC} never cites {required}"
 
@@ -283,6 +285,16 @@ def test_doc_explains_the_untrained_baseline() -> None:
     assert "untrained_baseline" in text
     assert "chance" in text.lower()
     assert "why every metric is reported beside it" in text.lower()
+
+
+def test_doc_notes_lexical_baseline_receipt_fields() -> None:
+    """g49: the bag-of-words ceiling is a first-class receipt field, not an offline JSON."""
+    text = DOC.read_text()
+    assert "lexical_baseline.tfidf" in text
+    assert "lexical_baseline.bm25" in text
+    assert "csd-lexical/v1" in text
+    assert "split_sha256" in text
+    assert "verify_lexical_baseline_split" in text
 
 
 def test_doc_states_ptq_ratio_is_not_a_speed_claim() -> None:

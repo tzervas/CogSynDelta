@@ -120,6 +120,15 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         battery_id="train_holdout",
         pooling="matched",
     ),
+    "lexical_baseline": MetricMethodology(
+        "TF-IDF cosine / BM25 (csd-lexical/v1: diagnosis word regex, log-tf * "
+        "smoothed idf cosine, BM25 k1=1.5 b=0.75, seed-0 1e-9 tie-break) over the "
+        "identical closed holdout; split_sha256 must equal split.sha256 (G26)",
+        "eval battery lexical ceiling",
+        "src/cogsyndelta/eval/lexical.py",
+        battery_id="eval_holdout",
+        pooling="matched",
+    ),
     "emb_std": MetricMethodology(
         "per-feature embedding std, averaged over features, anchor side only (the collapse signal)",
         "training held-out battery",

@@ -12,6 +12,7 @@ Zips are streamed as members; nothing is extracted to a tree of inodes.
 
 from __future__ import annotations
 
+import io
 import json
 import random
 import re
@@ -23,6 +24,24 @@ from typing import Any
 from cogsyndelta.corpus import CORPUS_FINGERPRINT_SCHEME, fingerprint_corpus
 
 PNG_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+
+_SLURP_MAX_BYTES = 2 * 1024**3
+"""Slurp a zip into a `BytesIO` before opening it when its size is at or below this.
+
+WHY: `zipfile.ZipFile` opened directly on a path issues its own small `seek`+`read`
+syscalls per member (central-directory lookup at open, then one read per PNG). On
+local disk each syscall is cheap and this pattern costs nothing measurable. Over NFS,
+each of those small reads is a separate round trip: R3
+(`/akula-data/session-backup-staging/reviews/r3-decode-probe/REPORT.md`) measured this
+at +1.3s across 15,400 probe images (170MB) versus local NVMe, even page-cache-warm --
+not disk wait, since the true cold I/O floor for that data is only 1.44s. Reading the
+whole archive into memory ONCE turns it into a single sequential read (which NFS
+readahead satisfies cheaply), after which every member access is a pure in-memory
+`seek` inside the `BytesIO`; decoded output is byte-identical either way. The
+threshold keeps this from slurping a multi-GB train zip whole into RAM -- those are
+still streamed exactly as before.
+"""
+
 DEFAULT_MANIFEST = Path(__file__).resolve().parents[3] / "config" / "mind" / "visual-clean-v1.json"
 PRIMARY_PROBE = "eurosat-test"
 STAMP_DIR_RE = re.compile(r"^\d{8}T\d{6}Z$")
@@ -48,11 +67,22 @@ class ImageRef:
 
 
 class ZipPngReader:
-    """Keep zip handles open across a training step. Never extracts members to disk."""
+    """Keep zip handles open across a training step. Never extracts members to disk.
 
-    def __init__(self) -> None:
-        """Create an empty zip-handle cache."""
+    `slurp` has no default on purpose: a reader that stays alive for a whole training
+    run (`PngTrain`, below) must NOT silently slurp, because it samples random indices
+    across the whole corpus rather than one pass -- every shard it ever touches gets
+    opened exactly once and then cached in `_zips` for the run's entire lifetime, with
+    no eviction. A transient reader (`_decode_png_stores`, closed in a `finally` right
+    after one full pass) is where slurping actually pays off and where the memory it
+    holds is bounded and short-lived. See `_SLURP_MAX_BYTES` for the size guard that
+    still applies even when `slurp=True`.
+    """
+
+    def __init__(self, slurp: bool) -> None:
+        """Create an empty zip-handle cache. ``slurp`` decides `_open`'s policy below."""
         self._zips: dict[Path, zipfile.ZipFile] = {}
+        self._slurp = slurp
 
     def read(self, ref: ImageRef) -> bytes:
         """Return PNG bytes for ``ref`` without extracting the zip to disk."""
@@ -60,9 +90,32 @@ class ZipPngReader:
             return ref.store.read_bytes()
         handle = self._zips.get(ref.store)
         if handle is None:
-            handle = zipfile.ZipFile(ref.store)
+            handle = self._open(ref.store)
             self._zips[ref.store] = handle
         return handle.read(ref.member)
+
+    def _open(self, store: Path) -> zipfile.ZipFile:
+        """Open ``store``, slurping it into memory first when told to and it's small.
+
+        `self._slurp` is `False` for a reader (`PngTrain`) that never gets to close
+        or evict any of its cached handles, so slurping there would mean every train
+        shard under `_SLURP_MAX_BYTES` staying resident in RAM for the run's entire
+        lifetime -- multiplied across concurrently packed runs. It is `True` only for
+        a reader that is closed right after one bounded pass (`_decode_png_stores`),
+        where the size guard below still keeps a huge shard from being slurped at all.
+        `stat()` failing (store vanished between listing and read) is not this
+        method's problem to hide: fall through to opening the path directly and let
+        that raise its own, more specific error.
+        """
+        if not self._slurp:
+            return zipfile.ZipFile(store)
+        try:
+            size = store.stat().st_size
+        except OSError:
+            size = _SLURP_MAX_BYTES + 1
+        if size <= _SLURP_MAX_BYTES:
+            return zipfile.ZipFile(io.BytesIO(store.read_bytes()))
+        return zipfile.ZipFile(store)
 
     def close(self) -> None:
         """Close every cached zip handle."""
