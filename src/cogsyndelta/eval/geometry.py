@@ -28,15 +28,23 @@ geometry drift is continuous and region/bit-width dependent, and no operator tol
 has been set yet (see `docs/design/METRICS-METHODOLOGY.md`'s representation-geometry
 section). A caller wanting a pass/fail bound must add one explicitly, elsewhere.
 
-G27
+G37
 `compute_geometry` compares two latent matrices row-for-row: row `i` of
 `fp32_latents` and row `i` of `quantized_latents` must be the SAME item, in the SAME
-order, or every number this module returns describes a mismatched pairing rather than
-quantization. `GeometryReference` names which held-out set a side was computed from
-(a content fingerprint plus a row count); `verify_geometry_reference` refuses,
-fail-closed, when the two sides disagree -- the same shape G26 already fixed for the
-text held-out split (`cogsyndelta.splits.SplitGuardError`), applied here to a pairwise
-comparison instead of a train/eval partition.
+order, computed from the SAME fp32 checkpoint and the SAME quantized artifact, or
+every number this module returns describes a mismatched pairing rather than
+quantization. `GeometryReference` names which held-out set, checkpoint and artifact a
+side was computed from (a content fingerprint plus a row count plus the two shas);
+`verify_geometry_reference` refuses, fail-closed, when the two sides disagree on any
+of them -- the same shape G26 already fixed for the text held-out split
+(`cogsyndelta.splits.SplitGuardError`), applied here to a pairwise comparison instead
+of a train/eval partition.
+
+GUARD NUMBER: this module's guard is G37, not G27 -- G27 through G36 are reserved for
+`docs/design/INTERCONNECT-MODULE-SPEC.md` Table 8's own guards (merged to main in
+PR #67 while this module's guard number was still unclaimed on this branch). The next
+new guard after this one is G38; check both `src/cogsyndelta/splits.py` (text split
+guard, currently G26) and that spec's Table 8 before picking a number.
 """
 
 from __future__ import annotations
@@ -61,22 +69,30 @@ P05_QUANTILE = 0.05
 
 
 class GeometryReferenceError(RuntimeError):
-    """G27 fail-closed: the fp32 and quantized sides of a geometry comparison disagree
-    on which items (or how many) they were computed over.
+    """G37 fail-closed: the fp32 and quantized sides of a geometry comparison disagree
+    on which items (or how many), which fp32 checkpoint, or which quantized artifact
+    they were computed over.
     """
 
 
 @dataclass(frozen=True)
 class GeometryReference:
-    """Identifies WHICH held-out items one side of a geometry comparison covers.
+    """Identifies WHICH held-out items, checkpoint and artifact one side of a
+    geometry comparison covers.
 
-    Two `GeometryReference`s must be equal (per `verify_geometry_reference`) before
-    `compute_geometry` may run on the latents they describe. `split_sha256` is a
-    content fingerprint of the item set/order -- the text battery's own
-    `split.sha256` (G26) when one exists, or a fingerprint computed over the decoded
-    eval tensor for a battery with no split-manifest of its own (visual) -- never a
-    path or a config value, both of which can name the same bytes under two different
-    strings or two different byte sets under the same string.
+    Two `GeometryReference`s must be equal in every field (per
+    `verify_geometry_reference`) before `compute_geometry` may run on the latents
+    they describe. `split_sha256` is a content fingerprint of the item set/order --
+    the text battery's own `split.sha256` (G26) when one exists, or a fingerprint
+    computed over the decoded eval tensor for a battery with no split-manifest of its
+    own (visual) -- never a path or a config value, both of which can name the same
+    bytes under two different strings or two different byte sets under the same
+    string. `checkpoint_sha256`/`quantized_sha256` are the same discipline applied to
+    the two MODELS being compared, not just the items: without them, two references
+    built from different fp32 draws (a stale cache, a re-trained checkpoint) but the
+    identical split would still pass -- same item count, same items -- and
+    `compute_geometry` would report a plausible-looking drift number that describes
+    two unrelated models, not quantization.
     """
 
     split_sha256: str
@@ -86,37 +102,75 @@ class GeometryReference:
     check that catches a truncated or padded batch even on a `split_sha256` collision
     (a 16-byte digest is compared, not re-derived from the latents themselves, so a
     mismatched row count is otherwise invisible to `verify_geometry_reference`)."""
+    checkpoint_sha256: str
+    """sha256 of the fp32 checkpoint this side's latents are anchored to -- for the
+    fp32 side, the checkpoint actually loaded (verified by the caller's own
+    `load_checkpoint(expected_sha256=...)`); for the quantized side, the fp32 parent
+    sha the packed artifact claims lineage from (the quant receipt's own
+    `artifacts.checkpoint_sha256`, already cross-checked against the training
+    receipt before this point -- see `scripts/csd-benchmark.py`'s `checkpoint_sha256`
+    resolution). The two must agree: a quantized artifact packed from checkpoint A
+    compared against a stale fp32 pass over checkpoint B would otherwise pass this
+    guard on split identity alone."""
+    quantized_sha256: str
+    """sha256 of the packed artifact bytes this comparison's quantized side was
+    scored from (`sha256_file(quantized_path)`, never trusted from a receipt).
+    Recorded on BOTH references -- the fp32 side records which artifact it is being
+    compared AGAINST, the quantized side records which artifact it was actually
+    LOADED from -- so a caller bug that computes `quantized_latents` from one packed
+    file while telling this module about another (two artifacts quantized from the
+    same fp32 checkpoint at different bit widths are the concrete case) is refused
+    rather than silently scored."""
 
 
 def verify_geometry_reference(
     fp32_reference: GeometryReference, quantized_reference: GeometryReference
 ) -> None:
     """Refuse, fail-closed, unless both sides of a geometry comparison name the same
-    items in the same order.
+    items, in the same order, anchored to the same fp32 checkpoint and quantized
+    artifact.
 
     Args:
         fp32_reference: what the fp32-side latents were computed over.
         quantized_reference: what the quantized-side latents were computed over.
 
     Raises:
-        GeometryReferenceError: the two references disagree on `split_sha256` or on
-            `n_items` -- either means the two latent matrices this call is about to
-            compare are not a row-for-row pairing of the same items.
+        GeometryReferenceError: the two references disagree on `split_sha256`,
+            `n_items`, `checkpoint_sha256` or `quantized_sha256` -- any of these
+            means the two latent matrices this call is about to compare are not a
+            row-for-row pairing of the same items through the same two models.
     """
     if fp32_reference.split_sha256 != quantized_reference.split_sha256:
         raise GeometryReferenceError(
-            "G27: fp32 and quantized latents were not produced on the same split -- "
+            "G37: fp32 and quantized latents were not produced on the same split -- "
             f"fp32 split_sha256={fp32_reference.split_sha256!r} != quantized "
             f"split_sha256={quantized_reference.split_sha256!r}. Refusing to compute "
             "representation-geometry metrics across two different item sets."
         )
     if fp32_reference.n_items != quantized_reference.n_items:
         raise GeometryReferenceError(
-            "G27: fp32 and quantized latents disagree on item count -- "
+            "G37: fp32 and quantized latents disagree on item count -- "
             f"fp32 n_items={fp32_reference.n_items} != quantized "
             f"n_items={quantized_reference.n_items}. Refusing to compute "
             "representation-geometry metrics over a truncated or padded batch on one "
             "side."
+        )
+    if fp32_reference.checkpoint_sha256 != quantized_reference.checkpoint_sha256:
+        raise GeometryReferenceError(
+            "G37: fp32 and quantized latents disagree on the fp32 checkpoint -- "
+            f"fp32 checkpoint_sha256={fp32_reference.checkpoint_sha256!r} != "
+            f"quantized checkpoint_sha256={quantized_reference.checkpoint_sha256!r}. "
+            "Refusing to compute representation-geometry metrics against two "
+            "different fp32 draws."
+        )
+    if fp32_reference.quantized_sha256 != quantized_reference.quantized_sha256:
+        raise GeometryReferenceError(
+            "G37: fp32 and quantized latents disagree on the quantized artifact -- "
+            f"fp32 quantized_sha256={fp32_reference.quantized_sha256!r} != "
+            f"quantized quantized_sha256={quantized_reference.quantized_sha256!r}. "
+            "Refusing to compute representation-geometry metrics where the "
+            "quantized side was scored from a different packed artifact than the "
+            "one this comparison names."
         )
 
 

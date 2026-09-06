@@ -1838,36 +1838,64 @@ def test_g26_held_out_leak_is_refused() -> None:
 
 
 # ---------------------------------------------------------------------------------------
-# DEFECT 9 / G27 -- a representation-geometry comparison (fp32 latents vs quantized
+# DEFECT 9 / G37 -- a representation-geometry comparison (fp32 latents vs quantized
 # latents, per docs/design/evidence/visual-ptq-sensitivity-2026-09-06/README.md) is only
-# a measurement of quantization if BOTH sides were computed over the same items in the
-# same order. `cogsyndelta.eval.geometry.verify_geometry_reference` is the guard that
-# refuses a comparison across two different item sets (a stale cached fp32 pass, a split
-# rebuilt under a different seed, a truncated batch on one side) before `compute_geometry`
-# ever runs -- the same shape G26 already fixed for the text held-out split, applied here
-# to a pairwise latent comparison instead of a train/eval partition.
+# a measurement of quantization if BOTH sides were computed over the same items, in the
+# same order, from the same fp32 checkpoint AND the same quantized artifact.
+# `cogsyndelta.eval.geometry.verify_geometry_reference` is the guard that refuses a
+# comparison across two different item sets, fp32 draws or packed artifacts (a stale
+# cached fp32 pass, a split rebuilt under a different seed, a truncated batch on one
+# side, a re-trained checkpoint compared against an artifact quantized from a different
+# draw, two artifacts quantized from the same checkpoint at different bit widths) before
+# `compute_geometry` ever runs -- the same shape G26 already fixed for the text held-out
+# split, applied here to a pairwise latent comparison instead of a train/eval partition.
+#
+# Guard number: G37, not G27. `docs/design/INTERCONNECT-MODULE-SPEC.md` Table 8 (merged
+# to main, PR #67) reserves G27 through G36 for the interconnect module's own guards --
+# this guard's number was picked from the same registry (`src/cogsyndelta/splits.py`'s
+# G26, then the next free number) before that PR landed and had to move. The next new
+# guard after this one is G38.
 # ---------------------------------------------------------------------------------------
 
+#: Shared valid checkpoint/artifact shas for the tests below that are NOT exercising the
+#: checkpoint_sha256 / quantized_sha256 fields themselves -- every `GeometryReference`
+#: constructor call needs a value for all four fields now, and reusing one pair of
+#: constants keeps the split/n_items-focused tests' intent legible (the pair is
+#: irrelevant to what those tests assert, so it stays fixed and out of the way).
+_SAME_CHECKPOINT_SHA = "checkpoint" * 4
+_SAME_QUANTIZED_SHA = "artifact" * 4
 
-def test_g27_mismatched_split_reference_is_refused() -> None:
+
+def test_g37_mismatched_split_reference_is_refused() -> None:
     """The fp32 side was scored on one split; the quantized side on another (a stale
     cached fp32 pass reused against a re-built holdout is exactly this shape). Same
-    item COUNT on both sides, so a guard keyed on `n_items` alone would miss it."""
+    item COUNT, checkpoint and artifact sha on both sides, so a guard keyed on any of
+    those alone would miss it."""
     from cogsyndelta.eval.geometry import (
         GeometryReference,
         GeometryReferenceError,
         verify_geometry_reference,
     )
 
-    fp32_reference = GeometryReference(split_sha256="split-a" * 4, n_items=5400)
-    quantized_reference = GeometryReference(split_sha256="split-b" * 4, n_items=5400)
+    fp32_reference = GeometryReference(
+        split_sha256="split-a" * 4,
+        n_items=5400,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="split-b" * 4,
+        n_items=5400,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
 
-    with pytest.raises(GeometryReferenceError, match="G27") as exc_info:
+    with pytest.raises(GeometryReferenceError, match="G37") as exc_info:
         verify_geometry_reference(fp32_reference, quantized_reference)
     assert "split_sha256" in str(exc_info.value)
 
 
-def test_g27_mismatched_item_count_is_refused() -> None:
+def test_g37_mismatched_item_count_is_refused() -> None:
     """Same split identity string, different row counts -- a truncated or padded batch
     on one side. A guard keyed on `split_sha256` alone would miss it."""
     from cogsyndelta.eval.geometry import (
@@ -1876,25 +1904,130 @@ def test_g27_mismatched_item_count_is_refused() -> None:
         verify_geometry_reference,
     )
 
-    fp32_reference = GeometryReference(split_sha256="same-split", n_items=5400)
-    quantized_reference = GeometryReference(split_sha256="same-split", n_items=5399)
+    fp32_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5399,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
 
-    with pytest.raises(GeometryReferenceError, match="G27") as exc_info:
+    with pytest.raises(GeometryReferenceError, match="G37") as exc_info:
         verify_geometry_reference(fp32_reference, quantized_reference)
     assert "n_items" in str(exc_info.value)
 
 
-def test_g27_a_genuinely_matching_reference_pair_is_not_refused() -> None:
+def test_g37_mismatched_checkpoint_sha_is_refused() -> None:
+    """The fp32 side was loaded from one fp32 checkpoint; the quantized side's
+    artifact claims lineage from a different one -- a re-trained fp32 checkpoint
+    compared against a stale packed artifact (or vice versa) is exactly this shape.
+    Same split, item count and quantized-artifact sha on both sides, so a guard that
+    does not check `checkpoint_sha256` would miss it (the hole a second review found:
+    previously `GeometryReference` carried only `split_sha256`/`n_items`, and
+    `checkpoint_sha256` was threaded into the receipt's `provenance` but never
+    compared between the two sides)."""
+    from cogsyndelta.eval.geometry import (
+        GeometryReference,
+        GeometryReferenceError,
+        verify_geometry_reference,
+    )
+
+    fp32_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256="checkpoint-a" * 4,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256="checkpoint-b" * 4,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+
+    with pytest.raises(GeometryReferenceError, match="G37") as exc_info:
+        verify_geometry_reference(fp32_reference, quantized_reference)
+    assert "checkpoint_sha256" in str(exc_info.value)
+
+
+def test_g37_matching_checkpoint_sha_is_not_refused() -> None:
+    """Positive control for `checkpoint_sha256` specifically: when every field,
+    including the new one, genuinely agrees, the guard must not fire. Without this,
+    the refusal test above could pass for the wrong reason (e.g. a guard that always
+    raises regardless of which field it inspects)."""
+    from cogsyndelta.eval.geometry import GeometryReference, verify_geometry_reference
+
+    fp32_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256="checkpoint-a" * 4,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256="checkpoint-a" * 4,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    verify_geometry_reference(fp32_reference, quantized_reference)
+
+
+def test_g37_mismatched_quantized_artifact_sha_is_refused() -> None:
+    """Two artifacts quantized from the SAME fp32 checkpoint at different bit widths
+    (the concrete shape this guards against): same split, item count and checkpoint
+    sha on both sides, but the quantized side's latents were actually scored from a
+    different packed file than the one this comparison names."""
+    from cogsyndelta.eval.geometry import (
+        GeometryReference,
+        GeometryReferenceError,
+        verify_geometry_reference,
+    )
+
+    fp32_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256="artifact-3bit" * 4,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256="artifact-8bit" * 4,
+    )
+
+    with pytest.raises(GeometryReferenceError, match="G37") as exc_info:
+        verify_geometry_reference(fp32_reference, quantized_reference)
+    assert "quantized_sha256" in str(exc_info.value)
+
+
+def test_g37_a_genuinely_matching_reference_pair_is_not_refused() -> None:
     """Negative control: without this, "the guard fires" could just mean "always"."""
     from cogsyndelta.eval.geometry import GeometryReference, verify_geometry_reference
 
-    reference = GeometryReference(split_sha256="the-real-split", n_items=5400)
+    reference = GeometryReference(
+        split_sha256="the-real-split",
+        n_items=5400,
+        checkpoint_sha256="the-real-checkpoint",
+        quantized_sha256="the-real-artifact",
+    )
     verify_geometry_reference(
-        reference, GeometryReference(split_sha256="the-real-split", n_items=5400)
+        reference,
+        GeometryReference(
+            split_sha256="the-real-split",
+            n_items=5400,
+            checkpoint_sha256="the-real-checkpoint",
+            quantized_sha256="the-real-artifact",
+        ),
     )
 
 
-def test_g27_end_to_end_through_compute_geometry_would_compare_the_wrong_items() -> None:
+def test_g37_end_to_end_through_compute_geometry_would_compare_the_wrong_items() -> None:
     """The regression this guard exists to stop, made concrete: without the guard,
     nothing would have stopped `compute_geometry` from running on two latent matrices
     that only coincidentally share a shape. This test proves the guard is what a caller
@@ -1912,9 +2045,19 @@ def test_g27_end_to_end_through_compute_geometry_would_compare_the_wrong_items()
 
     fp32_latents = torch.randn(20, 4)
     quantized_latents = torch.randn(20, 4)  # same SHAPE, not the same split
-    fp32_reference = GeometryReference(split_sha256="split-a" * 4, n_items=20)
-    quantized_reference = GeometryReference(split_sha256="split-b" * 4, n_items=20)
+    fp32_reference = GeometryReference(
+        split_sha256="split-a" * 4,
+        n_items=20,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="split-b" * 4,
+        n_items=20,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
 
-    with pytest.raises(GeometryReferenceError, match="G27"):
+    with pytest.raises(GeometryReferenceError, match="G37"):
         verify_geometry_reference(fp32_reference, quantized_reference)
         compute_geometry(fp32_latents, quantized_latents)  # never reached

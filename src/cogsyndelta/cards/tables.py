@@ -479,7 +479,7 @@ def build_quant_geometry_table(
     pass where the fp32 reference could not be established), never a number invented
     in its place and never a silently-omitted row. This is the fail-closed-for-cards
     half of the guard: `scripts/csd-benchmark.py`'s writer fail-closed refuses
-    (`GeometryReferenceError`, G27) rather than write a MISMATCHED number; this
+    (`GeometryReferenceError`, G37) rather than write a MISMATCHED number; this
     function is what a reader sees when the writer instead measured nothing at all.
 
     Args:

@@ -161,6 +161,14 @@ def test_the_neighbour_field_name_carries_k() -> None:
 
 def test_verify_geometry_reference_accepts_a_matching_pair() -> None:
     """Positive control for the guard proved (failing) in test_guards_can_fail.py --
-    the ordinary case, both sides describing the same items, must not raise."""
-    ref = GeometryReference(split_sha256="abc123", n_items=42)
-    verify_geometry_reference(ref, GeometryReference(split_sha256="abc123", n_items=42))
+    the ordinary case, both sides describing the same items, checkpoint and
+    quantized artifact, must not raise."""
+    ref = GeometryReference(
+        split_sha256="abc123", n_items=42, checkpoint_sha256="ckpt1", quantized_sha256="art1"
+    )
+    verify_geometry_reference(
+        ref,
+        GeometryReference(
+            split_sha256="abc123", n_items=42, checkpoint_sha256="ckpt1", quantized_sha256="art1"
+        ),
+    )

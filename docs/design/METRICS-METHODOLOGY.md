@@ -623,7 +623,7 @@ script's formula, not a second implementation.
 - **(a)** `lexical_baseline.tfidf.recall@1` / `.recall@5` / `.recall@10` / `.mrr` / `.ndcg@10`,
   the same keys under `lexical_baseline.bm25`, plus `lexical_baseline.scorer_version`
   (`csd-lexical/v1`) and `lexical_baseline.split_sha256`. Written by
-  `_lexical_baseline_block()` (`scripts/csd-benchmark.py:666-676`) onto every text
+  `_lexical_baseline_block()` (`scripts/csd-benchmark.py:680-690`) onto every text
   `kind: eval` / `eval-quantized` receipt, and by `backfill_one()`
   (`scripts/csd-lexical-baseline.py:77-121`) as a sidecar
   `cogsyndelta-<region>-lexical-<ts>.json` for existing seed-0 cells **without rewriting**
@@ -2130,10 +2130,10 @@ independent of whatever a downstream probe happens to be sensitive to.
 `quant.geometry.mean_cosine`, `quant.geometry.min_cosine`, `quant.geometry.p05_cosine`,
 `quant.geometry.nn_agreement_at_10`, `quant.geometry.latent_std_ratio`. A sixth,
 non-numeric field, `quant.geometry.reference` (`provenance`, not `metrics` -- it names a
-receipt/checkpoint sha, not a score), records which fp32 checkpoint and holdout the
-comparison was measured against. `battery_id` is `eval_quantized_holdout`, `pooling` is
-`matched` (row `i` of the fp32 side against row `i` of the quantized side -- the SAME item,
-never a retrieval pool).
+receipt/checkpoint/artifact sha, not a score), records which fp32 checkpoint, quantized
+artifact and holdout the comparison was measured against. `battery_id` is
+`eval_quantized_holdout`, `pooling` is `matched` (row `i` of the fp32 side against row `i`
+of the quantized side -- the SAME item, never a retrieval pool).
 
 **(b)** Formula (`src/cogsyndelta/eval/geometry.py`, `compute_geometry`): given
 `fp32_latents`/`quantized_latents`, both `[n_items, dim]`, row-aligned --
@@ -2156,21 +2156,30 @@ never a retrieval pool).
   `eval_latents_std_ratio`), independent of `repr.rep_std`'s collapse-batch definition (§3.9's
   neighbour, `held_out.rep_std` vs. `untrained_baseline.rep_std`).
 
-**(c)** Guard (G27, `cogsyndelta.eval.geometry.verify_geometry_reference`, fail-closed): a
-`GeometryReference(split_sha256, n_items)` names which items one side of the comparison was
-computed over. The writer refuses (`GeometryReferenceError`) before `compute_geometry` ever
-runs if the fp32 side's reference disagrees with the quantized side's on either field -- a
-stale cached fp32 pass, a split rebuilt under a different seed, or a truncated batch on one
-side would otherwise produce numbers that describe a mismatched pairing, not quantization.
-Proved in `tests/test_guards_can_fail.py` (DEFECT 9 / G27), the same file and pattern §10's
+**(c)** Guard (G37, `cogsyndelta.eval.geometry.verify_geometry_reference`, fail-closed): a
+`GeometryReference(split_sha256, n_items, checkpoint_sha256, quantized_sha256)` names which
+items, fp32 checkpoint and quantized artifact one side of the comparison was computed over.
+The writer refuses (`GeometryReferenceError`) before `compute_geometry` ever runs if the fp32
+side's reference disagrees with the quantized side's on ANY field -- a stale cached fp32 pass,
+a split rebuilt under a different seed, a truncated batch on one side, a re-trained fp32
+checkpoint compared against an artifact quantized from a DIFFERENT draw, or a quantized
+artifact loaded from a different packed file than the one this comparison names, would
+otherwise produce numbers that describe a mismatched pairing, not quantization.
+Proved in `tests/test_guards_can_fail.py` (DEFECT 9 / G37), the same file and pattern §10's
 "how a comparison can be legitimately refused" discipline already uses for G26.
+
+Guard number G37, not G27: `docs/design/INTERCONNECT-MODULE-SPEC.md` Table 8 reserves G27
+through G36 for the interconnect module's own guards (merged to main, PR #67, after this
+guard's number was first chosen but before it was committed) -- see
+`cogsyndelta.eval.geometry`'s module docstring for the "next number after this one" pointer.
 
 **(d)** Pool: the eval-quantized battery's own held-out set -- text's `split.sha256` (§6.4)
 manifest, or, for visual (no split-manifest of its own), a content fingerprint of the decoded
 probe-eval tensor. Both sides of one comparison are computed in the SAME process, from the
-SAME held-out object, so the reference match is a fact about the wiring, not a coincidence;
-G27 exists to catch a FUTURE divergence (a refactor, a stale cache), not a defect observed in
-production today.
+SAME held-out object and the SAME `checkpoint_sha256`/`quantized_sha256` values, so the
+reference match is a fact about the wiring, not a coincidence; G37 exists to catch a FUTURE
+divergence (a refactor, a stale cache, a re-trained checkpoint compared against an artifact
+quantized from a different draw), not a defect observed in production today.
 
 **(e)** Unit: `mean_cosine`/`min_cosine`/`p05_cosine` ∈ `[-1, 1]` (in practice close to 1 for
 a lightly-perturbed encoder); `nn_agreement_at_10` ∈ `[0, 1]`; `latent_std_ratio` a unitless

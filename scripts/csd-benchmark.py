@@ -231,7 +231,7 @@ def _visual_eval_split_identity(splits: VisualSplits) -> str:
     manifest-based equivalent of. Hashes the DECODED tensors, not a config value or a
     shard path, so a re-built split under a different seed/cap or a truncated batch
     changes this string even if every path/config field involved looks unchanged --
-    exactly the two failure shapes `cogsyndelta.eval.geometry`'s G27 guard exists to
+    exactly the failure shapes `cogsyndelta.eval.geometry`'s G37 guard exists to
     catch (MM §23).
     """
     h = hashlib.sha256()
@@ -246,6 +246,7 @@ def _quant_geometry_metrics(
     quantized_latents: torch.Tensor,
     split_sha256: str,
     checkpoint_sha256: str,
+    quantized_sha256: str,
     source_training_receipt: dict[str, str],
 ) -> tuple[dict[str, float], dict[str, Any] | None]:
     """`quant.geometry.*` fields for an eval-quantized receipt (MM §23), shared by the
@@ -254,10 +255,14 @@ def _quant_geometry_metrics(
     `fp32_latents`/`quantized_latents` must already be the SAME held-out items in the
     SAME order -- both callers compute them, in this same process, from the SAME
     split object, so that pairing holds by construction. `verify_geometry_reference`
-    (G27) is still run explicitly rather than assumed: a future refactor that breaks
+    (G37) is still run explicitly rather than assumed: a future refactor that breaks
     the pairing (a cached fp32 pass reused across a re-built split, a truncated batch
-    on one side) must fail loudly here, not ship a number that silently compares the
-    wrong items.
+    on one side, a stale fp32 draw, a quantized artifact from a different bit width)
+    must fail loudly here, not ship a number that silently compares the wrong items
+    or the wrong models. `checkpoint_sha256`/`quantized_sha256` are passed once and
+    used on BOTH sides' `GeometryReference` -- exactly like `split_sha256` -- so this
+    is a fact about the wiring today, not a live defect; the guard exists to catch a
+    FUTURE divergence (see `cogsyndelta.eval.geometry`'s module docstring).
 
     A held-out set no bigger than `DEFAULT_NN_K` cannot support `nn_agreement_at_k`
     (`compute_geometry` refuses outright) -- production probe-eval sets never come
@@ -271,8 +276,8 @@ def _quant_geometry_metrics(
         `(metrics, reference)` -- `metrics` keyed `quant.geometry.<field>` (empty
         when skipped), ready to merge into a receipt's flat `metrics` dict;
         `reference` is the non-numeric `quant.geometry.reference` block (MM §23(a))
-        naming which fp32 checkpoint/receipt and split the comparison used, for
-        `provenance` -- `None` when skipped.
+        naming which fp32 checkpoint/receipt, quantized artifact and split the
+        comparison used, for `provenance` -- `None` when skipped.
     """
     from cogsyndelta.eval.geometry import (
         DEFAULT_NN_K,
@@ -290,15 +295,24 @@ def _quant_geometry_metrics(
             flush=True,
         )
         return {}, None
-    fp32_reference = GeometryReference(split_sha256=split_sha256, n_items=n_items)
+    fp32_reference = GeometryReference(
+        split_sha256=split_sha256,
+        n_items=n_items,
+        checkpoint_sha256=checkpoint_sha256,
+        quantized_sha256=quantized_sha256,
+    )
     quantized_reference = GeometryReference(
-        split_sha256=split_sha256, n_items=quantized_latents.shape[0]
+        split_sha256=split_sha256,
+        n_items=quantized_latents.shape[0],
+        checkpoint_sha256=checkpoint_sha256,
+        quantized_sha256=quantized_sha256,
     )
     verify_geometry_reference(fp32_reference, quantized_reference)
     geometry = compute_geometry(fp32_latents, quantized_latents)
     metrics = {f"quant.geometry.{key}": value for key, value in geometry.items()}
     reference = {
         "checkpoint_sha256": checkpoint_sha256,
+        "quantized_sha256": quantized_sha256,
         "source_training_receipt": source_training_receipt,
         "split_sha256": split_sha256,
         "n_items": n_items,
@@ -1058,6 +1072,7 @@ def benchmark_visual_region_quantized(
         quantized_latents=quantized_latents,
         split_sha256=_visual_eval_split_identity(splits),
         checkpoint_sha256=checkpoint_sha256,
+        quantized_sha256=packed_sha,
         source_training_receipt={
             "path": str(resolved_path),
             "sha256": sha256_file(resolved_path),
@@ -1253,6 +1268,7 @@ def benchmark_region_quantized(
             quantized_latents=quantized_latents,
             split_sha256=str((split_meta.get("split") or {}).get("sha256") or ""),
             checkpoint_sha256=checkpoint_sha256,
+            quantized_sha256=quantized_sha256,
             source_training_receipt={
                 "path": str(train_receipt_path_final),
                 "sha256": sha256_file(train_receipt_path_final),
