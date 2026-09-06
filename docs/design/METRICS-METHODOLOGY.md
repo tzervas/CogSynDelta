@@ -15,7 +15,7 @@ retired, or demoted are marked inline where they diverge -- check §15's depreca
 trusting an unmarked §1-§11 field name against a receipt written after this migration.
 Sections 12-19 are the `csd-metrics/v2` layer: the canonical name each v1 field maps to (now
 IMPLEMENTED, not only proposed -- `compare()`, §14, is the refuse-function in production,
-`src/cogsyndelta/eval/metrics.py:763-843`), a retire list, and the standing statements a card
+`src/cogsyndelta/eval/metrics.py:828-908`), a retire list, and the standing statements a card
 or harness must not contradict. **v2 is a naming and comparison-discipline layer over the same
 measurements, not a formula rewrite** -- a v1 field name in a receipt written before the
 migration is not wrong, and nothing in §§12-19 licenses inventing a receipt field this
@@ -171,7 +171,7 @@ re-sampled from `cfg.seed`.
   mrr = (1.0 / ranks.float()).mean().item()
   ```
 
-- **(c)** `src/cogsyndelta/eval/metrics.py:563-575`.
+- **(c)** `src/cogsyndelta/eval/metrics.py:610-639`.
 - **(d)** Same closed 512-candidate pool as §2.1.
 - **(e)** Same rule as §2.1.
 - **(f)** None beyond §2.1's pool-size caveat.
@@ -191,7 +191,7 @@ re-sampled from `cfg.seed`.
   `src/cogsyndelta/regions/pretrain.py:669` and `evaluate_graded()` at
   `src/cogsyndelta/regions/pretrain.py:720`. The identical formula also exists as a
   standalone, tested function, `representation_std()`
-  (`src/cogsyndelta/eval/metrics.py:671-687`) -- since csd-metrics/v2 this IS also a
+  (`src/cogsyndelta/eval/metrics.py:736-752`) -- since csd-metrics/v2 this IS also a
   production call site: `benchmark_embeddings()` calls `representation_std(a)` for the eval
   battery's `repr.emb_std_anchor` (§12.5, §11.5). `held_out.emb_std` /
   `graded_held_out.emb_std` here still duplicate the formula inline rather than calling the
@@ -230,8 +230,8 @@ re-sampled from `cfg.seed`.
   spearman = cov / sqrt(var_p * var_g)     # 0.0 if var_p<=0 or var_g<=0 (a constant side)
   ```
 
-- **(c)** `spearman_correlation()`: `src/cogsyndelta/eval/metrics.py:607-652`.
-  `_average_ranks()`: `src/cogsyndelta/eval/metrics.py:578-604`. Called from
+- **(c)** `spearman_correlation()`: `src/cogsyndelta/eval/metrics.py:672-717`.
+  `_average_ranks()`: `src/cogsyndelta/eval/metrics.py:641-669`. Called from
   `evaluate_graded()`: `src/cogsyndelta/regions/pretrain.py:673-723`.
 - **(d)** `predicted` is the cosine similarity of each graded pair's two encodings; `gold` is
   the corpus's human score. The graded set for a region is a **different corpus** from its
@@ -243,7 +243,7 @@ re-sampled from `cfg.seed`.
   different fingerprint scheme) are not comparable by this number alone.
 - **(f)** Returns exactly `0.0`, not an error or `nan`, when either side of the pair is
   constant -- "no monotone relationship detectable," which is also what a fully collapsed
-  encoder legitimately produces (`src/cogsyndelta/eval/metrics.py:644-651`). **Read `cos_std`
+  encoder legitimately produces (`src/cogsyndelta/eval/metrics.py:709-716`). **Read `cos_std`
   alongside `spearman`**: a near-zero `cos_std` next to a plausible `spearman` means the
   correlation is being decided by floating-point noise, not a real signal
   (`src/cogsyndelta/regions/pretrain.py:693-697`).
@@ -303,7 +303,7 @@ Not metrics on their own -- gate/context fields. See §1 for `chance`'s formula 
   2.0 * pooled_pr_rank`). That gate is **measured not discriminating** at the harness's current
   (50-step smoke) step count: the control arm, with both token-aware terms fully off, already
   clears the ratio on its own at 2.0191x
-  (`src/cogsyndelta/eval/beir_fiqa.py:422-434`, `docs/design/evidence/
+  (`src/cogsyndelta/eval/beir_fiqa.py:513-525`, `docs/design/evidence/
   w4-control-arm-2026-09-03/`). A `passed: True` on this clause at 50 steps does not by itself
   distinguish "the token-aware terms worked" from "the terms were never turned on."
 
@@ -978,7 +978,7 @@ carries a genuine lexical baseline rather than only a random-init one.
   recall@k, mrr = recall_at_k(masked_scores, pick), mean_reciprocal_rank(masked_scores, pick)
   ```
 
-- **(c)** `src/cogsyndelta/eval/beir_fiqa.py:237-276`.
+- **(c)** `src/cogsyndelta/eval/beir_fiqa.py:237-316`.
 - **(d)** The pool from §7.1 (57,638 passages under `pool="corpus"`); gold from the BeIR qrels.
 - **(e)** Comparable only at the same pool mode (`corpus` vs `split`) and the same split
   (`dev`/`test` -- ranking `train` measures memorisation, not generalisation, per
@@ -1000,8 +1000,8 @@ carries a genuine lexical baseline rather than only a random-init one.
   idf(t) = log(1 + (N - df(t) + 0.5) / (df(t) + 0.5))
   ```
 
-- **(c)** `src/cogsyndelta/eval/beir_fiqa.py:279-324` (class `BM25`); `bm25_metrics()`:
-  `src/cogsyndelta/eval/beir_fiqa.py:390-398`.
+- **(c)** `src/cogsyndelta/eval/beir_fiqa.py:319-364` (class `BM25`); `bm25_metrics()`:
+  `src/cogsyndelta/eval/beir_fiqa.py:484-489`.
 - **(d)** Scored through the **identical** `rank_metrics()` code path as the trained encoder
   (§7.2), over the same pool and qrels -- "reporting a win for a loss" (beating "beats random
   init" while losing to word counting) is what this module exists to make structurally
@@ -1021,17 +1021,17 @@ naming one pass/fail condition:
 
 | gate | condition | anchor |
 |---|---|---|
-| `a_beats_both_parents` | `memory`'s `recall@1` >= max(`compress`, `retrieve` parents' `recall@1`) AND `memory`'s graded spearman >= `compress`'s | `src/cogsyndelta/eval/beir_fiqa.py:612-641` |
-| `b_full_pool_thresholds` | full-pool `recall@10 > 0.20` AND `mrr > 0.10` | `src/cogsyndelta/eval/beir_fiqa.py:644-661` |
-| `c_beats_bm25` | trained `recall@10` > BM25 `recall@10`, same pool/qrels | `src/cogsyndelta/eval/beir_fiqa.py:664-677` |
-| `d_beats_random_init` | trained `recall@10` > this region's own untrained-encoder `recall@10`, same pool | `src/cogsyndelta/eval/beir_fiqa.py:680-690` |
-| `e_retrain_gate` | `token_global_pr_rank >= 2.0 * pooled_pr_rank` (§2.7/§9) AND no more than 1-point regression against either parent | `src/cogsyndelta/eval/beir_fiqa.py:693-760` |
+| `a_beats_both_parents` | `memory`'s `recall@1` >= max(`compress`, `retrieve` parents' `recall@1`) AND `memory`'s graded spearman >= `compress`'s | `src/cogsyndelta/eval/beir_fiqa.py:703-732` |
+| `b_full_pool_thresholds` | full-pool `recall@10 > 0.20` AND `mrr > 0.10` | `src/cogsyndelta/eval/beir_fiqa.py:735-752` |
+| `c_beats_bm25` | trained `recall@10` > BM25 `recall@10`, same pool/qrels | `src/cogsyndelta/eval/beir_fiqa.py:755-768` |
+| `d_beats_random_init` | trained `recall@10` > this region's own untrained-encoder `recall@10`, same pool | `src/cogsyndelta/eval/beir_fiqa.py:771-781` |
+| `e_retrain_gate` | `token_global_pr_rank >= 2.0 * pooled_pr_rank` (§2.7/§9) AND no more than 1-point regression against either parent | `src/cogsyndelta/eval/beir_fiqa.py:784-851` |
 
 **(f)** `e_retrain_gate`'s rank clause is the one flagged in §2.7(f) as measured
 not-discriminating at 50 steps -- see that caveat before treating a `passed: True` here as
 proof the token-aware objective helped. `e_retrain_gate` also explicitly does **not** check the
 `banking77` damage-detector probe §4.0 of the design doc names
-(`src/cogsyndelta/eval/beir_fiqa.py:547-550`) -- recorded as `"not measured; out of scope"`
+(`src/cogsyndelta/eval/beir_fiqa.py:638-641`) -- recorded as `"not measured; out of scope"`
 in the gate's own output, not silently omitted.
 
 ### 7.5 Explicit field names for `beir.*` and `token.*` surfaces (schema v2)
@@ -1296,7 +1296,7 @@ legitimate "before vs. after" comparison.
    (`src/cogsyndelta/eval/metrics.py:1-8`) -- if a future card or receipt does show a
    `perplexity` field, its formula is `token_weighted_perplexity()`'s (§2's `emb_std`
    sibling), and it should cite this document's entry for it rather than an assumed standard
-   definition. `representation_std()` (`src/cogsyndelta/eval/metrics.py:671-687`) is
+   definition. `representation_std()` (`src/cogsyndelta/eval/metrics.py:736-752`) is
    DIFFERENT: since csd-metrics/v2 it IS a production call site --
    `benchmark_embeddings()` calls `representation_std(a)` for the eval battery's
    `repr.emb_std_anchor` (§12.5, §2.3(c)) -- `held_out.emb_std` and `graded_held_out.emb_std`
@@ -1714,10 +1714,10 @@ same seed                                 # this doc's §10 item 7
 ```
 
 **IMPLEMENTED as a function, not a comment.** `compare()`
-(`src/cogsyndelta/eval/metrics.py:763-843`) IS this refuse-predicate: it walks every
+(`src/cogsyndelta/eval/metrics.py:828-908`) IS this refuse-predicate: it walks every
 `MetricIdentity` field in the declared order above and returns a `ComparisonRefusal` (not a
 diff) the moment one differs, before ever touching `values`
-(`src/cogsyndelta/eval/metrics.py:806-830`) -- see `tests/test_eval_metrics.py`'s
+(`src/cogsyndelta/eval/metrics.py:871-895`) -- see `tests/test_eval_metrics.py`'s
 per-identity-key parametrisation and `tests/test_guards_can_fail.py`'s DEFECT 7 mutation
 proofs. The v1 version this replaced diffed only shared keys and checked none of schema,
 fingerprint, `battery_id`, pooling, or sha; shipping v2 field names without this predicate

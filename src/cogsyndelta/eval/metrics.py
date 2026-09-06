@@ -558,8 +558,55 @@ def screen_pair_contamination(
     return kept, report
 
 
+def recall_at_k_per_query(scores: torch.Tensor, relevant: torch.Tensor, k: int) -> torch.Tensor:
+    """The per-query hit indicator behind :func:`recall_at_k`, one entry per query.
+
+    WHY THIS EXISTS
+    A paired test cannot be run on a mean. The pre-registered decision rule for the
+    memory region's negative-set round is a paired bootstrap of the change in Success@10
+    over the 500 shared FiQA dev queries, and pairing is exactly what needs each query's
+    own 0/1 outcome in both arms; averaging first throws away the between-query variance
+    that the pairing exists to remove. So the vector is the primary object here and the
+    scalar is derived from it -- never the reverse, and never a second implementation
+    that could drift from it.
+
+    Args:
+        scores: ``[B, N]``, higher is better.
+        relevant: ``[B]`` index of the relevant candidate per query.
+        k: Cutoff. Capped at the pool size, so a ``k`` past the end of the pool means
+            "the whole pool" rather than an error.
+
+    Returns:
+        ``[B]`` float32, 1.0 where that query's relevant candidate is in its top ``k``.
+        float32, not float64, because :func:`recall_at_k` averages exactly this tensor
+        and published receipts record that float32 mean (0.2 stored as
+        ``0.20000000298023224``); widening here would silently make the stored number
+        unreproducible.
+
+    Raises:
+        ValueError: If ``k`` is below 1, which has no meaning as a cutoff.
+    """
+    if k < 1:
+        raise ValueError("k must be >= 1")
+    k = min(k, scores.size(1))
+    top = scores.topk(k, dim=-1).indices
+    return (top == relevant.unsqueeze(-1)).any(dim=-1).float()
+
+
 def recall_at_k(scores: torch.Tensor, relevant: torch.Tensor, k: int) -> float:
     """Fraction of queries whose relevant item appears in the top ``k``.
+
+    Defined as the mean of :func:`recall_at_k_per_query`'s vector and nothing else, so
+    the aggregate a receipt stores and the per-query vector a paired test consumes
+    cannot disagree about what was measured.
+
+    The mean is taken in **float32**, over the float32 indicator vector. That is a
+    decision, not an accident: the negative-set pre-registration left the representation
+    open because a per-query path aggregating in float64 would not reproduce an existing
+    receipt bit-for-bit, and that bit-for-bit match is what the checkpoint-integrity
+    claim rests on. The quantum near 0.2 at n = 500 is about 1.5e-08, six orders below
+    the 0.02 decision bar, so keeping float32 costs the decision nothing and buys exact
+    reproduction.
 
     Args:
         scores: ``[B, N]``, higher is better.
@@ -569,15 +616,35 @@ def recall_at_k(scores: torch.Tensor, relevant: torch.Tensor, k: int) -> float:
     Returns:
         Recall in ``[0, 1]``.
     """
-    if k < 1:
-        raise ValueError("k must be >= 1")
-    k = min(k, scores.size(1))
-    top = scores.topk(k, dim=-1).indices
-    return (top == relevant.unsqueeze(-1)).any(dim=-1).float().mean().item()
+    return recall_at_k_per_query(scores, relevant, k).mean().item()
+
+
+def reciprocal_rank_per_query(scores: torch.Tensor, relevant: torch.Tensor) -> torch.Tensor:
+    """The per-query 1/rank behind :func:`mean_reciprocal_rank`, one entry per query.
+
+    Same argument as :func:`recall_at_k_per_query`: MRR is a secondary metric of the
+    negative-set round, and reporting it paired alongside the primary one is only
+    possible if the per-query terms survive the aggregation.
+
+    Args:
+        scores: ``[B, N]``, higher is better.
+        relevant: ``[B]`` index of the relevant candidate per query.
+
+    Returns:
+        ``[B]`` float32 of ``1/rank``, rank counted from 1. float32 for the same
+        receipt-reproduction reason as :func:`recall_at_k_per_query`.
+    """
+    order = scores.argsort(dim=-1, descending=True)
+    ranks = (order == relevant.unsqueeze(-1)).float().argmax(dim=-1) + 1
+    return 1.0 / ranks.float()
 
 
 def mean_reciprocal_rank(scores: torch.Tensor, relevant: torch.Tensor) -> float:
     """Mean of 1/rank of the relevant candidate.
+
+    The mean of :func:`reciprocal_rank_per_query` and nothing else, aggregated in
+    float32 -- see :func:`recall_at_k` for why that representation is pinned rather than
+    widened.
 
     Args:
         scores: ``[B, N]``, higher is better.
@@ -586,9 +653,7 @@ def mean_reciprocal_rank(scores: torch.Tensor, relevant: torch.Tensor) -> float:
     Returns:
         MRR in ``(0, 1]``.
     """
-    order = scores.argsort(dim=-1, descending=True)
-    ranks = (order == relevant.unsqueeze(-1)).float().argmax(dim=-1) + 1
-    return (1.0 / ranks.float()).mean().item()
+    return reciprocal_rank_per_query(scores, relevant).mean().item()
 
 
 def _average_ranks(values: Sequence[float]) -> list[float]:
