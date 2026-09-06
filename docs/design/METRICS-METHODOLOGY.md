@@ -923,9 +923,9 @@ Produced by `quantize_text_region()` (`scripts/csd-quantize.py:54-272`), backed 
   fingerprint it was generated from; a held-out item in a training batch;
   a receipt whose `split.sha256` is not the manifest the benchmark/quantizer is scoring.
 - **(c)** `build_splits()`: `src/cogsyndelta/regions/pretrain.py:1047`. Manifest schema
-  and G26 checks: `verify_split_manifest()` (`src/cogsyndelta/splits.py:273`),
-  `verify_receipt_split()` (`src/cogsyndelta/splits.py:394`),
-  `assert_no_held_out_in_pairs()` (`src/cogsyndelta/splits.py:369`).
+  and G26 checks: `verify_split_manifest()` (`src/cogsyndelta/splits.py:295`),
+  `verify_receipt_split()` (`src/cogsyndelta/splits.py:560`),
+  `assert_no_held_out_in_pairs()` (`src/cogsyndelta/splits.py:389`).
 - **(e)** Two receipts are on the same eval set only when `split.sha256` agrees (and
   `corpus.fingerprint` agrees, §6.3). A training-seed change with the same split
   manifest is a different init, not a different test set. Seed-1 cells drawn before E0

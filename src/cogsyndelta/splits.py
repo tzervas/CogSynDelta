@@ -27,6 +27,7 @@ from typing import Any
 
 SPLIT_MANIFEST_SCHEMA = "csd-split-manifest/v1"
 ORDER_MANIFEST_SCHEMA = "csd-batch-order-manifest/v1"
+RESERVED_HOLDOUT_SCHEMA = "csd-reserved-holdout/v1"
 SPLIT_DRAW_ALGORITHM = "csd-split-draw/v1"
 ORDER_ALGORITHM = "csd-batch-order/v1-leftover-then-permute"
 FIRST_N_BATCHES = 64
@@ -34,9 +35,30 @@ FIRST_N_BATCHES = 64
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SPLITS_DIR = _REPO_ROOT / "config" / "mind" / "splits"
 
+RESERVED_HOLDOUT_GLOB = "*-holdout.json"
+REQUIRED_RESERVED_HOLDOUTS: tuple[str, ...] = ("reason-gsm8k-test-holdout.json",)
+"""Reserved-holdout manifests that MUST exist, pinned by name (G38).
+
+A glob alone would let the guard be disabled by deleting a file: no manifest, no ids, no
+leak detected, everything green. So the glob picks up any future holdout automatically
+AND these names are required to be present, so removing one is a failure rather than a
+silent widening of what may be trained on.
+"""
+
 
 class SplitGuardError(RuntimeError):
     """G26 fail-closed: split membership and the corpus it was drawn from disagree."""
+
+
+class ReservedHoldoutError(RuntimeError):
+    """G38 fail-closed: a reserved-holdout item reached a training set.
+
+    Distinct from :class:`SplitGuardError` because it is a different claim. G26 says
+    "this run's eval set is the one the receipt names". G38 says "this row was never
+    trained on by ANY region, so a battery scored on it is measuring the model rather
+    than its memory". A holdout that is merely intended to be held out is not a holdout;
+    the property has to be enforced where training pairs are assembled.
+    """
 
 
 def normalise_text(text: str) -> str:
@@ -385,6 +407,153 @@ def assert_no_held_out_in_pairs(
     if leaked:
         raise SplitGuardError(
             f"G26: {len(leaked)} held-out item(s) appear in {where} (example {leaked[0][:12]}...)"
+        )
+
+
+def build_reserved_holdout_manifest(
+    *,
+    name: str,
+    source: str,
+    split: str,
+    region_scope: str,
+    pair_columns: list[str],
+    shard: str,
+    shard_sha256: str,
+    rows: int,
+    item_ids: list[str],
+    licence: str,
+    upstream: str,
+    notes: str,
+) -> dict[str, Any]:
+    """Assemble a v1 reserved-holdout manifest for one source split.
+
+    Args:
+        name: Manifest stem, ending `-holdout`.
+        source: Upstream repo id, e.g. `openai/gsm8k`.
+        split: The upstream split reserved, e.g. `test`.
+        region_scope: `all` -- reserved against every region, which is the only value
+            that makes the holdout meaningful for a composed model.
+        pair_columns: Columns the ids were built from, in order.
+        shard: Absolute path of the parquet the ids were read from.
+        shard_sha256: Content digest of that parquet.
+        rows: Row count read.
+        item_ids: One :func:`item_id` per row.
+        licence: Licence string verified at the primary source.
+        upstream: Where that verification was read.
+        notes: Why this split is reserved.
+
+    Returns:
+        Manifest dict ready to write.
+    """
+    return {
+        "schema": RESERVED_HOLDOUT_SCHEMA,
+        "name": name,
+        "source": source,
+        "split": split,
+        "region_scope": region_scope,
+        "pair_columns": list(pair_columns),
+        "shard": shard,
+        "shard_sha256": shard_sha256,
+        "rows": int(rows),
+        "licence": licence,
+        "upstream": upstream,
+        "notes": notes,
+        "item_ids": sorted(item_ids),
+        "sha256": membership_sha256(item_ids),
+    }
+
+
+def verify_reserved_holdout_manifest(manifest: dict[str, Any], *, path: Path) -> list[str]:
+    """G38: refuse a reserved-holdout file whose ids do not hash to its own sha256.
+
+    Args:
+        manifest: Loaded manifest.
+        path: Where it came from, for the message.
+
+    Returns:
+        The manifest's item ids.
+
+    Raises:
+        ReservedHoldoutError: Wrong schema, malformed ids, or a membership/sha mismatch.
+    """
+    schema = manifest.get("schema")
+    if schema != RESERVED_HOLDOUT_SCHEMA:
+        raise ReservedHoldoutError(
+            f"G38: reserved-holdout schema {schema!r} != {RESERVED_HOLDOUT_SCHEMA!r} ({path})"
+        )
+    ids = manifest.get("item_ids")
+    if not isinstance(ids, list) or not ids or not all(isinstance(x, str) for x in ids):
+        raise ReservedHoldoutError(f"G38: reserved-holdout item_ids missing or malformed ({path})")
+    recomputed = membership_sha256(ids)
+    if manifest.get("sha256") != recomputed:
+        raise ReservedHoldoutError(
+            f"G38: reserved-holdout sha256 {manifest.get('sha256')} != membership "
+            f"{recomputed} -- doctored or truncated file ({path})"
+        )
+    return ids
+
+
+def load_reserved_holdout_ids(*, splits_dir: Path | None = None) -> frozenset[str]:
+    """Every reserved-holdout item id, across all committed holdout manifests.
+
+    Fails closed twice over: a pinned manifest in :data:`REQUIRED_RESERVED_HOLDOUTS`
+    that is absent is an error rather than an empty set, and any manifest whose ids do
+    not hash to its recorded sha256 is refused. An empty result can therefore only mean
+    "no holdouts are declared", never "the guard could not read its inputs".
+
+    Args:
+        splits_dir: Override the repo default, for tests.
+
+    Returns:
+        Frozen set of reserved item ids.
+
+    Raises:
+        ReservedHoldoutError: A required manifest is missing, or any manifest is invalid.
+    """
+    root = splits_dir if splits_dir is not None else DEFAULT_SPLITS_DIR
+    for required in REQUIRED_RESERVED_HOLDOUTS:
+        if not (root / required).is_file():
+            raise ReservedHoldoutError(
+                f"G38: required reserved-holdout manifest missing: {root / required}. "
+                f"Refusing to build a training set that cannot be checked against it."
+            )
+    ids: set[str] = set()
+    for path in sorted(root.glob(RESERVED_HOLDOUT_GLOB)):
+        ids.update(verify_reserved_holdout_manifest(load_json_manifest(path), path=path))
+    return frozenset(ids)
+
+
+def assert_no_reserved_holdout_in_pairs(
+    pairs: list[tuple[str, str]],
+    *,
+    where: str = "training pairs",
+    splits_dir: Path | None = None,
+    reserved: frozenset[str] | None = None,
+) -> None:
+    """G38: refuse if any reserved-holdout item appears in `pairs`.
+
+    Called from `build_splits` on the realised training pairs, so it covers every region
+    and every composite phase that assembles its corpus there -- the holdout is excluded
+    BY ITEM ID, not by the shard path happening to be left out of a config.
+
+    Args:
+        pairs: Candidate training pairs.
+        where: Label for the error.
+        splits_dir: Override the manifest directory, for tests.
+        reserved: Pre-loaded id set; loaded from `splits_dir` when omitted.
+
+    Raises:
+        ReservedHoldoutError: A reserved item id is present in `pairs`.
+    """
+    ids = load_reserved_holdout_ids(splits_dir=splits_dir) if reserved is None else reserved
+    if not ids:
+        return
+    leaked = [item_id(a, b) for a, b in pairs if item_id(a, b) in ids]
+    if leaked:
+        raise ReservedHoldoutError(
+            f"G38: {len(leaked)} reserved-holdout item(s) appear in {where} "
+            f"(example {leaked[0][:12]}...). These rows are reserved as a holdout for a "
+            f"pre-registered battery; training on them makes that battery a memory test."
         )
 
 
