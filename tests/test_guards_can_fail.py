@@ -1835,3 +1835,86 @@ def test_g26_held_out_leak_is_refused() -> None:
     train = [("unrelated q", "unrelated a"), ("the held out question", "the held out answer")]
     with pytest.raises(SplitGuardError, match="held-out item"):
         assert_no_held_out_in_pairs(holdout, train)
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 9 / G27 -- a representation-geometry comparison (fp32 latents vs quantized
+# latents, per docs/design/evidence/visual-ptq-sensitivity-2026-09-06/README.md) is only
+# a measurement of quantization if BOTH sides were computed over the same items in the
+# same order. `cogsyndelta.eval.geometry.verify_geometry_reference` is the guard that
+# refuses a comparison across two different item sets (a stale cached fp32 pass, a split
+# rebuilt under a different seed, a truncated batch on one side) before `compute_geometry`
+# ever runs -- the same shape G26 already fixed for the text held-out split, applied here
+# to a pairwise latent comparison instead of a train/eval partition.
+# ---------------------------------------------------------------------------------------
+
+
+def test_g27_mismatched_split_reference_is_refused() -> None:
+    """The fp32 side was scored on one split; the quantized side on another (a stale
+    cached fp32 pass reused against a re-built holdout is exactly this shape). Same
+    item COUNT on both sides, so a guard keyed on `n_items` alone would miss it."""
+    from cogsyndelta.eval.geometry import (
+        GeometryReference,
+        GeometryReferenceError,
+        verify_geometry_reference,
+    )
+
+    fp32_reference = GeometryReference(split_sha256="split-a" * 4, n_items=5400)
+    quantized_reference = GeometryReference(split_sha256="split-b" * 4, n_items=5400)
+
+    with pytest.raises(GeometryReferenceError, match="G27") as exc_info:
+        verify_geometry_reference(fp32_reference, quantized_reference)
+    assert "split_sha256" in str(exc_info.value)
+
+
+def test_g27_mismatched_item_count_is_refused() -> None:
+    """Same split identity string, different row counts -- a truncated or padded batch
+    on one side. A guard keyed on `split_sha256` alone would miss it."""
+    from cogsyndelta.eval.geometry import (
+        GeometryReference,
+        GeometryReferenceError,
+        verify_geometry_reference,
+    )
+
+    fp32_reference = GeometryReference(split_sha256="same-split", n_items=5400)
+    quantized_reference = GeometryReference(split_sha256="same-split", n_items=5399)
+
+    with pytest.raises(GeometryReferenceError, match="G27") as exc_info:
+        verify_geometry_reference(fp32_reference, quantized_reference)
+    assert "n_items" in str(exc_info.value)
+
+
+def test_g27_a_genuinely_matching_reference_pair_is_not_refused() -> None:
+    """Negative control: without this, "the guard fires" could just mean "always"."""
+    from cogsyndelta.eval.geometry import GeometryReference, verify_geometry_reference
+
+    reference = GeometryReference(split_sha256="the-real-split", n_items=5400)
+    verify_geometry_reference(
+        reference, GeometryReference(split_sha256="the-real-split", n_items=5400)
+    )
+
+
+def test_g27_end_to_end_through_compute_geometry_would_compare_the_wrong_items() -> None:
+    """The regression this guard exists to stop, made concrete: without the guard,
+    nothing would have stopped `compute_geometry` from running on two latent matrices
+    that only coincidentally share a shape. This test proves the guard is what a caller
+    is expected to run FIRST -- `verify_geometry_reference` raising before
+    `compute_geometry` is ever reached -- by reproducing exactly the call order
+    `scripts/csd-benchmark.py`'s wiring uses."""
+    import torch
+
+    from cogsyndelta.eval.geometry import (
+        GeometryReference,
+        GeometryReferenceError,
+        compute_geometry,
+        verify_geometry_reference,
+    )
+
+    fp32_latents = torch.randn(20, 4)
+    quantized_latents = torch.randn(20, 4)  # same SHAPE, not the same split
+    fp32_reference = GeometryReference(split_sha256="split-a" * 4, n_items=20)
+    quantized_reference = GeometryReference(split_sha256="split-b" * 4, n_items=20)
+
+    with pytest.raises(GeometryReferenceError, match="G27"):
+        verify_geometry_reference(fp32_reference, quantized_reference)
+        compute_geometry(fp32_latents, quantized_latents)  # never reached

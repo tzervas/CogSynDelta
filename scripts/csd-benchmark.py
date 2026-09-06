@@ -27,6 +27,7 @@ weights before and after packing, not two runs that happen to share a region nam
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import sys
@@ -222,6 +223,87 @@ def _measure_visual_probes(
             cfg.seed,
         )
     return held, xfer
+
+
+def _visual_eval_split_identity(splits: VisualSplits) -> str:
+    """Content fingerprint of the visual probe-eval set (`splits.px_ev`/`.py_ev`) --
+    the visual counterpart of text's `split.sha256` (MM §6.4), which visual has no
+    manifest-based equivalent of. Hashes the DECODED tensors, not a config value or a
+    shard path, so a re-built split under a different seed/cap or a truncated batch
+    changes this string even if every path/config field involved looks unchanged --
+    exactly the two failure shapes `cogsyndelta.eval.geometry`'s G27 guard exists to
+    catch (MM §23).
+    """
+    h = hashlib.sha256()
+    h.update(splits.px_ev.detach().cpu().numpy().tobytes())
+    h.update(splits.py_ev.detach().cpu().numpy().tobytes())
+    return h.hexdigest()
+
+
+def _quant_geometry_metrics(
+    *,
+    fp32_latents: torch.Tensor,
+    quantized_latents: torch.Tensor,
+    split_sha256: str,
+    checkpoint_sha256: str,
+    source_training_receipt: dict[str, str],
+) -> tuple[dict[str, float], dict[str, Any] | None]:
+    """`quant.geometry.*` fields for an eval-quantized receipt (MM §23), shared by the
+    text and visual branches of `benchmark_region_quantized`.
+
+    `fp32_latents`/`quantized_latents` must already be the SAME held-out items in the
+    SAME order -- both callers compute them, in this same process, from the SAME
+    split object, so that pairing holds by construction. `verify_geometry_reference`
+    (G27) is still run explicitly rather than assumed: a future refactor that breaks
+    the pairing (a cached fp32 pass reused across a re-built split, a truncated batch
+    on one side) must fail loudly here, not ship a number that silently compares the
+    wrong items.
+
+    A held-out set no bigger than `DEFAULT_NN_K` cannot support `nn_agreement_at_k`
+    (`compute_geometry` refuses outright) -- production probe-eval sets never come
+    close (EuroSAT alone is `n_eval=5400`), but a CPU-cheap test fixture routinely
+    holds 4-16 items. Rather than let that raise and abort the WHOLE eval-quantized
+    receipt over a fixture-only edge case, this returns `({}, None)` -- the same
+    "not measured" outcome a receipt written before this feature produces, printed
+    rather than silent so a real production run that hit this would be noticed.
+
+    Returns:
+        `(metrics, reference)` -- `metrics` keyed `quant.geometry.<field>` (empty
+        when skipped), ready to merge into a receipt's flat `metrics` dict;
+        `reference` is the non-numeric `quant.geometry.reference` block (MM §23(a))
+        naming which fp32 checkpoint/receipt and split the comparison used, for
+        `provenance` -- `None` when skipped.
+    """
+    from cogsyndelta.eval.geometry import (
+        DEFAULT_NN_K,
+        GeometryReference,
+        compute_geometry,
+        verify_geometry_reference,
+    )
+
+    n_items = fp32_latents.shape[0]
+    if n_items <= DEFAULT_NN_K:
+        print(
+            f"    quant.geometry: skipped -- {n_items} held-out items is not more "
+            f"than DEFAULT_NN_K={DEFAULT_NN_K}; nn_agreement_at_{DEFAULT_NN_K} needs "
+            "a larger held-out set (fixture-scale eval, not a production one)",
+            flush=True,
+        )
+        return {}, None
+    fp32_reference = GeometryReference(split_sha256=split_sha256, n_items=n_items)
+    quantized_reference = GeometryReference(
+        split_sha256=split_sha256, n_items=quantized_latents.shape[0]
+    )
+    verify_geometry_reference(fp32_reference, quantized_reference)
+    geometry = compute_geometry(fp32_latents, quantized_latents)
+    metrics = {f"quant.geometry.{key}": value for key, value in geometry.items()}
+    reference = {
+        "checkpoint_sha256": checkpoint_sha256,
+        "source_training_receipt": source_training_receipt,
+        "split_sha256": split_sha256,
+        "n_items": n_items,
+    }
+    return metrics, reference
 
 
 def benchmark_visual_region(
@@ -594,6 +676,33 @@ def _lexical_baseline_block(holdout: list, split_meta: dict) -> dict:
     return build_lexical_baseline(holdout, str(split.get("sha256") or ""))
 
 
+def _embed_holdout_pooled_both(
+    model: torch.nn.Module, tok, holdout: list, max_len: int, device: torch.device
+) -> torch.Tensor:
+    """Anchor and positive embeddings for a text holdout, concatenated (`pooled_both`,
+    the same population `repr.anisotropy`/`.uniformity` are measured over -- MM §3.9)
+    -- the item population `cogsyndelta.eval.geometry.compute_geometry` compares
+    row-for-row between the fp32 and quantized passes (MM §23).
+
+    A separate tokenize-and-embed pass from `_run_battery`'s own, rather than a
+    shared return value: `_run_battery` is a stable, tested seam other callers rely
+    on unchanged, and this function's only two callers (the fp32 and quantized sides
+    of `benchmark_region_quantized`'s geometry block) need latents alone, not a full
+    `BenchmarkResult`. The extra forward pass this costs is the same trade the
+    evidence this module implements already made (`measure_visual_ptq_sensitivity.py`
+    calls `_visual_latents` a second time rather than plumb it out of the probe
+    battery).
+    """
+    from cogsyndelta.regions.pretrain import _tokenize
+
+    with torch.no_grad():
+        a_ids, a_mask = _tokenize(tok, [a for a, _ in holdout], max_len, device)
+        p_ids, p_mask = _tokenize(tok, [b for _, b in holdout], max_len, device)
+        anchors = model(a_ids, a_mask).float().cpu()
+        positives = model(p_ids, p_mask).float().cpu()
+    return torch.cat([anchors, positives], dim=0)
+
+
 def _run_battery(
     model: torch.nn.Module, tok, holdout: list, cfg, device: torch.device, stored_bytes: int
 ) -> BenchmarkResult:
@@ -893,7 +1002,7 @@ def benchmark_visual_region_quantized(
     """
     from cogsyndelta.model.vl_jepa import IJEPA
     from cogsyndelta.quant.ptq import load_packed_artifact, unpack_state_dict
-    from cogsyndelta.regions._checkpoint import sha256_file
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
 
     started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     t0 = time.time()
@@ -929,6 +1038,33 @@ def benchmark_visual_region_quantized(
     }
     if xfer is not None:
         metrics["transfer.top1"] = float(xfer["top1"])
+
+    # Representation geometry (MM §23): the fp32 EMA target encoder is loaded FRESH,
+    # in this same process, so its eval latents are provably over the SAME decoded
+    # `splits.px_ev` the quantized artifact was just scored on -- `checkpoint_sha256`
+    # is unconditionally bound here (`require_bound_visual_train_receipt` above never
+    # returns without one), so unlike the text branch this has no "unbound, skip
+    # geometry" case.
+    fp32_model = IJEPA(cfg.jepa).to(device)
+    fp32_ckpt = load_checkpoint(
+        train_receipt["checkpoint"], expected_sha256=checkpoint_sha256, map_location=device
+    )
+    fp32_model.load_state_dict(fp32_ckpt["model"])
+    fp32_deployed = wrap_deployed_visual_encoder(fp32_model).to(device).eval()
+    fp32_latents = _visual_latents(fp32_deployed, splits.px_ev, device)
+    quantized_latents = _visual_latents(deployed, splits.px_ev, device)
+    geometry_metrics, geometry_reference = _quant_geometry_metrics(
+        fp32_latents=fp32_latents,
+        quantized_latents=quantized_latents,
+        split_sha256=_visual_eval_split_identity(splits),
+        checkpoint_sha256=checkpoint_sha256,
+        source_training_receipt={
+            "path": str(resolved_path),
+            "sha256": sha256_file(resolved_path),
+        },
+    )
+    metrics.update(geometry_metrics)
+
     return Receipt(
         producer=Producer("cogsyndelta", canonical_region(region), "i-jepa"),
         stage="eval",
@@ -949,11 +1085,14 @@ def benchmark_visual_region_quantized(
                 "sha256": sha256_file(resolved_path),
             },
         },
-        provenance={
-            "eval_target": "quantized",
-            "parameters": n_params,
-            "quantized_module": "target_encoder",
-        },
+        provenance=(
+            {
+                "eval_target": "quantized",
+                "parameters": n_params,
+                "quantized_module": "target_encoder",
+            }
+            | ({"quant.geometry.reference": geometry_reference} if geometry_reference else {})
+        ),
         detail={"held_out": held, "transfer": xfer},
         started_utc=started_utc,
         seconds=time.time() - t0,
@@ -1000,7 +1139,7 @@ def benchmark_region_quantized(
         packed_width_histogram,
         unpack_state_dict,
     )
-    from cogsyndelta.regions._checkpoint import sha256_file
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
     from cogsyndelta.regions.text_encoder import TextEncoder
 
     started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -1090,6 +1229,37 @@ def benchmark_region_quantized(
     # find the number that pairs with it.
     metrics["quant.artifact_recall@1"] = metrics["rank.recall@1"]
 
+    # Representation geometry (MM §23): only attempted when the fp32 checkpoint this
+    # pass is bound to has a KNOWN sha256 -- an unbound (`--allow-unbound-train-
+    # receipt`) run has no fp32 reference this comparison could name, so it is
+    # skipped rather than loading an unverified checkpoint to compare against; the
+    # card renders "not measured" for that case (MM §23(i)), never a fabricated
+    # number. `_embed_holdout_pooled_both` is called a SECOND time for the quantized
+    # `model` here (already scored once inside `_run_battery` above) -- an accepted
+    # extra forward pass, same trade `_embed_holdout_pooled_both`'s own docstring
+    # explains.
+    geometry_reference: dict[str, Any] | None = None
+    if checkpoint_sha256 and train_receipt.get("checkpoint"):
+        fp32_model = TextEncoder(enc, name=region).to(device)
+        fp32_ckpt = load_checkpoint(
+            train_receipt["checkpoint"], expected_sha256=checkpoint_sha256, map_location=device
+        )
+        fp32_model.load_state_dict(fp32_ckpt["model"])
+        fp32_model = fp32_model.eval()
+        fp32_latents = _embed_holdout_pooled_both(fp32_model, tok, holdout, cfg.max_len, device)
+        quantized_latents = _embed_holdout_pooled_both(model, tok, holdout, cfg.max_len, device)
+        geometry_metrics, geometry_reference = _quant_geometry_metrics(
+            fp32_latents=fp32_latents,
+            quantized_latents=quantized_latents,
+            split_sha256=str((split_meta.get("split") or {}).get("sha256") or ""),
+            checkpoint_sha256=checkpoint_sha256,
+            source_training_receipt={
+                "path": str(train_receipt_path_final),
+                "sha256": sha256_file(train_receipt_path_final),
+            },
+        )
+        metrics.update(geometry_metrics)
+
     artifacts = {
         "checkpoint": train_receipt.get("checkpoint", ""),
         "checkpoint_sha256": checkpoint_sha256,
@@ -1106,6 +1276,43 @@ def benchmark_region_quantized(
             "sha256": sha256_file(quant_receipt_final),
         }
 
+    provenance: dict[str, Any] = {
+        "holdout_pairs": len(holdout),
+        "quantized_size": True,
+        "eval_target": "quantized",
+        "width_histogram": packed_width_histogram(packed),
+        # `packed_stored_bytes` counts packed codes/scale/zero for quantized
+        # tensors and 4 bytes/element for the fp32-kept ones it stores verbatim --
+        # weights only, same as the fp32 pass's `fp32_reference_bytes` (see
+        # `benchmark_region`'s `stored` comment). The two receipts' `eff.stored_mb`
+        # are comparable by this shared definition, not by coincidence.
+        "stored_bytes_definition": "weights-only",
+        # `eval_quantized_holdout`, never `eval_holdout` -- same code path as the
+        # fp32 pass, but a DIFFERENT battery: this one scores the packed artifact
+        # read off disk, not the in-memory fp32 checkpoint (g7 §3.3's closed
+        # `battery_id` set names both separately for exactly this reason).
+        "split": split_meta.get("split"),
+        "batch_order": split_meta.get("batch_order"),
+        "metric_groups": {
+            **_metric_groups("eval_quantized_holdout", cfg.split_seed),
+            # `quant.artifact_recall@1` above is `rank.recall@1` verbatim (MM
+            # §12.8's plan-vs-artifact sameness special-case, g7 §3.3) -- not an
+            # independent measurement, so it shares the `rank` group's
+            # battery_id/pooling/seed rather than inventing its own. Without this
+            # entry, a caller building a `MetricIdentity` (MM §14) for
+            # `quant.artifact_recall@1` off THIS receipt has no
+            # battery_id/pooling/seed to read, even though the field is on
+            # `metrics`.
+            "quant": {
+                "battery_id": "eval_quantized_holdout",
+                "pooling": "matched",
+                "seed": cfg.split_seed,
+            },
+        },
+    }
+    if geometry_reference is not None:
+        provenance["quant.geometry.reference"] = geometry_reference
+
     return Receipt(
         producer=Producer("cogsyndelta", region, "dense-transformer"),
         stage="eval",
@@ -1120,40 +1327,7 @@ def benchmark_region_quantized(
             "uses_its_dimensions": rep["effective_rank_entropy_ratio"] > 0.05,
         },
         artifacts=artifacts,
-        provenance={
-            "holdout_pairs": len(holdout),
-            "quantized_size": True,
-            "eval_target": "quantized",
-            "width_histogram": packed_width_histogram(packed),
-            # `packed_stored_bytes` counts packed codes/scale/zero for quantized
-            # tensors and 4 bytes/element for the fp32-kept ones it stores verbatim --
-            # weights only, same as the fp32 pass's `fp32_reference_bytes` (see
-            # `benchmark_region`'s `stored` comment). The two receipts' `eff.stored_mb`
-            # are comparable by this shared definition, not by coincidence.
-            "stored_bytes_definition": "weights-only",
-            # `eval_quantized_holdout`, never `eval_holdout` -- same code path as the
-            # fp32 pass, but a DIFFERENT battery: this one scores the packed artifact
-            # read off disk, not the in-memory fp32 checkpoint (g7 §3.3's closed
-            # `battery_id` set names both separately for exactly this reason).
-            "split": split_meta.get("split"),
-            "batch_order": split_meta.get("batch_order"),
-            "metric_groups": {
-                **_metric_groups("eval_quantized_holdout", cfg.split_seed),
-                # `quant.artifact_recall@1` above is `rank.recall@1` verbatim (MM
-                # §12.8's plan-vs-artifact sameness special-case, g7 §3.3) -- not an
-                # independent measurement, so it shares the `rank` group's
-                # battery_id/pooling/seed rather than inventing its own. Without this
-                # entry, a caller building a `MetricIdentity` (MM §14) for
-                # `quant.artifact_recall@1` off THIS receipt has no
-                # battery_id/pooling/seed to read, even though the field is on
-                # `metrics`.
-                "quant": {
-                    "battery_id": "eval_quantized_holdout",
-                    "pooling": "matched",
-                    "seed": cfg.split_seed,
-                },
-            },
-        },
+        provenance=provenance,
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
         started_utc=started_utc,
         seconds=time.time() - t0,
