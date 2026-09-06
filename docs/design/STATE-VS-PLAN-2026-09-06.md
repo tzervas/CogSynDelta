@@ -6,7 +6,7 @@ Synthesised from six read-only surveys (regions, composed, features, experiments
 
 **Done.** The per-region pipeline is real and proven: five regions have trained matrix cells with receipts, the guard and metric machinery (split manifests, G26 fail-closed guards, lexical and untrained baselines, corpus fingerprints, card rendering) has tests that demonstrate the guards fire, and the gating experiments W1, W1d, W2c, W4-control-arm, g22 and g48-E1 carry verdicts (`docs/design/evidence/`, Table 1).
 
-**Missing.** Nothing of the composed model exists as code. There is no faculty protocol, no thalamic controller or workspace, no episodic store, no compose trainer, no composed evals, and no test file for any of them (`find tests -iname "*interconnect*|*workspace*|*episodic*|*compose*"` → none). The `memory` region, a v1 participant, has no matrix cell and its corpus is marked not on disk (`config/mind/csd-regions.json:104`). `affect` and a learned router are design-only.
+**Missing.** Nothing of the composed model exists as code. There is no faculty protocol, no thalamic controller or workspace, no episodic store, no compose trainer, no composed evals, and no test file for any of them (`find tests -iname "*interconnect*|*workspace*|*episodic*|*compose*"` → none). The `memory` region, a v1 participant, has no matrix cell and its corpus is marked not on disk (`config/mind/csd-regions.json:112`). `affect` and a learned router are design-only.
 
 **Single biggest blocker to composed training.** The plan's own prerequisite chain has not reached the region-set freeze (W2b): `memory` has no matrix checkpoint and its token-aware retrain W4 is "BLOCKED ON OD-17", an operator decision on the gate's `>` versus `≥` and pivot-versus-amend (`REGION-TAXONOMY-AND-INTERCONNECT.md:589`). Even with a frozen set there is no interconnect code to train, so the two blockers are serial: decide OD-17 and train `memory`, and in parallel build the interconnect.
 
@@ -52,17 +52,17 @@ Each region's code, tests, trained cells and corpus were checked independently b
 
 Each entry states what the plan says the module is, then what exists. Sizes the plan commits to are in Table 3.
 
-**Faculty protocol and W0 split.** The plan requires every region to expose `tokens()` (pre-pool position latents) and `pool()` (post-pool vector), with "tokens" always meaning latents (taxonomy `:1087-1217`, DEC-14/15/47). No `Protocol` exists under `src/cogsyndelta`; `TextEncoder`/`ViTEncoder` have a pooling point at `regions/text_encoder.py:117-124` but row W0 (split plus parameter-table re-instantiation) is `todo`.
+**Faculty protocol and W0 split.** The plan requires every region to expose `tokens()` (pre-pool position latents) and `pool()` (post-pool vector), with "tokens" always meaning latents (taxonomy `:1087-1217`, DEC-14/15/47). No `Protocol` exists under `src/cogsyndelta`; `TextEncoder`/`ViTEncoder` have a pooling point at `regions/text_encoder.py:130-150` but row W0 (split plus parameter-table re-instantiation) is `todo`.
 
 **Thalamic controller, workspace, adapters, K/V bank, frontal read-out.** The plan's interconnect is a controller emitting context and read budgets, an admission matrix and a halt signal; top-k region tokens pass through per-region adapters into a K/V bank; workspace latents iterate cross-attention, self-attention and MLP; attention weights are the connection strengths; a frontal read-out chooses output modality (taxonomy `:1217-1391`, `:2113-2163`). No module named interconnect, workspace, thalam* or schedule exists; the legacy `core/interconnect_manager.py` and `integrated_system.py` are non-differentiable (`.item()` in `compute_importance`/`allocate_bandwidth`) and superseded per DEC-12 (`:1026`).
 
 **Episodic store.** A non-parametric store with two projections `W_k`, `W_v` inside white matter and a floored read budget, reinstated as a v1 participant by DEC-49 (taxonomy §8, `:4853`). `src/cogsyndelta/memory/*` holds active-memory and persistence code but nothing named episodic_store and no `W_k`/`W_v`; six contract gaps await operator deliberation.
 
-**Compose trainer and composed evals.** The plan trains the interconnect with regions frozen, then runs whole-mind training (DEC-50 three-step protocol, taxonomy §2.6-2.7). `scripts/csd-train-all.py` trains per region only and merely reserves corpus for a future `compose` consumer (`:159`, `:170`, `:240-242`, `:825`); `pipeline/receipt.py` lists a `"compose"` stage that nothing writes (taxonomy `:4795`). `cards/templates/composed.md.j2` exists and says whole-mind training has not run.
+**Compose trainer and composed evals.** The plan trains the interconnect with regions frozen, then runs whole-mind training (DEC-50 three-step protocol, taxonomy §2.6-2.7). `scripts/csd-train-all.py` trains per region only and merely reserves corpus for a future `compose` consumer (`:159`, `:170`, `:240-242`, `:825`); `pipeline/receipt.py` lists a `"compose"` stage that nothing writes (`src/cogsyndelta/pipeline/receipt.py:78`). `cards/templates/composed.md.j2` exists and says whole-mind training has not run.
 
-**Memory region checkpoint.** Not a module but a missing artifact: `regions/memory.py` is implemented and tested, yet no `memory-*` cell exists in the matrix and the config marks the corpus absent (`csd-regions.json:104`); the matrix planning table lists memory cell ids with every metric `n/a` (`matrix/tables/csd-m1-20260904/matrix.md`).
+**Memory region checkpoint.** Not a module but a missing artifact: `regions/memory.py` is implemented and tested, yet no `memory-*` cell exists in the matrix and the config marks the corpus absent (`csd-regions.json:112`); the matrix planning table lists memory cell ids with every metric `n/a` (`matrix/tables/csd-m1-20260904/matrix.md`).
 
-**Affect faculty and learned router.** Affect is a required separate faculty with tagged `z_affect`, memory-velocity learning and a leak guard (Grok S11; gates G0-G5 explicitly unrun, `g6-ternary-memory-gate-2026-09-04/README.md:22`). The router is a per-region string field described as "learned, not hand-written" with no learning code (`region_spec.py:90-93`).
+**Affect faculty and learned router.** Affect is a required separate faculty with tagged `z_affect`, memory-velocity learning and a leak guard (Grok S11; gates G0-G5 explicitly unrun, `g6-ternary-memory-gate-2026-09-04/README.md:22` — untracked evidence directory on the main checkout, not in git). The router is a per-region string field described as "learned, not hand-written" with no learning code (`region_spec.py:90-93`).
 
 **stream_vae production module.** Declared in config with a compress-analog role; only PoC-tier VAE code exists and nothing binds to the region name.
 
@@ -72,7 +72,7 @@ Each entry states what the plan says the module is, then what exists. Sizes the 
 
 | item | planned value | source |
 |---|---|---|
-| white matter parameters | 27,424,039 (`[I]`, not re-instantiated) | taxonomy `:1263` |
+| white matter parameters | 27,424,039 (`[I]`, not re-instantiated) | taxonomy `:1307` |
 | white matter share of composed mind | 31.8% of ~86.3M | taxonomy `:1310` |
 | workspace latents | `z ∈ [B,64,512]`, `n_iter` 4 | taxonomy §2.3 |
 | episodic projections | `W_k`, `W_v` 512×512 = 524,288 params | taxonomy §8 |
@@ -102,7 +102,7 @@ Each entry states what the plan says the module is, then what exists. Sizes the 
 | token-aware retrains W1b/W7a (reason, language) | taxonomy `:1178-1179` "mandatory" | none | none | none | missing |
 | token-aware retrain W7v (visual 128px) | taxonomy `:1179`, `:2379-2380` | config half only (DEC-83) | none | none | missing; blocked on OD-4 |
 | W1/W1d rank measurement | DEC-35 `:556` | `measure_w1.py`, `measure_w1d.py` | — | `results.json` | proven |
-| untrained-baseline gate | `METRICS-METHODOLOGY.md:2018` | `eval/metrics.py` | `test_benchmark_metrics_v2_*` | `w2c-untrained-baselines` | proven |
+| untrained-baseline gate | `METRICS-METHODOLOGY.md:2019` | `eval/metrics.py` | `test_benchmark_metrics_v2_*` | `w2c-untrained-baselines` | proven |
 | overlap-check gate P2.5a | `TRAINING-SUPERSET.md:449,462` | none | none | none | missing ("unstarted") |
 | reason/classify wired into runner P2.2 | `TRAINING-SUPERSET.md:1349` | doc says todo; reason cells exist | none | `g48-reason-e1` | contradictory (§8) |
 | manifest `status` field enforcement | `MODEL-MANIFESTS.md:151,557` | schema in markdown only | none | `:165` example | not found |
@@ -155,7 +155,7 @@ The corpus lives under `/mnt/bulk/csd-corpus/` (staging) and `/mnt/fleet-dataset
 
 | region | trained corpus | rows | licence | contract target | gap |
 |---|---|---|---|---|---|
-| language/code | codesearchnet-python | 455,243; 1 source; N_eff 1.00 | unresolved (mirrors disagree) | 6 languages, 165,600 rows, N_eff 6.00 | monolingual; 93.9% truncated at max_len 96 (`CORPUS-CONTRACT.md:113`) |
+| language/code | codesearchnet-python | 455,243; 1 source; N_eff 1.00 | unresolved (mirrors disagree) | 6 languages, 165,600 rows, N_eff 6.00 | monolingual; 93.9% truncated at max_len 96 (`CORPUS-CONTRACT.md:118`) |
 | compress | all-nli | 277,269 train; N_eff 1.95 | BLOCKING (SNLI CC BY-SA); MIT repair via SynCSE | entailment ≥50%, graded ≥5% | no long-form entailment source; graded gate never ran |
 | retrieve | fiqa + NQ + gooaq | 505,216 train; N_eff 1.50 | NC tier (GooAQ contested) | 5 sources, 150k cap each, N_eff 4.47 | 79% GooAQ; holdout 53.71% near-dup of train |
 | memory | union spec | none trained | inherits above | STS-B + BEIR FiQA heads | not on disk |
