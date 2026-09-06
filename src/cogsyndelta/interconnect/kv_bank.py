@@ -271,7 +271,7 @@ class KVBank(nn.Module):
             slot_region[:, sl] = r_idx
 
             if name == STORE_PARTICIPANT:
-                z, mask = store_latents  # type: ignore[misc]  -- validated non-None above
+                z, mask = store_latents  # type: ignore[misc]  # validated non-None above
                 assert_float_tract(z, f"KVBank store latents ({name})")
                 if z.shape[1] != b_r:
                     raise ValueError(
