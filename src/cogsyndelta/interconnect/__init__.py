@@ -46,6 +46,7 @@ from cogsyndelta.interconnect.kv_bank import STORE_PARTICIPANT, KVBank, StorePro
 from cogsyndelta.interconnect.losses import DistilLoss, FlopsPenalty, RankLoss, UnifyLoss
 from cogsyndelta.interconnect.mind import (
     InterconnectConfig,
+    InterconnectConfigError,
     ParticipantSpec,
     WhiteMatter,
     WhiteMatterOutput,
@@ -87,6 +88,7 @@ __all__ = [
     "GateFailure",
     "InMemoryStoreStub",
     "InterconnectConfig",
+    "InterconnectConfigError",
     "KVBank",
     "LatentBank",
     "NullCandidate",

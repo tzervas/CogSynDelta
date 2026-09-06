@@ -25,7 +25,7 @@ call sites. It does not define G27-G29/G33-G36 (`gates.py`, lane IC-10, called b
 compose-stage script over a receipt this module's output feeds, not called from inside
 a forward pass).
 
-THREE CROSS-LANE TENSIONS THIS FILE RESOLVES (recorded here and repeated in the lane
+FOUR CROSS-LANE TENSIONS THIS FILE RESOLVES (recorded here and repeated in the lane
 report, per the task's instruction to record where the spec is silent or lanes
 disagree)
 
@@ -85,6 +85,20 @@ disagree)
    `WorkspaceBlock` itself (the untied per-iteration block IC-3 also exports) is used
    here exactly as built, with no modification.
 
+4. **G30'S DENSE-FALLBACK EFFECT ON A REFUSED CALLER SCHEDULE IS DEFERRED (IC-R1
+   SKEPTIC F5).** Table 8's G30 row gives two effects for a `Schedule` that fails a B1
+   bound: "the `Schedule` is refused before execution AND the dense fallback runs."
+   `forward` (below) implements only the first half on the caller-supplied-`Schedule`
+   arm -- `self.schedule_validator.validate(schedule)` lets `ScheduleViolationError`
+   propagate out of the call, with no substitute-with-dense-and-retry branch after it.
+   The `schedule=None` arm already IS the dense fallback (`_dense_schedule`) for the
+   one case spec section 3 step 2 names as load-bearing (phase A, tension 1 above);
+   this module never constructs a bad frozen `Schedule` itself, so the missing branch
+   is unreached by every phase this lane's tests exercise (Table 6: phase A only).
+   Implementing the substitute-and-retry path is deferred to whichever phase first
+   drives `WhiteMatter` with a real (non-dense, non-`None`) caller-supplied `Schedule`
+   that can actually fail G30 in production -- spec-vs-code, not spec-vs-taxonomy.
+
 WHAT `inputs` LOOKS LIKE
 A single `Mapping[str, Any]` for the whole request: one entry per faculty participant
 name, holding whatever that `Faculty.tokens()` implementation expects as its native
@@ -143,7 +157,24 @@ from cogsyndelta.interconnect.schedule import (
 )
 from cogsyndelta.interconnect.workspace import Workspace
 
-__all__ = ["InterconnectConfig", "ParticipantSpec", "WhiteMatter", "WhiteMatterOutput"]
+__all__ = [
+    "InterconnectConfig",
+    "InterconnectConfigError",
+    "ParticipantSpec",
+    "WhiteMatter",
+    "WhiteMatterOutput",
+]
+
+
+class InterconnectConfigError(ValueError):
+    """A `WhiteMatter` was built with a bad `InterconnectConfig`.
+
+    Mirrors `schedule.ScheduleValidatorConfigError` and `controller.ControllerConfigError`
+    (IC-1, IC-5): this fires on construction-time arguments, before any forward pass.
+    Currently the single case spec section 2.1 names: a caller-supplied `flops_ceiling`
+    below the dense schedule's own `region_token_flops` (IC-R1 skeptic F3 -- see
+    `WhiteMatter.__init__`).
+    """
 
 
 @dataclass(frozen=True)
@@ -390,16 +421,31 @@ class WhiteMatter(nn.Module):
             )
             for name in participant_names
         }
+        # Spec section 2.1: "the dense schedule's own region_token_flops, Sum_i Sum_r
+        # phi_r * ctx_max_r over n_iter iterations, the worst case B1 can reach" --
+        # computed unconditionally (not only for the None-default arm below) because
+        # "construction refuses a smaller value" is checked against it too.
+        dense_region_token_flops = config.n_iter * sum(
+            config.participants[name].phi * (config.participants[name].ctx_max or 0)
+            for name in participant_names
+        )
+        dense_region_token_flops = max(dense_region_token_flops, 1e-6)
         flops_ceiling = config.flops_ceiling
         if flops_ceiling is None:
-            # Spec section 2.1: "the dense schedule's own region_token_flops, Sum_i
-            # Sum_r phi_r * ctx_max_r over n_iter iterations, the worst case B1 can
-            # reach."
-            flops_ceiling = config.n_iter * sum(
-                config.participants[name].phi * (config.participants[name].ctx_max or 0)
-                for name in participant_names
+            flops_ceiling = dense_region_token_flops
+        elif flops_ceiling < dense_region_token_flops:
+            # IC-R1 skeptic F3: spec section 2.1's last sentence -- "construction
+            # refuses a smaller value, so G30's dense fallback can never be refused by
+            # its own validator." A ceiling under the dense schedule's own FLOPs means
+            # the dense fallback this file builds when schedule=None (tension 1 above)
+            # would immediately trip G30 against itself; refused here instead of
+            # letting that surface as a ScheduleViolationError from inside forward().
+            raise InterconnectConfigError(
+                f"InterconnectConfig.flops_ceiling={flops_ceiling} is below the dense "
+                f"schedule's own region_token_flops={dense_region_token_flops}; the "
+                "dense fallback this module builds when schedule=None could never "
+                "validate against its own ceiling"
             )
-            flops_ceiling = max(flops_ceiling, 1e-6)
         self._flops_ceiling = float(flops_ceiling)
         self.schedule_validator = ScheduleValidator(
             validator_participants,
