@@ -1,0 +1,131 @@
+{
+  "row": "E1",
+  "gate": "ii -- dynamic capacity probe",
+  "generated_at": "2026-09-06T16:10:40Z",
+  "host": "akula-prime",
+  "platform": "Linux-6.12.107+deb13-amd64-x86_64-with-glibc2.41",
+  "formula": "max(0, VRAM_total - KV_reserved(context_len, regions_active) - activation_reserve - safety_margin)",
+  "inputs": {
+    "context_len": 8192,
+    "long_context_len": 2000000,
+    "safety_margin_bytes": 2147483648,
+    "activation_reserve_bytes": 1073741824,
+    "floor_bytes": 2147483648,
+    "kv_bytes_per_token_per_region": 2048,
+    "regions_deployment": [
+      "language",
+      "reason",
+      "retrieve",
+      "visual"
+    ],
+    "regions_changed": [
+      "language",
+      "reason",
+      "retrieve",
+      "visual",
+      "episodic_store"
+    ]
+  },
+  "arms": {
+    "deployment": {
+      "host": "akula-prime",
+      "device_name": "NVIDIA GeForce RTX 3090 Ti",
+      "capacity_bytes": 20858273792,
+      "capacity_mib": 19892.0,
+      "branch": "residual",
+      "vram_total_bytes": 24146608128,
+      "vram_total_mib": 23028.0,
+      "kv_reserved_bytes": 67108864,
+      "activation_reserve_bytes": 1073741824,
+      "safety_margin_bytes": 2147483648,
+      "residual_bytes": 20858273792,
+      "floor_bytes": 2147483648,
+      "kv_headroom_bytes": 67108864,
+      "context_len": 8192,
+      "regions_active": [
+        "language",
+        "reason",
+        "retrieve",
+        "visual"
+      ],
+      "arm": "deployment"
+    },
+    "region_set_changed": {
+      "host": "akula-prime",
+      "device_name": "NVIDIA GeForce RTX 3090 Ti",
+      "capacity_bytes": 20841496576,
+      "capacity_mib": 19876.0,
+      "branch": "residual",
+      "vram_total_bytes": 24146608128,
+      "vram_total_mib": 23028.0,
+      "kv_reserved_bytes": 83886080,
+      "activation_reserve_bytes": 1073741824,
+      "safety_margin_bytes": 2147483648,
+      "residual_bytes": 20841496576,
+      "floor_bytes": 2147483648,
+      "kv_headroom_bytes": 83886080,
+      "context_len": 8192,
+      "regions_active": [
+        "language",
+        "reason",
+        "retrieve",
+        "visual",
+        "episodic_store"
+      ],
+      "arm": "region_set_changed"
+    },
+    "long_context": {
+      "host": "akula-prime",
+      "device_name": "NVIDIA GeForce RTX 3090 Ti",
+      "capacity_bytes": 4541382656,
+      "capacity_mib": 4331.0,
+      "branch": "residual",
+      "vram_total_bytes": 24146608128,
+      "vram_total_mib": 23028.0,
+      "kv_reserved_bytes": 16384000000,
+      "activation_reserve_bytes": 1073741824,
+      "safety_margin_bytes": 2147483648,
+      "residual_bytes": 4541382656,
+      "floor_bytes": 2147483648,
+      "kv_headroom_bytes": 16384000000,
+      "context_len": 2000000,
+      "regions_active": [
+        "language",
+        "reason",
+        "retrieve",
+        "visual"
+      ],
+      "arm": "long_context"
+    },
+    "respected": {
+      "capacity_bytes": 20858273792,
+      "span_bytes_each": 5214568448,
+      "spans_written": 6,
+      "declared_total_bytes": 31287410688,
+      "peak_resident_bytes": 20858273792,
+      "survivors": [
+        "span-2",
+        "span-3",
+        "span-4",
+        "span-5"
+      ],
+      "evicted": 2,
+      "allocated_bytes_for_spans": 32,
+      "ok": true
+    }
+  },
+  "errors": [],
+  "device_name": "NVIDIA GeForce RTX 3090 Ti",
+  "vram_total_bytes": 24146608128,
+  "capacity_bytes": 20858273792,
+  "branch": "residual",
+  "long_context_branch": "residual",
+  "checks": {
+    "capacity_positive": true,
+    "region_set_changes_capacity": true,
+    "branch_named": true,
+    "floor_arm_positive": true,
+    "capacity_respected": true
+  },
+  "ok": true
+}
