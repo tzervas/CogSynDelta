@@ -414,10 +414,15 @@ regions:
     # Only `train` genuinely differs: memory trains through its own module entry point
     # (`cogsyndelta.regions.memory`), not `scripts/csd-train-all.py`.
     commands:
+      # `--warmup-steps 266` pins the CLI's default (200, memory.py L548) to the value the
+      # W4 production receipt actually used at steps=4000
+      # (docs/design/evidence/w4-production-runs-2026-09-03/memory-20260903T184441Z.json,
+      # `config.warmup_steps`) -- left at the default, the harness under-trains relative to
+      # that receipt and the cell fails gates b/c/e that were only ever measured at 266.
       train: >-
         {python} -m cogsyndelta.regions.memory --steps {steps} --batch-size {batch} --lr {lr}
         --max-len {max_len} --seed {seed} --token-loss-weight {token_w} --decorr-weight {decorr_w}
-        --token-loss-chunk {chunk} --eval-split dev --out-dir {state}/receipts
+        --token-loss-chunk {chunk} --warmup-steps 266 --eval-split dev --out-dir {state}/receipts
       test: "{python} scripts/csd-benchmark.py --regions {region} --state {state} --train-receipt {train_receipt}"
       quantize: >-
         {python} scripts/csd-quantize.py --regions {region} --state {state} --train-receipt {train_receipt}
