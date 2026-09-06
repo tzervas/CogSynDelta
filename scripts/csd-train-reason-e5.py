@@ -27,13 +27,14 @@ not merely "a different order file than the one you meant".
 
 WHY THIS SCRIPT NEVER APPLIES THE GO/KILL RULE ITSELF
 The diagnosis's go/kill is defined ACROSS a pair of runs at the same seed (arm vs. its
-sequence-blind control) and, for "go", across all three seeds at once. One invocation
-of this script produces exactly one arm of one seed. `reason_latent_step.go_kill_note`
-is available and IS called here, but only with whatever half of the pair this process
-already has on disk (`--peer-receipt` naming the OTHER arm's receipt, when it already
-exists) -- it reports `"pending"` otherwise, which is the honest state of a lone run.
-Comparing all six receipts once phase 2 has produced them is future work, deliberately
-out of scope for this pass.
+sequence-blind control) and, for "go", across all three seeds at once. One invocation of
+this script produces exactly one arm of one seed, with no paired receipt to read yet --
+this script does not accept a peer-receipt argument. `reason_latent_step.go_kill_note`
+is available and IS called here (`receipt["go_kill_reference"]["this_run"]`), but always
+with `blind_recall=None`, so it always reports `"pending"` -- the honest state of a lone
+run. Comparing all six receipts once phase 2 has produced them (re-reading each receipt's
+`predictor_battery.recall@1` and calling `go_kill_note` with the paired arm's score) is
+future work, deliberately out of scope for this pass.
 
 PHASE 2 (not run by this task; GPU 0 must be idle first -- see AGENTS.md / this repo's
 GPU policy)
@@ -120,7 +121,9 @@ EXPECTED_HOLDOUT = 512
 
 ARMS = ("latent-step", "sequence-blind")
 GRAD_CLIP = 1.0
-CHECKPOINT_KEEP_NOTE = "final.pt only -- see module docstring; no periodic resume path"
+# Only `final.pt` is ever written -- no periodic checkpoints, no resume path (unlike
+# `pretrain_region`'s `checkpoint_every`): a toy pre-registration run at ~11 GPU-minutes
+# does not need mid-run resumability, and adding it would be unused machinery.
 
 
 def _corpus_root() -> Path:
