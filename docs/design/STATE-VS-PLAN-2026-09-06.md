@@ -6,9 +6,19 @@ Synthesised from six read-only surveys (regions, composed, features, experiments
 
 **Done.** The per-region pipeline is real and proven: five regions have trained matrix cells with receipts, the guard and metric machinery (split manifests, G26 fail-closed guards, lexical and untrained baselines, corpus fingerprints, card rendering) has tests that demonstrate the guards fire, and the gating experiments W1, W1d, W2c, W4-control-arm, g22 and g48-E1 carry verdicts (`docs/design/evidence/`, Table 1).
 
-**Missing.** Nothing of the composed model exists as code. There is no faculty protocol, no thalamic controller or workspace, no episodic store, no compose trainer, no composed evals, and no test file for any of them (`find tests -iname "*interconnect*|*workspace*|*episodic*|*compose*"` → none). The `memory` region, a v1 participant, has no matrix cell and its corpus is marked not on disk (`config/mind/csd-regions.json:112`). `affect` and a learned router are design-only.
+**Missing (updated 2026-09-06, post wave-1 merge).** The composed model itself still does not exist
+as code: no thalamic controller or workspace, no episodic store, no compose trainer, no composed
+evals, and no test file for any of them on `main`. **This no longer includes the faculty
+protocol**: row W0 merged (PR #72) — `src/cogsyndelta/faculty/protocol.py` defines `tokens()`/
+`pool()`, adapters exist for text and visual encoders, and the per-region parameter table is
+re-instantiated (`docs/technical/faculty-protocol.md`); see §3's revised paragraph. The interconnect
+module itself is under way on unmerged lane branches (IC-1 through IC-11 against
+`docs/design/INTERCONNECT-MODULE-SPEC.md`, merged PR #67) but none has landed on `main` yet. The
+`memory` region, a v1 participant, still has no matrix cell; its corpus is marked not on disk
+(`config/mind/csd-regions.json:112`), though PR #70 pinned its warmup steps to the W4-comparable
+value. `affect` and a learned router are still design-only.
 
-**Single biggest blocker to composed training.** The plan's own prerequisite chain has not reached the region-set freeze (W2b): `memory` has no matrix checkpoint and its token-aware retrain W4 is "BLOCKED ON OD-17", an operator decision on the gate's `>` versus `≥` and pivot-versus-amend (`REGION-TAXONOMY-AND-INTERCONNECT.md:589`). Even with a frozen set there is no interconnect code to train, so the two blockers are serial: decide OD-17 and train `memory`, and in parallel build the interconnect.
+**Single biggest blocker to composed training.** The plan's own prerequisite chain has not reached the region-set freeze (W2b): `memory` has no matrix checkpoint and its token-aware retrain W4 is "BLOCKED ON OD-17", an operator decision on the gate's `>` versus `≥` and pivot-versus-amend (`REGION-TAXONOMY-AND-INTERCONNECT.md:589`). **Updated:** OD-17 now has a pre-registered replacement gate ready to run (`docs/design/evidence/prereg-rank-gate-4000-2026-09-06/PREREG.md`, PR #69), so the blocker is "adopt and run it," not "design it." Even with a frozen set the interconnect module is only partially built (unmerged lane branches, see above), so the two blockers stay serial: decide and run OD-17, train `memory`, and merge the interconnect lanes in parallel.
 
 **Table 1: headline counts.**
 
@@ -22,8 +32,8 @@ Synthesised from six read-only surveys (regions, composed, features, experiments
 | composed-model modules with code | 0 (legacy `core/` stack superseded per DEC-12) | composed survey |
 | tests covering composed components | 0 | composed survey |
 | gating experiments with a verdict | 6 (W1, W1d, W2c, W4-control, g22 ×2, g48-E1) | §5 |
-| interconnect rows still `todo` | W0, W2b, W3, W5, W5b, W6, W8, W9, W10, E0, E1, E2 | taxonomy §4 table |
-| operator decisions holding the chain | OD-17 (W4 gate), OD-4 (W7v corpus), six episodic-store contract gaps | taxonomy `:589`, `:604`, `:4853` |
+| interconnect rows still `todo` | W2b, W3, W5, W5b, W6, W8, W9, W10, E0, E1, E2 (W0 done, PR #72) | taxonomy §4 table |
+| operator decisions holding the chain | OD-17 (W4/rank gate, now pre-registered and awaiting adoption), OD-4 (W7v corpus), 2 of 6 episodic-store contract gaps still open (gap (a) capacity's safety margin, gap (b) partition axis; gaps (c)/(d)/(e)/(f) settled by DEC-65/DEC-66/DEC-49) | taxonomy `:589`, `:604`, `:4853`, DEC-49/65/66 |
 
 ## 2. Regions
 
@@ -52,7 +62,7 @@ Each region's code, tests, trained cells and corpus were checked independently b
 
 Each entry states what the plan says the module is, then what exists. Sizes the plan commits to are in Table 3.
 
-**Faculty protocol and W0 split.** The plan requires every region to expose `tokens()` (pre-pool position latents) and `pool()` (post-pool vector), with "tokens" always meaning latents (taxonomy `:1087-1217`, DEC-14/15/47). No `Protocol` exists under `src/cogsyndelta`; `TextEncoder`/`ViTEncoder` have a pooling point at `regions/text_encoder.py:130-150` but row W0 (split plus parameter-table re-instantiation) is `todo`.
+**Faculty protocol and W0 split — DONE, PR #72.** The plan requires every region to expose `tokens()` (pre-pool position latents) and `pool()` (post-pool vector), with "tokens" always meaning latents (taxonomy `:1087-1217`, DEC-14/15/47). A `Protocol` now exists at `src/cogsyndelta/faculty/protocol.py`, with adapters for text and visual encoders (`faculty/adapters.py`) and the per-region parameter table re-instantiated (`faculty/param_table.py`, `docs/technical/faculty-protocol.md`); tests at `tests/test_faculty_protocol.py` and `tests/test_faculty_param_table.py`. Row W0 is closed.
 
 **Thalamic controller, workspace, adapters, K/V bank, frontal read-out.** The plan's interconnect is a controller emitting context and read budgets, an admission matrix and a halt signal; top-k region tokens pass through per-region adapters into a K/V bank; workspace latents iterate cross-attention, self-attention and MLP; attention weights are the connection strengths; a frontal read-out chooses output modality (taxonomy `:1217-1391`, `:2113-2163`). No module named interconnect, workspace, thalam* or schedule exists; the legacy `core/interconnect_manager.py` and `integrated_system.py` are non-differentiable (`.item()` in `compute_importance`/`allocate_bandwidth`) and superseded per DEC-12 (`:1026`).
 
@@ -129,21 +139,23 @@ Decided experiments carry a pre-registered criterion and a verdict; pending ones
 | g22 visual run 2 | replicate under fixed pipeline | same | seed0 .6252→.7224, seed1 .6337→.7237 | PASS, replicated | visual production-passing (H1) |
 | g48 E1 | is any reason checkpoint step-sensitive? | go ≥0.30, kill ≤0.25 | b256-s0 0.1137, b512-s0 0.1070, untrained 0.1171 (chance 0.20) | KILL | E5 promoted, E3 demoted |
 | reason diagnosis | why is reason weakest? | diagnostic | train acc→1.0 vs held-out r@1 0.12-0.19; TF-IDF ceiling 0.873; seed axis resamples split | n/a | defines E0-E5 |
+| E2 (reason) | is "b256 > b512" an epoch effect, not a batch effect? (H2), and does (512,2000) trail (256,4000) by >0.05 r@10 (H6)? | H2: both clauses within tolerance, every seed; H6: margin >0.05, every seed | H2 clauses fail by 2-4.8x tolerance in every seed; H6 confirmed by 2.2-3.8x margin in every seed; lr covaries with batch in every arm (not held fixed) | H2 NOT_CONFIRMED, H6 CONFIRMED (batch-and-lr joint, not isolated) | E3 temperature arm and a new lr-controlled arm licensed; `PRE:1018` best-checkpoint gate does not fire (0/6) |
+| E5 (reason) | does K=1 latent-step prediction beat a sequence-blind control? | go: acc@1 ≥0.40 and ≥ control+0.10, every seed; kill: acc@1 ≤ control+0.05, any seed | control beats the latent-step predictor in all 3 seeds, margins -0.0124/-0.0440/-0.0234 | KILL | no validated step-sensitive reason objective survives g48-E1 and E5; next step is a pre-registered redesign, not another lookup proxy (`g-e5-reason-latent-step-2026-09-06/GO_KILL.md`) |
 
 **Table 6: pending experiments and rows.**
 
 | id | question | cost | prerequisite | source |
 |---|---|---|---|---|
 | E0 | split independent of seed | 0 GPU-min | none | diagnosis README `:83` |
-| E2 (reason) | epoch-matched batch ablation, 2 batches × 2 step counts × 3 seeds | ~53 GPU-min | E0 | `:87` |
-| E3 | structure-sensitive negatives (demoted) | ~47 GPU-min | E0 | `:89` |
+| E3 | structure-sensitive negatives (demoted; now also licensed as an E2 follow-up, temperature 0.05 vs 0.10) | ~47 GPU-min | E0 | `:89`; `reason-e2-2026-09-06/README.md` |
 | E4 | third provenance group via `mathematics_dataset` | ~16 GPU-min | E0, corpus admission | `:91` |
-| E5 | latent-step prediction, K=1 toy | ~70 GPU-min | E0 | `:93`; reportedly running in a separate worktree, not on main |
-| W0 | tokens()/pool() split | 0 GPU | none | taxonomy table |
-| W1b, W7a, W7v | token-aware retrains | see Table 12 | W0; W7v needs OD-4 | taxonomy `:1178-1179` |
+| E2 lr-controlled follow-up | b512 at a fixed lr=3.0e-4 (same seeds/split as E2), to separate the batch effect from the lr confound E2 found | ~0.3 GPU-h | E2 (done) | `reason-e2-2026-09-06/README.md` deviation 4 |
+| reasoning-objective redesign | a pre-registered objective for the reason region built around the latent-transform-loop reading (DEC-47), after both g48-E1 and E5 killed the lookup-style candidates | unmeasured; design first | E0 | Wave 2's "reason region objective status" note, `COMPLETION-PLAN-2026-09-06.md` |
+| rank-gate replacement (OD-17) | matched read-out probe at 4,000 steps, 3 regions × 2 seeds × 2 arms | ~3.9 GPU-h | pre-registered, adversarial review applied (rg-review3); awaiting adoption and a run | `prereg-rank-gate-4000-2026-09-06/PREREG.md`, PR #69 |
+| W1b, W7a, W7v | token-aware retrains | see Table 12 | W0 (done); rank-gate replacement (OD-17, pre-registered not run); W7v needs OD-4; W1b's reason leg needs the reasoning-objective redesign above | taxonomy `:1178-1179` |
 | W2b | admission gate, freezes region set | 0 GPU | all retrains done | "BLOCKS P2.3" |
-| E0/E1/E2 (episodic) | contract, build+probe, admission retrain | unknown | six contract gaps decided | taxonomy §4.1 |
-| W5, W5b, W6 | interconnect train, write-back gate, composed metric | unmeasured | W2b, W0 | taxonomy §2.6 |
+| E0/E1/E2 (episodic) | contract, build+probe, admission retrain | unknown | two contract gaps remain undecided (scope axis, capacity's safety margin — the other four are settled, DEC-65/DEC-66); IC-6 carries the interface and stub | taxonomy §4.1 |
+| W5, W5b, W6 | interconnect train, write-back gate, composed metric | unmeasured | W2b, W0 (done) | taxonomy §2.6 |
 | W8, W9, W10 | quantize, topology agreement, final | unmeasured | W6 | taxonomy §4 |
 | S16 G0-G5 | affect isolation gates | unknown | affect module | g6 README `:22` |
 
@@ -218,14 +230,14 @@ Ordered by the operator's direction: prove planned features, then missing module
 
 | # | gap | why it blocks | lane shape | prerequisite | GPU-h |
 |---|---|---|---|---|---|
-| 1 | OD-17: decide W4 gate `>` vs `≥`, pivot vs amend | W4 row is BLOCKED; memory retrain and W2b freeze wait on it (taxonomy `:589`) | operator decision, then single agent (mid) to record DEC | none | 0 |
+| 1 | OD-17: adopt the pre-registered read-out gate or pivot | rank-gate replacement row is BLOCKED on it; memory retrain and W2b freeze wait on it (taxonomy `:589`) | **pre-registration done** (`prereg-rank-gate-4000-2026-09-06/PREREG.md`, PR #69); operator adopts, then a workflow runs the 12 training runs + 12 probes | none | 0 (decision); ~3.9 (the run, if adopted) |
 | 2 | E0: make the split independent of seed; guard that fires on a swapped pair | every seed comparison since is contaminated (diagnosis README `:83`; memory `identical-seeds-as-control`) | single agent (mid) with `test_guards_can_fail` pattern | none | 0 |
-| 3 | W0: `tokens()`/`pool()` protocol, re-instantiate parameter table | first `todo` on the interconnect chain; nothing composed can be typed without it | single agent (high) | none | 0 |
-| 4 | replacement for the invalidated 2.0× rank gate | W4 control arm KILLed it at 50 steps; only the 4,000-step arm discriminates; no gate means no retrain can be judged | workflow (high design, mid run): pre-register, run control + treatment at 4,000 steps | #2 | ~1 |
-| 5 | visual: land eval/quant receipts in the matrix dir, then W7v 128px token-aware retrain (OD-4) | visual is train-only in matrix; W7v is mandatory for the freeze (DEC-83 `:604`) | workflow (mid) | OD-4 decision; #3 | ~0.5 |
-| 6 | W1b/W7a token-aware retrains of reason and language, 2 seeds each | mandatory since W1 (taxonomy `:1178-1179`); freeze cannot happen without them | workflow (mid) over existing matrix config | #2, #3, #4 | ~1 |
-| 7 | E2 reason batch ablation | settles whether b256>b512 is an epoch effect before any reason retrain is judged | workflow (mid), 12 cells | #2 | ~0.9 |
-| 8 | E5 latent-step prediction, verify on main | the promoted reasoning objective after the g48 KILL; a worktree run exists but main shows nothing | single agent (high) to review the worktree result, then merge | #2 | ~1.2 |
+| 3 | ~~W0: `tokens()`/`pool()` protocol, re-instantiate parameter table~~ **DONE, merged PR #72** | was the first `todo` on the interconnect chain | `src/cogsyndelta/faculty/protocol.py`, `faculty/adapters.py`, `faculty/param_table.py` | none | 0 |
+| 4 | ~~replacement for the invalidated 2.0× rank gate~~ **pre-registered, not run** | W4 control arm KILLed it at 50 steps; only the 4,000-step arm discriminates; no gate means no retrain can be judged | pre-registration merged (PR #69, rg-review3 applied); the run itself is gap #1's second half | #1 (adoption), #2 | ~3.9 |
+| 5 | visual: land eval/quant receipts in the matrix dir, then W7v 128px token-aware retrain (OD-4) | visual is train-only in matrix; W7v is mandatory for the freeze (DEC-83 `:604`) | workflow (mid); the motivating PTQ-sensitivity evidence (`visual-ptq-sensitivity-2026-09-06`) and `quant.geometry.*` (PR #77, unmerged) now exist for the floor half of this gap | OD-4 decision; #3 (done) | ~0.5 |
+| 6 | W1b/W7a token-aware retrains of reason and language, 2 seeds each | mandatory since W1 (taxonomy `:1178-1179`); freeze cannot happen without them; reason's leg additionally needs the reasoning-objective redesign gap #7 now requires | workflow (mid) over existing matrix config | #2, #3 (done), #4 | ~1 |
+| 7 | ~~E2 reason batch ablation~~ **done**; reasoning-objective redesign for the reason region | E2 (merged, PR #71) settled H2/H6 but found b256>b512 is batch-and-lr joint, not isolated; separately, g48-E1 and E5 (PR #76, KILL) leave reason with **no validated step-sensitive objective** — a pre-registered redesign around the latent-transform-loop reading is the new prerequisite for gap #6's reason leg | workflow (mid) for the licensed E2 follow-ups (E3 temperature arm, lr-controlled arm); design work (high) for the redesign | #2 | ~0.3 (follow-ups); redesign unmeasured |
+| 8 | ~~E5 latent-step prediction, verify on main~~ **done and graded: KILL** | the K=1 latent-step objective does not beat a sequence-blind control in any of 3 seeds (`g-e5-reason-latent-step-2026-09-06/GO_KILL.md`, PR #76, unmerged); a battery defect was found and does not change the verdict (`BATTERY-DEFECT.md`) | closed; folds into gap #7's redesign line, not a separate row going forward | #2 | 0 (concluded) |
 | 9 | memory region: put the union corpus on disk, run the first matrix cell with full receipts | v1 participant with no checkpoint; `available: false`; W4 evidence runs are outside the matrix | workflow (mid) | #1, corpus admission | ~0.5 |
 | 10 | interconnect module: controller, workspace, adapters, K/V bank, read-out, `Schedule` emission, tests | zero code, zero tests; the composed model cannot be trained | workflow (high): design-to-code with adversarial review per AGENTS.md | #3 | ~0.1 smoke |
 | 11 | episodic store: operator decides the six contract gaps, then E0/E1 build and probe | DEC-49 makes it a v1 participant; E2 admission cannot run without it | operator deliberation, then workflow (high) | #10 | ~0.3 probe |
@@ -252,11 +264,11 @@ Where two surveys disagree, both readings are given; none is chosen here.
 | 4 | DEC-83 (`:604`): W7v `corpus_source` is `None`, the run refuses to start | corpus survey: visual trained on visual-clean-v1 (581,280 rows) | W7v (128px token-aware rebuild) may be distinct from the g22 pooled-probe runs; unresolved |
 | 5 | `TRAINING-SUPERSET.md:1349`: reason and classify "not yet wired into the runner" (P2.2 todo) | reason cells at b256 and b512 with full receipts exist | doc stale, or reason ran through a path the doc does not count |
 | 6 | `csd-regions.json` declares stream_dim 512, hidden 1024 | `csd-train-all.py:1007,1478` hardcode dim 256, depth 4, heads 4; every receipt agrees | config does not describe what is trained |
-| 7 | taxonomy §2.2 (~`:1194`): the `MindSpec` stream_dim uniformity check "is replaced" | `region_spec.py:163-171` still raises on mismatch | code behind doc |
-| 8 | DEC-12 (`:1026`): mark `core/interconnect_manager.py` and `integrated_system.py` superseded in their docstrings | no such marker in either file | code behind doc |
-| 9 | composed card and DEC-31/§5.7: composed licence unresolved, inherits strictest tier (NC via GooAQ) | live `tzervas/cogsyndelta` Hub repo tagged `license:mit` | Hub metadata contradicts the design |
-| 10 | taxonomy §7.2/§7.3: phase order and manifest fields to be folded into `TRAINING-SUPERSET.md`, `MODEL-MANIFESTS.md` | `TRAINING-SUPERSET.md:268-331` still states the old 4-phase curriculum; manifests doc lacks `faculty`, `token_budget`, `overlay` | edits documented as pending, not applied |
-| 11 | `CORPUS-CONTRACT.md` §§1.4-1.6: six-region pre-DEC-02 model; classify/reason have no role; vl_latent unreleasable | config: memory region, roles and waivers for reason/classify, visual renamed and trained on a permissive mix | contract stale |
+| 7 | taxonomy §2.2 (~`:1194`): the `MindSpec` stream_dim uniformity check "is replaced" | `region_spec.py:163-171` still raises on mismatch | **RESOLVED, PR #68** (`318e0f6`): the check now warns rather than raises, per DEC-14/DEC-15; code matches doc |
+| 8 | DEC-12 (`:1026`): mark `core/interconnect_manager.py` and `integrated_system.py` superseded in their docstrings | no such marker in either file | **RESOLVED, PR #68** (`537669e`): both docstrings now state `Status: SUPERSEDED (DEC-12, ...)` |
+| 9 | composed card and DEC-31/§5.7: composed licence unresolved, inherits strictest tier (NC via GooAQ) | live `tzervas/cogsyndelta` Hub repo tagged `license:mit` | Hub metadata contradicts the design; still open, not touched by this pass |
+| 10 | taxonomy §7.2/§7.3: phase order and manifest fields to be folded into `TRAINING-SUPERSET.md`, `MODEL-MANIFESTS.md` | `TRAINING-SUPERSET.md:268-331` still states the old 4-phase curriculum; manifests doc lacks `faculty`, `token_budget`, `overlay` | **RESOLVED, PR #68** (`e97e769`, `7922c82`): the four-phase order and the manifest fields are folded in |
+| 11 | `CORPUS-CONTRACT.md` §§1.4-1.6: six-region pre-DEC-02 model; classify/reason have no role; vl_latent unreleasable | config: memory region, roles and waivers for reason/classify, visual renamed and trained on a permissive mix | **PARTIALLY RESOLVED, PR #68** (`541c72c`): stale pre-DEC-02 sections now point at the current config; verify no residual stale prose before closing fully |
 | 12 | task brief: corpus under `/akula-data/csd/` | `/akula-data/csd/` holds receipts only; corpus at `/mnt/bulk/csd-corpus/` and `/mnt/fleet-datasets/csd/` | path assumption wrong |
 | 13 | prose: code untrained lexical floor ≈0.40 | W2c measured 0.2285/0.2344 | no artefact backs 0.40 |
 | 14 | recorded retrieve untrained r@1 0.0000 | W2c measured 0.0020 (chance) | superseded measurement, not a bug |
