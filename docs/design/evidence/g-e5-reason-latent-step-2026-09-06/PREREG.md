@@ -31,11 +31,11 @@ loss            = smooth_l1(predicted, layer_norm(target_latent))
 `encoder` is the same `TextEncoder` architecture and weights the `reason` bi-encoder
 already trains — E5 changes the objective on the same trunk, not the architecture.
 `target_encoder` is an EMA copy of `encoder`, the same shape `IJEPA` already uses for
-images, transplanted to a pooled `[B, D]` text latent (`reason_latent_step.py:26-33`).
+images, transplanted to a pooled `[B, D]` text latent (`reason_latent_step.py:32-38`).
 
 K = 1 only: the predictor's own output is never fed back in to predict `t+2`. That
 recursive direction is explicitly deferred and not built here
-(`reason_latent_step.py:83-90`).
+(`reason_latent_step.py:71-78`).
 
 ## Arms
 
@@ -43,7 +43,7 @@ Two arms, one seed per invocation (`csd-train-reason-e5.py:9-13`):
 
 - `latent-step` — context = question + steps so far (the E5 objective).
 - `sequence-blind` — context = question alone (W1d's shortcut-detection control;
-  `reason_latent_step.py:92-97`).
+  `reason_latent_step.py:80-87`).
 
 ## Seeds, steps, batch size
 
@@ -58,7 +58,7 @@ order-manifest file and silently breaks comparability between arms
 5-way step-battery `recall@1` (chance 0.20 = 1/(1+4 distractors)): rank the true
 `steps[t]` latent among 5 candidates (true, one corrupted step, three steps from other
 derivations) by cosine similarity between the predictor's output and each candidate's
-target-encoder latent (`reason_latent_step.py:71-81`, `CHANCE = 1.0 / (1 + K_DISTRACTORS)`
+target-encoder latent (`reason_latent_step.py:89-99`, `CHANCE = 1.0 / (1 + K_DISTRACTORS)`
 at `reason_latent_step.py:140`).
 
 ## Go / kill rule (verbatim)
@@ -66,7 +66,7 @@ at `reason_latent_step.py:140`).
 > Go: predictor acc@1 >= 0.40 AND >= sequence-blind + 0.10, in every seed.
 > Kill: predictor acc@1 <= sequence-blind + 0.05, in any seed.
 
-(`reason_latent_step.py:97-99`; constants `GO_RECALL_FLOOR = 0.40`,
+(`reason_latent_step.py:101-105`; constants `GO_RECALL_FLOOR = 0.40`,
 `GO_MARGIN_OVER_BLIND = 0.10`, `KILL_MARGIN_OVER_BLIND = 0.05` at
 `reason_latent_step.py:141-143`.)
 
