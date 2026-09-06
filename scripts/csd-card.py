@@ -308,6 +308,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "reviewable. The catalogue (config/mind/csd-regions.json) is typed and carries no "
         "per-promotion text, and the matrix yaml is never read by this CLI.",
     )
+    ap.add_argument(
+        "--release-tag",
+        default=None,
+        help="optional: sets region_cfg['release_tag'] (region_main template prints it; "
+        "without this flag the card keeps the template default '(not tagged)')",
+    )
     return ap.parse_args(argv)
 
 
@@ -332,6 +338,10 @@ def main(argv: list[str] | None = None) -> int:
             region_cfg["how_chosen"] = how_chosen
         elif args.how_chosen_file is not None:
             raise CardCliError("--how-chosen-file applies to --kind region_main only")
+        # Optional on every kind: the region_main template already prints release_tag;
+        # omitting the flag leaves the render default "(not tagged)".
+        if args.release_tag is not None:
+            region_cfg["release_tag"] = args.release_tag
         attr_lines = pub_mod.visual_attribution_block(train_receipt)
         if attr_lines:
             region_cfg["attribution_md"] = "\n".join(attr_lines).strip()
