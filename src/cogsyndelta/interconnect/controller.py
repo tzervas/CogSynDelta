@@ -473,6 +473,19 @@ class ThalamicController(nn.Module):
     the `Mapping`'s own iteration order.
     """
 
+    # Class-level type annotations for the registered buffers `__init__` fills in below:
+    # `nn.Module.__getattr__`'s stub returns `Tensor | Module` for any attribute mypy
+    # cannot otherwise resolve, which the arithmetic in `forward` and `box_integerise`
+    # (both `Tensor`-only) then rejects; annotating each buffer's name here (a plain
+    # declaration, not an assignment -- the real value is `register_buffer`'s job) is
+    # the standard fix so static access resolves to `Tensor`.
+    _lo: Tensor
+    _hi: Tensor
+    _ctx_idx: Tensor
+    _ctx_min: Tensor
+    _ctx_max: Tensor
+    _c: Tensor
+
     def __init__(
         self,
         participants: Mapping[str, ControllerParticipant],
