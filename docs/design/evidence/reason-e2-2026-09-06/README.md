@@ -2,10 +2,12 @@
 
 **E2 ran to completion.** All twelve pre-registered arms exist, trained under one code
 revision and one committed held-out split. H2 (batch is really an epoch effect) is
-refuted. H6 (harder in-batch negatives at batch 512, steps 2000, trail on r@10) is
-confirmed. The best-checkpoint-retention gate `PRE:1018` does not fire. This replaces
-the prior `BLOCKED_INSUFFICIENT_DATA` pack in this directory
-(commit `2f5f649`), which graded a run that had only 2 of 12 arms.
+refuted. H6 ((512, 2000) trails (256, 4000) on r@10) is confirmed by the numbers, but
+batch and learning rate covary in every arm here (deviation 4 below), so "harder
+in-batch negatives at larger batch" is one of two live explanations for that margin,
+not a settled mechanism. The best-checkpoint-retention gate `PRE:1018` does not fire.
+This replaces the prior `BLOCKED_INSUFFICIENT_DATA` pack in this directory (commit
+`2f5f649`), which graded a run that had only 2 of 12 arms.
 
 ## What was asked, what exists
 
@@ -55,6 +57,13 @@ The untrained baseline moves with the training seed (0.0059/0.0020/0.0039 r@1 at
 `untrained_baseline` in each train receipt. Every arm's `r@1 ÷ untrained` multiple is
 double digits or higher (11.3x–78x), so every trained arm clears the untrained floor by
 a wide margin; the interesting comparisons are between arms, covered below.
+
+Seed 1's untrained baseline (0.0020) is exactly chance (1/512 = 0.001953125, `n_pairs`
+in the same receipt) rather than a noisy-but-real measurement above chance, unlike
+seeds 0 and 2 (0.0059 and 0.0039, both above 1/512). Its `r@1 ÷ untrained` column
+(35.0x/78.0x/61.0x) is a near-zero-denominator artifact for that reason — read seed 1's
+raw r@1 and its TF-IDF-ceiling fraction, not its "× untrained" multiple, as the
+comparable number.
 
 Batch 256 beats batch 512 at the same step count, in every seed, at both step counts
 (e.g. seed 0: 0.0840 vs 0.0664 at 2000 steps, 0.1523 vs 0.1250 at 4000 steps). This is
@@ -119,7 +128,11 @@ six (recall@1 was still at its running maximum at the final step in every run), 
 
 - **H2 is refuted.** The matrix row stays batch-parameterised. "b256 > b512" is **not**
   retired as a batch finding — 256 beats 512 at every seed and every step count tested.
-- **H6 is confirmed.** A temperature arm (τ = 0.05 vs 0.10) **joins E3**.
+- **H6 is confirmed by the numbers, but see deviation 4.** Batch and lr covary in
+  every arm here, so "harder in-batch negatives at larger batch" is one of two live
+  explanations for the margin, not a confirmed mechanism. A temperature arm
+  (τ = 0.05 vs 0.10) **still joins E3**; the disambiguating follow-up (batch=512 at
+  lr=3.0e-4, same seeds and split) should run before or alongside it.
 - **`PRE:1018` does not fire.** Best-checkpoint retention is **not** added.
 - **E1's kill stands, independent of E2.** All arms scored on the corrupted-derivation
   battery (b256-s0, b512-s0, untrained baseline) landed at or below 0.25
@@ -134,8 +147,19 @@ six (recall@1 was still at its running maximum at the final step in every run), 
 1. **`eval_every` is 666 (steps=4000) and 333 (steps=2000), not the pre-registered
    200.** `scripts/csd-train-all.py` computes `eval_every=max(1, steps // 6)`
    internally and exposes no CLI flag or matrix command-template placeholder to
-   override it. This changes eval density but not what H2/H6/`PRE:1018` read (the
-   final step's metrics and the running peak).
+   override it. At steps=4000 this samples 7 points before the run ends (0, 666,
+   1332, 1998, 2664, 3330, 3996) plus a final-step check at 3999, versus ~21
+   pre-registered (every 200). H2 and H6 both read only the final step's metrics,
+   which this does not change. `PRE:1018` is different: it reads `peak − final`, and
+   a coarser sample is less likely to land on a run's true interior peak, so this
+   weakens that gate's instrument, not merely its cadence. The available evidence
+   argues the coarser sampling likely did not flip the call here: two of the twelve
+   4,000-step arms are already non-monotone in r@1 at this same coarse sampling —
+   `reason-b512-st4000-s1-2fdc8b2-20260906` dips 0.0059 between steps 2664→3330,
+   `reason-b512-st4000-s2-2fdc8b2-20260906` dips 0.0059 between steps 1998→2664 —
+   real swings an order of magnitude under the 0.02 gate threshold, even caught by
+   only 7–8 samples. That is evidence, not proof: a densely-sampled rerun could still
+   surface a larger interior peak these samples missed.
 2. **`program/matrix/csd-matrix.yaml` carried worktree-local, uncommitted edits** for
    both matrix runs: `run.code.sha` pinned to `2fdc8b2` (main HEAD at scout time,
    needed for the split-manifest and lexical-baseline machinery E2 depends on),
@@ -150,6 +174,20 @@ six (recall@1 was still at its running maximum at the final step in every run), 
    rerunning `(256, 4000, seed=0)` and `(512, 4000, seed=0)` under `2fdc8b2` instead of
    reusing the `a769409` cells. See "Secondary, disclosed comparison" above for the
    two superseded numbers.
+4. **Learning rate covaries with batch; E2 does not hold it fixed.**
+   `scripts/csd-train-all.py`'s `lr_for_batch` (`:284-300`, using `BASE_BATCH = 256`
+   and `BASE_LR = 3e-4` at `:246-247`) sets `lr = 3e-4 * sqrt(batch / 256)`: every
+   batch=256 arm trains at lr=3.0000e-4 and every batch=512 arm at lr=4.2426e-4 (both
+   exact, in every arm's `config.lr`). `warmup_steps = max(50, steps // 15)`
+   (`:1004`, `:1475`) is 133 at steps=2000 and 266 at steps=4000, so warmup length
+   moves with steps, independent of batch. No arm in this matrix varies batch at a
+   fixed learning rate, so H6's r@10 margin and H2's refutation ("b256 > b512") are a
+   joint batch-and-lr effect, not an isolated batch effect — "harder in-batch
+   negatives at larger batch" (H6's stated mechanism,
+   `docs/design/evidence/reason-region-diagnosis-2026-09-06/README.md:250`) is one of
+   two live explanations, the other being a learning rate too high for batch 512 at
+   this corpus size. A follow-up arm at batch=512, lr=3.0e-4 (held fixed at the
+   batch=256 value), same three seeds and the same split, would disambiguate the two.
 
 See `GO_KILL.md` for the full pre-registration text and the per-seed go/kill working.
 

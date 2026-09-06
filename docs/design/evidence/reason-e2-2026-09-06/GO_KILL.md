@@ -95,9 +95,20 @@ step in every 4,000-step run, so 0 of 6 trigger the gate (threshold: ≥ 4 of 6)
    200.** `scripts/csd-train-all.py` computes `eval_every=max(1, steps // 6)`
    internally for the reason region's call site and exposes no CLI flag or matrix
    command-template placeholder to override it — confirmed by grep over
-   `program/matrix/csd-matrix.yaml` and `src/cogsyndelta/regions/pretrain.py`. This
-   changes eval density (6 points instead of ~10–20) but not what is measured at the
-   final step, which is what H2/H6/`PRE:1018` all read.
+   `program/matrix/csd-matrix.yaml` and `src/cogsyndelta/regions/pretrain.py`. At
+   steps=4000 this samples 7 points before the run ends (0, 666, 1332, 1998, 2664,
+   3330, 3996) plus a final-step check at 3999, versus ~21 pre-registered (every
+   200). H2 and H6 both read only the final step's metrics, which this does not
+   change. `PRE:1018` is different: it reads `peak − final`, and a coarser sample is
+   less likely to land on a run's true interior peak, so this weakens that gate's
+   instrument, not merely its cadence. The available evidence argues the coarser
+   sampling likely did not flip the call here: two of the twelve 4,000-step arms are
+   already non-monotone in r@1 at this same coarse sampling —
+   `reason-b512-st4000-s1-2fdc8b2-20260906` dips 0.0059 between steps 2664→3330,
+   `reason-b512-st4000-s2-2fdc8b2-20260906` dips 0.0059 between steps 1998→2664 —
+   real swings an order of magnitude under the 0.02 gate threshold, even caught by
+   only 7–8 samples. That is evidence, not proof: a densely-sampled rerun could still
+   surface a larger interior peak these samples missed.
 2. **`run.code.sha` and the reason `axes`/`exclude` block were edited worktree-local,
    uncommitted, in `program/matrix/csd-matrix.yaml`** for the duration of both matrix
    runs (the original 10-cell run and this pack's 2-cell rerun): `sha` pinned to
@@ -121,10 +132,28 @@ step in every 4,000-step run, so 0 of 6 trigger the gate (threshold: ≥ 4 of 6)
    The two `a769409` cells are kept on disk and reported in `RUN-MANIFEST.json` and
    `README.md` as a secondary, disclosed comparison only — they are not inputs to
    any verdict above.
+4. **Learning rate covaries with batch; E2 does not hold it fixed.**
+   `scripts/csd-train-all.py`'s `lr_for_batch` (`:284-300`, using `BASE_BATCH = 256`
+   and `BASE_LR = 3e-4` at `:246-247`) sets `lr = 3e-4 * sqrt(batch / 256)`: every
+   batch=256 arm trains at lr=3.0000e-4 and every batch=512 arm at lr=4.2426e-4 (both
+   exact, in every arm's `config.lr`). `warmup_steps = max(50, steps // 15)`
+   (`:1004`, `:1475`) is 133 at steps=2000 and 266 at steps=4000, so warmup length
+   moves with steps, independent of batch. No arm in this matrix varies batch at a
+   fixed learning rate, so H6's r@10 margin and H2's refutation ("b256 > b512") are a
+   joint batch-and-lr effect, not an isolated batch effect — "harder in-batch
+   negatives at larger batch" (H6's stated mechanism,
+   `docs/design/evidence/reason-region-diagnosis-2026-09-06/README.md:250`) is one of
+   two live explanations, the other being a learning rate too high for batch 512 at
+   this corpus size. A follow-up arm at batch=512, lr=3.0e-4 (held fixed at the
+   batch=256 value), same three seeds and the same split, would disambiguate the two.
 
 ## What this licenses for the reason region
 
-- **E3 gains a temperature arm** (τ = 0.05 vs 0.10), per H6.
+- **E3 still gains a temperature arm** (τ = 0.05 vs 0.10), per H6 — but see deviation
+  4: batch and lr covary in every arm here, so "harder in-batch negatives at larger
+  batch" is one of two live explanations for H6's margin, not a confirmed mechanism.
+  The disambiguating follow-up (batch=512 at lr=3.0e-4, same seeds and split) should
+  run before or alongside the temperature arm.
 - **The matrix row stays batch-parameterised**, not epoch-parameterised — H2's
   refutation means "epochs, not batch" is not a safe simplification for this
   region's matrix axis.
