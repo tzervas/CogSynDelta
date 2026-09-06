@@ -1,0 +1,40 @@
+{
+  "experiment": "E2",
+  "region": "reason",
+  "pre_registration": "docs/design/evidence/reason-region-diagnosis-2026-09-06/README.md:349-368",
+  "split_manifest": "config/mind/splits/reason-ca364a92-split0.json",
+  "split_sha256": "77d2c0e1ac02db40c49fd1258785c005b202da184622acaccc7c3f73144baa13",
+  "corpus_fingerprint": "ca364a92d2c6c5fd259404e0ab6f52a1",
+  "required_arms": [
+    {"batch": 256, "steps": 4000, "seed": 0, "status": "present", "reused": true,
+      "cell": "/akula-data/csd/matrix/reason-b256-s0-7bc2699-20260904",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b256-s0-7bc2699-20260904/receipts/cogsyndelta-reason-eval-20260904T145946Z.json",
+      "train_receipt": "/akula-data/csd/matrix/reason-b256-s0-7bc2699-20260904/receipts/reason-20260904T145943Z.json"},
+    {"batch": 512, "steps": 4000, "seed": 0, "status": "present", "reused": true,
+      "cell": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904/receipts/cogsyndelta-reason-eval-20260904T151530Z.json",
+      "train_receipt": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904/receipts/reason-20260904T151527Z.json",
+      "lexical_receipt": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904/receipts/cogsyndelta-reason-lexical-20260906T022914Z.json"},
+    {"batch": 256, "steps": 4000, "seed": 1, "status": "blocked", "reason": "seed-1 holdout retired by E0/G26 (README.md:321-322); not admissible as an E2 arm"},
+    {"batch": 256, "steps": 4000, "seed": 2, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
+    {"batch": 512, "steps": 4000, "seed": 1, "status": "blocked", "reason": "seed-1 holdout retired by E0/G26 (README.md:321-322); not admissible as an E2 arm"},
+    {"batch": 512, "steps": 4000, "seed": 2, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
+    {"batch": 256, "steps": 2000, "seed": 0, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
+    {"batch": 256, "steps": 2000, "seed": 1, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
+    {"batch": 256, "steps": 2000, "seed": 2, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
+    {"batch": 512, "steps": 2000, "seed": 0, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
+    {"batch": 512, "steps": 2000, "seed": 1, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
+    {"batch": 512, "steps": 2000, "seed": 2, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"}
+  ],
+  "e1_battery_receipts": {
+    "readme": "docs/design/evidence/g48-reason-e1-2026-09-06/README.md",
+    "b256-s0": {"derive.recall@1": 0.1137, "derive.mrr": 0.4054},
+    "b512-s0": {"derive.recall@1": 0.1070, "derive.mrr": 0.3925},
+    "baseline_untrained_w2c": {"derive.recall@1": 0.1171, "derive.mrr": 0.4299},
+    "kill_threshold": 0.25,
+    "go_threshold": 0.30,
+    "verdict": "kill (all arms <= 0.25); reason r@1 demoted from gate to lexical-ceiling fraction"
+  },
+  "unblock_needed": "operator action on /akula-data/csd/matrix/selection.json (widen sticky regions=[visual] to include reason, or clear it) before the remaining 10 cells can be trained via program/matrix/csd-matrix.yaml",
+  "grading_scope_note": "This manifest and grade_e2.py grade the lane's actual, verified state. E2 as pre-registered (12 arms, 3 seeds) did not execute beyond the two reused seed-0 cells; H2 and H6 both require a within-seed comparison across all three seeds and cannot be tested from 1 seed. No new cells were trained by this lane (read-only on /akula-data/csd/matrix/, per instruction)."
+}

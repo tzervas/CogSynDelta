@@ -1,0 +1,126 @@
+{
+  "arms": [
+    {
+      "batch": 256,
+      "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit",
+      "seed": 0,
+      "status": "blocked",
+      "steps": 2000
+    },
+    {
+      "batch": 512,
+      "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit",
+      "seed": 0,
+      "status": "blocked",
+      "steps": 2000
+    },
+    {
+      "batch": 256,
+      "final_mrr": 0.26101309061050415,
+      "final_r1": 0.1875,
+      "final_r10": 0.419921875,
+      "lexical_fraction_r1": 0.214765,
+      "peak_minus_final_r1": 0.0,
+      "peak_r1": 0.1875,
+      "peak_r10": 0.419921875,
+      "seed": 0,
+      "status": "present",
+      "steps": 4000
+    },
+    {
+      "batch": 512,
+      "final_mrr": 0.1768743395805359,
+      "final_r1": 0.126953125,
+      "final_r10": 0.267578125,
+      "lexical_fraction_r1": 0.145414,
+      "peak_minus_final_r1": 0.0,
+      "peak_r1": 0.126953125,
+      "peak_r10": 0.322265625,
+      "seed": 0,
+      "status": "present",
+      "steps": 4000
+    },
+    {
+      "batch": 256,
+      "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit",
+      "seed": 1,
+      "status": "blocked",
+      "steps": 2000
+    },
+    {
+      "batch": 512,
+      "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit",
+      "seed": 1,
+      "status": "blocked",
+      "steps": 2000
+    },
+    {
+      "batch": 256,
+      "reason": "seed-1 holdout retired by E0/G26 (README.md:321-322); not admissible as an E2 arm",
+      "seed": 1,
+      "status": "blocked",
+      "steps": 4000
+    },
+    {
+      "batch": 512,
+      "reason": "seed-1 holdout retired by E0/G26 (README.md:321-322); not admissible as an E2 arm",
+      "seed": 1,
+      "status": "blocked",
+      "steps": 4000
+    },
+    {
+      "batch": 256,
+      "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit",
+      "seed": 2,
+      "status": "blocked",
+      "steps": 2000
+    },
+    {
+      "batch": 512,
+      "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit",
+      "seed": 2,
+      "status": "blocked",
+      "steps": 2000
+    },
+    {
+      "batch": 256,
+      "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit",
+      "seed": 2,
+      "status": "blocked",
+      "steps": 4000
+    },
+    {
+      "batch": 512,
+      "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit",
+      "seed": 2,
+      "status": "blocked",
+      "steps": 4000
+    }
+  ],
+  "best_checkpoint_retention_gate": {
+    "gate_evaluable": false,
+    "gate_fired": "INSUFFICIENT_DATA",
+    "runs_at_4000_steps_available": 2,
+    "runs_at_4000_steps_required": 6,
+    "runs_triggering_gate": 0,
+    "trigger_threshold_runs": 4
+  },
+  "experiment": "E2",
+  "h2_h6": {
+    "h2": "INSUFFICIENT_DATA",
+    "h6": "INSUFFICIENT_DATA",
+    "seeds_complete": [],
+    "seeds_required": 3
+  },
+  "manifest_sha256": "fcd5b207cb55cbac3e78e6411e42491a18cf4786a3e31541a7d698dec82f5ef5",
+  "pre_registration": "docs/design/evidence/reason-region-diagnosis-2026-09-06/README.md:349-368",
+  "verdict": {
+    "arms_present": 2,
+    "arms_required": 12,
+    "decision": "BLOCKED_INSUFFICIENT_DATA",
+    "e1_battery_verdict": "kill (all arms <= 0.25); reason r@1 demoted from gate to lexical-ceiling fraction",
+    "h2": "INSUFFICIENT_DATA",
+    "h6": "INSUFFICIENT_DATA",
+    "rationale": "Only 2/12 pre-registered arms exist (both reused seed-0 cells; the other 10 were never trained -- model-matrix run never executed because /akula-data/csd/matrix/selection.json holds a stale sticky selection for a different region and this lane is read-only on the matrix root). H2 and H6 each require a within-seed comparison across all three seeds; with 1 of 3 seeds populated, neither can be confirmed or refuted as pre-registered. The matrix row does not move to an epoch budget, the b256>b512 batch finding is not retired, and no temperature arm is added to E3 on this evidence. The E1 kill (all arms <= 0.25 on the corrupted-derivation battery) stands independently and continues to demote reason diagonal r@1 to a lexical-ceiling fraction regardless of E2's outcome."
+  }
+}
