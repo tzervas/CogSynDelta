@@ -45,7 +45,7 @@ instances of it legitimately, **(f)** known caveats.
 
 1. [The untrained baseline](#1-the-untrained-baseline)
 2. [The training held-out battery (`kind: train` receipts)](#2-the-training-held-out-battery-kind-train-receipts)
-3. [The eval battery (`kind: eval` / `eval-quantized` receipts)](#3-the-eval-battery-kind-eval-eval-quantized-receipts)
+3. [The eval battery (`kind: eval` / `eval-quantized` receipts)](#3-the-eval-battery-kind-eval-eval-quantized-receipts) (incl. [§3.14 lexical baseline](#314-lexical_baselinetfidf--lexical_baselinebm25))
 4. [The battery distinction -- quant vs. eval](#4-the-battery-distinction----quant-vs-eval)
 5. [Quantization / compression metrics (`kind: quant` receipts)](#5-quantization-compression-metrics-kind-quant-receipts)
 6. [Contamination, corpus-fingerprint, and split-manifest fields](#6-contamination-and-corpus-fingerprint-fields)
@@ -63,6 +63,8 @@ instances of it legitimately, **(f)** known caveats.
 18. [The dual-harness principle](#18-the-dual-harness-principle)
 19. [Standing statements](#19-standing-statements)
 20. [Field index](#field-index)
+21. [Visual probe metrics](#21-visual-probe-metrics-kind-eval-on-the-i-jepa-region)
+22. [E1 corrupted-derivation battery](#22-e1-corrupted-derivation-battery-kind-eval)
 
 ---
 
@@ -324,7 +326,7 @@ the training receipt's own recorded config and cross-checked by corpus fingerpri
 "eval"` scores the fp32 checkpoint; `kind: "eval-quantized"` scores the actual packed `.ptq.pt`
 artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:915-1109`), not
 the in-memory quantization plan (§4). `_run_battery()`
-(`scripts/csd-benchmark.py:584-605`) encodes the **whole** holdout as one closed candidate
+(`scripts/csd-benchmark.py:597-618`) encodes the **whole** holdout as one closed candidate
 pool -- identical in shape to §2's `scores = a @ p.T`, `relevant = arange(...)` construction,
 which is why `rank.recall@1` in this battery is numerically identical to `held_out.recall@1`
 in §2 for the same checkpoint (confirmed against a real receipt pair in §10).
@@ -609,6 +611,42 @@ context for reading every `rank.*` figure beside it.
   `baseline_sane` precondition) -- the two fields share a name across receipt kinds but not an
   implementation. Do not assume a training receipt's `beats_untrained: True` and an eval
   receipt's `gates.beats_untrained: True` were decided by the same rule.
+
+### 3.14 `lexical_baseline.tfidf.*`, `lexical_baseline.bm25.*`
+
+The bag-of-words ceiling on the **same closed holdout** the eval battery ranks, so a card
+that prints `rank.recall@1` beside only the untrained baseline cannot overstate what was
+learned. Source: the 2026-09-06 reason-region diagnosis
+(`docs/design/evidence/reason-region-diagnosis-2026-09-06/`); this project's scorer is that
+script's formula, not a second implementation.
+
+- **(a)** `lexical_baseline.tfidf.recall@1` / `.recall@5` / `.recall@10` / `.mrr` / `.ndcg@10`,
+  the same keys under `lexical_baseline.bm25`, plus `lexical_baseline.scorer_version`
+  (`csd-lexical/v1`) and `lexical_baseline.split_sha256`. Written by
+  `_lexical_baseline_block()` (`scripts/csd-benchmark.py:584-594`) onto every text
+  `kind: eval` / `eval-quantized` receipt, and by `backfill_one()`
+  (`scripts/csd-lexical-baseline.py:77-121`) as a sidecar
+  `cogsyndelta-<region>-lexical-<ts>.json` for existing seed-0 cells **without rewriting**
+  those cells' train/eval/quant receipts.
+- **(b)** Closed-pool ranking with relevant item `i` on the diagonal -- the same pool
+  §3.1-§3.3 use. TF-IDF: log-tf × smoothed idf (`log((N+1)/(df+1))+1`) cosine, IDF over
+  anchors+positives combined. BM25: k1=1.5, b=0.75, positives-only IDF
+  `log(1+(Np-df+0.5)/(df+0.5))`. Tokenizer: `[a-z]+|\\d+(?:\\.\\d+)?`. Seed-0 uniform
+  `1e-9` tie-break (TF-IDF then BM25, one RNG stream). **Not** `eval.beir_fiqa.BM25`
+  (BEIR k1=0.9/b=0.4, different word regex, full-corpus FiQA pool -- §7).
+- **(c)** `score_holdout()` (`src/cogsyndelta/eval/lexical.py:164-188`);
+  `rank_metrics()` (`src/cogsyndelta/eval/lexical.py:63-89`);
+  `build_lexical_baseline()` (`src/cogsyndelta/eval/lexical.py:191-218`).
+- **(d)** The manifested held-out split this eval reconstructed (`split.sha256`, §6.4).
+- **(e)** Comparable only when `lexical_baseline.split_sha256` equals both receipts'
+  `split.sha256` and `scorer_version` agrees. A TF-IDF recall@1 and a `rank.recall@1`
+  share a pool and a battery; the former is the ceiling, not a second model.
+- **(f)** `verify_lexical_baseline_split()` (`src/cogsyndelta/eval/lexical.py:243-274`)
+  refuses (G26, fail closed) when the field is present and its sha is missing or does
+  not match the receipt's `split.sha256`. Absent field is "not measured", not a pass.
+  Cards print a third column "lexical baseline (TF-IDF)" on text `region_variant` /
+  `region_main` ranking tables; missing field prints "lexical baseline: not measured"
+  rather than omitting the column. Visual cards are unchanged.
 
 ---
 
@@ -1659,6 +1697,7 @@ same battery_id  in {
   train_graded, train_token_rank,
   quant_plan,
   beir_fiqa_corpus, beir_fiqa_split,
+  eval_corrupted_derivation,  # E1 reason-sensitivity; never alias into rank.*
   mteb_<task>,            # future adapter; never alias into rank.*
   latent_loop             # future; not a native battery today
 }
@@ -1938,6 +1977,7 @@ Receipt field -> section. `kind` is the receipt this field is written into
 | `metrics["repr.uniformity"]` | eval, eval-quantized | [§3.11](#311-repruniformity) |
 | `metrics["repr.effective_rank"]`, `["repr.dimensions"]`, `["repr.effective_rank_ratio"]` | eval, eval-quantized | [§3.12](#312-repreffective_rank-reprdimensions-repreffective_rank_ratio) |
 | `gates.beats_untrained`, `.not_anisotropic`, `.uses_its_dimensions` | eval, eval-quantized | [§3.13](#313-gatesbeats_untrained-gatesnot_anisotropic-gatesuses_its_dimensions) |
+| `lexical_baseline.tfidf.*`, `lexical_baseline.bm25.*`, `.scorer_version`, `.split_sha256` | eval, eval-quantized, lexical sidecar | [§3.14](#314-lexical_baselinetfidf--lexical_baselinebm25) |
 | `provenance.stored_bytes_definition` | eval, eval-quantized | [§3.7](#37-effparameters-effstored_mb-effcapability_per_param-effcapability_per_mb) |
 | `fp32_bytes` | quant | [§5.1](#51-fp32_bytes) |
 | `stored_bytes`, `compression_ratio` | quant | [§5.2](#52-stored_bytes-compression_ratio) |
@@ -1946,6 +1986,9 @@ Receipt field -> section. `kind` is the receipt this field is written into
 | `corpus_fingerprint` (quant receipt, top level) | quant | [§6.3](#63-corpusfingerprint-corpusfingerprint_scheme) |
 | BEIR-FiQA `recall@1`/`recall@10`/`recall@100`/`mrr` | (evidence/gate scripts, not a receipt `kind` above) | [§7.2](#72-rank_metrics-recall1-recall10-recall100-mrr-multi-relevant) |
 | W4 gates `a_beats_both_parents` .. `e_retrain_gate` | (evidence/gate scripts) | [§7.4](#74-the-w4-gates-a_beats_both_parents-e_retrain_gate) |
+| `derive.recall@1`, `.mrr`, `.n_items`, `.chance` | eval (E1 battery) | [§22](#22-e1-corrupted-derivation-battery-kind-eval) |
+| `derive.tfidf.recall@1`, `derive.bm25.recall@1` | eval (E1 oracles) | [§22](#22-e1-corrupted-derivation-battery-kind-eval) |
+| `derive.wrong_problem.tfidf.recall@1` | eval (E1 control a) | [§22](#22-e1-corrupted-derivation-battery-kind-eval) |
 
 ### `csd-metrics/v2` canonical names (§12)
 
@@ -1974,6 +2017,7 @@ disk for a given battery.
 | `quant.plan_recall@1`, `.artifact_recall@1`, `.drop_recall@1`, `.compression_ratio` | `quantized_metric`, `rank.recall@1` (eval-quantized), `drop`, `compression_ratio` | [§12.8](#128-quantplan_recall1--quantartifact_recall1--quantdrop_recall1--quantcompression_ratio) |
 | `quant.plan_probe_top1`, `.artifact_probe_top1`, `.drop_probe_top1` | (visual; never `quant.*_recall@1` — the quantity is EuroSAT probe top-1) | [§12.8.1](#1281-visual-quantplan_probe_top1--quantartifact_probe_top1--quantdrop_probe_top1) |
 | `gate.beats_untrained_train`, `gate.beats_untrained_eval` | `beats_untrained` / `gates.beats_untrained` | [§12.9](#129-gatebeats_untrained_train--gatebeats_untrained_eval) |
+| `derive.recall@1` / `.mrr` / lexical oracles | (new; E1) | [§22](#22-e1-corrupted-derivation-battery-kind-eval) |
 
 See [§15](#15-v1---v2-deprecation-map) for the full v1 -> v2 deprecation map and
 [§14](#14-schema-stamp-and-refuse-predicate) for the `metrics_schema` stamp and refuse
@@ -2021,3 +2065,43 @@ check (`benchmark_visual_region()` writes `gates.beats_untrained_eval` the same
 way). A card must print untrained vs trained vs this threshold honestly; a 24-step
 smoke that fails H1 is a FAIL, not a pass. Transfer Fashion t10k (`n_eval` 2000)
 is a named set, not H1.
+
+## 22. E1 corrupted-derivation battery (`kind: eval`)
+
+Reasoning-sensitivity battery for the `reason` region (diagnosis 2026-09-05 §4 E1;
+g48). **Not** closed-pool `rank.recall@1`. Do not compare `derive.recall@1` to
+`rank.recall@1`: the pools differ (5 candidates vs 512) and the claim differs
+(derivation-structure sensitivity vs lexical pair retrieval).
+
+**(a)** Receipt fields: `derive.recall@1`, `derive.mrr`, `derive.n_items`,
+`derive.chance`, `derive.tfidf.recall@1`, `derive.bm25.recall@1`,
+`derive.wrong_problem.tfidf.recall@1`. `battery_id` is `eval_corrupted_derivation`.
+`kind` is `eval`.
+
+**(b)** Formula: for each held-out gsm8k pair with ≥ 2 calculator annotations
+`<<a op b=c>>`, construct K=4 corrupted derivations by editing one operand or
+result and propagating to `####` when that value is the final answer. Rank the
+true derivation among {true, 4 corruptions} by cosine of L2-normalised encoder
+embeddings (question vs candidate). Chance is 0.20. Tie-break is a deterministic
+unbiased jitter so a 5-way tie has expectation 0.20.
+
+**(c)** `build_corrupted_battery()` (`src/cogsyndelta/eval/corrupted_derivation.py:305-346`);
+`cosine_hit_rate()` (`src/cogsyndelta/eval/corrupted_derivation.py:542-577`);
+`hit_rate_at_1()` (`src/cogsyndelta/eval/corrupted_derivation.py:450-475`);
+`score_items_lexical()` (`src/cogsyndelta/eval/corrupted_derivation.py:477-510`);
+`score_wrong_problem_tfidf()` (`src/cogsyndelta/eval/corrupted_derivation.py:513-539`);
+`go_kill()` (`src/cogsyndelta/eval/corrupted_derivation.py:602-634`). Scoring
+entry: `scripts/csd-eval-reason-e1.py`.
+
+**(d)** E0 reason split, seed 0, fingerprint `ca364a92d2c6c5fd259404e0ab6f52a1`,
+11,811 train / 132 duplicates removed. Eligible: 299 of 320 held-out gsm8k pairs.
+
+**(e)** Compare two `derive.recall@1` only when `battery_id`, corruption seed,
+split sha, and checkpoint sha match. Never compare to `rank.recall@1`.
+
+**(f)** Controls (instrument validity, not model quality): (a) wrong-problem TF-IDF
+≥ 0.90; (b) TF-IDF and BM25 on the corrupted battery within ±0.05 of 0.20; (c)
+untrained encoder at the W2c region-specific seed. Go: any checkpoint ≥ 0.30 →
+derivation sensitivity, E3 next. Kill: all ≤ 0.25 → learned nothing about
+structure, E5 ahead of E4. Diagonal r@1 is demoted to a lexical-ceiling fraction
+(model ÷ TF-IDF). Reasoning is not lookup.

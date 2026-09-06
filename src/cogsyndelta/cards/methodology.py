@@ -120,6 +120,15 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         battery_id="train_holdout",
         pooling="matched",
     ),
+    "lexical_baseline": MetricMethodology(
+        "TF-IDF cosine / BM25 (csd-lexical/v1: diagnosis word regex, log-tf * "
+        "smoothed idf cosine, BM25 k1=1.5 b=0.75, seed-0 1e-9 tie-break) over the "
+        "identical closed holdout; split_sha256 must equal split.sha256 (G26)",
+        "eval battery lexical ceiling",
+        "src/cogsyndelta/eval/lexical.py",
+        battery_id="eval_holdout",
+        pooling="matched",
+    ),
     "emb_std": MetricMethodology(
         "per-feature embedding std, averaged over features, anchor side only (the collapse signal)",
         "training held-out battery",
@@ -646,6 +655,60 @@ METRIC_METHODOLOGY: dict[str, MetricMethodology] = {
         "scripts/csd-benchmark.py",
         battery_id="eval_holdout",
         pooling="anchor",
+    ),
+    "derive.recall@1": MetricMethodology(
+        "fraction of eligible held-out gsm8k items whose true derivation ranks first "
+        "among {true, 4 corruptions} (chance 0.20). Not closed-pool rank.recall@1",
+        "E1 corrupted-derivation battery",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.mrr": MetricMethodology(
+        "mean reciprocal rank of the true derivation among {true, 4 corruptions}",
+        "E1 corrupted-derivation battery",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.n_items": MetricMethodology(
+        "count of held-out gsm8k pairs with >= 2 calculator annotations (299 of 320 "
+        "on the E0 reason split)",
+        "E1 corrupted-derivation battery",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.chance": MetricMethodology(
+        "1/(1+K) with K=4 corruptions -- 0.20",
+        "E1 corrupted-derivation battery",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.tfidf.recall@1": MetricMethodology(
+        "TF-IDF overlap recall@1 on the same {true, 4 corruptions} pool (control b; "
+        "must sit within 0.05 of chance)",
+        "E1 corrupted-derivation battery, lexical oracle",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.bm25.recall@1": MetricMethodology(
+        "BM25 recall@1 on the same {true, 4 corruptions} pool (control b; must sit "
+        "within 0.05 of chance)",
+        "E1 corrupted-derivation battery, lexical oracle",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
+    ),
+    "derive.wrong_problem.tfidf.recall@1": MetricMethodology(
+        "TF-IDF overlap recall@1 of the true derivation vs four other problems' "
+        "derivations (control a; must be >= 0.90)",
+        "E1 wrong-problem control",
+        "src/cogsyndelta/eval/corrupted_derivation.py",
+        battery_id="eval_corrupted_derivation",
+        pooling="matched",
     ),
 }
 

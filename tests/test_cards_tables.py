@@ -15,6 +15,8 @@ import pytest
 
 from cogsyndelta.cards.methodology import CardError
 from cogsyndelta.cards.tables import (
+    LEXICAL_COLUMN,
+    LEXICAL_NOT_MEASURED,
     V1_LEGACY_SCHEMA,
     MetricRow,
     _best_column,
@@ -180,6 +182,47 @@ def test_build_eval_tables_comparator_columns() -> None:
 def test_build_eval_tables_heading_suffix() -> None:
     tables = build_eval_tables(eval_receipt=_eval_receipt(), heading_suffix=" (fp32)")
     assert all(t.heading.endswith(" (fp32)") for t in tables)
+
+
+def test_build_eval_tables_lexical_column_not_measured_when_field_absent() -> None:
+    tables = build_eval_tables(eval_receipt=_eval_receipt(), show_lexical_column=True)
+    rank = next(t for t in tables if t.category == "rank")
+    repr_t = next(t for t in tables if t.category == "repr")
+    assert rank.show_lexical is True
+    assert repr_t.show_lexical is False
+    row = next(r for r in rank.rows if r.key == "rank.recall@1")
+    assert row.lexical == LEXICAL_NOT_MEASURED
+
+
+def test_build_eval_tables_lexical_column_from_tfidf_field() -> None:
+    receipt = _eval_receipt()
+    receipt["lexical_baseline"] = {
+        "scorer_version": "csd-lexical/v1",
+        "split_sha256": "aaa",
+        "tfidf": {"recall@1": 0.713},
+        "bm25": {"recall@1": 0.701},
+    }
+    tables = build_eval_tables(eval_receipt=receipt, show_lexical_column=True)
+    rank = next(t for t in tables if t.category == "rank")
+    row = next(r for r in rank.rows if r.key == "rank.recall@1")
+    assert row.lexical == 0.713
+
+
+def test_render_table_markdown_prints_lexical_column() -> None:
+    from cogsyndelta.cards.methodology import METRIC_METHODOLOGY
+    from cogsyndelta.cards.tables import MetricTable
+
+    row = MetricRow(key="rank.recall@1", variant=0.49, baseline=0.05, lexical=0.713)
+    table = MetricTable(category="rank", heading="Retrieval", rows=[row], show_lexical=True)
+    m = METRIC_METHODOLOGY["recall@1"]
+    lex = METRIC_METHODOLOGY["lexical_baseline"]
+    fn = {
+        (m.definition, m.battery_id, m.pooling, m.source): 1,
+        (lex.definition, lex.battery_id, lex.pooling, lex.source): 2,
+    }
+    md = render_table_markdown(table, footnote_numbers=fn)
+    assert LEXICAL_COLUMN in md
+    assert "0.713" in md
 
 
 # --------------------------------------------------------------------------- other table builders
