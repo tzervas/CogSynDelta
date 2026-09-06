@@ -5,36 +5,175 @@
   "split_manifest": "config/mind/splits/reason-ca364a92-split0.json",
   "split_sha256": "77d2c0e1ac02db40c49fd1258785c005b202da184622acaccc7c3f73144baa13",
   "corpus_fingerprint": "ca364a92d2c6c5fd259404e0ab6f52a1",
-  "required_arms": [
-    {"batch": 256, "steps": 4000, "seed": 0, "status": "present", "reused": true,
-      "cell": "/akula-data/csd/matrix/reason-b256-s0-7bc2699-20260904",
-      "eval_receipt": "/akula-data/csd/matrix/reason-b256-s0-7bc2699-20260904/receipts/cogsyndelta-reason-eval-20260904T145946Z.json",
-      "train_receipt": "/akula-data/csd/matrix/reason-b256-s0-7bc2699-20260904/receipts/reason-20260904T145943Z.json"},
-    {"batch": 512, "steps": 4000, "seed": 0, "status": "present", "reused": true,
-      "cell": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904",
-      "eval_receipt": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904/receipts/cogsyndelta-reason-eval-20260904T151530Z.json",
-      "train_receipt": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904/receipts/reason-20260904T151527Z.json",
-      "lexical_receipt": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904/receipts/cogsyndelta-reason-lexical-20260906T022914Z.json"},
-    {"batch": 256, "steps": 4000, "seed": 1, "status": "blocked", "reason": "seed-1 holdout retired by E0/G26 (README.md:321-322); not admissible as an E2 arm"},
-    {"batch": 256, "steps": 4000, "seed": 2, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
-    {"batch": 512, "steps": 4000, "seed": 1, "status": "blocked", "reason": "seed-1 holdout retired by E0/G26 (README.md:321-322); not admissible as an E2 arm"},
-    {"batch": 512, "steps": 4000, "seed": 2, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
-    {"batch": 256, "steps": 2000, "seed": 0, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
-    {"batch": 256, "steps": 2000, "seed": 1, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
-    {"batch": 256, "steps": 2000, "seed": 2, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
-    {"batch": 512, "steps": 2000, "seed": 0, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
-    {"batch": 512, "steps": 2000, "seed": 1, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"},
-    {"batch": 512, "steps": 2000, "seed": 2, "status": "blocked", "reason": "matrix run never executed: selection.json carries a stale sticky selection (regions=[visual]) that model-matrix refuses to widen without --all or operator edit"}
-  ],
-  "e1_battery_receipts": {
-    "readme": "docs/design/evidence/g48-reason-e1-2026-09-06/README.md",
-    "b256-s0": {"derive.recall@1": 0.1137, "derive.mrr": 0.4054},
-    "b512-s0": {"derive.recall@1": 0.1070, "derive.mrr": 0.3925},
-    "baseline_untrained_w2c": {"derive.recall@1": 0.1171, "derive.mrr": 0.4299},
-    "kill_threshold": 0.25,
-    "go_threshold": 0.30,
-    "verdict": "kill (all arms <= 0.25); reason r@1 demoted from gate to lexical-ceiling fraction"
+  "code_sha_all_required_arms": "2fdc8b2b6ca3ac4836fd61fbcd9ac32e25372fc6",
+  "lexical_baseline": {
+    "source_receipt": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904/receipts/cogsyndelta-reason-lexical-20260906T022914Z.json",
+    "split_sha256": "77d2c0e1ac02db40c49fd1258785c005b202da184622acaccc7c3f73144baa13",
+    "tfidf_recall@1": 0.873046875,
+    "bm25_recall@1": 0.849609375,
+    "note": "split-level (does not depend on batch/steps/seed); applies to every arm sharing this split"
   },
-  "unblock_needed": "operator action on /akula-data/csd/matrix/selection.json (widen sticky regions=[visual] to include reason, or clear it) before the remaining 10 cells can be trained via program/matrix/csd-matrix.yaml",
-  "grading_scope_note": "This manifest and grade_e2.py grade the lane's actual, verified state. E2 as pre-registered (12 arms, 3 seeds) did not execute beyond the two reused seed-0 cells; H2 and H6 both require a within-seed comparison across all three seeds and cannot be tested from 1 seed. No new cells were trained by this lane (read-only on /akula-data/csd/matrix/, per instruction)."
+  "required_arms": [
+    {
+      "batch": 256,
+      "steps": 2000,
+      "seed": 0,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b256-st2000-s0-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b256-st2000-s0-2fdc8b2-20260906/receipts/reason-20260906T074927Z.json",
+      "train_receipt_sha256": "1567c92220372dbcb43a2503aa8a0b878334f4f3675458eb12b59bf9b16431a1",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b256-st2000-s0-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T074930Z.json",
+      "eval_receipt_sha256": "c31f5d865040b0c5446c049208fd97557129bf3f01e8567e67123bd2afc04714"
+    },
+    {
+      "batch": 512,
+      "steps": 2000,
+      "seed": 0,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b512-st2000-s0-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b512-st2000-s0-2fdc8b2-20260906/receipts/reason-20260906T081102Z.json",
+      "train_receipt_sha256": "8394e37df4d26a0fcfb9bd3160043ff7c33cc5cb22261c3ca9d7a284aa311d0e",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b512-st2000-s0-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T081106Z.json",
+      "eval_receipt_sha256": "53facfae0604a48ed30830913d64d0d5a74880090b5b0c75cee988ebfac6c512"
+    },
+    {
+      "batch": 256,
+      "steps": 4000,
+      "seed": 0,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b256-st4000-s0-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b256-st4000-s0-2fdc8b2-20260906/receipts/reason-20260906T085552Z.json",
+      "train_receipt_sha256": "1c2a819efeb95b7993f194b1624f5b89765ee56adefbcc2d7f930c28440922f3",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b256-st4000-s0-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T085555Z.json",
+      "eval_receipt_sha256": "47d2b4179c72ae9173387ff07288dae560b0283dbe17afccfdcaaef24cc5645f"
+    },
+    {
+      "batch": 512,
+      "steps": 4000,
+      "seed": 0,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b512-st4000-s0-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b512-st4000-s0-2fdc8b2-20260906/receipts/reason-20260906T090644Z.json",
+      "train_receipt_sha256": "1f98bb3fe70ad003239b2a103ac26b79dd543ba2eba5335e3d9cf30a954b8bd5",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b512-st4000-s0-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T090648Z.json",
+      "eval_receipt_sha256": "0690586e24b8f1f9e3d5cebff5c13c497db2d2db926fcc8bab5054a1939d9965"
+    },
+    {
+      "batch": 256,
+      "steps": 2000,
+      "seed": 1,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b256-st2000-s1-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b256-st2000-s1-2fdc8b2-20260906/receipts/reason-20260906T075206Z.json",
+      "train_receipt_sha256": "de8457541100f0a503d834ce2df1acd16840d01946167c741dd82dc6b44284d6",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b256-st2000-s1-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T075209Z.json",
+      "eval_receipt_sha256": "a29502cfcd0e17f1ac095616de79938b10f391918898e42a458fc614e8c10873"
+    },
+    {
+      "batch": 512,
+      "steps": 2000,
+      "seed": 1,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b512-st2000-s1-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b512-st2000-s1-2fdc8b2-20260906/receipts/reason-20260906T081601Z.json",
+      "train_receipt_sha256": "e3ae717c910cffaab73ae83d2bafd13a26959fcea097643c505cf8b06566b2a9",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b512-st2000-s1-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T081604Z.json",
+      "eval_receipt_sha256": "bce6840980d2c1acad9b87419ec5b87e4d2d7716d3c9b5bcae5650903ddbda21"
+    },
+    {
+      "batch": 256,
+      "steps": 4000,
+      "seed": 1,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b256-st4000-s1-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b256-st4000-s1-2fdc8b2-20260906/receipts/reason-20260906T080053Z.json",
+      "train_receipt_sha256": "e1e12a117f8ced11026fc042251d47b164d6c5532a9d916899fb6d745bc9b0b3",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b256-st4000-s1-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T080057Z.json",
+      "eval_receipt_sha256": "9c98d947a0c981abfc5f28c29ee694ce325ddf5fd55d1377d18c104b649acacc"
+    },
+    {
+      "batch": 512,
+      "steps": 4000,
+      "seed": 1,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b512-st4000-s1-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b512-st4000-s1-2fdc8b2-20260906/receipts/reason-20260906T083050Z.json",
+      "train_receipt_sha256": "f30dc6d584ebd83ecf27fabcc175ca85a6f3ffed273c2b35d1b7067fa40db4be",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b512-st4000-s1-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T083054Z.json",
+      "eval_receipt_sha256": "7ac1bb363de97ea19aa53beb74ca4989ed58da3e398660e39150997501029fc9"
+    },
+    {
+      "batch": 256,
+      "steps": 2000,
+      "seed": 2,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b256-st2000-s2-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b256-st2000-s2-2fdc8b2-20260906/receipts/reason-20260906T075445Z.json",
+      "train_receipt_sha256": "c9b0fe8fb67e5d988f979e662d05dfbbde36e21975d4352e236704886f379a91",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b256-st2000-s2-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T075449Z.json",
+      "eval_receipt_sha256": "c04486833c62153bde7ba6d936199fc5295ea7d25e052ba140669822ad75bffe"
+    },
+    {
+      "batch": 512,
+      "steps": 2000,
+      "seed": 2,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b512-st2000-s2-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b512-st2000-s2-2fdc8b2-20260906/receipts/reason-20260906T082100Z.json",
+      "train_receipt_sha256": "358d449ac76684cec6a0a91cbd08aad5475354f0abdab30f0082d1294cd29344",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b512-st2000-s2-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T082103Z.json",
+      "eval_receipt_sha256": "98a0e1648d657d7c77ac559bfcf12745dfb62b015dbc87b5995660745084fe88"
+    },
+    {
+      "batch": 256,
+      "steps": 4000,
+      "seed": 2,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b256-st4000-s2-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b256-st4000-s2-2fdc8b2-20260906/receipts/reason-20260906T080603Z.json",
+      "train_receipt_sha256": "9594b5caaa783ca7237d7638ca37040ac12928c7f722e2fd5b4c5d4fec5b38bf",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b256-st4000-s2-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T080606Z.json",
+      "eval_receipt_sha256": "3d1d44b34fcb1489c26ffe4c2472da1677514f1f95a04f8302e2d33485c909f7"
+    },
+    {
+      "batch": 512,
+      "steps": 4000,
+      "seed": 2,
+      "status": "present",
+      "cell": "/akula-data/csd/matrix/reason-b512-st4000-s2-2fdc8b2-20260906",
+      "train_receipt": "/akula-data/csd/matrix/reason-b512-st4000-s2-2fdc8b2-20260906/receipts/reason-20260906T084040Z.json",
+      "train_receipt_sha256": "d4c2c9a06adcfa0bc850e8a3854f120b38e57ea466686311c3d50d77d46d5346",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b512-st4000-s2-2fdc8b2-20260906/receipts/cogsyndelta-reason-eval-20260906T084044Z.json",
+      "eval_receipt_sha256": "e03de8ddfa4f838fbbf319cc3d6973cb578c16ceee607f726934ad681a5799d3"
+    }
+  ],
+  "secondary_disclosed_cells": [
+    {
+      "batch": 256,
+      "steps": 4000,
+      "seed": 0,
+      "code_sha": "a7694090903664bc256b4b96d998b37cacd316cf",
+      "note": "superseded by the 2fdc8b2 rerun above; kept as a secondary, disclosed comparison only (no split.sha256 in its receipt -- code-revision confound, resolved by the rerun, not usable for H2/H6/PRE:1018)",
+      "cell": "/akula-data/csd/matrix/reason-b256-s0-7bc2699-20260904",
+      "train_receipt": "/akula-data/csd/matrix/reason-b256-s0-7bc2699-20260904/receipts/reason-20260904T145943Z.json",
+      "train_receipt_sha256": "fe4f943cc656dbef69cb1b744666f8948486f197e34f1532874504e97fa33749",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b256-s0-7bc2699-20260904/receipts/cogsyndelta-reason-eval-20260904T145946Z.json",
+      "eval_receipt_sha256": "899af95c998e68cda6d5c0843ef15f45d28bad0239156799d7d120181f60ffd8"
+    },
+    {
+      "batch": 512,
+      "steps": 4000,
+      "seed": 0,
+      "code_sha": "a7694090903664bc256b4b96d998b37cacd316cf",
+      "note": "superseded by the 2fdc8b2 rerun above; kept as a secondary, disclosed comparison only (no split.sha256 in its receipt -- code-revision confound, resolved by the rerun, not usable for H2/H6/PRE:1018)",
+      "cell": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904",
+      "train_receipt": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904/receipts/reason-20260904T151527Z.json",
+      "train_receipt_sha256": "da951af39095d43753989157aa0d54d47fcbfa04b1eac424d2507509d3b12de9",
+      "eval_receipt": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904/receipts/cogsyndelta-reason-eval-20260904T151530Z.json",
+      "eval_receipt_sha256": "e6acc3198667b07c3ffae4747ee8ab02a9d17e8e0accf889cf100489a2ec36c9",
+      "lexical_receipt": "/akula-data/csd/matrix/reason-b512-s0-7bc2699-20260904/receipts/cogsyndelta-reason-lexical-20260906T022914Z.json",
+      "lexical_receipt_sha256": "348e0f6d31f5b95d0646ea86298b5cbaac1eb77829fd668ec2fc4f4ca4c632ab"
+    }
+  ],
+  "code_revision_confound_note": "reason-b256-s0-7bc2699-20260904 and reason-b512-s0-7bc2699-20260904 (originally reused as the seed=0/steps=4000 arms) ran under code a7694090903664bc256b4b96d998b37cacd316cf with no split.sha256 in their receipts, a code-revision confound against the other ten arms trained under 2fdc8b2b6ca3ac4836fd61fbcd9ac32e25372fc6. Resolved by rerunning exactly those two (batch, steps=4000, seed=0) points under 2fdc8b2 (reason-b256-st4000-s0-2fdc8b2-20260906, reason-b512-st4000-s0-2fdc8b2-20260906); all twelve required_arms above now share code 2fdc8b2 and the committed split manifest. The two a769409 cells are retained on disk and listed under secondary_disclosed_cells for transparency only -- they are not inputs to H2, H6, or PRE:1018."
 }

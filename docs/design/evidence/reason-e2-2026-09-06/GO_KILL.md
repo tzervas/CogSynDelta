@@ -1,7 +1,8 @@
 # E2 go/kill — reason region epoch-matched batch ablation
 
 Template source: `docs/design/evidence/reason-region-diagnosis-2026-09-06/README.md:349-368`.
-Filled from `results.json` (this directory), computed by `grade_e2.py`.
+Filled from `results.json` (this directory), computed by `grade_e2.py`. All twelve
+required arms are present and graded; nothing here is `INSUFFICIENT_DATA`.
 
 ## Pre-registration (verbatim)
 
@@ -27,61 +28,109 @@ Filled from `results.json` (this directory), computed by `grade_e2.py`.
 > arm (0.05 vs 0.10) joins E3. If peak − final > 0.02 r@1 in ≥ 4 of the 6
 > 4,000-step runs, best-checkpoint retention is added (`PRE:1018`).
 
-## H2
+## H2 — NOT_CONFIRMED
 
-**INSUFFICIENT_DATA.** H2 requires all four (batch, steps) arms present at
-every one of seeds {0, 1, 2}. Only seed 0's two 4,000-step arms exist; seed 0's
-2,000-step arms and both seeds 1 and 2's four arms were never trained. 0 of 3
-seeds are complete (`results.json: h2_h6.seeds_complete = []`). H2 is neither
-confirmed nor refuted.
+Fails in all three seeds, on both clauses:
 
-## H6
+| seed | (512,2000) r@1 | (256,4000) r@1 | r@1 gap | tolerance | (512,2000) r@10 | (256,4000) r@10 | r@10 gap | tolerance | both beat (512,4000)? |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | 0.0664 | 0.1523 | 0.0859 | 0.03 | 0.1992 | 0.3906 | 0.1914 | 0.04 | no |
+| 1 | 0.0762 | 0.1523 | 0.0762 | 0.03 | 0.2676 | 0.3789 | 0.1113 | 0.04 | no |
+| 2 | 0.0664 | 0.1250 | 0.0586 | 0.03 | 0.2344 | 0.3457 | 0.1113 | 0.04 | no |
 
-**INSUFFICIENT_DATA**, same cause as H2 — H6 is also a within-seed, all-three-arm
-comparison and the (512, 2000) arm does not exist at any seed.
+The r@1 gap is 2–2.9x the 0.03 tolerance and the r@10 gap is 2.8–4.8x the 0.04
+tolerance in every seed — this is not a near miss. `beats(512,4000)` also fails in
+every seed: `(512,2000)` never beats `(512,4000)` on r@1 (0.0664/0.0762/0.0664 vs.
+0.1250/0.1191/0.1016), because `(512,2000)` is the weakest of the four batch=512 arms
+regardless of the steps=4000 comparator. **H2 does not confirm.**
 
-## Best-checkpoint retention gate (`PRE:1018`)
+## H6 — CONFIRMED
 
-**Not evaluable.** 2 of the required 6 four-thousand-step runs exist. Both
-available runs show `peak − final = 0.0` r@1 (recall@1 was still rising at the
-final step in both, see README §Numbers), so the two data points that do exist
-give no signal toward the gate either way.
+`(256,4000)` beats `(512,2000)` on r@10 by more than 0.05 in every seed, same sign
+throughout:
+
+| seed | (256,4000) r@10 | (512,2000) r@10 | margin | threshold |
+|---|---|---|---|---|
+| 0 | 0.3906 | 0.1992 | 0.1914 | > 0.05 |
+| 1 | 0.3789 | 0.2676 | 0.1113 | > 0.05 |
+| 2 | 0.3457 | 0.2344 | 0.1113 | > 0.05 |
+
+**H6 confirms.**
+
+## Best-checkpoint retention gate (`PRE:1018`) — does not fire
+
+All 6 required 4,000-step runs exist (evaluable). `peak − final` r@1 is exactly `0.0`
+in all six — recall@1 was still at (or tied with) its running maximum at the final
+step in every 4,000-step run, so 0 of 6 trigger the gate (threshold: ≥ 4 of 6).
+
+| batch | seed | peak r@1 | final r@1 | peak − final |
+|---|---|---|---|---|
+| 256 | 0 | 0.1523 | 0.1523 | 0.000 |
+| 512 | 0 | 0.1250 | 0.1250 | 0.000 |
+| 256 | 1 | 0.1523 | 0.1523 | 0.000 |
+| 512 | 1 | 0.1191 | 0.1191 | 0.000 |
+| 256 | 2 | 0.1250 | 0.1250 | 0.000 |
+| 512 | 2 | 0.1016 | 0.1016 | 0.000 |
+
+**`PRE:1018` does not fire.**
 
 ## Decision
 
-**BLOCKED_INSUFFICIENT_DATA.** Neither a go nor a kill call can be made under
-the pre-registered protocol:
+- **H2 is refuted, not confirmed.** The matrix row does **not** move to an epoch
+  budget; "b256 > b512" is **not** retired as a batch finding — it holds at every
+  seed and every step count tested here (256 beats 512 at both 2,000 and 4,000
+  steps, all three seeds).
+- **H6 is confirmed.** A temperature arm (τ = 0.05 vs 0.10) **joins E3**.
+- **`PRE:1018` does not fire.** Best-checkpoint retention is **not** added on this
+  evidence — every 4,000-step run's recall@1 was still rising (or flat) at the
+  final step, not past its peak.
+- These three findings are now direct, not blocked: all twelve arms share code
+  `2fdc8b2` and the committed split manifest (`split.sha256`
+  `77d2c0e1ac02...`), so every within-seed comparison H2/H6 needs is a clean
+  apples-to-apples read, not a confounded one.
 
-- The matrix row does **not** move to an epoch budget.
-- The "b256 > b512" batch finding is **not** retired.
-- No temperature arm is added to E3 on this evidence.
-- Best-checkpoint retention is **not** added on this evidence.
+## Deviations from the pre-registration (disclosed)
 
-The blocker is procedural, not scientific: `/akula-data/csd/matrix/selection.json`
-carries a stale sticky selection (`regions=["visual"]`) from a finished prior
-run, and `model-matrix plan/run --regions reason` refuses to proceed against it
-without `--all` (which would additionally admit every other not-yet-done cell
-across the whole matrix — out of this lane's scope) or an operator edit to the
-selection file. This lane is instructed read-only on `/akula-data/csd/matrix/`
-and did not attempt either.
+1. **`eval_every` is 666 (steps=4000) and 333 (steps=2000), not the pre-registered
+   200.** `scripts/csd-train-all.py` computes `eval_every=max(1, steps // 6)`
+   internally for the reason region's call site and exposes no CLI flag or matrix
+   command-template placeholder to override it — confirmed by grep over
+   `program/matrix/csd-matrix.yaml` and `src/cogsyndelta/regions/pretrain.py`. This
+   changes eval density (6 points instead of ~10–20) but not what is measured at the
+   final step, which is what H2/H6/`PRE:1018` all read.
+2. **`run.code.sha` and the reason `axes`/`exclude` block were edited worktree-local,
+   uncommitted, in `program/matrix/csd-matrix.yaml`** for the duration of both matrix
+   runs (the original 10-cell run and this pack's 2-cell rerun): `sha` pinned to
+   `2fdc8b2b6ca3ac4836fd61fbcd9ac32e25372fc6` (main HEAD at scout time, needed for the
+   split-manifest and lexical-baseline machinery E2 depends on), `stages.quantize`
+   forward disabled (train+test only, per pre-registration), and every other region's
+   block commented out so only `reason` ran. `model-matrix run ... --allow-code-drift`
+   was required because that pin is dirty relative to a clean checkout. The file was
+   restored to its committed state (`git checkout -- program/matrix/csd-matrix.yaml`)
+   before this pack was written; `tests/test_matrix_config.py` (34 tests) passes
+   against the restored file.
+3. **The two originally-reused seed-0/steps=4000 cells were a code-revision
+   confound, now resolved.** `reason-b256-s0-7bc2699-20260904` and
+   `reason-b512-s0-7bc2699-20260904` ran under code
+   `a7694090903664bc256b4b96d998b37cacd316cf` with no `split.sha256` in their
+   receipts (pre-dating the split-manifest machinery), while the other ten arms ran
+   under `2fdc8b2`. This pack reruns exactly those two `(batch, steps=4000, seed=0)`
+   points under `2fdc8b2` (`reason-b256-st4000-s0-2fdc8b2-20260906`,
+   `reason-b512-st4000-s0-2fdc8b2-20260906`), so all twelve arms used for
+   H2/H6/`PRE:1018` now share one code revision and the committed split manifest.
+   The two `a769409` cells are kept on disk and reported in `RUN-MANIFEST.json` and
+   `README.md` as a secondary, disclosed comparison only — they are not inputs to
+   any verdict above.
 
-**Independent of E2's blocked status**, E1's kill already stands: all three
-scored arms (b256-s0, b512-s0, untrained baseline) landed at or below 0.25
-`derive.recall@1` on the corrupted-derivation battery
-(`docs/design/evidence/g48-reason-e1-2026-09-06/README.md`). Diagonal r@1 on
-reason is demoted from a gate to a lexical-ceiling fraction for any future
-reading of these two arms' numbers.
+## What this licenses for the reason region
 
-## To unblock
-
-One of, operator's choice:
-
-1. Clear or widen `/akula-data/csd/matrix/selection.json`'s sticky selection to
-   include `reason` (it is tracking metadata, not a cell — safe to edit).
-2. Explicitly authorize `--all` for this lane, accepting that it also admits
-   every other pending cell in the matrix.
-
-Either unblocks the 10 missing cells; the pre-registered `program/matrix/csd-matrix.yaml`
-edits for the reason axes (batch/steps/seed exclusions for the two reused cells)
-are already staged, uncommitted, in the worktree from the prior run attempt and
-were not touched by this grading pass.
+- **E3 gains a temperature arm** (τ = 0.05 vs 0.10), per H6.
+- **The matrix row stays batch-parameterised**, not epoch-parameterised — H2's
+  refutation means "epochs, not batch" is not a safe simplification for this
+  region's matrix axis.
+- **E1's kill (recall demoted to a lexical-ceiling fraction) is unaffected and
+  stands independently** (`docs/design/evidence/g48-reason-e1-2026-09-06/README.md`);
+  every arm's r@1 in `README.md`'s table is reported as both a raw number and a
+  fraction of the 0.873 TF-IDF ceiling for exactly that reason.
+- **The token-aware retrain (W1d) is unaffected either way** — an orthogonal
+  question, already licensed independently of E2.
