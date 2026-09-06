@@ -12,8 +12,8 @@ taxonomy leaves open, the sentence is tagged `[spec]`. `TAX` below means
 twelve files, a shape for every tensor boundary, a parameter table reconciled against the taxonomy's
 27,424,039, the forward pass as numbered steps, the DEC-50 training contract with its receipts and
 fail-closed guards, a test plan with a sub-30-second CPU smoke, four operator questions, and a
-file-disjoint lane plan. Five of the taxonomy's seven parameter rows reproduce exactly from their
-stated dimensions; the controller and type-embedding rows do not (section 2.3).
+file-disjoint lane plan. Four of the taxonomy's seven parameter rows reproduce exactly from their
+stated dimensions; the workspace, controller and type-embedding rows do not (section 2.3).
 
 **What the module is.** White matter is a bounded Perceiver workspace: `L = 64` latents of width
 `D_w = 512` cross-attend over a key/value bank built from every admitted region's position latents,
