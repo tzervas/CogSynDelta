@@ -1,4 +1,4 @@
-"""E5: latent-step prediction for the `reason` region (diagnosis §4 E5).
+r"""E5: latent-step prediction for the `reason` region (diagnosis §4 E5).
 
 WHY THIS EXISTS
 g48's E1 KILLED the contrastive `reason` bi-encoder: every arm (b256-s0, b512-s0, the
@@ -273,7 +273,7 @@ def _join_context(question: str, prefix_steps: tuple[str, ...]) -> str:
 
 
 def enumerate_step_windows(examples: list[StepExample], *, blind: bool = False) -> list[StepWindow]:
-    """Every valid (steps[:t] -> steps[t]) window across `examples`.
+    r"""Every valid (steps[:t] -> steps[t]) window across `examples`.
 
     Deterministic and exhaustive -- every eligible prefix length of every example
     becomes one window, rather than sampling one window per example at random. This
@@ -602,8 +602,10 @@ class LatentStepModel(nn.Module):
         """One E5 step: predict the next-step latent, loss against the EMA target.
 
         Args:
-            ctx_ids, ctx_mask: Tokenized context (`question [+ prior steps]`).
-            tgt_ids, tgt_mask: Tokenized target step.
+            ctx_ids: Tokenized context ids (`question [+ prior steps]`).
+            ctx_mask: Attention mask for `ctx_ids`.
+            tgt_ids: Tokenized target-step ids.
+            tgt_mask: Attention mask for `tgt_ids`.
 
         Returns:
             `(loss, stats)`. `stats["target_emb_std"]` near zero is the collapse
@@ -709,6 +711,15 @@ def score_step_battery(
         candidates.extend((it.target, it.corrupted, *it.others))
 
     def encode_chunks(texts: list[str], fn: Any) -> torch.Tensor:
+        """Tokenize and encode `texts` through `fn` in `batch`-sized chunks, L2-normalised.
+
+        Args:
+            texts: Strings to encode.
+            fn: `(ids, mask) -> [n, D]`, e.g. `model.predict` or `model.encode_target`.
+
+        Returns:
+            `[len(texts), D]`, or `[0, 0]` when `texts` is empty.
+        """
         chunks = []
         for i in range(0, len(texts), batch):
             ids, mask = tokenize(texts[i : i + batch])
