@@ -48,7 +48,7 @@ instances of it legitimately, **(f)** known caveats.
 3. [The eval battery (`kind: eval` / `eval-quantized` receipts)](#3-the-eval-battery-kind-eval-eval-quantized-receipts)
 4. [The battery distinction -- quant vs. eval](#4-the-battery-distinction----quant-vs-eval)
 5. [Quantization / compression metrics (`kind: quant` receipts)](#5-quantization-compression-metrics-kind-quant-receipts)
-6. [Contamination and corpus-fingerprint fields](#6-contamination-and-corpus-fingerprint-fields)
+6. [Contamination, corpus-fingerprint, and split-manifest fields](#6-contamination-and-corpus-fingerprint-fields)
 7. [The external retrieval battery: BEIR-style FiQA + BM25 + the W4 gates](#7-the-external-retrieval-battery-beir-style-fiqa-bm25-the-w4-gates)
 8. [The training objective the metrics are measured relative to](#8-the-training-objective-the-metrics-are-measured-relative-to)
 9. [Definitional collision: three different "effective rank"s](#9-definitional-collision-three-different-effective-ranks)
@@ -116,15 +116,18 @@ that it was not zero.
 
 ## 2. The training held-out battery (`kind: train` receipts)
 
-Produced by `pretrain_region` (`src/cogsyndelta/regions/pretrain.py:1226`) via
+Produced by `pretrain_region` (`src/cogsyndelta/regions/pretrain.py:1468`) via
 `evaluate()` / `evaluate_graded()`. This is the battery every region's own training receipt
 reports, and the one `scripts/csd-quantize.py` reads from for its sensitivity search (§4).
 
 **Evaluation set, every field in this section:** the region's own held-out split -- the FIRST
 `cfg.holdout_pairs` (default 512) pairs of the deduplicated, shuffled, contamination-screened
-corpus, per `build_splits` (`src/cogsyndelta/regions/pretrain.py:872-1005`). It is the SAME
-split every stage (train / quant / eval / eval-quantized) reconstructs, gated on the corpus
-fingerprint matching what training recorded (§6) -- never re-globbed or re-sampled.
+corpus, per `build_splits` (`src/cogsyndelta/regions/pretrain.py:1047`). Membership is drawn
+with `cfg.split_seed` (default 0), **not** the training seed, and locked by a hashed
+manifest (`split.manifest` / `split.sha256` / `split.seed`, §6.4). It is the SAME split
+every stage (train / quant / eval / eval-quantized) reconstructs, gated on the corpus
+fingerprint **and** the split sha matching what training recorded -- never re-globbed or
+re-sampled from `cfg.seed`.
 
 ### 2.1 `held_out.recall@1`, `held_out.recall@10` / `untrained_baseline.recall@1`, `.recall@10`
 
@@ -321,7 +324,7 @@ the training receipt's own recorded config and cross-checked by corpus fingerpri
 "eval"` scores the fp32 checkpoint; `kind: "eval-quantized"` scores the actual packed `.ptq.pt`
 artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:915-1109`), not
 the in-memory quantization plan (§4). `_run_battery()`
-(`scripts/csd-benchmark.py:558-579`) encodes the **whole** holdout as one closed candidate
+(`scripts/csd-benchmark.py:584-605`) encodes the **whole** holdout as one closed candidate
 pool -- identical in shape to §2's `scores = a @ p.T`, `relevant = arange(...)` construction,
 which is why `rank.recall@1` in this battery is numerically identical to `held_out.recall@1`
 in §2 for the same checkpoint (confirmed against a real receipt pair in §10).
@@ -831,7 +834,7 @@ Produced by `quantize_text_region()` (`scripts/csd-quantize.py:54-272`), backed 
   `src/cogsyndelta/eval/metrics.py:406-542`. `REMOVAL_CEILING = 0.01`:
   `src/cogsyndelta/eval/metrics.py:467-485` -- caps how much of *training* a repair may delete
   (not how much of the holdout may have leaked) before refusing to train at all. Called from
-  `build_splits()`: `src/cogsyndelta/regions/pretrain.py:872-1005`.
+  `build_splits()`: `src/cogsyndelta/regions/pretrain.py:1047`.
 - **(d)** The full training corpus (streamed, never fully materialised, per
   `src/cogsyndelta/eval/metrics.py:419-421`) against the held-out split.
 - **(e)** `train_pairs_removed` and each channel's `eval_fraction_contaminated` are
@@ -866,6 +869,33 @@ Produced by `quantize_text_region()` (`scripts/csd-quantize.py:54-272`), backed 
   different-content shard swap would not be detected. This project's own corpus-fetch
   pipeline does not produce that case; a hand-edited shard would defeat the fingerprint
   silently.
+
+### 6.4 `split.manifest`, `split.sha256`, `split.seed` (and `batch_order.*`)
+
+- **(a)** `split.manifest`, `split.sha256`, `split.seed` on every `kind: train` receipt
+  (`pretrain_region`, `src/cogsyndelta/regions/pretrain.py:1468`); copied onto eval /
+  eval-quantized `provenance.split` (`scripts/csd-benchmark.py`) and the quant receipt
+  (`scripts/csd-quantize.py`). `batch_order.manifest`, `batch_order.sha256`,
+  `batch_order.seed` stamp the training-pair permutation the same way.
+- **(b)** Held-out membership is generated once from the corpus fingerprint plus
+  `split_seed` (default 0), written as
+  `config/mind/splits/<region>-<corpus_fp8>-split<seed>.json` (ordered item ids, counts,
+  generator params, `sha256` of the sorted membership list). The training seed does not
+  touch membership. Guard **G26** refuses: a split sha that does not match the corpus
+  fingerprint it was generated from; a held-out item in a training batch;
+  a receipt whose `split.sha256` is not the manifest the benchmark/quantizer is scoring.
+- **(c)** `build_splits()`: `src/cogsyndelta/regions/pretrain.py:1047`. Manifest schema
+  and G26 checks: `verify_split_manifest()` (`src/cogsyndelta/splits.py:273`),
+  `verify_receipt_split()` (`src/cogsyndelta/splits.py:394`),
+  `assert_no_held_out_in_pairs()` (`src/cogsyndelta/splits.py:369`).
+- **(e)** Two receipts are on the same eval set only when `split.sha256` agrees (and
+  `corpus.fingerprint` agrees, §6.3). A training-seed change with the same split
+  manifest is a different init, not a different test set. Seed-1 cells drawn before E0
+  are retired from comparison.
+- **(f)** `split_seed=0` is pinned to the historical seed-0 draw so existing seed-0
+  cells stay interpretable. `order_seed=0` is identity over that leftover (historical
+  seed-0 batch order). A compact batch-order manifest records the permutation seed,
+  algorithm version, and sha256 of the first N sliding-window start indices.
 
 ---
 
@@ -1892,6 +1922,8 @@ Receipt field -> section. `kind` is the receipt this field is written into
 | `token_aware.final_block_rank.*` | train | [§2.7](#27-token_awarefinal_block_rank) |
 | `contamination.*` (training receipt) | train | [§6.2](#62-contamination-training-receipts-pair-level-form-train_pairs_seen-train_pairs_removed-eval_pairs-gated_channels-channels-eval_duplicate_positives) |
 | `corpus.fingerprint`, `corpus.fingerprint_scheme` | train | [§6.3](#63-corpusfingerprint-corpusfingerprint_scheme) |
+| `split.manifest`, `split.sha256`, `split.seed` | train, eval, quant | [§6.4](#64-splitmanifest-splitsha256-splitseed-and-batch_order) |
+| `batch_order.manifest`, `batch_order.sha256`, `batch_order.seed` | train, eval, quant | [§6.4](#64-splitmanifest-splitsha256-splitseed-and-batch_order) |
 | `code_revision.*` | train, quant, eval | [§10](#10-how-to-compare-two-numbers-legitimately) item 6 |
 | `metrics["rank.recall@1"]` .. `["rank.recall@10"]` | eval, eval-quantized | [§3.1](#31-rankrecall1-rankrecall5-rankrecall10) |
 | `metrics["rank.mrr"]` | eval, eval-quantized | [§3.2](#32-rankmrr) |
