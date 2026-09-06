@@ -2061,3 +2061,173 @@ def test_g37_end_to_end_through_compute_geometry_would_compare_the_wrong_items()
     with pytest.raises(GeometryReferenceError, match="G37"):
         verify_geometry_reference(fp32_reference, quantized_reference)
         compute_geometry(fp32_latents, quantized_latents)  # never reached
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 10 / G38+G39 -- mined hard negatives could be their own pair's positive, and a run could
+# train on negatives mined against a DIFFERENT corpus, with nothing on disk saying so.
+#
+# G38 (self-positive disjointness) and G39 (mining provenance) are the two guards
+# PREREG-RETRIEVAL-NEGATIVES-2026-09-06 rev 3 section 4.2 pre-registers for the mined
+# arm. Both refuse the RUN, not the batch, and both are proven here by construction:
+# each test builds a mined negative set that is wrong in exactly one way and asserts the
+# refusal, including through `pretrain_region` itself so the guard is shown to be WIRED
+# rather than merely present.
+# ---------------------------------------------------------------------------------------
+
+
+def _mining_fixture() -> tuple[list[tuple[str, str]], list[tuple[str, list[tuple[str, str]]]]]:
+    """A miniature single-source union: distinct anchors, distinct positives."""
+    pairs = [
+        (f"question number {i} about topic {i}", f"answer body {i} explains topic {i}")
+        for i in range(8)
+    ]
+    return pairs, [("primary", pairs)]
+
+
+def _faithful_manifest(tmp_path: Path, m: int = 2) -> tuple[dict, dict, list, list]:
+    """Mine the fixture honestly and stamp a manifest for it.
+
+    Returns:
+        `(manifest, pools, pairs, sources)` -- everything a verify call needs.
+    """
+    from cogsyndelta.regions import _mining
+
+    pairs, sources = _mining_fixture()
+    qrels_path = tmp_path / "train.parquet"
+    qrels_path.write_bytes(b"the qrels artefact G39 hashes")
+    empty_qrels: dict[str, list] = {"query_id": [], "doc_id": [], "query": [], "passage": []}
+    result = _mining.mine_and_audit(
+        train_pairs=pairs, sources=sources, qrels=empty_qrels, fiqa_source="primary", m=m
+    )
+    manifest = _mining.build_manifest(
+        region="memory",
+        corpus_fingerprint="6fc0cf23ff8591ff2241278f82c001d2",
+        result=result,
+        train_pairs=pairs,
+        qrels_path=qrels_path,
+        m=m,
+    )
+    return manifest, _mining.build_pools(sources), pairs, sources
+
+
+def test_g38_fires_when_a_mined_negative_is_its_own_pairs_positive(tmp_path: Path) -> None:
+    """The construction G38 exists to refuse: a "hard negative" that IS the gold.
+
+    Mining excludes only the pair's own positive, so a bug in that exclusion -- an index
+    off by one, a normalisation that stops matching, a hand-edited manifest -- produces a
+    negative set in which some anchors are trained to rank their own answer DOWN. The
+    loss curve looks fine.
+    """
+    from cogsyndelta.regions import _mining
+
+    manifest, pools, pairs, _ = _faithful_manifest(tmp_path)
+    negatives = [list(row) for row in manifest["negatives"]]
+
+    # The honest mining result passes.
+    source_of_pair = ["primary"] * len(pairs)
+    _mining.assert_self_positive_disjoint(pairs, negatives, source_of_pair, pools)
+
+    # Now point pair 3's first negative at its own positive, which IS in the pool.
+    own = pools["primary"].texts.index(pairs[3][1])
+    negatives[3][0] = own
+    with pytest.raises(_mining.MiningGuardError, match="G38"):
+        _mining.assert_self_positive_disjoint(pairs, negatives, source_of_pair, pools)
+
+
+def test_g38_catches_a_reformatted_copy_of_the_positive(tmp_path: Path) -> None:
+    """Exact string equality would pass on the copy a corpus is most likely to hold.
+
+    G38 keys on the `pair_exact` normalisation (whitespace and case), so a positive that
+    reappears in the pool with different spacing is still refused.
+    """
+    from cogsyndelta.regions import _mining
+
+    pairs = [("anchor one", "The Answer Body"), ("anchor two", "another answer")]
+    pool_texts = ("the   answer   body", "another answer")
+    pools = {
+        "primary": _mining.MiningPool(
+            source="primary", texts=pool_texts, sha256=_mining.pool_sha256(pool_texts)
+        )
+    }
+    with pytest.raises(_mining.MiningGuardError, match="G38"):
+        _mining.assert_self_positive_disjoint(pairs, [[0], [1]], ["primary", "primary"], pools)
+
+
+@pytest.mark.parametrize(
+    ("field", "break_it"),
+    [
+        ("corpus fingerprint", lambda m: m["corpus"].__setitem__("fingerprint", "0" * 32)),
+        ("pool sha256", lambda m: m["pools"]["primary"].__setitem__("sha256", "0" * 64)),
+        ("qrels sha256", lambda m: m["qrels"].__setitem__("sha256", "0" * 64)),
+        ("bm25 k1", lambda m: m["bm25"].__setitem__("k1", 1.2)),
+        ("m", lambda m: m.__setitem__("negatives_per_anchor", 7)),
+        ("train pair sequence", lambda m: m["train_pairs"].__setitem__("sha256", "0" * 64)),
+        ("missing corpus block", lambda m: m.pop("corpus")),
+        ("missing schema", lambda m: m.pop("schema")),
+    ],
+)
+def test_g39_refuses_a_manifest_that_disagrees_with_the_run(
+    tmp_path: Path, field: str, break_it
+) -> None:
+    """Every field section 4.2 pins, broken one at a time.
+
+    Each is checked against a value computed from the RUN's own corpus, never against
+    another field of the same manifest -- a self-consistent manifest for a different
+    corpus is precisely what this refuses. The parametrisation includes two ABSENT
+    fields, because a guard that treats a missing field as "nothing to check" fails open.
+    """
+    from cogsyndelta.regions import _mining
+
+    manifest, pools, pairs, _ = _faithful_manifest(tmp_path)
+    qrels_sha = _mining.file_sha256(tmp_path / "train.parquet")
+
+    # The faithful manifest verifies.
+    _mining.verify_manifest(
+        manifest,
+        corpus_fingerprint="6fc0cf23ff8591ff2241278f82c001d2",
+        pools=pools,
+        qrels_sha256=qrels_sha,
+        train_pairs=pairs,
+        m=2,
+    )
+
+    break_it(manifest)
+    # Re-stamp the payload hash, so this test proves the FIELD check fires rather than
+    # only the tamper-detection hash.
+    if "sha256" in manifest:
+        manifest["sha256"] = _mining.manifest_payload_sha256(manifest)
+    with pytest.raises(_mining.MiningGuardError, match="G39"):
+        _mining.verify_manifest(
+            manifest,
+            corpus_fingerprint="6fc0cf23ff8591ff2241278f82c001d2",
+            pools=pools,
+            qrels_sha256=qrels_sha,
+            train_pairs=pairs,
+            m=2,
+        )
+
+
+def test_g39_refuses_a_manifest_whose_payload_was_edited(tmp_path: Path) -> None:
+    """Swapping negatives in an otherwise-correct manifest, without re-stamping its hash."""
+    from cogsyndelta.regions import _mining
+
+    manifest, pools, pairs, _ = _faithful_manifest(tmp_path)
+    manifest["negatives"][0] = list(reversed(manifest["negatives"][0]))
+    with pytest.raises(_mining.MiningGuardError, match="payload sha256"):
+        _mining.verify_manifest(
+            manifest,
+            corpus_fingerprint="6fc0cf23ff8591ff2241278f82c001d2",
+            pools=pools,
+            qrels_sha256=_mining.file_sha256(tmp_path / "train.parquet"),
+            train_pairs=pairs,
+            m=2,
+        )
+
+
+def test_g39_refuses_a_missing_manifest(tmp_path: Path) -> None:
+    """No manifest at all is a refusal, not an unmined run."""
+    from cogsyndelta.regions import _mining
+
+    with pytest.raises(_mining.MiningGuardError, match="G39"):
+        _mining.load_manifest(tmp_path / "not-here.json")
