@@ -81,20 +81,20 @@ Table 2 — files under `src/cogsyndelta/interconnect/`, their classes and const
 | `__init__.py` | — | — | re-exports; `__all__` is the public surface |
 
 `InterconnectConfig` defaults are the §1.4 interconnect block — `workspace_dim 512`, `latents 64`,
-`n_iter 4`, `heads 8`, `mlp_ratio 4`, `budget_total_read_tokens 256`, `budget_total_kv_bytes
-3221225472`, `floor_eta 0.15` — plus `n_cond 8`, `controller_dim 256`, `controller_depth 2`,
-`controller_heads 4`, `flops_ceiling`, `write_back True`, `k_candidates 32` and
-`unify_probes_trainable True` (TAX:736-741, TAX:1428, TAX:1684-1688). **One name for the iteration
-count.** `n_iter` is the number of workspace blocks and the upper bound on iterations; `I` in
-formulas is `n_iter`; a request's `step_budget.max_iters ≤ n_iter` is the bound the validator
+`n_iter 4`, `heads 8`, `mlp_ratio 4`, `budget_total_read_tokens 256`,
+`budget_total_kv_bytes 3221225472`, `floor_eta 0.15` — plus `n_cond 8`, `controller_dim 256`,
+`controller_depth 2`, `controller_heads 4`, `flops_ceiling`, `write_back True`, `k_candidates 32`
+and `unify_probes_trainable True` (TAX:736-741, TAX:1428, TAX:1684-1688). **One name for the
+iteration count.** `n_iter` is the number of workspace blocks and the upper bound on iterations; `I`
+in formulas is `n_iter`; a request's `step_budget.max_iters ≤ n_iter` is the bound the validator
 checks; `halt_at ≤ max_iters` is the realised value. Iteration `i` runs block `i` with untied
 weights, so halting at iteration 2 skips blocks 3 and 4 (TAX:1563-1568). Tying the blocks is the
 recurrent-depth seam and is not built (TAX:4612-4614).
 
 ### 2.2 Shapes at every boundary
 
-Symbols: `B` batch, `L = 64`, `D = 512`, `R` participants, `R_ctx = 4` encoding participants, `I =
-n_iter = 4`, `H = 8` heads, `T_r ≤ ctx_r` positions region `r` encoded, `b_r` its read tokens,
+Symbols: `B` batch, `L = 64`, `D = 512`, `R` participants, `R_ctx = 4` encoding participants,
+`I = n_iter = 4`, `H = 8` heads, `T_r ≤ ctx_r` positions region `r` encoded, `b_r` its read tokens,
 `n_cond = 8`, `k = 32` candidates. Budgets are per item, so within a batch a region runs at the
 batch maximum `ctx_r` and the per-item budget mask enforces each item's own budget `[spec]`. Mask
 polarity is uniform: `True` means valid, attendable or executed.
@@ -174,9 +174,9 @@ Table 4a — context budgets per encoding participant `[spec]`; the taxonomy nam
 | `reasoning` | 8 | 256 | trained at `max_len 256` (TAX:132-133) |
 | `visual` | 8 | 64 | `n_patches` today; 256 after W7v (TAX:1236-1242) |
 
-`ctx_min = 8` is one prefix length, the same order as `n_cond`. From these values `Σ_r c_r ·
-ctx_max_r = 4,096·(96 + 96 + 256) + 9,216·64 = 2,424,832` bytes against a 3 GiB `B_kv`, and
-4,194,304 bytes after W7v, so at v1 `ctx_max` binds and `B_kv` never does.
+`ctx_min = 8` is one prefix length, the same order as `n_cond`. From these values
+`Σ_r c_r · ctx_max_r = 4,096·(96 + 96 + 256) + 9,216·64 = 2,424,832` bytes against a 3 GiB `B_kv`,
+and 4,194,304 bytes after W7v, so at v1 `ctx_max` binds and `B_kv` never does.
 
 Table 5 — controller summary and heads, the part the taxonomy leaves undimensioned `[spec]`.
 
@@ -204,20 +204,21 @@ skipped and it is executed as given; this is the frozen-schedule arm of the budg
 
 1. **Summarise.** Build `s [B, R+1, 256]` from raw inputs without running any region, add the slot
    embeddings, run the two controller blocks.
-2. **Budgets.** `β_ctx = η/R_ctx + (1−η)·softmax(s_ctx)` over the four encoding participants; `ctx_r
-   = clip(floor(β_ctx,r · B_kv / c_r), ctx_min, ctx_max_r)`; clipping down never breaks the byte
-   bound, and clipping up cannot because construction refuses a config where `η/R_ctx · B_kv < c_r ·
-   ctx_min` for any `r`. `β_b = η/R + (1−η)·softmax(s_b)` over all five, then `b =
-   box_integerise(B_read · β_b, lo, hi)` with `lo_r = max(token_budget.min_r, ceil(η/R · B_read))`
-   and `hi_r = token_budget.max_r`: start every region at `lo_r`, distribute `B_read − Σ lo` by
-   largest remainder in proportion to `β_b`, cap at `hi_r`, and redistribute any capped surplus
-   among the uncapped regions. `Σ b_r = B_read` exactly, every `b_r` is inside its box, and
-   construction refuses `Σ lo > B_read` or `Σ hi < B_read` (TAX:1401-1416, TAX:5824-5825). At `R =
-   5` every `lo_r` is 8, the store's floor; at `R = 4` it is 10. **Phase A and the fallback
-   `Schedule` use the dense allocation** `[spec]`: `A ≡ 1`, `ctx = ctx_max`, `halt_at = max_iters =
-   n_iter`, and `b = box_integerise(uniform)`, which is `[64, 64, 64, 64]` at `R = 4` and `[52, 51,
-   51, 51, 51]` at `R = 5`. This is what "all regions on at `ctx_max`, `b_max`" can mean inside a
-   256-slot bank, since `Σ b_max = 768` (TAX:1645-1647, TAX:1196).
+2. **Budgets.** `β_ctx = η/R_ctx + (1−η)·softmax(s_ctx)` over the four encoding participants;
+   `ctx_r = clip(floor(β_ctx,r · B_kv / c_r), ctx_min, ctx_max_r)`; clipping down never breaks the
+   byte bound, and clipping up cannot because construction refuses a config where
+   `η/R_ctx · B_kv < c_r · ctx_min` for any `r`. `β_b = η/R + (1−η)·softmax(s_b)` over all five,
+   then `b = box_integerise(B_read · β_b, lo, hi)` with
+   `lo_r = max(token_budget.min_r, ceil(η/R · B_read))` and `hi_r = token_budget.max_r`: start every
+   region at `lo_r`, distribute `B_read − Σ lo` by largest remainder in proportion to `β_b`, cap at
+   `hi_r`, and redistribute any capped surplus among the uncapped regions. `Σ b_r = B_read` exactly,
+   every `b_r` is inside its box, and construction refuses `Σ lo > B_read` or `Σ hi < B_read`
+   (TAX:1401-1416, TAX:5824-5825). At `R = 5` every `lo_r` is 8, the store's floor; at `R = 4` it is
+   10. **Phase A and the fallback `Schedule` use the dense allocation** `[spec]`: `A ≡ 1`,
+   `ctx = ctx_max`, `halt_at = max_iters = n_iter`, and `b = box_integerise(uniform)`, which is
+   `[64, 64, 64, 64]` at `R = 4` and `[52, 51, 51, 51, 51]` at `R = 5`. This is what "all regions on
+   at `ctx_max`, `b_max`" can mean inside a 256-slot bank, since `Σ b_max = 768`
+   (TAX:1645-1647, TAX:1196).
 3. **Admission and halt.** `A = 1[σ(A_logits) > 0.5]` with a straight-through sigmoid, forced so
    every declared region is admitted at least once at its argmax iteration. `halt_at` is the first
    `i` at which the cumulative halt probability reaches `1 − ε`, else `max_iters`; the runtime bound
@@ -227,15 +228,15 @@ skipped and it is executed as given; this is the frozen-schedule arm of the budg
    `admitted[n_iter]`, `context_tokens`, `read_tokens`, `condition`, `priority`, `precision`,
    `resident` and `codec`; `step_budget` carries `max_iters`, `kv_bytes`, `read_tokens`, `wall_ms`
    and `flops_ceiling`; the schedule carries its predicted `region_token_flops`; `output.modalities`
-   is checked against the request's `allowed_modalities` and the resident heads (TAX:1494-1518,
-   TAX:1616-1626). A `Schedule` carrying a `trace_id`, a store namespace, a modality with no
-   resident head, a malformed `admitted`, a `region_token_flops` over the ceiling, or any bound
-   violation is refused before execution and the dense fallback runs (TAX:1521-1524, TAX:5827-5828,
-   TAX:5854); Table 8a disposes of the rest.
-5. **Condition.** For `i ≥ 1` and every admitted region with `accepts_condition`, `cond_r =
-   reshape(Linear_r(pool_r(z_{i−1})), [n_cond, d_r])`, where `pool_r` is the region's attention pool
-   over the latents (TAX:1427-1431). With `write_back = False` the argument is `None` at every
-   iteration.
+   is checked against the request's `allowed_modalities` and the resident heads
+   (TAX:1494-1518, TAX:1616-1626). A `Schedule` carrying a `trace_id`, a store namespace, a modality
+   with no resident head, a malformed `admitted`, a `region_token_flops` over the ceiling, or any
+   bound violation is refused before execution and the dense fallback runs
+   (TAX:1521-1524, TAX:5827-5828, TAX:5854); Table 8a disposes of the rest.
+5. **Condition.** For `i ≥ 1` and every admitted region with `accepts_condition`,
+   `cond_r = reshape(Linear_r(pool_r(z_{i−1})), [n_cond, d_r])`, where `pool_r` is the region's
+   attention pool over the latents (TAX:1427-1431). With `write_back = False` the argument is `None`
+   at every iteration.
 6. **Encode.** Run `tokens(inputs, context_tokens=ctx_r, condition=cond_r)` for `{r : A[i, r] = 1}`,
    concurrently on separate streams, reading the per-request cache when `(ctx_r, cond_r)` is
    unchanged; the cache holds at most `R × I` entries and dies with the request (TAX:1563-1577). A
@@ -253,13 +254,14 @@ skipped and it is executed as given; this is the frozen-schedule arm of the budg
    positional term `[spec]` (TAX:1253). `b_store` is floored at `lo_store = 8` so that a store
    nobody attends to is a measurement, and an empty partition yields zero unmasked store slots,
    which is the no-store configuration (TAX:1412-1414, TAX:5857).
-9. **One workspace block.** `z += CrossAttn(LN(z), LN(bank))`, `z += SelfAttn(LN(z))`, `z +=
-   MLP(LN(z))` (TAX:1254-1256).
-10. **Export connection strengths.** `a[:, i, r] = (1 / (H·L)) · Σ_h Σ_l Σ_{t : slot_region[t] = r}
-    w[:, h, l, t]`, a scatter-add over `slot_region` on the materialised softmax, so `a[b, i, :]` is
-    a distribution over the admitted regions; for `i ≥ halt_at` it is zero and `active[b, i]` is
-    false, and every receipt statistic averages over active iterations only. The block runs SDPA
-    unless `return_attention` is set, and the two paths must agree to 1e-4 (TAX:1257-1262).
+9. **One workspace block.** `z += CrossAttn(LN(z), LN(bank))`, `z += SelfAttn(LN(z))`,
+   `z += MLP(LN(z))` (TAX:1254-1256).
+10. **Export connection strengths.**
+    `a[:, i, r] = (1 / (H·L)) · Σ_h Σ_l Σ_{t : slot_region[t] = r} w[:, h, l, t]`, a scatter-add
+    over `slot_region` on the materialised softmax, so `a[b, i, :]` is a distribution over the
+    admitted regions; for `i ≥ halt_at` it is zero and `active[b, i]` is false, and every receipt
+    statistic averages over active iterations only. The block runs SDPA unless `return_attention` is
+    set, and the two paths must agree to 1e-4 (TAX:1257-1262).
 11. **Halt check.** Stop when `i + 1 == halt_at`.
 12. **Read out.** `f = FrontalReadout(z_N)`, a learned-query attention pool over the latents plus
     its MLP (TAX:2117-2119). `RankHead` maps `f` and each candidate embedding to `[B, D]` and scores
@@ -269,17 +271,18 @@ skipped and it is executed as given; this is the frozen-schedule arm of the budg
     `[spec]`, under `(scope, domain, logical_key)` with the default importance and a provenance
     sidecar that is never on the read path; this is the workspace's own write-back path, one latent
     per turn, as decided (TAX:586, TAX:4847, TAX:5069).
-14. **Finalise the `Schedule` and the receipt fields.** `intensity` per node is the mean of `a[:, :,
-    r]` over active iterations; `halt_at` is the realised value; `edges`, `stages` and
+14. **Finalise the `Schedule` and the receipt fields.** `intensity` per node is the mean of
+    `a[:, :, r]` over active iterations; `halt_at` is the realised value; `edges`, `stages` and
     `lockstep_groups` come from the two topology derivations only when write-back is enabled,
     otherwise the fields are omitted and `topology: not demonstrated` is recorded (TAX:1443-1490).
 
-**Admission matrix semantics.** `depth(r) = min{i : A[i, r] = 1}`; a region with `depth 0` and `A[:,
-r] ≡ 1` is asynchronous; regions first admitted at the same `i ≥ 1` with `accepts_condition` form a
-lockstep group, because each reads `z_{i−1}` and writes `z_i` (TAX:1443-1456). The cross-check `Ĉ[i,
-j] = Σ_t ⟨a[:, t, i], w[:, t+1, j]⟩ / Z` needs `w`, the weight with which each latent fed region
-`j`'s prefix; with a mean pool `w` is uniform and `Ĉ` degenerates to a per-source marginal, which is
-why this spec makes the prefix pool a per-region attention pool `[spec]` (TAX:1461-1470).
+**Admission matrix semantics.** `depth(r) = min{i : A[i, r] = 1}`; a region with `depth 0` and
+`A[:, r] ≡ 1` is asynchronous; regions first admitted at the same `i ≥ 1` with `accepts_condition`
+form a lockstep group, because each reads `z_{i−1}` and writes `z_i` (TAX:1443-1456). The
+cross-check `Ĉ[i, j] = Σ_t ⟨a[:, t, i], w[:, t+1, j]⟩ / Z` needs `w`, the weight with which each
+latent fed region `j`'s prefix; with a mean pool `w` is uniform and `Ĉ` degenerates to a per-source
+marginal, which is why this spec makes the prefix pool a per-region attention pool `[spec]`
+(TAX:1461-1470).
 
 **Severance for I2′.** Masking region `i`'s slots at every iteration below `depth(j)` and zeroing
 its share of `j`'s prefix is a mask on `key_mask` and on the prefix pool, with no weight changed
@@ -397,12 +400,13 @@ Table 9 — unit tests per component, one file each under `tests/interconnect/`.
 | all | construction and forward under `torch.manual_seed(0)` are bitwise identical across two runs on CPU |
 
 **Integration test.** `tests/interconnect/test_integration.py` builds two fake faculties that
-satisfy the W0 protocol, `FakeText(token_dim 16, pooled_dim 16, kv_bytes_per_token 64,
-accepts_condition True)` and `FakeVisual(token_dim 24, ...)`, plus the store stub, at `D = 64`, `L =
-8`, `n_iter = 2`, `B_read = 16`, `k = 4`. It runs phase A for 20 steps on toy items with a planted
-rule and asserts that the loss falls; `a` is a distribution; write-back changes `h_r` at iteration 1
-and not at iteration 0; the store's slots receive mass only after a write in the same scope; the
-emitted `Schedule` validates, and switching `write_back` off omits `edges`. Five more: the bank is
+satisfy the W0 protocol,
+`FakeText(token_dim 16, pooled_dim 16, kv_bytes_per_token 64, accepts_condition True)` and
+`FakeVisual(token_dim 24, ...)`, plus the store stub, at `D = 64`, `L = 8`, `n_iter = 2`,
+`B_read = 16`, `k = 4`. It runs phase A for 20 steps on toy items with a planted rule and asserts
+that the loss falls; `a` is a distribution; write-back changes `h_r` at iteration 1 and not at
+iteration 0; the store's slots receive mass only after a write in the same scope; the emitted
+`Schedule` validates, and switching `write_back` off omits `edges`. Five more: the bank is
 load-bearing, `∂f/∂bank_v ≠ 0`; halting is reachable and no block at or beyond `halt_at` receives
 gradient; an `A` with some `A[i, r] = 0` leaves that region unencoded and unread at `i`; two
 distinct `z` give distinct `f`; and the frozen-schedule arm, `forward(inputs, schedule=s0)` with the
@@ -435,15 +439,15 @@ none blocks the lanes of section 7.
 **Q1. Store scope axis (OD-21, DEC-64).** What is `scope` in `(scope, domain, logical_key)`?
 Options: (a) the authenticated principal, with `session` as a server-bounded sub-segment; (b) the
 session alone; (c) a persona basin within a principal. Recommendation: (a), the DEC-64 default; (b)
-makes X7 work and long-horizon memory impossible, and (c) is a later product decision (TAX:585,
-TAX:4966-4977).
+makes X7 work and long-horizon memory impossible, and (c) is a later product decision
+(TAX:585, TAX:4966-4977).
 
 **Q2. Store capacity claim and `safety_margin` (DEC-63).** Is a residual claim acceptable, given
 that the residual may round to zero on the 5080? Options: (a) the residual formula with
 `safety_margin = 2 GiB` and E1's pre-committed floor fallback on any card whose residual is zero;
 (b) a fixed floor reserved before the KV budget on every card; (c) the residual with no fallback.
-Recommendation: (a); it is what E1's gate (ii) already records per card (TAX:584, TAX:4919-4927,
-TAX:6002-6015).
+Recommendation: (a); it is what E1's gate (ii) already records per card
+(TAX:584, TAX:4919-4927, TAX:6002-6015).
 
 **Q5. OD-17 dependency.** W5 needs regions frozen at retrained checkpoints, W4 is blocked on OD-17,
 and the current checkpoints carry near-copies of the mean per W1 (TAX:2397-2400, TAX:2651). Options:
