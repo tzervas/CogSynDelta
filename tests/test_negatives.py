@@ -653,6 +653,36 @@ def test_the_auxiliary_weights_are_settable_to_zero(tmp_path: Path, monkeypatch)
     assert (off.token_loss_weight, off.decorr_weight) == (0.0, 0.0)
 
 
+def test_the_receipt_records_the_weights_the_loss_actually_used(
+    tiny_cfg: PretrainConfig,
+) -> None:
+    """`objective_weights.measured` comes from the loss site, and grades as arm C.
+
+    A receipt that reported the parsed configuration could not tell an auxiliaries-off
+    arm from a run where something downstream put the terms back. This asserts the
+    measured pair is present, is what the loss multiplied by, and satisfies G40 for the
+    control arm -- and that a production-weighted run of the same code does NOT.
+    """
+    from cogsyndelta.eval.prereg import E_N_ARMS, PreregGuardError, assert_receipt_matches_arm
+
+    receipt = pretrain_region(replace(tiny_cfg, token_loss_weight=0.0, decorr_weight=0.0))
+    weights = receipt["objective_weights"]
+    assert weights["measured"] == {"token_loss_weight": 0.0, "decorr_weight": 0.0}
+    assert weights["steps_measured"] == tiny_cfg.steps
+    assert weights["values_seen"] == [[0.0, 0.0]]
+    assert_receipt_matches_arm(receipt, E_N_ARMS["C"])
+
+    production = pretrain_region(
+        replace(tiny_cfg, token_loss_weight=0.1, decorr_weight=0.1, out_dir=tiny_cfg.out_dir + "-p")
+    )
+    assert production["objective_weights"]["measured"] == {
+        "token_loss_weight": 0.1,
+        "decorr_weight": 0.1,
+    }
+    with pytest.raises(PreregGuardError, match="G40"):
+        assert_receipt_matches_arm(production, E_N_ARMS["C"])
+
+
 def test_zero_weight_run_has_no_auxiliary_terms(tiny_cfg: PretrainConfig) -> None:
     receipt = pretrain_region(replace(tiny_cfg, token_loss_weight=0.0, decorr_weight=0.0))
     assert all("token_loss" not in entry for entry in receipt["history"])

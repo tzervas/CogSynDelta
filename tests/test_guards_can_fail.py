@@ -2231,3 +2231,149 @@ def test_g39_refuses_a_missing_manifest(tmp_path: Path) -> None:
 
     with pytest.raises(_mining.MiningGuardError, match="G39"):
         _mining.load_manifest(tmp_path / "not-here.json")
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 11 / G40 -- a round could be launched with the WRONG OBJECTIVE and complete
+# normally. PREREG-RETRIEVAL-NEGATIVES-2026-09-06 rev 3 section 2.1 requires both
+# auxiliary weights at 0.0 in every arm, and `scripts/csd-train-all.py` hard-coded
+# `memory`'s 0.1/0.1 with no override: an arm started there would have trained the
+# production objective, finished, and written a plausible receipt. Nothing failed.
+#
+# The launcher is fixed, but a launch-time check only protects the launcher somebody
+# remembered to fix. G40 sits where the number is READ: `cogsyndelta.eval.prereg` refuses
+# to grade a receipt whose MEASURED weights -- recorded at the loss site, not parsed from
+# arguments -- are not the pre-registration's declared ones.
+# ---------------------------------------------------------------------------------------
+
+
+def _graded_receipt(token_weight: float, decorr_weight: float, negative_set: str = "in_batch"):
+    """A receipt shaped like `pretrain_region`'s, with the measured weights dialled."""
+    return {
+        "region": "memory",
+        "objective_weights": {
+            "declared": {"token_loss_weight": 0.0, "decorr_weight": 0.0},
+            "measured": {
+                "token_loss_weight": token_weight,
+                "decorr_weight": decorr_weight,
+            },
+            "values_seen": [[token_weight, decorr_weight]],
+            "steps_measured": 4000,
+            "read": "at the loss site, per step",
+        },
+        "negatives": {"set": negative_set, "bank_size": 0},
+    }
+
+
+def test_g40_refuses_to_grade_a_receipt_trained_at_the_production_weights() -> None:
+    """The failing arm: 0.1/0.1 measured against a pre-registration declaring 0.0/0.0.
+
+    This is the run the old launcher would have produced. Its loss curve, its receipt and
+    its metrics are all well-formed; the only thing wrong with it is that it answers a
+    different question, which is exactly why a human reading the number would not catch
+    it.
+    """
+    from cogsyndelta.eval.prereg import E_N_ARMS, PreregGuardError, assert_receipt_matches_arm
+
+    # The honest arm grades.
+    assert_receipt_matches_arm(_graded_receipt(0.0, 0.0), E_N_ARMS["C"])
+
+    with pytest.raises(PreregGuardError, match="G40"):
+        assert_receipt_matches_arm(_graded_receipt(0.1, 0.1), E_N_ARMS["C"])
+    # One weight is enough: the terms are separate, and 0.1 * L_decorr alone carries the
+    # 98.8% of the rank change the control-armed experiment measured.
+    with pytest.raises(PreregGuardError, match="G40"):
+        assert_receipt_matches_arm(_graded_receipt(0.0, 0.1), E_N_ARMS["C"])
+
+
+def test_g40_reads_the_measured_weights_not_the_declared_ones() -> None:
+    """A receipt whose config says 0.0 while its loss used 0.1 is refused.
+
+    This is the case a check on the parsed arguments cannot see, and it is the reason the
+    weights are collected at the multiplication site: `declared` here is 0.0/0.0 -- the
+    config was correct -- and the run still trained the wrong objective.
+    """
+    from cogsyndelta.eval.prereg import E_N_ARMS, PreregGuardError, assert_receipt_matches_arm
+
+    receipt = _graded_receipt(0.1, 0.1)
+    assert receipt["objective_weights"]["declared"] == {
+        "token_loss_weight": 0.0,
+        "decorr_weight": 0.0,
+    }
+    with pytest.raises(PreregGuardError, match="MEASURED"):
+        assert_receipt_matches_arm(receipt, E_N_ARMS["C"])
+
+
+@pytest.mark.parametrize(
+    ("case", "damage"),
+    [
+        ("no block at all", lambda r: r.pop("objective_weights")),
+        ("measured is null", lambda r: r["objective_weights"].__setitem__("measured", None)),
+        (
+            "weights changed mid-run",
+            lambda r: r["objective_weights"].update(
+                {"measured": None, "values_seen": [[0.0, 0.0], [0.1, 0.1]]}
+            ),
+        ),
+        (
+            "measured is unreadable",
+            lambda r: r["objective_weights"].__setitem__("measured", {"token_loss_weight": 0.0}),
+        ),
+    ],
+)
+def test_g40_fails_closed_on_a_receipt_that_cannot_say_what_it_trained(case, damage) -> None:
+    """Absence is a refusal, not a pass.
+
+    A receipt written before this field existed, one where no step ran, and one whose
+    weights moved mid-run all describe runs whose objective is unknown. Grading them
+    "because there is nothing to check" is how an unmeasured run passes as a measured one.
+    """
+    from cogsyndelta.eval.prereg import E_N_ARMS, PreregGuardError, assert_receipt_matches_arm
+
+    receipt = _graded_receipt(0.0, 0.0)
+    damage(receipt)
+    with pytest.raises(PreregGuardError, match="G40"):
+        assert_receipt_matches_arm(receipt, E_N_ARMS["C"])
+
+
+def test_g40_refuses_an_arm_whose_negative_set_is_not_its_own() -> None:
+    """The round changes ONE variable, so a T1 receipt with an in-batch denominator is
+    not T1 -- it is the control wearing T1's name."""
+    from cogsyndelta.eval.prereg import E_N_ARMS, PreregGuardError, assert_receipt_matches_arm
+
+    assert_receipt_matches_arm(_graded_receipt(0.0, 0.0, negative_set="bank"), E_N_ARMS["T1"])
+    with pytest.raises(PreregGuardError, match="G40"):
+        assert_receipt_matches_arm(
+            _graded_receipt(0.0, 0.0, negative_set="in_batch"), E_N_ARMS["T1"]
+        )
+
+
+def test_g40_stops_the_grader_before_it_produces_a_number() -> None:
+    """The refusal has to happen where the RESULT is read, not only where a run starts.
+
+    `grade_contrast` is the whole path from two receipts to a PASS-A verdict; this asserts
+    a wrong-objective treatment arm cannot get a bound out of it, however it was launched.
+    """
+    from cogsyndelta.eval.prereg import E_N_ARMS, PreregGuardError, grade_contrast
+
+    def with_per_query(receipt, values):
+        receipt["retrieval"] = {
+            "full_pool": {
+                "query_ids": [f"q{i}" for i in range(len(values))],
+                "per_query": {"trained": {"recall@10": values}},
+            }
+        }
+        return receipt
+
+    control = with_per_query(_graded_receipt(0.0, 0.0), [0.0, 1.0, 0.0, 1.0])
+    honest = with_per_query(_graded_receipt(0.0, 0.0, negative_set="bank"), [1.0, 1.0, 1.0, 1.0])
+    graded = grade_contrast(control=control, treatment=honest, treatment_arm=E_N_ARMS["T1"], seed=0)
+    assert graded["bootstrap"]["point_estimate"] == pytest.approx(0.5)
+
+    wrong_objective = with_per_query(
+        _graded_receipt(0.1, 0.1, negative_set="bank"), [1.0, 1.0, 1.0, 1.0]
+    )
+    with pytest.raises(PreregGuardError, match="G40"):
+        grade_contrast(
+            control=control, treatment=wrong_objective, treatment_arm=E_N_ARMS["T1"], seed=0
+        )

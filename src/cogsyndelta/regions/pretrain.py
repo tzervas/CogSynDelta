@@ -1866,6 +1866,13 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     # in something other than the negative set. A resumed run refills it over the next
     # `K/batch` steps instead, which is visible in `negatives_per_query`.
     bank = NegativeBank(cfg.negative_bank_size, device=device) if cfg.negative_bank_size else None
+    # The auxiliary weights AS THE LOSS SAW THEM, collected at the site that multiplies
+    # by them rather than from `cfg` at receipt-writing time. A receipt that reports the
+    # parsed arguments cannot tell an arm that ran with the terms off from one where some
+    # later code path put them back; this set can, and `cogsyndelta.eval.prereg` (G40)
+    # refuses to grade a run whose measured weights are not the pre-registered ones.
+    observed_objective_weights: set[tuple[float, float]] = set()
+    steps_measured = 0
     holdout_id_set = {item_id(a, b) for a, b in holdout}
     for step in range(start_step, cfg.steps):
         for group in opt.param_groups:
@@ -1927,7 +1934,14 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
                 if extra_negatives is None
                 else info_nce(a_pooled, p_pooled, extra_negatives=extra_negatives)
             )
-            if cfg.token_loss_weight > 0.0:
+            # Read ONCE, here, into the values the loss is about to use -- and recorded
+            # below from these same locals, so the receipt reports the multiplier that
+            # was applied and not a field somebody could have read differently.
+            token_weight = cfg.token_loss_weight
+            decorr_weight = cfg.decorr_weight
+            observed_objective_weights.add((token_weight, decorr_weight))
+            steps_measured += 1
+            if token_weight > 0.0:
                 assert mlm_head is not None and mask_embedding is not None
                 token_loss_a, n_masked_a = _mlm_token_loss(
                     model,
@@ -1948,15 +1962,15 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
                     chunk=cfg.token_loss_chunk,
                 )
                 token_loss = 0.5 * (token_loss_a + token_loss_p)
-                loss = loss + cfg.token_loss_weight * token_loss
+                loss = loss + token_weight * token_loss
                 stats["token_loss"] = token_loss.item()
                 stats["token_loss_n_masked"] = n_masked_a + n_masked_p
-            if cfg.decorr_weight > 0.0:
+            if decorr_weight > 0.0:
                 decorr_loss = 0.5 * (
                     _token_decorrelation_loss(a_h, a_tmask)
                     + _token_decorrelation_loss(p_h, p_tmask)
                 )
-                loss = loss + cfg.decorr_weight * decorr_loss
+                loss = loss + decorr_weight * decorr_loss
                 stats["decorr_loss"] = decorr_loss.item()
         if bank is not None:
             # After the loss, so this step's positives are negatives for LATER anchors
@@ -2066,6 +2080,28 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         # of what its numbers mean, so every receipt names its negative set even when
         # that set is "the batch, as always". The per-step `negatives_per_query` lives in
         # `history` (`info_nce`'s own stats); this block is the run-level identity.
+        # What the objective ACTUALLY weighted, measured at the loss site (see
+        # `observed_objective_weights`). `declared` is what the config asked for; a
+        # disagreement between the two is the bug this field exists to make visible, and
+        # `measured` is None -- refused by the grader, never defaulted -- when no step
+        # ran or the weights changed mid-run.
+        "objective_weights": {
+            "declared": {
+                "token_loss_weight": cfg.token_loss_weight,
+                "decorr_weight": cfg.decorr_weight,
+            },
+            "measured": (
+                {
+                    "token_loss_weight": next(iter(observed_objective_weights))[0],
+                    "decorr_weight": next(iter(observed_objective_weights))[1],
+                }
+                if len(observed_objective_weights) == 1
+                else None
+            ),
+            "values_seen": sorted(list(pair) for pair in observed_objective_weights),
+            "steps_measured": steps_measured,
+            "read": "at the loss site, per step",
+        },
         "negatives": {
             "set": negative_set,
             "bank_size": cfg.negative_bank_size,
