@@ -63,6 +63,8 @@ instances of it legitimately, **(f)** known caveats.
 18. [The dual-harness principle](#18-the-dual-harness-principle)
 19. [Standing statements](#19-standing-statements)
 20. [Field index](#field-index)
+21. [Visual probe metrics](#21-visual-probe-metrics-kind-eval-on-the-i-jepa-region)
+22. [E1 corrupted-derivation battery](#22-e1-corrupted-derivation-battery-kind-eval)
 
 ---
 
@@ -1695,6 +1697,7 @@ same battery_id  in {
   train_graded, train_token_rank,
   quant_plan,
   beir_fiqa_corpus, beir_fiqa_split,
+  eval_corrupted_derivation,  # E1 reason-sensitivity; never alias into rank.*
   mteb_<task>,            # future adapter; never alias into rank.*
   latent_loop             # future; not a native battery today
 }
@@ -1983,6 +1986,9 @@ Receipt field -> section. `kind` is the receipt this field is written into
 | `corpus_fingerprint` (quant receipt, top level) | quant | [§6.3](#63-corpusfingerprint-corpusfingerprint_scheme) |
 | BEIR-FiQA `recall@1`/`recall@10`/`recall@100`/`mrr` | (evidence/gate scripts, not a receipt `kind` above) | [§7.2](#72-rank_metrics-recall1-recall10-recall100-mrr-multi-relevant) |
 | W4 gates `a_beats_both_parents` .. `e_retrain_gate` | (evidence/gate scripts) | [§7.4](#74-the-w4-gates-a_beats_both_parents-e_retrain_gate) |
+| `derive.recall@1`, `.mrr`, `.n_items`, `.chance` | eval (E1 battery) | [§22](#22-e1-corrupted-derivation-battery-kind-eval) |
+| `derive.tfidf.recall@1`, `derive.bm25.recall@1` | eval (E1 oracles) | [§22](#22-e1-corrupted-derivation-battery-kind-eval) |
+| `derive.wrong_problem.tfidf.recall@1` | eval (E1 control a) | [§22](#22-e1-corrupted-derivation-battery-kind-eval) |
 
 ### `csd-metrics/v2` canonical names (§12)
 
@@ -2011,6 +2017,7 @@ disk for a given battery.
 | `quant.plan_recall@1`, `.artifact_recall@1`, `.drop_recall@1`, `.compression_ratio` | `quantized_metric`, `rank.recall@1` (eval-quantized), `drop`, `compression_ratio` | [§12.8](#128-quantplan_recall1--quantartifact_recall1--quantdrop_recall1--quantcompression_ratio) |
 | `quant.plan_probe_top1`, `.artifact_probe_top1`, `.drop_probe_top1` | (visual; never `quant.*_recall@1` — the quantity is EuroSAT probe top-1) | [§12.8.1](#1281-visual-quantplan_probe_top1--quantartifact_probe_top1--quantdrop_probe_top1) |
 | `gate.beats_untrained_train`, `gate.beats_untrained_eval` | `beats_untrained` / `gates.beats_untrained` | [§12.9](#129-gatebeats_untrained_train--gatebeats_untrained_eval) |
+| `derive.recall@1` / `.mrr` / lexical oracles | (new; E1) | [§22](#22-e1-corrupted-derivation-battery-kind-eval) |
 
 See [§15](#15-v1---v2-deprecation-map) for the full v1 -> v2 deprecation map and
 [§14](#14-schema-stamp-and-refuse-predicate) for the `metrics_schema` stamp and refuse
@@ -2058,3 +2065,43 @@ check (`benchmark_visual_region()` writes `gates.beats_untrained_eval` the same
 way). A card must print untrained vs trained vs this threshold honestly; a 24-step
 smoke that fails H1 is a FAIL, not a pass. Transfer Fashion t10k (`n_eval` 2000)
 is a named set, not H1.
+
+## 22. E1 corrupted-derivation battery (`kind: eval`)
+
+Reasoning-sensitivity battery for the `reason` region (diagnosis 2026-09-05 §4 E1;
+g48). **Not** closed-pool `rank.recall@1`. Do not compare `derive.recall@1` to
+`rank.recall@1`: the pools differ (5 candidates vs 512) and the claim differs
+(derivation-structure sensitivity vs lexical pair retrieval).
+
+**(a)** Receipt fields: `derive.recall@1`, `derive.mrr`, `derive.n_items`,
+`derive.chance`, `derive.tfidf.recall@1`, `derive.bm25.recall@1`,
+`derive.wrong_problem.tfidf.recall@1`. `battery_id` is `eval_corrupted_derivation`.
+`kind` is `eval`.
+
+**(b)** Formula: for each held-out gsm8k pair with ≥ 2 calculator annotations
+`<<a op b=c>>`, construct K=4 corrupted derivations by editing one operand or
+result and propagating to `####` when that value is the final answer. Rank the
+true derivation among {true, 4 corruptions} by cosine of L2-normalised encoder
+embeddings (question vs candidate). Chance is 0.20. Tie-break is a deterministic
+unbiased jitter so a 5-way tie has expectation 0.20.
+
+**(c)** `build_corrupted_battery()` (`src/cogsyndelta/eval/corrupted_derivation.py:305-346`);
+`cosine_hit_rate()` (`src/cogsyndelta/eval/corrupted_derivation.py:542-577`);
+`hit_rate_at_1()` (`src/cogsyndelta/eval/corrupted_derivation.py:450-475`);
+`score_items_lexical()` (`src/cogsyndelta/eval/corrupted_derivation.py:477-510`);
+`score_wrong_problem_tfidf()` (`src/cogsyndelta/eval/corrupted_derivation.py:513-539`);
+`go_kill()` (`src/cogsyndelta/eval/corrupted_derivation.py:602-634`). Scoring
+entry: `scripts/csd-eval-reason-e1.py`.
+
+**(d)** E0 reason split, seed 0, fingerprint `ca364a92d2c6c5fd259404e0ab6f52a1`,
+11,811 train / 132 duplicates removed. Eligible: 299 of 320 held-out gsm8k pairs.
+
+**(e)** Compare two `derive.recall@1` only when `battery_id`, corruption seed,
+split sha, and checkpoint sha match. Never compare to `rank.recall@1`.
+
+**(f)** Controls (instrument validity, not model quality): (a) wrong-problem TF-IDF
+≥ 0.90; (b) TF-IDF and BM25 on the corrupted battery within ±0.05 of 0.20; (c)
+untrained encoder at the W2c region-specific seed. Go: any checkpoint ≥ 0.30 →
+derivation sensitivity, E3 next. Kill: all ≤ 0.25 → learned nothing about
+structure, E5 ahead of E4. Diagonal r@1 is demoted to a lexical-ceiling fraction
+(model ÷ TF-IDF). Reasoning is not lookup.

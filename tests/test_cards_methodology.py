@@ -53,6 +53,7 @@ _CANONICAL_BATTERY_IDS = frozenset(
         "quant_plan",
         "beir_fiqa_corpus",
         "beir_fiqa_split",
+        "eval_corrupted_derivation",
     }
 )
 
