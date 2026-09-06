@@ -36,11 +36,23 @@ def test_duplicate_region_names_rejected() -> None:
         MindSpec(stream_dim=64, regions=[_region("a"), _region("a")])
 
 
-def test_stream_width_mismatch_rejected() -> None:
-    """Every region reads and writes the same stream; a width mismatch is a shape error
-    at the first activate() and is far cheaper to catch at declaration."""
-    with pytest.raises(ValueError, match="stream_dim"):
-        MindSpec(stream_dim=64, regions=[_region("a", stream_dim=128)])
+def test_stream_width_mismatch_warns_not_rejected() -> None:
+    """DEC-14/DEC-15 (taxonomy section 2.2): regions keep their own native widths and
+    adapt into the shared workspace stream_dim via a per-region adapter, so a mismatch
+    is expected -- not a shape error -- and only warns."""
+    with pytest.warns(UserWarning, match="stream_dim"):
+        spec = MindSpec(stream_dim=64, regions=[_region("a", stream_dim=128)])
+    assert spec.regions[0].stream_dim == 128
+    assert spec.stream_dim == 64
+
+
+def test_stream_width_uniform_case_still_passes_with_no_warning() -> None:
+    """The pre-DEC-14 uniform-width case (every region matches the mind's stream_dim)
+    is still valid and must not warn."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        spec = MindSpec(stream_dim=64, regions=[_region("a", stream_dim=64)])
+    assert spec.regions[0].stream_dim == spec.stream_dim == 64
 
 
 def test_latent_vae_requires_latent_dim() -> None:
@@ -153,6 +165,58 @@ def test_catalogue_records_the_dec02_merge() -> None:
     assert "memory" in by_name
     assert by_name["memory"].merged_into is None
     assert not by_name["memory"].live
+
+
+def test_catalogue_records_memory_corpus_as_available_and_on_disk() -> None:
+    """`memory.pretrain.available` used to say `false` / "NOT on disk" even though the
+    corpus has been on the fleet mount and in production receipts since W4 (2026-09-03)
+    -- stale documentation, never read by any training/eval/publish code path
+    (`available` is `PretrainSpec` prose, not a gate). Fixed 2026-09-06.
+
+    This pins two things: the static claim (`available` is true, `paths` names the same
+    four globs `REGIONS["memory"]` in `scripts/csd-train-all.py` trains on) always, and,
+    when the fleet's NFS export is actually mounted, that those exact globs reproduce
+    the corpus fingerprint the committed split manifest
+    (`config/mind/splits/memory-6fc0cf23-split0.json`) was drawn from -- not merely that
+    files exist at those paths, but that they are the SAME files DEC-02's union names.
+    """
+    import os
+
+    from cogsyndelta.corpus import fingerprint_corpus
+
+    spec = MindSpec.from_json(CATALOGUE)
+    memory = {r.name: r for r in spec.regions}["memory"]
+    assert memory.pretrain is not None
+    assert memory.pretrain.available is True
+    assert memory.pretrain.paths == (
+        "region/retrieve/fiqa-pairs/train.parquet",
+        "region/compress/all-nli/pair/train*.parquet",
+        "region/retrieve/natural-questions/**/train*.parquet",
+        "region/retrieve/gooaq/**/train*.parquet",
+    )
+
+    root = Path(os.environ.get("CSD_MEMORY_ROOT", "/mnt/fleet-datasets/csd"))
+    if not root.is_dir():
+        pytest.skip("fleet NFS export not mounted here; static claim above still checked")
+
+    def resolve(pattern: str) -> list[str]:
+        return sorted(str(p) for p in root.glob(pattern))
+
+    primary_pattern, *extra_patterns = memory.pretrain.paths
+    extra_columns = [("anchor", "positive"), ("query", "answer"), ("question", "answer")]
+    extra_caps = [0, 0, 400_000]
+    extra_sources = [
+        {"shards": resolve(pat), "columns": list(cols), "limit": cap}
+        for pat, cols, cap in zip(extra_patterns, extra_columns, extra_caps, strict=True)
+    ]
+    fp = fingerprint_corpus(
+        resolve(primary_pattern), columns=("query", "passage"), extra_sources=extra_sources
+    )
+    assert fp == "6fc0cf23ff8591ff2241278f82c001d2", (
+        f"memory's declared paths now fingerprint to {fp}, not the value the committed "
+        "split manifest was drawn from -- either the corpus drifted or the paths above "
+        "no longer match REGIONS['memory']"
+    )
 
 
 def test_catalogue_records_vl_as_vision_not_text() -> None:

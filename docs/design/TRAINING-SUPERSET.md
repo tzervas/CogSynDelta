@@ -275,54 +275,78 @@ claim it makes is one this project can actually defend.
 `program/REMAINING.md` encodes the same as P4 → P5 → P6. So the superset's phases must be
 these, and a generic *pretrain / finetune / eval* split would misdescribe the project.
 
+**Folded from `docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` §7.2, 2026-09-06.** The
+quote above is still the literal text of `config/mind/csd-regions.json` today (that file's
+own edit is a reviewed-but-not-applied diff, taxonomy §1.4), but DEC-13/DEC-16 supersede the
+discrete `router` with the interconnect module (taxonomy §2.3), and DEC-19 (§2.6) gives the
+former `router`/`compose` split a single training recipe. The table and prose below are
+re-keyed to the **four phases** the taxonomy specifies: **(1) per-region → (2) interconnect →
+(3) whole-mind dynamic → (4) foundation**. Phase 3 is new, and it is where region and
+depth/width growth happens (DEC-49, P5′).
+
 | phase | slice id | consumes | produced by | status |
 |---|---|---|---|---|
-| **0 — foundation** | `phase0/foundation` | broad text (FineWeb/C4/Pile class) | P6, *last* | **EMPTY.** No cleared constituent. |
-| **1 — per-submodel** | `phase1/<region>` | one slice per region: `code`, `retrieve`, `compress`, `classify`, `reason`, `vl_latent` | P2.3, P3.1 | partly built, licence-blocked |
-| **2 — router** | `phase2/router` | region-labelled examples | P4 | derivable, see below |
-| **3 — composition** | `phase3/compose` | mixed-region material | P5 | needs the reserve |
+| **1 — per-region** | `phase1/<region>` | one slice per region: `language` (was `code`), `memory` (was `retrieve`+`compress`), `classify` (probe, DEC-05/06), `reason`, `visual` (was `vl_latent`) | P2.3, P3.1 | partly built, licence-blocked |
+| **2 — interconnect** | `phase2/interconnect` | region-labelled examples plus `reserve/mixed`, per DEC-19's dense → distil → sparse → scheduler recipe (taxonomy §2.6); regions frozen | P5 | needs the reserve; supersedes the old `router` (P4) and absorbs what this table used to call `compose` |
+| **3 — whole-mind dynamic** | `phase3/whole-mind` | region corpora **and** the reserve, interleaved, regions unfrozen | P5′ | **new.** Region and depth/width growth happens here (DEC-49); no code, eval harness, or metric exists yet |
+| **4 — foundation** | `phase4/foundation` | broad text (FineWeb/C4/Pile class) | P6, *last* | **EMPTY.** No cleared constituent. |
 | **R — reserve** | `reserve/<region>`, `reserve/mixed` | held out from *everything* | P2.5d | **the load-bearing piece** |
 
-**Phase 0 is empty and must be declared empty rather than aspirational.** FineWeb and C4 are
-ODC-BY over Common Crawl; the Pile has known constituent problems. None has a recorded
-verdict in this repository, and inventing one here would be exactly the failure mode the
-catalogue exists to prevent. This is the largest phase by intended row count and it has zero
-cleared constituents — that is a real finding, and it is a *cheap* one to sit on, because the
-curriculum puts foundation last anyway. Record it as `status: planned` with an empty
-constituent list, the same way `csd-regions.json` already records intent without it reading
-as capability.
+**Phase 4 (foundation) is empty and must be declared empty rather than aspirational.**
+FineWeb and C4 are ODC-BY over Common Crawl; the Pile has known constituent problems. None
+has a recorded verdict in this repository, and inventing one here would be exactly the
+failure mode the catalogue exists to prevent. This is the largest phase by intended row count
+and it has zero cleared constituents — that is a real finding, and it is a *cheap* one to sit
+on, because the curriculum puts foundation last anyway. Record it as `status: planned` with
+an empty constituent list, the same way `csd-regions.json` already records intent without it
+reading as capability.
 
-**Phase 2 needs no new corpora but its eval does.** A router example is an input plus the
-region that should handle it. Every Phase 1 row already carries its region as a shard-level
-constant, so the router's *training* set is a free derivation of Phase 1. Its *eval* is not:
-scoring the router on rows drawn from region training data measures memorisation. Router eval
-comes from the reserve, like everything else.
+**Phase 2 (interconnect) needs no new corpora, and DEC-19 now gives it a training recipe
+where the old `router` phase had none.** A router-style example is still an input plus the
+region that should handle it, and every Phase 1 row already carries its region as a
+shard-level constant, so that half of phase 2's *training* data is a free derivation of
+Phase 1. Its *eval* is not: scoring on rows drawn from region training data measures
+memorisation, so phase 2 eval comes from the reserve, like everything else. What DEC-19 adds
+relative to the old `router`/`compose` split is a named recipe (dense → distil → sparse →
+scheduler, taxonomy §2.6) and a pass condition per phase, so `reserve/mixed` is now one input
+to phase 2's training rather than a separate `compose` phase's undefined one.
 
-**Phase 3 is defining its own measuring instrument, and it has nothing else.** There is no
-compose code, no compose eval harness, and no compose metric in the repository. `compose` is
-a bare string in `receipt.py`'s `STAGES` tuple that nothing writes; `program/csd-program.json`
-records P5 with `"status": "blocked"` and — unlike P1, P3 and P4 — **no `method`, no `gate`
-and no `measures` keys at all**; `REMAINING.md` states the gate only as prose (*"composed
-beats best single region on a mixed set"*). So `reserve/mixed` is not one input to an existing
-evaluation. **It is the entire specification of what "composed beats best single region"
-will mean**, and building it defines the metric rather than feeding it. That raises the stakes
-on getting the separation right, and it is an argument for doing the reserve before the
-router rather than after.
+**Phase 3 (whole-mind dynamic) is the phase that is defining its own measuring instrument
+now, and it has nothing else.** There is no whole-mind-dynamic code, eval harness, or metric
+in the repository. `compose` is a bare string in `receipt.py`'s `STAGES` tuple that nothing
+writes; `program/csd-program.json` records P5 with `"status": "blocked"` and — unlike P1, P3
+and P4 — **no `method`, no `gate` and no `measures` keys at all**; `REMAINING.md` states the
+gate only as prose (*"composed beats best single region on a mixed set"*). Taxonomy §4.1's
+P5′ gives it a firmer pass condition (G2 still holds per bin after unfreezing **and**
+G3/G3′ still hold; each new region beats its own untrained baseline and improves the composed
+metric monotonically), but no implementation exists yet. `reserve/mixed` is still the entire
+specification of what "composed beats best single region" will mean; building it defines the
+metric rather than feeding it, which is an argument for doing the reserve before phase 3
+rather than after.
 
 ### Per-submodel composition
 
-Stated as caps, because the failure this is preventing is measured. `retrieve` is 77.8%
-gooaq / 19.5% NQ / 2.7% FiQA **while being evaluated on financial-domain FiQA** — training on
-one distribution and measuring on another, which P2.5 names as hard requirement 3.
+**Re-keyed to faculties, taxonomy §7.2, 2026-09-06.** `retrieve` and `compress` fold into
+one `memory` submodel with two heads (DEC-02); `code` and `vl_latent` are the `language` and
+`visual` faculties (DEC-78, DEC-03). `classify` is demoted to a probe, not a trained
+submodel (DEC-05/06), and is kept as a row for corpus continuity only. `reason` is left
+un-renamed here: the taxonomy's own text proposes `reasoning` (§7.1, DEC-04) but every cell,
+checkpoint and receipt on disk is still named `reason`, and `cogsyndelta.regions.aliases`
+does not map it — an unresolved naming ambiguity, not a decision this fold makes.
+
+Stated as caps, because the failure this is preventing is measured. `memory`'s retrieval
+head is 77.8% gooaq / 19.5% NQ / 2.7% FiQA **while being evaluated on financial-domain
+FiQA** — training on one distribution and measuring on another, which P2.5 names as hard
+requirement 3.
 
 | slice | constituents (post-audit, clean-only) | cap policy | honest state |
 |---|---|---|---|
-| `phase1/code` | filtered CodeSearchNet (permissive repos only, ~324k pairs of 455k), plus operator-owned repository code | ≤35% per source | `FETCH-ONLY`; needs the per-repo licence resolution and a NOTICES sidecar |
-| `phase1/retrieve` | `esci` (Apache-2.0), operator-collected financial QA, plus `gooaq` **iff** AI2 resolves it | ≤35% per source | The single biggest open question in the project. `esci` alone is a product-search corpus, not general web QA. |
-| `phase1/compress` | needs a permissive entailment source; `hkust-nlp/SynCSE-scratch-NLI` (MIT, 275,579 pairs) is the audit's one like-for-like candidate | ≤35% | **Synthetic — see §7's correction on generator terms.** MIT-tagged but GPT-4/GPT-3.5-generated, and the generator's own output-use terms were never examined. **Unverified.** |
-| `phase1/classify` | `banking77` (CC BY 4.0), `go_emotions` (Apache-2.0) | class-balance cap, not just source cap | Clean. `go_emotions` is 14,219 `neutral` against 77 for the rarest label — **185:1** — and must be capped or reweighted, not shipped raw. |
+| `phase1/language` (was `code`) | filtered CodeSearchNet (permissive repos only, ~324k pairs of 455k), plus operator-owned repository code | ≤35% per source | `FETCH-ONLY`; needs the per-repo licence resolution and a NOTICES sidecar |
+| `phase1/memory`, retrieval head (was `retrieve`) | `esci` (Apache-2.0), operator-collected financial QA, plus `gooaq` **iff** AI2 resolves it | ≤35% per source | The single biggest open question in the project. `esci` alone is a product-search corpus, not general web QA. |
+| `phase1/memory`, compression head (was `compress`) | needs a permissive entailment source; `hkust-nlp/SynCSE-scratch-NLI` (MIT, 275,579 pairs) is the audit's one like-for-like candidate | ≤35% | **Synthetic — see §7's correction on generator terms.** MIT-tagged but GPT-4/GPT-3.5-generated, and the generator's own output-use terms were never examined. **Unverified.** |
+| `phase1/classify` (DEC-05/06: a probe, not a trained submodel) | `banking77` (CC BY 4.0), `go_emotions` (Apache-2.0) | class-balance cap, not just source cap | Clean. `go_emotions` is 14,219 `neutral` against 77 for the rarest label — **185:1** — and must be capped or reweighted, not shipped raw. |
 | `phase1/reason` | `gsm8k` (MIT), `aqua_rat` (Apache-2.0) | ≤50% (only two sources) | Clean. The MATH family stays out: DMCA-encumbered. |
-| `phase1/vl_latent` | the audit's composite: pxhere (CC0), PatchCamelyon (CC0), Shapes3D (Apache), CLEVR (CC BY), fashion_mnist (MIT), eurosat (MIT) — **plus operator photography** | ≤100k per domain, or the stricter ≈27k-per-domain variant | The only slice where a fully shippable version is achievable today. |
+| `phase1/visual` (was `vl_latent`) | the audit's composite: pxhere (CC0), PatchCamelyon (CC0), Shapes3D (Apache), CLEVR (CC BY), fashion_mnist (MIT), eurosat (MIT) — **plus operator photography** | ≤100k per domain, or the stricter ≈27k-per-domain variant | The only slice where a fully shippable version is achievable today. |
 
 The `cap` / `cap_why` field names are taken verbatim from `MODEL-MANIFESTS.md`'s
 `trainedSpec.sources`, where `cap` is documented as *"0 = uncapped. Exists for BALANCE, not
