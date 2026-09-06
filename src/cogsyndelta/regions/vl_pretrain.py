@@ -263,7 +263,10 @@ def _decode_png_stores(
     names = [class_name_from_ref(r) or "_" for r in refs]
     classes = sorted(set(names))
     class_to_i = {c: i for i, c in enumerate(classes)}
-    reader = ZipPngReader()
+    # slurp=True: this reader is transient (closed in `finally` right below, right
+    # after one bounded pass over `refs`), so the NFS-small-read win from slurping is
+    # free -- unlike PngTrain, nothing here keeps the cache alive for a whole run.
+    reader = ZipPngReader(slurp=True)
     try:
         images = [_decode_png_ref(r, size, reader) for r in refs]
     finally:
@@ -287,7 +290,13 @@ class PngTrain:
             refs = refs[:limit]
         self.refs = refs
         self.size_px = size
-        self.reader = ZipPngReader()
+        # slurp=False: this reader lives for the whole training run and never closes
+        # or evicts a cached handle (training samples random indices across the whole
+        # corpus, not one pass), so slurping here would mean every shard under
+        # _SLURP_MAX_BYTES staying resident in RAM for the run's entire lifetime --
+        # multiplied across concurrently packed runs. Streaming keeps this path's
+        # memory behaviour exactly as it was before the slurp fix.
+        self.reader = ZipPngReader(slurp=False)
 
     def size(self, dim: int = 0) -> int:
         """Return the image count (``dim`` must be 0, matching a 1-D tensor API)."""
