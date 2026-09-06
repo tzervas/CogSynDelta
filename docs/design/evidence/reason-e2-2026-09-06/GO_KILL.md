@@ -102,10 +102,11 @@ step in every 4,000-step run, so 0 of 6 trigger the gate (threshold: ≥ 4 of 6)
    change. `PRE:1018` is different: it reads `peak − final`, and a coarser sample is
    less likely to land on a run's true interior peak, so this weakens that gate's
    instrument, not merely its cadence. The available evidence argues the coarser
-   sampling likely did not flip the call here: two of the twelve 4,000-step arms are
+   sampling likely did not flip the call here: three of the six 4,000-step arms are
    already non-monotone in r@1 at this same coarse sampling —
    `reason-b512-st4000-s1-2fdc8b2-20260906` dips 0.0059 between steps 2664→3330,
-   `reason-b512-st4000-s2-2fdc8b2-20260906` dips 0.0059 between steps 1998→2664 —
+   `reason-b512-st4000-s2-2fdc8b2-20260906` dips 0.0059 between steps 1998→2664, and
+   `reason-b256-st4000-s2-2fdc8b2-20260906` dips 0.0039 between steps 2664→3330 —
    real swings an order of magnitude under the 0.02 gate threshold, even caught by
    only 7–8 samples. That is evidence, not proof: a densely-sampled rerun could still
    surface a larger interior peak these samples missed.
@@ -133,7 +134,7 @@ step in every 4,000-step run, so 0 of 6 trigger the gate (threshold: ≥ 4 of 6)
    `README.md` as a secondary, disclosed comparison only — they are not inputs to
    any verdict above.
 4. **Learning rate covaries with batch; E2 does not hold it fixed.**
-   `scripts/csd-train-all.py`'s `lr_for_batch` (`:284-300`, using `BASE_BATCH = 256`
+   `scripts/csd-train-all.py`'s `lr_for_batch` (`:282-300`, using `BASE_BATCH = 256`
    and `BASE_LR = 3e-4` at `:246-247`) sets `lr = 3e-4 * sqrt(batch / 256)`: every
    batch=256 arm trains at lr=3.0000e-4 and every batch=512 arm at lr=4.2426e-4 (both
    exact, in every arm's `config.lr`). `warmup_steps = max(50, steps // 15)`
