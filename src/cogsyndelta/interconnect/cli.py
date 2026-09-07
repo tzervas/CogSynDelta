@@ -544,7 +544,26 @@ def _build_parser() -> argparse.ArgumentParser:
     phase_a.add_argument("--steps", type=int, default=20)
     phase_a.add_argument("--batch-size", type=int, default=8)
     phase_a.add_argument("--train-batches", type=int, default=4)
-    phase_a.add_argument("--dev-batches", type=int, default=2)
+    # The default has to be large enough for G35 to MEAN what it says. `recall@1` over
+    # `dev_batches * batch_size` items moves in steps of `1 / N`, so one misranked
+    # held-out item is a `100 / N`-point gap. At the original default of 2 batches
+    # (`N = 16`) that single item was a 6.25-point gap -- already over G35's own
+    # 5.00-point ceiling -- so the gate could not express the tolerance it is defined
+    # with: with a perfect train metric it passed only on an EXACTLY equal dev metric.
+    # Which side of that a run landed on was then decided by float reduction order
+    # (measured: identical seed and command line, `OMP_NUM_THREADS` 1/2/6/8 -> dev 1.0000,
+    # 3/4 -> dev 0.9375), not by anything the run did. 8 batches is `N = 64`, a
+    # 1.5625-point resolution, 3.2x finer than the ceiling; the same measurement puts the
+    # toy's real gap at 0.00-1.56 points across every thread count.
+    phase_a.add_argument(
+        "--dev-batches",
+        type=int,
+        default=8,
+        help=(
+            "Held-out batches. Keep dev-batches * batch-size above 20 items or G35's "
+            "5.00-point ceiling is finer than the metric's own resolution."
+        ),
+    )
     phase_a.add_argument("--k", type=int, default=4)
     phase_a.add_argument("--lr", type=float, default=3e-3)
     phase_a.add_argument("--delta", type=float, default=1.0)

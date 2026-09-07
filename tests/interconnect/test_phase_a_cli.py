@@ -20,8 +20,8 @@ from typing import Any
 import pytest
 
 from cogsyndelta.interconnect import phase_a
-from cogsyndelta.interconnect.cli import main
-from cogsyndelta.interconnect.gates import GateFailure
+from cogsyndelta.interconnect.cli import _build_parser, main
+from cogsyndelta.interconnect.gates import GateFailure, check_overfit_gate
 from cogsyndelta.interconnect.phase_a import (
     PHASE_A_TRAINABLE_R5,
     TABLE_4_TOTAL_R5,
@@ -109,6 +109,31 @@ def test_phase_a_gates_all_pass_once_the_toy_is_actually_trained(
     assert out["train_recall_at_1"] >= out["dev_recall_at_1"] - 0.05
     assert abs(out["overfit_gap_points"]) < 5.0
     check_receipt_collapse_floor(json.loads(Path(out["receipt"]).read_text()))
+
+
+def test_the_default_held_out_split_can_resolve_the_overfit_ceiling() -> None:
+    """G35 tolerates a gap under five points; the default split must be able to SHOW one.
+
+    `recall@1` over `N` held-out items moves in steps of `1 / N`, so one misranked item is
+    a `100 / N`-point gap and no smaller non-zero gap exists. The default used to be
+    `--dev-batches 2` at `--batch-size 8`, i.e. `N = 16`: one item was 6.25 points, already
+    over G35's own ceiling, so with a perfect train metric the gate passed ONLY on an
+    exactly equal dev metric. That is not the five-point tolerance the gate is specified
+    with, and which side of it a run landed on was decided by float reduction order rather
+    than by the run -- the same command line and seed passed at `OMP_NUM_THREADS` 1, 2, 6
+    and 8 and failed at 3 and 4.
+
+    Both halves are asserted, because only the pair distinguishes "the split can express a
+    tolerated gap" from "the split cannot express a refused one": one item must be
+    tolerated, and a handful of them must still fire.
+    """
+    args = _build_parser().parse_args(["phase-a"])
+    one_item = 1.0 / (args.dev_batches * args.batch_size)
+
+    check_overfit_gate(1.0, 1.0 - one_item)
+
+    with pytest.raises(GateFailure, match="G35"):
+        check_overfit_gate(1.0, 1.0 - 5 * one_item)
 
 
 def test_the_store_receives_attention_mass_and_clears_its_own_floor(
