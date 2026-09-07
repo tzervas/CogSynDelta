@@ -5877,6 +5877,17 @@ unification is an unpaid claim.
 At r@1 0.0801 it may never be attended to. **Falsifier:** `a_reasoning` in W5's phase A. If it is
 near zero on reasoning-bin items, **the region is the problem, not the interconnect** — and W1b
 must have produced its receipt first, or there is nothing to compare against.
+**AMENDED 2026-09-07 — two preconditions before a low `a_r` is a finding about the region.**
+*The falsifier stands; what is added is what has to hold before its verdict means anything.*
+**(1) The read must be identified.** `mean(a_r)` is only about region `r` when `r`'s output carries
+information the task can use; where it does not, `dL/da_r ≈ 0` and the mass random-walks. That was
+measured on the store, not argued — a constant read, mutual information exactly zero, and
+`mean(a_store)` moving over 70x while dev `recall@1` did not move at all. `reasoning` is
+parametric and its read is item-dependent, so the mechanism is not automatic here; it is also not
+free, and the receipt should show it rather than assume it. **(2) One run is not a verdict.** The
+same statistic flipped across `OMP_NUM_THREADS` at a fixed seed and ran non-monotonically in the
+step count (0.118 → 0.047 → 0.329), so this falsifier needs seed replication and a thread pin
+before *"the region is the problem"* is read off it. See **DEC-50, amended 2026-09-07**.
 
 ## 9.9 ADVERSARIAL — five boundaries, three of which revision 1 did not have
 

@@ -280,7 +280,13 @@ skipped and it is executed as given; this is the frozen-schedule arm of the budg
    request's server-derived scope, ranked by residency score; they receive `type_emb[store]` and no
    positional term `[spec]` (TAX:1253). `b_store` is floored at `lo_store = 8` so that a store
    nobody attends to is a measurement, and an empty partition yields zero unmasked store slots,
-   which is the no-store configuration (TAX:1412-1414, TAX:5857).
+   which is the no-store configuration (TAX:1412-1414, TAX:5857). **Amended 2026-09-07 (A6): the
+   floor is unchanged and it rules out starvation, which is necessary and not sufficient.** If the
+   store's read carries no information about the target, `dL/d(store attention) ≈ 0` and
+   `mean(a_store)` is unidentified, so a low reading is drift rather than a measurement in either
+   direction. Both conditions are needed — `b_store` at the floor **and** the read shown to be
+   identified — before *"nobody attends to it"* is a finding. TAX:1412-1414 carries the same
+   correction.
 9. **One workspace block.** `z += CrossAttn(LN(z), LN(bank))`, `z += SelfAttn(LN(z))`,
    `z += MLP(LN(z))` (TAX:1254-1256).
 10. **Export connection strengths.**
