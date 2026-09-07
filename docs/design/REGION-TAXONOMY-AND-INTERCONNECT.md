@@ -1411,7 +1411,17 @@ accidentally right and would have no way to show it. **Only the expression is bi
 receipt prints the evaluated floor **beside its own `R`**, so a count change can never make a
 constant accidentally correct in either direction. **`b_store` is subject to the same floor:** the
 store's share cannot fall below `η/R · B_read = 0.03 × 256 ≈ 8 read tokens`, which is what makes
-"the store received no attention mass" a *measurement* in E2 rather than a starvation artefact. Grafted from the systems-first proposal, where the
+"the store received no attention mass" a *measurement* in E2 rather than a starvation artefact.
+**AMENDED 2026-09-07 — the floor rules out starvation; on its own it does not make the reading a
+measurement.** *The floor itself is unchanged.* Ruling out *"the store was denied budget"* is
+necessary and it is not sufficient: if the store's read carries no information about the target,
+`dL/d(store attention) ≈ 0` and `mean(a_store)` is an **unidentified** direction that random-walks,
+so a low reading is neither a measurement of the store's usefulness nor a starvation artefact — it
+is drift. Measured on phase A's stream: MI exactly zero, the mass identical to four decimal places
+at 5, 8 and 64 primed records and *higher* with an empty store, non-monotone in the step count, and
+flipping on `OMP_NUM_THREADS` alone at a fixed seed. **Two conditions, not one, before either
+direction of the reading is a measurement:** `b_store` pinned at this floor **and** the store's read
+shown to be identified. See **DEC-50, amended 2026-09-07**, and E2's cross-reference. Grafted from the systems-first proposal, where the
 bound is derived: at `B_kv = 3.0 GiB` and `c_r = 192 KB/token` the floor is **≥ 409 tokens** for
 any active region [V\*].
 
