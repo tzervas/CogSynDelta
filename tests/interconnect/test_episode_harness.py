@@ -27,6 +27,7 @@ artefact without something going red.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -342,6 +343,34 @@ def test_turn2_read_returns_turn1_record_at_rank_zero(item, episode_config) -> N
     assert result.store_read_records == 1
     assert result.oracle_choice == item.gold_index
     assert result.oracle_pass is True
+
+
+def test_a_colliding_latent_is_attributed_to_this_episode_not_another(episode_config) -> None:
+    """Two identical turn-1 latents must not make one episode claim another's record.
+
+    MEASURED, 2026-09-07: the `wrong_turn1` arm stages the donor's `key_claim` as its text and
+    donors recur across items, so 466 of 2,048 runs committed a latent bit-identical to
+    another episode's. The verdict was unaffected -- identical inputs commit identical facts --
+    but `read_record_logical_key` named the wrong episode, which is the very field a reader
+    would use to check the harness's own claim.
+
+    Constructed here with two items whose turn-1 text is character-identical, run in order.
+    The second episode must attribute its read to its OWN key.
+    """
+    shared = "TURN 1 (shared). The passage resolves to 33."
+    first = parse_episode(make_record(item_id="first", fact=33))
+    second = parse_episode(make_record(item_id="second", fact=33, probe_answer=100))
+    first = dataclasses.replace(first, turn1_text=shared)
+    second = dataclasses.replace(second, turn1_text=shared)
+
+    harness, _probe = build_harness(episode_config)
+    results = harness.run([first, second], [EpisodeArm.FULL])
+
+    assert results[0].read_record_logical_key == "first#t0"
+    assert results[1].read_record_logical_key == "second#t0", (
+        "the second episode was credited with the first episode's colliding record"
+    )
+    assert all(row.oracle_pass for row in results)
 
 
 def test_the_step8_read_is_the_one_the_forward_pass_made(item, episode_config) -> None:

@@ -898,6 +898,7 @@ class EpisodeHarness:
                 "verdict from this point could be another episode's memory."
             )
 
+        own: list[CommittedRecord] = []
         turn1_key: str | None = None
         turn1_committed = False
         turn1_text = item.text_for(arm)
@@ -913,10 +914,11 @@ class EpisodeHarness:
             turn1_committed = bool(receipt.committed)
             fact = item.fact_for(arm)
             assert fact is not None  # arm has a turn 1, so it has a fact
-            self._committed.extend(
+            own = [
                 CommittedRecord(latent=latent, fact=fact, logical_key=receipt.logical_key)
                 for latent in turn1.written_latents
-            )
+            ]
+            self._committed.extend(own)
 
         resident_before_turn2 = self._resident(scope, b_store)
         commit_observed = turn1_committed and resident_before_turn2 >= 1
@@ -924,7 +926,7 @@ class EpisodeHarness:
         turn2 = self._run_turn(item.turn2_text, scope, f"{item.item_id}#t1", options=item.options)
         read = turn2.step8_read
         assert read is not None  # _run_turn raises when it is not exactly one
-        rank, matched, cosine = _match_read_to_commits(read, self._committed)
+        rank, matched, cosine = _match_read_to_commits(read, own, self._committed)
         returned = rank >= 0
 
         oracle_choice = ABSTAIN
@@ -975,13 +977,26 @@ class EpisodeHarness:
 
 
 def _match_read_to_commits(
-    read: StoreRead, committed: Sequence[CommittedRecord]
+    read: StoreRead,
+    own: Sequence[CommittedRecord],
+    run_wide: Sequence[CommittedRecord],
 ) -> tuple[int, CommittedRecord | None, float]:
     """Find which committed record turn 2's read returned, and at what rank.
 
+    THE EPISODE'S OWN RECORDS ARE SEARCHED FIRST, AND THAT ORDER IS LOAD-BEARING (measured
+    2026-09-07). Two turn-1 latents can be bit-identical when their inputs are: the
+    `WRONG_TURN1` arm stages the donor's `key_claim` as its text, and donors recur across
+    items, so 466 of 2,048 runs matched a run-wide record written by a DIFFERENT episode with
+    the same latent. The verdict was unaffected -- identical inputs commit identical facts --
+    but `read_record_logical_key` named the wrong episode, which is exactly the field a reader
+    would use to check the harness's own claim. Searching this episode's records first makes
+    the attribution correct without weakening leak detection: a leaked record is by definition
+    NOT in `own`, so it still comes back from `run_wide` and still says whose it was.
+
     Args:
         read: The step-8 read.
-        committed: Every record the harness has watched a turn 1 write in this run.
+        own: The records THIS episode's turn 1 committed.
+        run_wide: Every record the harness has watched a turn 1 write in this run.
 
     Returns:
         `(slot rank, the matched record, its cosine to the returned slot)`, or
@@ -989,6 +1004,8 @@ def _match_read_to_commits(
         store returned, so `0` means the read put that record FIRST -- which is the claim PR
         #86's cosine ranking makes, and the one worth reporting per episode.
     """
+    seen = {id(record) for record in own}
+    committed = [*own, *(record for record in run_wide if id(record) not in seen)]
     if not committed:
         return -1, None, 0.0
     latents = read.latents

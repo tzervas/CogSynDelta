@@ -38,8 +38,19 @@ read returned the latent turn 1 committed.
 | episodes that committed a turn 1 | 2,048 |
 | whose turn-2 read returned that record | 2,048 |
 | at rank 0 (first slot the store returned) | 2,048 |
-| cosine to the committed latent | 1.0 on every one |
+| attributed to **this** episode's own `logical_key` | 2,048 |
+| cosine to the committed latent | 0.9999998 – 1.0000002 on every one |
+| partition resident count before turn 2 | 1 on all 2,048; 0 on all 1,024 `no_turn1` runs |
 | `no_turn1` runs that read any record | 0 |
+
+The `logical_key` row is the one that had to be earned. Two turn-1 latents can be
+bit-identical when their inputs are — the `wrong_turn1` arm stages the donor's `key_claim` as
+its text and donors recur across items — and a first pass matched **466 of 2,048** runs against
+a run-wide record written by a *different* episode. The verdict was unaffected (identical
+inputs commit identical facts) but the attribution field was wrong, and that is precisely the
+field a reader would use to check the harness's own claim. Matching now searches the episode's
+own records first, which fixes attribution without weakening leak detection: a leaked record is
+by definition not among the episode's own, so it still comes back named.
 
 Rank 0 on every episode is PR #86's cosine-ranked read doing its job: the query is the item's own
 store-free pre-pass `z_N`, the partition holds exactly the record turn 1 wrote, and the read puts

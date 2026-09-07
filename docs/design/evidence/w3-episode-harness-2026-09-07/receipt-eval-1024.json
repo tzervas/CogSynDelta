@@ -654,7 +654,7 @@
       "read_returned_turn1_record": true,
       "read_rank_of_turn1_record": 0,
       "read_top1_cosine_to_turn1": 0.9999999403953552,
-      "read_record_logical_key": "46c00248ac52229ea2a05c42aec52ecda4b1a0a5d93e0446f7e9a1df99595afd#t0",
+      "read_record_logical_key": "b034138b42190a0cffc865eea2ce9ab83ffb4de3b4cbd603947e3f45eddb545f#t0",
       "oracle_choice": 0,
       "oracle_pass": false,
       "rank_head_choice": -1,
