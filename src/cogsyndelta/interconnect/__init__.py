@@ -75,6 +75,7 @@ from cogsyndelta.interconnect.mind import (
     WhiteMatterOutput,
 )
 from cogsyndelta.interconnect.phase_a import (
+    DEFAULT_PHASE_A_THREADS,
     PHASE_A_TRAINABLE_R5,
     TABLE_4_TOTAL_R5,
     PhaseABatch,
@@ -83,11 +84,14 @@ from cogsyndelta.interconnect.phase_a import (
     PhaseAResult,
     PhaseATrainer,
     StepRecord,
+    ThreadPin,
     check_phase_a_frozen_set,
     check_receipt_collapse_floor,
+    check_receipt_thread_pin,
     loss_decreased,
     phase_a_guards,
     phase_a_parameter_partition,
+    pin_threads,
 )
 from cogsyndelta.interconnect.readout import FrontalReadout, NullCandidate, RankHead, UnifyProbes
 from cogsyndelta.interconnect.receipts import ComposeReceipt
@@ -108,6 +112,7 @@ from cogsyndelta.interconnect.workspace import LatentBank, Workspace, WorkspaceB
 
 __all__ = [
     "CODEC_V1",
+    "DEFAULT_PHASE_A_THREADS",
     "FORBIDDEN_KEYS",
     "GPU_RESIDENT_BONUS",
     "MAX_IN_FLIGHT",
@@ -170,6 +175,7 @@ __all__ = [
     "StoreScopeError",
     "StoredRecord",
     "ThalamicController",
+    "ThreadPin",
     "TierBudget",
     "TopKSelect",
     "UnifyLoss",
@@ -189,6 +195,7 @@ __all__ = [
     "check_phase_a_frozen_set",
     "check_phase_d_revert",
     "check_receipt_collapse_floor",
+    "check_receipt_thread_pin",
     "check_topology_agreement",
     "check_write_back_gate",
     "derive_scope",
@@ -196,6 +203,7 @@ __all__ = [
     "partition_scope_key",
     "phase_a_guards",
     "phase_a_parameter_partition",
+    "pin_threads",
     "probe_host_vram",
     "staleness_penalty",
 ]
