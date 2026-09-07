@@ -94,9 +94,9 @@ def test_empty_partition_yields_zero_unmasked_slots() -> None:
 
 
 def test_determinism_under_a_fixed_seed() -> None:
-    """No RNG is used anywhere in this module -- ranking is `(-importance, written_at)`,
-    a stable, seed-free order (ambiguity note 3) -- so two identically-seeded runs building
-    identical stores must read back bitwise identical tensors."""
+    """No RNG is used anywhere in this module -- ranking is `(-importance, -written_at,
+    logical_key)`, a stable, seed-free order (ambiguity note 3) -- so two identically-seeded
+    runs building identical stores must read back bitwise identical tensors."""
 
     def build_and_read() -> tuple[torch.Tensor, torch.Tensor]:
         torch.manual_seed(0)
@@ -110,6 +110,80 @@ def test_determinism_under_a_fixed_seed() -> None:
     latents_b, mask_b = build_and_read()
     assert torch.equal(latents_a, latents_b)
     assert torch.equal(mask_a, mask_b)
+
+
+# ---------------------------------------------------------------------------------------
+# The tie-break: a resident set must not become a wall (measured defect, 2026-09-07).
+# ---------------------------------------------------------------------------------------
+
+
+def _wall_fixture() -> tuple[InMemoryStoreStub, Scope]:
+    """Eight primers, then four later writes, all at the default (uniform) importance.
+
+    This is the phase-A shape exactly: `cli.prime_store` writes `records` episodes before
+    step 0 and the model then writes one record per turn, none of them overriding
+    `importance_default`, so `importance` cannot separate any of them.
+    """
+    store = _store()
+    scope = derive_scope("alice")
+    for i in range(8):
+        store.write(scope, "chat", f"primer-{i}", _latent(fill=float(i)))
+    for i in range(4):
+        store.write(scope, "chat", f"later-{i}", _latent(fill=100.0 + i))
+    return store, scope
+
+
+def test_a_read_reaches_records_written_after_the_resident_set() -> None:
+    """With importance uniform, the newest writes must be readable, not queued behind primers.
+
+    Measured on `main`: with the tie-break at `written_at` ASCENDING, `b_store = 8` over 8
+    primers returned the 8 primers forever. An 8-record store and a 32-record store trained
+    to bit-identical results to 17 significant figures, because nothing written after the
+    primers could ever be read.
+    """
+    store, scope = _wall_fixture()
+    latents, mask = store.read(scope, domain="chat", b_store=8)
+
+    assert bool(mask.all()), "eight slots, twelve records: every slot must be filled"
+    fills = [float(row[0]) for row in latents]
+    assert sum(1 for f in fills if f >= 100.0) == 4, (
+        f"the four post-primer writes are still unreachable: {fills}"
+    )
+
+
+def test_the_oldest_first_tie_break_is_what_walled_the_store_off() -> None:
+    """The can-fail control: rank the SAME records by the old key and the wall comes back.
+
+    `MEMORY.md`'s "verify guards by making them fail" applied to a fixed ordering bug -- the
+    green test above only means something beside a red one built from the exact expression
+    that was wrong.
+    """
+    store, scope = _wall_fixture()
+    records = [r for r in store._records.values() if r.scope == scope]
+    assert len(records) == 12
+
+    old_order = sorted(records, key=lambda r: (-r.importance, r.written_at))[:8]
+    assert all(r.logical_key.startswith("primer-") for r in old_order), (
+        "the fixture no longer reproduces the uniform-importance tie"
+    )
+
+    new_order = sorted(records, key=lambda r: (-r.importance, -r.written_at))[:8]
+    assert sum(1 for r in new_order if r.logical_key.startswith("later-")) == 4
+
+
+def test_importance_still_outranks_recency() -> None:
+    """Recency is the TIE-break, not the ranking: a deliberate importance still wins.
+
+    Guards the other direction -- a repair that made the read purely recency-ordered would
+    have thrown away DEC-63's importance axis rather than fixing its tie-break.
+    """
+    store = _store()
+    scope = derive_scope("alice")
+    store.write(scope, "chat", "old-but-important", _latent(fill=1.0), importance=0.9)
+    store.write(scope, "chat", "new-but-dull", _latent(fill=2.0), importance=0.1)
+
+    latents, _mask = store.read(scope, domain="chat", b_store=1)
+    assert torch.allclose(latents[0], _latent(fill=1.0))
 
 
 # ---------------------------------------------------------------------------------------

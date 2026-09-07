@@ -61,13 +61,15 @@ report, per the task's instruction to record spec ambiguity and how it was resol
      `B` distinct scopes into one bank slot range is `kv_bank.py`'s / `mind.py`'s job
      (IC-2/IC-8, later waves) -- looping this call per batch item and stacking. Building
      that loop here would be scope creep into files this lane does not own.
-  3. `read()` ranks matches by `importance` descending, ties by earlier `written_at` (a
+  3. `read()` ranks matches by `importance` descending, ties by LATER `written_at` (a
      stable, RNG-free order) rather than the taxonomy's full residency score `importance +
      gpu_resident_bonus - staleness_penalty(last_accessed)` (TAX:683's clause 2): the GPU
      bonus and the staleness half-life are exactly DEC-63's un-adopted formula, so ranking by
      it here would silently ship a DEC-63 answer through the back door of `read()` instead of
      through a `ContractGap`. Importance-descending is the smallest honest substitute that
-     keeps `read()` usable by later lanes without pre-empting DEC-63.
+     keeps `read()` usable by later lanes without pre-empting DEC-63. AMENDED 2026-09-07:
+     the tie-break was `written_at` ASCENDING, which under a uniform importance made the
+     oldest records permanently unreachable-past; see `_tie_break` for the measurement.
   4. The constructor signature is fixed by the spec at `InMemoryStoreStub(domain_enum,
      half_life_s, importance_default)` -- no `dim` argument. `D` is therefore inferred from
      the first write; a `read()` against a partition that has never been written (including
@@ -228,6 +230,33 @@ class Record:
     written_at: float
     last_accessed: float
     provenance: str | None
+
+
+def _tie_break(record: Record) -> tuple[float, float, str]:
+    """The RNG-free order a read falls back to: importance down, then NEWEST first, then key.
+
+    THE MEASURED DEFECT THIS CLOSES (2026-09-07). The tie-break used to be `written_at`
+    ASCENDING -- oldest first. Combined with a uniform `importance_default` (every write
+    from `mind.py` takes the default; nothing on the forward path sets one), that made the
+    priming records a permanent wall: with 8 primers resident and `b_store = 8`, every
+    later write the model made ranked strictly below them and was never readable. Measured:
+    an 8-record store and a 32-record store trained to bit-identical results, to 17
+    significant figures, because the extra 24 records could not be reached.
+
+    Newest-first is the smallest honest repair. It keeps the order total, deterministic and
+    seed-free (ambiguity note 3's actual requirement), and it agrees with the direction the
+    real store's eviction already scores in -- `episodic/store.py::_enforce_capacity` spills
+    the OLDER record when scores tie, so preferring the older one on a read was the read
+    and the eviction disagreeing about the same record. `logical_key` last keeps two records
+    written inside the same clock tick in a fixed order.
+
+    Args:
+        record: The stored record to key.
+
+    Returns:
+        A sort key; `sorted` over it is the read's ranking when no query is supplied.
+    """
+    return (-record.importance, -record.written_at, record.logical_key)
 
 
 @runtime_checkable
@@ -503,7 +532,7 @@ class InMemoryStoreStub:
         if not matches:
             return self._empty_partition(b_store)
 
-        matches.sort(key=lambda r: (-r.importance, r.written_at))
+        matches.sort(key=_tie_break)
         now = time.time()
         selected = matches[:b_store]
         for record in selected:

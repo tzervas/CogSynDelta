@@ -818,10 +818,20 @@ class EpisodicStoreImpl:
         return meta.importance + bonus - penalty
 
     def _rank_key(self, record: StoredRecord, now: float) -> tuple[float, float, RecordKey]:
-        """Read ranking: eviction score descending, then older first, then key.
+        """Read ranking: eviction score descending, then NEWEST first, then key.
 
         Scored off the INDEX where the record has one, so a read and an eviction never
         disagree about the same record -- one policy, evaluated once per tick.
+
+        AMENDED 2026-09-07. The timestamp tie-break used to be ascending (older first),
+        which is the direction `_enforce_capacity` SPILLS in: the read preferred exactly the
+        record eviction had judged least valuable, so the two halves of "one policy, not
+        two" pointed opposite ways. Under a uniform importance -- which is what every write
+        through `mind.py` carries, since nothing on the forward path sets one -- that made a
+        resident set of primers a permanent wall in front of everything written afterwards.
+        `episodic_store.py::_tie_break` carries the measurement; this is the same repair in
+        the store that replaces that stub. Eviction's own ordering is untouched: it sorts in
+        `_enforce_capacity`/`_prune_disk` with their own keys, not through this method.
         """
         meta = self._index.get(record.key)
         if meta is not None:
@@ -833,7 +843,7 @@ class EpisodicStoreImpl:
                 + bonus
                 - staleness_penalty(record.last_accessed, now, self.half_life_s)
             )
-        return (-score, record.written_at, record.key)
+        return (-score, -record.written_at, record.key)
 
     def score(self, key: RecordKey, *, now: float | None = None) -> float:
         """The eviction score of one record, exposed so a gate can construct a known ordering.

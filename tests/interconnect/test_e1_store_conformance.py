@@ -7,9 +7,12 @@ against `InMemoryStoreStub`, so `tests/interconnect/test_episodic_store.py` is a
 STUB: making the stub implement DEC-63 would turn that file red, which is the same forbidden
 move by a different door. So E1 adds a second implementation of E0's protocol beside the stub
 and re-runs the nine fixtures against it here, verbatim in assertion and in name, minus the
-`ContractGap` wrapper that only ever described the stub. `git diff` on this branch shows
+`ContractGap` wrapper that only ever described the stub. `git diff` on E1's OWN branch showed
 `tests/interconnect/test_episodic_store.py` and `src/cogsyndelta/interconnect/episodic_store.py`
-untouched; that is gate (i)'s evidence, and it is checkable rather than asserted.
+untouched; that was gate (i)'s evidence, and it was checkable rather than asserted. Later
+branches may edit both -- gate (i) forbids editing a gate to make it pass, not fixing a
+measured defect in the contract both files implement (see `episodic/__init__.py`'s 2026-09-07
+note); the nine fixtures below are unchanged by any of it.
 
 BOTH ORACLES, ONE SUITE. Every test here is parameterised over `InMemoryBackend` (the
 conformance oracle) and a file-backed `SqliteBackend` (the durability oracle), because row E1
@@ -19,6 +22,7 @@ the dict.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from contextlib import ExitStack
 from pathlib import Path
@@ -295,6 +299,57 @@ def test_e0_disk_prune_drops_lowest(backend_factory) -> None:
 
     surviving = {key[2] for key in store._index}
     assert surviving == {"k3", "k4"}, f"disk prune kept the wrong rows: {surviving}"
+
+
+# ---------------------------------------------------------------------------------------
+# The read tie-break: newest first, so a resident set is not a wall (2026-09-07).
+# ---------------------------------------------------------------------------------------
+
+
+def _tied_pair(backend_factory) -> tuple[EpisodicStoreImpl, Scope]:
+    """Two records whose eviction SCORE is exactly equal, so only the tie-break can decide.
+
+    Equal importance, equal residency and a `last_accessed` pinned to one instant on both,
+    which zeroes the staleness term's difference -- the same pinning
+    `test_e1_eviction_order.py` uses to isolate one term of the score at a time.
+    """
+    store = _store(backend_factory)
+    scope = derive_scope("alice")
+    store.learn(scope, "chat", "older", _latent(fill=1.0), importance=0.5)
+    store.learn(scope, "chat", "newer", _latent(fill=2.0), importance=0.5)
+    now = time.time()
+    for logical_key in ("older", "newer"):
+        store._index[(partition_scope_key(scope), "chat", logical_key)].last_accessed = now
+    return store, scope
+
+
+def test_a_tied_read_prefers_the_newer_record(backend_factory) -> None:
+    """`episodic_store.py::_tie_break`'s repair, in the store that replaces that stub.
+
+    The stub's oldest-first tie-break made a set of equally-important primers permanently
+    outrank everything written later; this store inherited the same direction through
+    `_rank_key`. Preferring the newer record also puts the read back in agreement with
+    `_enforce_capacity`, which spills the OLDER record when scores tie.
+    """
+    store, scope = _tied_pair(backend_factory)
+    latents, _mask = store.retrieve(scope, domain="chat", b_store=1)
+    assert torch.allclose(latents[0], _latent(fill=2.0))
+
+
+def test_the_old_ascending_tie_break_would_have_returned_the_older_record(
+    backend_factory,
+) -> None:
+    """The can-fail control: the same records, ranked by the expression that was wrong."""
+    store, scope = _tied_pair(backend_factory)
+    now = time.time()
+    matches = store._backend.partition(partition_scope_key(scope), "chat")
+    scores = {r.key: store._rank_key(r, now)[0] for r in matches}
+    assert len(set(scores.values())) == 1, "the fixture no longer ties the score"
+
+    old_first = sorted(matches, key=lambda r: (scores[r.key], r.written_at, r.key))[0]
+    assert old_first.logical_key == "older"
+    new_first = sorted(matches, key=lambda r: (scores[r.key], -r.written_at, r.key))[0]
+    assert new_first.logical_key == "newer"
 
 
 # ---------------------------------------------------------------------------------------
