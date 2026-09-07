@@ -1,0 +1,4 @@
+language code-b1280-s0-7bc2699-20260904 code-b1280-s0-7bc2699-20260904-ce493273b tzervas/cogsyndelta-region-language docs/design/evidence/text-promotions-2026-09-06/HOW-CHOSEN-language.md
+compress compress-b1280-s0-7bc2699-20260904 compress-b1280-s0-7bc2699-20260904-c65a99381 tzervas/cogsyndelta-region-compress docs/design/evidence/text-promotions-2026-09-06/HOW-CHOSEN-compress.md
+retrieve retrieve-b1280-s0-7bc2699-20260904 retrieve-b1280-s0-7bc2699-20260904-caf4bb36f tzervas/cogsyndelta-region-retrieve docs/design/evidence/text-promotions-2026-09-06/HOW-CHOSEN-retrieve.md
+reason reason-b512-s0-7bc2699-20260904 reason-b512-s0-7bc2699-20260904-cca364a92 tzervas/cogsyndelta-region-reason docs/design/evidence/text-promotions-2026-09-06/HOW-CHOSEN-reason.md
