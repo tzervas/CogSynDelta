@@ -1854,7 +1854,10 @@ def test_g26_held_out_leak_is_refused() -> None:
 # to main, PR #67) reserves G27 through G36 for the interconnect module's own guards --
 # this guard's number was picked from the same registry (`src/cogsyndelta/splits.py`'s
 # G26, then the next free number) before that PR landed and had to move. The next new
-# guard after this one is G38.
+# guard after this one is G42: G38/G39 are regions/_mining.py's, G40 is
+# eval/prereg.py's, and G41 is the reserved-holdout guard
+# (`cogsyndelta.splits.assert_no_reserved_holdout_in_pairs`, claimed 2026-09-06,
+# proved in tests/test_gsm8k_test_holdout.py).
 # ---------------------------------------------------------------------------------------
 
 #: Shared valid checkpoint/artifact shas for the tests below that are NOT exercising the

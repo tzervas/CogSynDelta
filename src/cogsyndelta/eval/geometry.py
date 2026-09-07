@@ -42,9 +42,12 @@ of a train/eval partition.
 
 GUARD NUMBER: this module's guard is G37, not G27 -- G27 through G36 are reserved for
 `docs/design/INTERCONNECT-MODULE-SPEC.md` Table 8's own guards (merged to main in
-PR #67 while this module's guard number was still unclaimed on this branch). The next
-new guard after this one is G38; check both `src/cogsyndelta/splits.py` (text split
-guard, currently G26) and that spec's Table 8 before picking a number.
+PR #67 while this module's guard number was still unclaimed on this branch). G38/G39
+are `regions/_mining.py`'s mining guards, G40 is `eval/prereg.py`'s, and G41 is the
+reserved-holdout guard in `src/cogsyndelta/splits.py`
+(`assert_no_reserved_holdout_in_pairs`, claimed 2026-09-06), so the next new guard is
+G42. Check `src/cogsyndelta/splits.py` (text split guard G26, reserved holdout G41) and
+that spec's Table 8 before picking a number.
 """
 
 from __future__ import annotations

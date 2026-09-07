@@ -230,16 +230,52 @@ class VisualCorpusUnsetError(RuntimeError):
     """
 
 
+HELD_OUT_SHARDS: dict[str, str] = {
+    "reason/gsm8k-main/test.parquet": (
+        "openai/gsm8k:main test (1,319 rows, MIT, verified at "
+        "github.com/openai/grade-school-math 2026-09-06)"
+    ),
+}
+"""Individual shards reserved as holdouts, keyed by the trailing `<region>/<dir>/<file>`.
+
+RESERVED_FOR_COMPOSE cannot express this. It is keyed by DIRECTORY, and
+`reason/gsm8k-main/` holds both the `train` split every reason cell is trained on and the
+`test` split that must never be trained on. Reserving the directory would refuse the
+region's own corpus; reserving nothing would let a future config widen a glob from
+`train.parquet` to `*.parquet` and silently absorb the battery's population.
+
+This is the SHARD half of the holdout guarantee and it is deliberately not the whole of
+it: a shard check cannot see rows that reached a config some other way. The item-id half
+is G41 (`cogsyndelta.splits.assert_no_reserved_holdout_in_pairs`), enforced inside
+`build_splits` on the realised training pairs.
+"""
+
+
 def _refuse_reserved_shards(region: str, glob_pat: str, shards: list[str]) -> None:
-    """Raise :class:`ReservedSourceError` if any resolved shard is under a reserved corpus."""
+    """Raise :class:`ReservedSourceError` if any resolved shard is reserved.
+
+    Two reservations, one check: whole directories allocated to the composed model
+    (:data:`RESERVED_FOR_COMPOSE`) and individual holdout shards
+    (:data:`HELD_OUT_SHARDS`).
+    """
     for shard in shards:
+        parts = Path(shard).parts
         for name, note in RESERVED_FOR_COMPOSE.items():
-            if name in Path(shard).parts:
+            if name in parts:
                 raise ReservedSourceError(
                     f"region {region!r} source {glob_pat!r} resolved a shard under the "
                     f"reserved directory {name!r} ({note}, allocated `compose` -- see "
                     f"docs/design/CORPUS-CONTRACT.md §2.4). Reserved sources may only be "
                     f"consumed by the composed model. Refusing to start. shard: {shard}"
+                )
+        for suffix, note in HELD_OUT_SHARDS.items():
+            if parts[-len(Path(suffix).parts) :] == Path(suffix).parts:
+                raise ReservedSourceError(
+                    f"region {region!r} source {glob_pat!r} resolved the held-out shard "
+                    f"{suffix!r} ({note}). It is reserved as the population of a "
+                    f"pre-registered battery and is not training material for any region "
+                    f"-- see docs/design/CORPUS-CONTRACT.md §2.2 item-level disjointness. "
+                    f"Refusing to start. shard: {shard}"
                 )
 
 

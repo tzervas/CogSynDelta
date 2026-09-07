@@ -79,6 +79,7 @@ from cogsyndelta.regions.text_encoder import (
 from cogsyndelta.splits import (
     SplitGuardError,
     assert_no_held_out_in_pairs,
+    assert_no_reserved_holdout_in_pairs,
     build_order_manifest,
     build_split_manifest,
     item_id,
@@ -1239,6 +1240,13 @@ def build_splits(
         }
 
     assert_no_held_out_in_pairs(holdout, train_pairs, where="training pairs")
+    # G41: this region's own holdout is not the only thing that must stay out of its
+    # training set. `openai/gsm8k`'s `test` split is reserved fleet-wide as the
+    # pre-registered reasoning battery's population, so it has to be excluded from EVERY
+    # region and every composite phase -- by item id, here, where the realised training
+    # pairs exist. A config that simply does not name test.parquet is an intention; this
+    # is the enforcement.
+    assert_no_reserved_holdout_in_pairs(train_pairs, where=f"{cfg.region} training pairs")
     train_pairs = permute_train_pairs(train_pairs, cfg.order_seed)
 
     order_path = resolve_order_manifest_path(

@@ -19,7 +19,8 @@ weights are not the declared ones.
 GUARD NUMBER
 G40. Free at `12e2d1f`: G26 is the text split guard (`cogsyndelta.splits`), G27-G36 are
 INTERCONNECT-MODULE-SPEC.md Table 8's, G37 is `eval/geometry.py`'s geometry reference,
-G38/G39 are `regions/_mining.py`'s mining guards. The next new guard is G41.
+G38/G39 are `regions/_mining.py`'s mining guards, and G41 is
+`cogsyndelta.splits`'s reserved-holdout guard. The next new guard is G42.
 
 FAIL CLOSED
 A receipt with no measured block, a `None` measured block (no step ran, or the weights
