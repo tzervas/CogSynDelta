@@ -715,12 +715,27 @@ catalogue; this section is not rewritten to match.
 | source | rows | shape | balance | licence |
 |---|---|---|---|---|
 | `deepmind/aqua_rat` (`raw`) | 97,467 | algebraic MCQ with natural-language rationale | answer letters C 22,290 / B 21,446 / A 20,494 / D 19,441 / E 13,796 — max **22.87%**, max:min **1.62:1** | **PERMISSIVE_OK** (Apache-2.0) |
-| `openai/gsm8k` (`main`) | 7,473 | grade-school arithmetic word problems, step-by-step | — | **PERMISSIVE_OK** (MIT) |
+| `openai/gsm8k` (`main`, `train`) | 7,473 | grade-school arithmetic word problems, step-by-step | — | **PERMISSIVE_OK** (MIT) |
 
 *(`§3.reason_aqua_rat_answer_letter`; manifests under `/mnt/bulk/csd-corpus/reason/`.)*
 
 Source balance of the staged pool: **aqua_rat 92.88% / gsm8k 7.12% — max share 92.88%,
 N_eff 1.15.**
+
+**Amendment 2026-09-06 — the `gsm8k` `test` split is landed, as a holdout.** 1,319 rows,
+same MIT terms, re-verified at `github.com/openai/grade-school-math` rather than inherited
+from the card. It is **not training material for any region**: zero rows reach any
+training set, so the realised `reason` train split (gsm8k 7,473 / aqua_rat 4,982 — 60/40,
+N_eff 1.92) and the corpus fingerprint `ca364a92` are both unchanged, and the staged-pool
+figures above still describe the training material exactly. Counting the holdout, the
+staged pool moves to **aqua_rat 91.73% / gsm8k 8.28% — max share 91.73%, N_eff 1.18**:
+better on both checks, still failing both, and the gap this section describes (two
+reasoning shapes where four are needed) is untouched. Reserved against every region by
+item id (G38, `cogsyndelta.splits.assert_no_reserved_holdout_in_pairs`, manifest
+`config/mind/splits/reason-gsm8k-test-holdout.json`) and by shard path
+(`csd-train-all.py` `HELD_OUT_SHARDS`). It is `in-mixture` at the source level under B3,
+not `held-out-domain`. Full accounting:
+`docs/design/evidence/gsm8k-test-intake-2026-09-06/`.
 
 ### The gap, plainly
 

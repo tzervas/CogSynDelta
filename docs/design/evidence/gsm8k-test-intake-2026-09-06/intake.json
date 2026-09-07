@@ -1,0 +1,79 @@
+{
+  "balance": {
+    "realised_train_split_after": {
+      "B1_max_share_le_0.40": false,
+      "B2_n_eff_ge_3": false,
+      "exp_shannon": 1.9601,
+      "max_share": 0.6,
+      "n_eff_inverse_simpson": 1.9231,
+      "shares": {
+        "aqua_rat": 0.4,
+        "gsm8k": 0.6
+      },
+      "total_rows": 12455
+    },
+    "realised_train_split_before": {
+      "B1_max_share_le_0.40": false,
+      "B2_n_eff_ge_3": false,
+      "exp_shannon": 1.9601,
+      "max_share": 0.6,
+      "n_eff_inverse_simpson": 1.9231,
+      "shares": {
+        "aqua_rat": 0.4,
+        "gsm8k": 0.6
+      },
+      "total_rows": 12455
+    },
+    "staged_pool_after": {
+      "B1_max_share_le_0.40": false,
+      "B2_n_eff_ge_3": false,
+      "exp_shannon": 1.3303,
+      "max_share": 0.917259,
+      "n_eff_inverse_simpson": 1.179,
+      "shares": {
+        "aqua_rat": 0.917259,
+        "gsm8k": 0.082741
+      },
+      "total_rows": 106259
+    },
+    "staged_pool_after_training_material_only": {
+      "B1_max_share_le_0.40": false,
+      "B2_n_eff_ge_3": false,
+      "exp_shannon": 1.2927,
+      "max_share": 0.928788,
+      "n_eff_inverse_simpson": 1.1524,
+      "shares": {
+        "aqua_rat": 0.928788,
+        "gsm8k": 0.071212
+      },
+      "total_rows": 104940
+    },
+    "staged_pool_before": {
+      "B1_max_share_le_0.40": false,
+      "B2_n_eff_ge_3": false,
+      "exp_shannon": 1.2927,
+      "max_share": 0.928788,
+      "n_eff_inverse_simpson": 1.1524,
+      "shares": {
+        "aqua_rat": 0.928788,
+        "gsm8k": 0.071212
+      },
+      "total_rows": 104940
+    }
+  },
+  "battery": {
+    "eligible_items_from_test_split": 1236,
+    "eligible_today_from_in_mixture_holdout": 299,
+    "mean_annotations": 3.4118,
+    "test_split_rows": 1319
+  },
+  "fingerprint_unchanged_vs_E0_ca364a92": true,
+  "gsm8k_test_rows": 1319,
+  "gsm8k_train_rows": 7473,
+  "overlap_test_vs_gsm8k_train_ids": 0,
+  "overlap_test_vs_train_question_text": 0,
+  "reason_corpus_fingerprint": "ca364a92d2c6c5fd259404e0ab6f52a1",
+  "reserved_covers_every_test_row": true,
+  "reserved_manifest_ids": 1319,
+  "test_ids_unique": 1319
+}
