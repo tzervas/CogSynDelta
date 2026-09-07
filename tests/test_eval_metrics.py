@@ -27,6 +27,8 @@ from cogsyndelta.eval.metrics import (
     MetricGroup,
     MetricIdentity,
     assert_sameness,
+    recall_at_k_per_query,
+    reciprocal_rank_per_query,
 )
 
 
@@ -387,3 +389,103 @@ def test_spearman_refuses_input_it_cannot_correlate() -> None:
         spearman_correlation([0.1, 0.2], [0.1])
     with pytest.raises(ValueError, match="at least 2"):
         spearman_correlation([0.1], [0.1])
+
+
+# ---------------------------------------------------------------------------------------
+# Per-query emission. The pre-registered decision rule for the memory region negative-set
+# round is a PAIRED bootstrap, which cannot run on a mean; these fix the property that
+# makes the vector safe to substitute for the scalar -- they are the same number.
+# ---------------------------------------------------------------------------------------
+
+
+def _random_ranking(queries: int = 64, pool: int = 40) -> tuple[torch.Tensor, torch.Tensor]:
+    """A non-trivial ranking: enough queries to mix hits and misses at every cutoff."""
+    generator = torch.Generator().manual_seed(20260906)
+    scores = torch.randn(queries, pool, generator=generator)
+    relevant = torch.randint(0, pool, (queries,), generator=generator)
+    return scores, relevant
+
+
+@pytest.mark.cpu
+def test_recall_at_k_is_exactly_the_mean_of_its_per_query_vector() -> None:
+    """EXACT equality, not approx.
+
+    An aggregate that merely rounds to the vector's mean is an aggregate that can drift
+    from it, and the drift would land inside a paired test whose whole job is to compare
+    two nearly equal numbers. `==` is the assertion that forbids a second implementation.
+    """
+    scores, relevant = _random_ranking()
+    for k in (1, 5, 10, 100):
+        vector = recall_at_k_per_query(scores, relevant, k)
+        assert vector.dtype is torch.float32
+        assert vector.shape == (scores.size(0),)
+        assert vector.mean().item() == recall_at_k(scores, relevant, k)
+
+
+@pytest.mark.cpu
+def test_reciprocal_rank_is_exactly_the_mean_of_its_per_query_vector() -> None:
+    """The MRR half of the same guarantee, with the same exact-equality assertion."""
+    scores, relevant = _random_ranking()
+    vector = reciprocal_rank_per_query(scores, relevant)
+    assert vector.dtype is torch.float32
+    assert vector.shape == (scores.size(0),)
+    assert vector.mean().item() == mean_reciprocal_rank(scores, relevant)
+
+
+@pytest.mark.cpu
+def test_per_query_recall_still_computes_the_pre_refactor_expression() -> None:
+    """The aggregate is UNCHANGED by the refactor, checked against the old expression.
+
+    The previous implementation was a single line -- topk, compare, any, float, mean.
+    Reproducing that line here and demanding exact equality is what makes "the receipts
+    already published are still reproducible" a tested claim rather than an assurance.
+    """
+    scores, relevant = _random_ranking()
+    for k in (1, 5, 10):
+        top = scores.topk(min(k, scores.size(1)), dim=-1).indices
+        pre_refactor = (top == relevant.unsqueeze(-1)).any(dim=-1).float().mean().item()
+        assert recall_at_k(scores, relevant, k) == pre_refactor
+
+    order = scores.argsort(dim=-1, descending=True)
+    ranks = (order == relevant.unsqueeze(-1)).float().argmax(dim=-1) + 1
+    assert mean_reciprocal_rank(scores, relevant) == (1.0 / ranks.float()).mean().item()
+
+
+@pytest.mark.cpu
+def test_per_query_recall_reproduces_the_float32_receipt_value() -> None:
+    """0.2 over 500 queries is stored as 0.20000000298023224, and must stay that way.
+
+    The negative-set pre-registration left the float32 question open precisely because a
+    per-query path aggregating in float64 would return 0.2 exactly and stop matching the
+    memory region receipt -- and that bit-for-bit match is the checkpoint-integrity
+    evidence. Settled here in favour of float32: the quantum near 0.2 at n = 500 is about
+    1.5e-08, six orders below the 0.02 decision bar, so nothing is paid for it.
+    """
+    pool = 4
+    scores = torch.zeros(500, pool)
+    relevant = torch.zeros(500, dtype=torch.long)
+    scores[:100, 0] = 1.0  # 100 of 500 queries put their gold first
+    scores[100:, 1] = 1.0
+    assert recall_at_k_per_query(scores, relevant, 1).sum().item() == 100.0
+    assert recall_at_k(scores, relevant, 1) == 0.20000000298023224
+
+
+@pytest.mark.cpu
+def test_per_query_recall_hand_checked_tiny_case() -> None:
+    """Four queries whose outcomes can be read off the tensor by eye."""
+    scores = torch.tensor(
+        [
+            [0.9, 0.1, 0.0],  # gold 0, rank 1
+            [0.1, 0.9, 0.0],  # gold 0, rank 2
+            [0.1, 0.2, 0.9],  # gold 0, rank 3
+            [0.0, 0.9, 0.1],  # gold 1, rank 1
+        ]
+    )
+    relevant = torch.tensor([0, 0, 0, 1])
+    assert recall_at_k_per_query(scores, relevant, 1).tolist() == [1.0, 0.0, 0.0, 1.0]
+    assert recall_at_k_per_query(scores, relevant, 2).tolist() == [1.0, 1.0, 0.0, 1.0]
+    # 1/3 is not representable in float32, and the vector is deliberately float32 so its
+    # mean reproduces the published receipts -- see `recall_at_k`'s docstring.
+    assert reciprocal_rank_per_query(scores, relevant).tolist() == pytest.approx(
+        [1.0, 0.5, 1.0 / 3.0, 1.0]
+    )

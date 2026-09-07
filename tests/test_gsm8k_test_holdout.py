@@ -1,4 +1,4 @@
-"""G38: the gsm8k `test` split is a holdout, and the guard that makes it one must fire.
+"""G41: the gsm8k `test` split is a holdout, and the guard that makes it one must fire.
 
 WHY THIS FILE EXISTS
 `openai/gsm8k:main` `test` (1,319 rows, MIT) was landed 2026-09-06 as the population of

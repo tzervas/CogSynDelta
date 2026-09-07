@@ -543,3 +543,103 @@ def test_refuse_cross_family_rank_ratio_rejects_an_unrecognised_field_name() -> 
         beir_fiqa.refuse_cross_family_rank_ratio(
             "token.pooled_pr_rank", 15.0, "repr.effective_rank", 100.0
         )
+
+
+# ---------------------------------------------------------------------------------------
+# rank_metrics_per_query -- the paired-test surface. The pre-registered rule for the
+# memory region negative-set round is a paired bootstrap over the 500 shared FiQA dev
+# queries, so the per-query terms must survive AND must be the same numbers the receipt
+# already stores. These pin both halves of that.
+# ---------------------------------------------------------------------------------------
+
+
+def _multi_relevant_ranking(
+    queries: int = 48, pool: int = 60
+) -> tuple[torch.Tensor, list[list[int]]]:
+    """A non-trivial multi-relevant case: 1-4 golds per query, at FiQA-ish density."""
+    generator = torch.Generator().manual_seed(20260906)
+    scores = torch.randn(queries, pool, generator=generator)
+    gold: list[list[int]] = []
+    for row in range(queries):
+        count = 1 + (row % 4)
+        picks = torch.randperm(pool, generator=generator)[:count]
+        gold.append(sorted(int(p) for p in picks))
+    return scores, gold
+
+
+def test_rank_metrics_per_query_aggregates_are_exactly_rank_metrics() -> None:
+    """EXACT equality with the aggregate-only path, on a non-trivial multi-relevant case.
+
+    This is the property that makes the refactor safe to land under an already-published
+    receipt: `rank_metrics` now delegates here, so if the two ever disagreed the receipt
+    and the paired test would be describing different measurements. `==` rather than
+    `approx` because any difference at all is the bug.
+    """
+    scores, gold = _multi_relevant_ranking()
+    aggregates, per_query = beir_fiqa.rank_metrics_per_query(scores, gold)
+    assert aggregates == beir_fiqa.rank_metrics(scores, gold)
+    assert list(aggregates) == list(per_query)
+
+
+def test_rank_metrics_per_query_vectors_average_to_the_aggregate() -> None:
+    """Each vector re-averaged in float32 reproduces its own aggregate, bit for bit.
+
+    Aggregation stays float32 deliberately (see `metrics.recall_at_k`): the published
+    memory-region receipt stores Success@10 = 0.2 as 0.20000000298023224, and a float64
+    re-aggregation would return 0.2 and stop matching it.
+    """
+    scores, gold = _multi_relevant_ranking()
+    aggregates, per_query = beir_fiqa.rank_metrics_per_query(scores, gold)
+    for key, values in per_query.items():
+        assert len(values) == scores.size(0)
+        assert torch.tensor(values, dtype=torch.float32).mean().item() == aggregates[key]
+
+
+def test_rank_metrics_per_query_hand_checked_tiny_case() -> None:
+    """The `_toy_scores` case, read off per query rather than averaged.
+
+    Query 0 has two golds; its best one sits at rank 2 behind an irrelevant document, so
+    it misses @1 and scores 1/2. Query 1's only gold is first. Those are exactly the 0.5
+    recall@1 and 0.75 MRR the aggregate test above asserts -- shown here as the two
+    numbers they are averaged from, which is what a paired test consumes.
+    """
+    scores, gold = _toy_scores()
+    aggregates, per_query = beir_fiqa.rank_metrics_per_query(scores, gold)
+    assert per_query["recall@1"] == [0.0, 1.0]
+    assert per_query["recall@10"] == [1.0, 1.0]
+    assert per_query["mrr"] == [0.5, 1.0]
+    assert aggregates["recall@1"] == pytest.approx(0.5)
+    assert "recall@100" not in per_query  # capped at the pool size, same as the aggregate
+
+
+def test_bm25_metrics_per_query_carries_both_halves_unchanged() -> None:
+    """The BM25 reference emits per-query terms without changing what it reports.
+
+    `bm25_metrics` keeps stamping `index_s`, which stays an aggregate: it is wall-clock
+    for the whole pass and has no per-query meaning. The metric keys, and only those,
+    appear on both sides.
+    """
+    docs = [
+        "the capital gains tax on a long term stock sale",
+        "how to bake sourdough bread at home",
+        "mortgage interest deduction and property tax",
+        "index funds and expense ratios explained",
+    ]
+    task = beir_fiqa.RankingTask(
+        queries=["capital gains tax on stock", "sourdough bread"],
+        query_ids=["q0", "q1"],
+        pool_ids=[f"d{i}" for i in range(len(docs))],
+        pool_texts=docs,
+        gold=[[0], [1]],
+    )
+    aggregates, per_query = beir_fiqa.bm25_metrics_per_query(task)
+    assert "index_s" in aggregates
+    assert "index_s" not in per_query
+    for key, values in per_query.items():
+        assert len(values) == len(task.queries)
+        assert torch.tensor(values, dtype=torch.float32).mean().item() == aggregates[key]
+
+    aggregate_only = beir_fiqa.bm25_metrics(task)
+    assert {k: v for k, v in aggregate_only.items() if k != "index_s"} == {
+        k: v for k, v in aggregates.items() if k != "index_s"
+    }

@@ -177,6 +177,47 @@ def test_run_memory_pretrain_produces_retrieval_and_gates_blocks(
     )
 
 
+def test_run_memory_pretrain_emits_per_query_vectors_beside_the_aggregates(
+    beir_and_memory_roots: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """The pre-registered decision rule is paired, so the receipt has to carry the terms.
+
+    A paired bootstrap over the shared queries cannot be run from a mean. This asserts
+    the vectors are present, are keyed by `query_ids` in order, and average back to the
+    aggregate the receipt already carried -- the aggregate is the same number it always
+    was, not a recomputation from the vectors.
+    """
+    import torch
+
+    beir_root, tok_path = beir_and_memory_roots
+
+    receipt = memory_mod.run_memory_pretrain(
+        steps=6,
+        batch_size=8,
+        holdout_pairs=8,
+        eval_every=3,
+        checkpoint_every=0,
+        max_len=24,
+        device="cpu",
+        encoder=TextEncoderConfig(dim=16, depth=1, n_heads=2, max_len=24),
+        tokenizer_path=str(tok_path),
+        out_dir=str(tmp_path / "receipts"),
+        eval_root=beir_root,
+        eval_split="dev",
+    )
+
+    full = receipt["retrieval"]["full_pool"]
+    n_queries = int(full["task"]["queries"])
+    assert len(full["query_ids"]) == n_queries
+    for arm in ("trained", "untrained", "lexical_bm25"):
+        vectors = full["per_query"][arm]
+        assert set(vectors) == {key for key in full[arm] if key != "index_s"}
+        for key, vector in vectors.items():
+            assert len(vector) == n_queries
+            recomputed = torch.tensor(vector, dtype=torch.float32).mean().item()
+            assert recomputed == full[arm][key], f"{arm}.{key} aggregate moved"
+
+
 def test_run_memory_pretrain_skip_lexical_leaves_gates_unevaluable(
     beir_and_memory_roots: tuple[Path, Path], tmp_path: Path
 ) -> None:

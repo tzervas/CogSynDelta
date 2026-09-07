@@ -66,7 +66,7 @@ would still leak the problem, and the pair-id check alone would not see it.
 A holdout that is merely intended to be held out is not a holdout. Two guards, and each
 one's failure is constructed in `tests/test_gsm8k_test_holdout.py`:
 
-- **G38, by item id.** `cogsyndelta.splits.assert_no_reserved_holdout_in_pairs`, called
+- **G41, by item id.** `cogsyndelta.splits.assert_no_reserved_holdout_in_pairs`, called
   from `build_splits` on the realised training pairs — so it covers every region and every
   composite phase, whatever shards the config happens to name. Fails closed twice: a
   missing pinned manifest is an error rather than an empty id set, and a manifest whose

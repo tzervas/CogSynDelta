@@ -37,7 +37,7 @@ DEFAULT_SPLITS_DIR = _REPO_ROOT / "config" / "mind" / "splits"
 
 RESERVED_HOLDOUT_GLOB = "*-holdout.json"
 REQUIRED_RESERVED_HOLDOUTS: tuple[str, ...] = ("reason-gsm8k-test-holdout.json",)
-"""Reserved-holdout manifests that MUST exist, pinned by name (G38).
+"""Reserved-holdout manifests that MUST exist, pinned by name (G41).
 
 A glob alone would let the guard be disabled by deleting a file: no manifest, no ids, no
 leak detected, everything green. So the glob picks up any future holdout automatically
@@ -51,10 +51,10 @@ class SplitGuardError(RuntimeError):
 
 
 class ReservedHoldoutError(RuntimeError):
-    """G38 fail-closed: a reserved-holdout item reached a training set.
+    """G41 fail-closed: a reserved-holdout item reached a training set.
 
     Distinct from :class:`SplitGuardError` because it is a different claim. G26 says
-    "this run's eval set is the one the receipt names". G38 says "this row was never
+    "this run's eval set is the one the receipt names". G41 says "this row was never
     trained on by ANY region, so a battery scored on it is measuring the model rather
     than its memory". A holdout that is merely intended to be held out is not a holdout;
     the property has to be enforced where training pairs are assembled.
@@ -464,7 +464,7 @@ def build_reserved_holdout_manifest(
 
 
 def verify_reserved_holdout_manifest(manifest: dict[str, Any], *, path: Path) -> list[str]:
-    """G38: refuse a reserved-holdout file whose ids do not hash to its own sha256.
+    """G41: refuse a reserved-holdout file whose ids do not hash to its own sha256.
 
     Args:
         manifest: Loaded manifest.
@@ -479,15 +479,15 @@ def verify_reserved_holdout_manifest(manifest: dict[str, Any], *, path: Path) ->
     schema = manifest.get("schema")
     if schema != RESERVED_HOLDOUT_SCHEMA:
         raise ReservedHoldoutError(
-            f"G38: reserved-holdout schema {schema!r} != {RESERVED_HOLDOUT_SCHEMA!r} ({path})"
+            f"G41: reserved-holdout schema {schema!r} != {RESERVED_HOLDOUT_SCHEMA!r} ({path})"
         )
     ids = manifest.get("item_ids")
     if not isinstance(ids, list) or not ids or not all(isinstance(x, str) for x in ids):
-        raise ReservedHoldoutError(f"G38: reserved-holdout item_ids missing or malformed ({path})")
+        raise ReservedHoldoutError(f"G41: reserved-holdout item_ids missing or malformed ({path})")
     recomputed = membership_sha256(ids)
     if manifest.get("sha256") != recomputed:
         raise ReservedHoldoutError(
-            f"G38: reserved-holdout sha256 {manifest.get('sha256')} != membership "
+            f"G41: reserved-holdout sha256 {manifest.get('sha256')} != membership "
             f"{recomputed} -- doctored or truncated file ({path})"
         )
     return ids
@@ -514,7 +514,7 @@ def load_reserved_holdout_ids(*, splits_dir: Path | None = None) -> frozenset[st
     for required in REQUIRED_RESERVED_HOLDOUTS:
         if not (root / required).is_file():
             raise ReservedHoldoutError(
-                f"G38: required reserved-holdout manifest missing: {root / required}. "
+                f"G41: required reserved-holdout manifest missing: {root / required}. "
                 f"Refusing to build a training set that cannot be checked against it."
             )
     ids: set[str] = set()
@@ -530,7 +530,7 @@ def assert_no_reserved_holdout_in_pairs(
     splits_dir: Path | None = None,
     reserved: frozenset[str] | None = None,
 ) -> None:
-    """G38: refuse if any reserved-holdout item appears in `pairs`.
+    """G41: refuse if any reserved-holdout item appears in `pairs`.
 
     Called from `build_splits` on the realised training pairs, so it covers every region
     and every composite phase that assembles its corpus there -- the holdout is excluded
@@ -551,7 +551,7 @@ def assert_no_reserved_holdout_in_pairs(
     leaked = [item_id(a, b) for a, b in pairs if item_id(a, b) in ids]
     if leaked:
         raise ReservedHoldoutError(
-            f"G38: {len(leaked)} reserved-holdout item(s) appear in {where} "
+            f"G41: {len(leaked)} reserved-holdout item(s) appear in {where} "
             f"(example {leaked[0][:12]}...). These rows are reserved as a holdout for a "
             f"pre-registered battery; training on them makes that battery a memory test."
         )

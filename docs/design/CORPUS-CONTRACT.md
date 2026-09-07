@@ -731,7 +731,7 @@ figures above still describe the training material exactly. Counting the holdout
 staged pool moves to **aqua_rat 91.73% / gsm8k 8.28% — max share 91.73%, N_eff 1.18**:
 better on both checks, still failing both, and the gap this section describes (two
 reasoning shapes where four are needed) is untouched. Reserved against every region by
-item id (G38, `cogsyndelta.splits.assert_no_reserved_holdout_in_pairs`, manifest
+item id (G41, `cogsyndelta.splits.assert_no_reserved_holdout_in_pairs`, manifest
 `config/mind/splits/reason-gsm8k-test-holdout.json`) and by shard path
 (`csd-train-all.py` `HELD_OUT_SHARDS`). It is `in-mixture` at the source level under B3,
 not `held-out-domain`. Full accounting:

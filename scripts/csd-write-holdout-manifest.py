@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write a reserved-holdout manifest (G38) for one landed corpus split.
+"""Write a reserved-holdout manifest (G41) for one landed corpus split.
 
 WHY A MANIFEST AND NOT "JUST DO NOT LIST THE FILE"
 A holdout that is merely intended to be held out is not a holdout. Leaving `test.parquet`

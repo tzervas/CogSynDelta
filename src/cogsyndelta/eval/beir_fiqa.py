@@ -44,7 +44,7 @@ from typing import Any, Protocol
 import numpy as np
 import torch
 
-from cogsyndelta.eval.metrics import mean_reciprocal_rank, recall_at_k
+from cogsyndelta.eval.metrics import recall_at_k_per_query, reciprocal_rank_per_query
 
 DEFAULT_FIQA_ROOT = Path("/mnt/fleet-datasets/csd/region/retrieve")
 """Read-only NFS view of homelab's `/data/datasets/csd/region/retrieve` -- the same mount
@@ -234,26 +234,34 @@ def build_ranking_task(split: str, pool: str = "corpus", root: Path | None = Non
     )
 
 
-def rank_metrics(scores: torch.Tensor, gold: list[list[int]]) -> dict[str, float]:
-    """Recall@k and MRR over a multi-relevant ranking, per query.
+def rank_metrics_per_query(
+    scores: torch.Tensor, gold: list[list[int]]
+) -> tuple[dict[str, float], dict[str, list[float]]]:
+    """:func:`rank_metrics`, keeping the per-query terms it would otherwise average away.
 
-    ``recall_at_k``/``mean_reciprocal_rank`` take one relevant index per row. The standard
-    IR definitions are "at least one relevant in the top k" and "1/rank of the FIRST
-    relevant", so this picks each query's best-scoring gold and suppresses its other golds
-    to ``-inf``.
+    WHY THIS EXISTS
+    The pre-registered decision rule for the memory region's negative-set round is a
+    *paired* bootstrap over the 500 shared FiQA dev queries, and a paired test cannot
+    be run on a mean -- it needs each query's own outcome under both arms. Emitting the
+    aggregate and the vector from one pass is the point: two functions computing the
+    same metric separately is exactly how a receipt and the test that reads it come to
+    disagree about what was measured.
 
-    That is exact, not an approximation: no other gold can outrank the best gold, so
-    removing them cannot change its rank, and if any gold reaches the top k then the best
-    one does too. It also keeps a second correct answer from being counted as a wrong
-    document that pushed the right one down, which is the diagonal evaluation's core error
-    this whole module exists to avoid.
+    The multi-relevant handling is unchanged and is described in :func:`rank_metrics`.
 
     Args:
         scores: ``[Q, N]``, higher is better.
         gold: Per query, pool indices judged relevant. Must be non-empty.
 
     Returns:
-        recall@1, recall@10, recall@100 (capped at the pool size) and MRR.
+        ``(aggregates, per_query)``. ``aggregates`` is byte-for-byte what
+        :func:`rank_metrics` returns -- same keys, same insertion order, same float32
+        means. ``per_query`` carries the same keys mapped to ``[Q]`` lists, so
+        ``mean(per_query[key])`` and ``aggregates[key]`` describe the same measurement.
+
+    Raises:
+        ValueError: If the score rows and gold lists disagree in length, or if any query
+            has no relevant document -- both make the metric undefined rather than zero.
     """
     if scores.size(0) != len(gold):
         raise ValueError(f"{scores.size(0)} score rows vs {len(gold)} gold lists")
@@ -269,11 +277,43 @@ def rank_metrics(scores: torch.Tensor, gold: list[list[int]]) -> dict[str, float
         masked[row, pick] = scores[row, pick].float()
         best[row] = pick
 
-    out = {"mrr": mean_reciprocal_rank(masked, best)}
+    reciprocal = reciprocal_rank_per_query(masked, best)
+    out = {"mrr": reciprocal.mean().item()}
+    per_query = {"mrr": reciprocal.tolist()}
     for k in (1, 10, 100):
         if k <= scores.size(1):
-            out[f"recall@{k}"] = recall_at_k(masked, best, k)
-    return out
+            hits = recall_at_k_per_query(masked, best, k)
+            out[f"recall@{k}"] = hits.mean().item()
+            per_query[f"recall@{k}"] = hits.tolist()
+    return out, per_query
+
+
+def rank_metrics(scores: torch.Tensor, gold: list[list[int]]) -> dict[str, float]:
+    """Recall@k and MRR over a multi-relevant ranking, per query.
+
+    ``recall_at_k``/``mean_reciprocal_rank`` take one relevant index per row. The standard
+    IR definitions are "at least one relevant in the top k" and "1/rank of the FIRST
+    relevant", so this picks each query's best-scoring gold and suppresses its other golds
+    to ``-inf``.
+
+    That is exact, not an approximation: no other gold can outrank the best gold, so
+    removing them cannot change its rank, and if any gold reaches the top k then the best
+    one does too. It also keeps a second correct answer from being counted as a wrong
+    document that pushed the right one down, which is the diagonal evaluation's core error
+    this whole module exists to avoid.
+
+    The computation lives in :func:`rank_metrics_per_query`; this drops its per-query
+    half. It is a delegation rather than a copy so the aggregate in a receipt and the
+    vector a paired test reads can never come from two different code paths.
+
+    Args:
+        scores: ``[Q, N]``, higher is better.
+        gold: Per query, pool indices judged relevant. Must be non-empty.
+
+    Returns:
+        recall@1, recall@10, recall@100 (capped at the pool size) and MRR.
+    """
+    return rank_metrics_per_query(scores, gold)[0]
 
 
 class BM25:
@@ -375,6 +415,37 @@ def encode_texts(
 
 
 @torch.no_grad()
+def encoder_rank_metrics_per_query(
+    model: EncoderLike,
+    tokenize: Any,
+    task: RankingTask,
+    batch: int = 256,
+) -> tuple[dict[str, float], dict[str, list[float]]]:
+    """:func:`encoder_rank_metrics`, keeping the per-query terms as well.
+
+    The per-query half only reaches a paired test if every layer between the metric and
+    the caller carries it, so the encoder path gets the same treatment as
+    :func:`rank_metrics_per_query`: one pass, both halves.
+
+    ``task.query_ids`` is the id for each position of the returned lists, in order --
+    that is what a paired test aligns the two arms on, so the caller must keep them
+    together.
+
+    Args:
+        model: Anything shaped like `TextEncoder` -- see `EncoderLike`.
+        tokenize: `(texts) -> (ids, mask)`, bound by the caller as in :func:`encode_texts`.
+        task: The ranking task, its pool and its gold judgements.
+        batch: Encoding chunk size.
+
+    Returns:
+        ``(aggregates, per_query)`` exactly as :func:`rank_metrics_per_query` defines them.
+    """
+    pool = encode_texts(model, tokenize, task.pool_texts, batch)
+    queries = encode_texts(model, tokenize, task.queries, batch)
+    return rank_metrics_per_query(queries @ pool.T, task.gold)
+
+
+@torch.no_grad()
 def encoder_rank_metrics(
     model: EncoderLike,
     tokenize: Any,
@@ -382,9 +453,32 @@ def encoder_rank_metrics(
     batch: int = 256,
 ) -> dict[str, float]:
     """Rank ``task``'s queries against its pool with a dense encoder."""
-    pool = encode_texts(model, tokenize, task.pool_texts, batch)
-    queries = encode_texts(model, tokenize, task.queries, batch)
-    return rank_metrics(queries @ pool.T, task.gold)
+    return encoder_rank_metrics_per_query(model, tokenize, task, batch)[0]
+
+
+def bm25_metrics_per_query(task: RankingTask) -> tuple[dict[str, float], dict[str, list[float]]]:
+    """:func:`bm25_metrics`, keeping the per-query terms as well.
+
+    BM25 needs the per-query vector for the same reason the encoder does, and for one
+    more: it is the reference the arm is compared against, so a paired contrast between
+    a trained encoder and the lexical baseline is only expressible if both sides emit
+    per-query outcomes over the same query order.
+
+    Args:
+        task: The ranking task; BM25 indexes ``task.pool_texts`` on the spot.
+
+    Returns:
+        ``(aggregates, per_query)`` as :func:`rank_metrics_per_query` defines them, with
+        ``aggregates`` additionally carrying ``index_s`` -- wall-clock seconds to index
+        the pool and score every query. That timing stays an aggregate: it is a property
+        of the pass, not of any one query.
+    """
+    t0 = time.time()
+    metrics, per_query = rank_metrics_per_query(
+        BM25(task.pool_texts).score_matrix(task.queries), task.gold
+    )
+    metrics["index_s"] = round(time.time() - t0, 1)
+    return metrics, per_query
 
 
 def bm25_metrics(task: RankingTask) -> dict[str, float]:
@@ -392,10 +486,7 @@ def bm25_metrics(task: RankingTask) -> dict[str, float]:
     (`rank_metrics`) the dense encoder is scored through, per this module's own rule
     against "reporting a win for a loss".
     """
-    t0 = time.time()
-    metrics = rank_metrics(BM25(task.pool_texts).score_matrix(task.queries), task.gold)
-    metrics["index_s"] = round(time.time() - t0, 1)
-    return metrics
+    return bm25_metrics_per_query(task)[0]
 
 
 # ---------------------------------------------------------------------------------------
