@@ -430,15 +430,28 @@ def _check_facts_distinct(gold: FactDonor, donors: Sequence[FactDonor]) -> None:
 
 
 def _check_options_distinct(options: Sequence[float]) -> None:
-    """Reject when two options render identically.
+    """Reject when two options RENDER identically, which distinct facts do not prevent.
 
-    HONEST NOTE ON REACHABILITY. Under the current additive binding this gate cannot fire
-    through :func:`build_episode`: every option is ``fact + probe_answer`` for the same
-    ``probe_answer``, so distinct facts always give distinct options and
-    ``fact_value_collision`` refuses first. It is kept, and unit-tested directly, because
-    it is the check that would catch a *non-injective* binding if one is ever introduced
-    -- and its tally is printed as ``0`` rather than dropped, so a reader can see that it
-    was evaluated rather than assume it passed.
+    WHAT THIS GUARDS THAT ``fact_value_collision`` CANNOT. That gate inspects the facts
+    **before** the shift; this one inspects the options **after** it, and the two are not
+    the same question, because :func:`format_value` is **lossy**. It rounds to four
+    decimals, and rounding does not commute with addition: ``0.00004`` and ``0.00006``
+    render as ``"0"`` and ``"0.0001"`` -- distinct, so ``fact_value_collision`` passes --
+    yet with ``probe_answer = 0.00003`` both options render ``"0.0001"``. A brute-force
+    sweep of a 39x39x39 grid of small decimals finds 2,414 such triples, so this is a
+    family and not a fluke.
+
+    It matters because the rendered string **is** the item: options are stored rendered
+    and the harness scores a string choice. Two options that render the same make the item
+    unanswerable and make the negative control non-discriminating -- silently.
+
+    WHY ITS TALLY IS NONETHELESS ZERO IN THE SHIPPED BUILD, which is a fact about the
+    *builder*, not about this gate. ``csd-build-x7-episodes.py`` admits only positive
+    integral facts and probe answers, and on integers ``format_value`` is exact, so the
+    shift is injective there (0 collisions over a 400x400x200 sweep). That filter is an
+    invariant this gate depends on, so ``tests/test_x7_episodes.py`` asserts it directly:
+    if the filter is ever relaxed, the test names this gate as the thing that must catch
+    the result.
 
     Args:
         options: The option values, in item order.

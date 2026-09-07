@@ -7,18 +7,19 @@
     "eval": {
       "path": "/akula-data/csd/reserve/x7/x7-eval.jsonl",
       "rows": 1024,
-      "sha256": "9739cfab58e61aa021ed65a0bc9e984e9ded336dfe2b2f0f1867be3c734be570"
+      "sha256": "ac20cd810904a25afe99c938de61107fb689cf6c584ba341d9afea93881e5b7f"
     },
     "train": {
       "path": "/akula-data/csd/reserve/x7/x7-train.jsonl",
       "rows": 10240,
-      "sha256": "3243ea098e457bc9f625919bd4690ba91299f40aa62c242d4103f14e2a1affce"
+      "sha256": "317d5f87bdec0c1e7d8d8106deef90999d3e1744e61d77e93494d03ed1398229"
     }
   },
   "balance": {
     "aqua_rat_source_row_share": 0.5556,
     "b1_hard_line": 0.5,
     "b1_operating_cap": 0.4,
+    "not_a_b1_verdict": "Do NOT read this local share as a B1 violation. B1 is computed over the reserve's source rows, and the reserve-wide figure is itself under re-accounting: W3's scope pass measured 87,599 unaccounted TRAIN_OK rows in `squad`, which would move the reserve-wide aqua_rat share from the design's printed 79.5% to roughly 43% -- below both the 0.50 hard line and the 0.40 operating cap. The verdict belongs to that accounting, not to this shape.",
     "note": "B1 binds on the reserve as a whole, not on one shape; this is X7's own contribution to that share, printed so it can be summed."
   },
   "bin": "episodic_store x memory",
@@ -58,8 +59,8 @@
     "licence": "none -- no generating model is in the provenance chain",
     "model": "none",
     "name": "x7_recall_dependent_episode",
-    "revision": "70ab887691f9e681248c54b47df06876d6e3ee97957e6d2192cd35b16fef1855",
-    "source_sha256": "70ab887691f9e681248c54b47df06876d6e3ee97957e6d2192cd35b16fef1855"
+    "revision": "b13a1797ecb90756a4bb76ce81a8aa8d697f877be5dda9d1a56e16a4e7360577",
+    "source_sha256": "b13a1797ecb90756a4bb76ce81a8aa8d697f877be5dda9d1a56e16a4e7360577"
   },
   "harness_interface": {
     "commit": "turn 1's write must return a committed receipt before turn 2 is scored. The code's type is WriteReceipt(committed=True); 'LearnReceipt' in the design prose has no symbol in this repo.",

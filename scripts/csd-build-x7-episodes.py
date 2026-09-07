@@ -1026,6 +1026,15 @@ def main(argv: list[str] | None = None) -> int:
                 "B1 binds on the reserve as a whole, not on one shape; this is X7's own "
                 "contribution to that share, printed so it can be summed."
             ),
+            "not_a_b1_verdict": (
+                "Do NOT read this local share as a B1 violation. B1 is computed over the "
+                "reserve's source rows, and the reserve-wide figure is itself under "
+                "re-accounting: W3's scope pass measured 87,599 unaccounted TRAIN_OK rows "
+                "in `squad`, which would move the reserve-wide aqua_rat share from the "
+                "design's printed 79.5% to roughly 43% -- below both the 0.50 hard line "
+                "and the 0.40 operating cap. The verdict belongs to that accounting, not "
+                "to this shape."
+            ),
         },
         "artifacts": artefacts,
         "ledger": {"path": str(ledger_path), "rows": len(ledger_rows), "sha256": ledger_sha},

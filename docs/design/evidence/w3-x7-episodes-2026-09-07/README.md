@@ -55,10 +55,27 @@ construction**. Six gates enforce that; each has a test that makes it fire.
 | `negative_control_solved_with_wrong_turn1` | the pinned BM25 reference solver reaches the gold option from a *substituted* turn 1 |
 | `negative_control_solved_without_turn1` | the same solver reaches it with no turn 1 at all |
 
-`option_value_collision` is a seventh gate that the additive binding makes unreachable through
-`build_episode`. It is kept for a future non-injective binding, unit-tested directly, and its
-tally is printed as `0` rather than dropped — an unreachable guard nobody tests is the failure
-mode this programme has already found four times.
+A seventh gate, `option_value_collision`, catches two options that **render** identically. Its
+tally is `0` in this build, and the first version of this document called it unreachable. **That
+was wrong, and the correction is worth stating rather than quietly editing.**
+
+`fact_value_collision` inspects the facts *before* the shift; `option_value_collision` inspects
+the options *after* it. Those are different questions, because `format_value` rounds to four
+decimals and **rounding does not commute with addition**. Facts `0.00004` and `0.00006` render
+`"0"` and `"0.0001"` — distinct, so the earlier gate passes them — yet with a probe answer of
+`0.00003` both options render `"0.0001"`. A sweep of a 39×39×39 grid of small decimals finds
+2,414 such triples. It fires through the public `build_episode` API, which accepts any float
+fact, and the tests construct exactly that case.
+
+The rendered string **is** the item: options are stored rendered and the harness scores a string
+choice, so two options that render the same make the item unanswerable and the negative control
+non-discriminating.
+
+**Why the tally is zero anyway** is a fact about the *builder*, not the gate: it admits only
+positive integral facts and probe answers, and on integers `format_value` is exact, so the shift
+is injective (0 collisions over a 400×400×200 sweep). That filter is an invariant the gate's quiet
+depends on, so it is asserted directly in `tests/test_x7_episodes.py`. Relax the filter and the
+test says, in one place, that this gate stops being a formality.
 
 **What this is not.** The sufficient control is *"run turn 2 through the mind after committing a
 substituted turn 1 and require a wrong answer"*, and that needs the harness and trained weights.
@@ -104,9 +121,12 @@ rows.
   `("description", "solutions")`, and `solutions` is most of a 19 GB shard. Fingerprinting it at
   DEC-38 granularity needs a streaming reader this row did not build, so the code half comes from
   `apps` only.
-- **aqua_rat's share of X7's own source rows is 55.6%**, above B1's 0.50 hard line and well above
-  the 0.40 operating cap. B1 binds on the whole reserve rather than on one shape, so this number is
-  printed to be summed with the other shapes' — not to be read as a pass.
+- **aqua_rat's share of X7's own source rows is 55.6%.** This is not a B1 verdict in either
+  direction. B1 is computed over the whole reserve, and that figure is itself under re-accounting:
+  W3's scope pass measured 87,599 unaccounted `TRAIN_OK` rows in `squad`, which would move the
+  reserve-wide aqua_rat share from the design's printed 79.5% to roughly 43% — below both the 0.50
+  hard line and the 0.40 operating cap. The number here is printed to be summed into that
+  accounting, not read as a violation.
 - **aqua_rat declares no revision.** `MANIFEST.json` pins the shard's SHA-256 instead, so drift is
   still detectable (§5.6 asks for a revision; the landed manifest does not carry one).
 - **The apps↔code_contests near-duplicate dedupe is not applied**, because code_contests is not

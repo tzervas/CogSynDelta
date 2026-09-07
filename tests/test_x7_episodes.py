@@ -344,18 +344,80 @@ class TestWellFormedEpisode:
         pool_rows = [r for r in item["source_rows"] if r["role"] == "turn1_pool"]
         assert {r["pair_fingerprint"] for r in pool_rows} == {"fp-p1", "fp-p2"}
 
-    def test_option_collision_guard_works_even_though_build_cannot_reach_it(self) -> None:
-        """The additive binding makes this gate unreachable; prove the gate itself works.
+    def test_options_that_collide_only_after_the_shift_are_rejected(self) -> None:
+        """Distinct facts do NOT imply distinct options, and this gate is what sees it.
 
-        Leaving an unreachable guard untested is how a check ends up structurally
-        incapable of firing without anyone noticing.
+        `format_value` rounds to four decimals, and rounding does not commute with
+        addition. Facts 0.00004 and 0.00006 render "0" and "0.0001", so
+        `fact_value_collision` passes them; with a probe answer of 0.00003 both options
+        render "0.0001". This fires through the PUBLIC api -- `build_episode` accepts any
+        float fact -- so the gate guards a live hazard, not a hypothetical one.
         """
-        from cogsyndelta.reserve import episodes
-
-        episodes._check_options_distinct([1.0, 2.0, 3.0])
+        colliding = ProbeSource(
+            source_dataset="deepmind/aqua_rat",
+            source_revision="pinned",
+            row_index=1234,
+            pair_fingerprint="fp-probe",
+            columns=("question", "rationale"),
+            licence_tier="permissive",
+            question="Problem: how many geese fly north? Report X + Y.",
+            answer_value=0.00003,
+        )
         with pytest.raises(EpisodeRejectedError) as caught:
-            episodes._check_options_distinct([1.0, 2.0, 1.0])
+            build_episode(
+                donor("gold", 0.00004),
+                colliding,
+                [
+                    donor("d1", 0.00006),
+                    donor("d2", 63),
+                    donor("d3", 74),
+                    donor("d4", 85),
+                ],
+                variant="passage_claim",
+                split="eval",
+                split_key=SPLIT_KEY,
+                generator=GENERATOR,
+            )
         assert caught.value.reason == "option_value_collision"
+
+    def test_the_facts_gate_really_does_pass_that_pair(self) -> None:
+        """Proof the case above reaches the right gate, not merely *a* gate.
+
+        Without this, the test above could be passing because `fact_value_collision`
+        refused first, and `option_value_collision` would still be untested.
+        """
+        assert format_value(0.00004) != format_value(0.00006)
+        assert format_value(0.00004 + 0.00003) == format_value(0.00006 + 0.00003)
+
+
+class TestBindingInvariant:
+    """The assumption that keeps `option_value_collision` quiet in the shipped build."""
+
+    def test_integral_facts_make_the_shift_injective(self) -> None:
+        """The builder admits only positive integers, and on those the shift is safe.
+
+        This is the invariant `option_value_collision`'s zero tally rests on. If the
+        builder's integer filter is ever relaxed, this test is what tells the next reader
+        that the gate above stops being a formality and starts being load-bearing.
+        """
+        for fact_a in range(0, 120):
+            for fact_b in range(fact_a + 1, 120):
+                for answer in (0, 1, 7, 99):
+                    assert format_value(fact_a + answer) != format_value(fact_b + answer)
+
+    def test_non_integral_facts_break_it(self) -> None:
+        """The same sweep over decimals does NOT hold -- which is why the gate exists."""
+        grid = [i / 100000 for i in range(1, 12)]
+        collisions = [
+            (a, b, y)
+            for a in grid
+            for b in grid
+            for y in grid
+            if a < b
+            and format_value(a) != format_value(b)
+            and format_value(a + y) == format_value(b + y)
+        ]
+        assert collisions, "the hazard this gate guards must be demonstrable"
 
     def test_content_hash_tracks_content_not_bookkeeping(self) -> None:
         """Re-splitting an item is not source drift; changing a turn is."""
