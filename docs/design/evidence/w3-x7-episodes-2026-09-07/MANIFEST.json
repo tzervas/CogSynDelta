@@ -1,0 +1,176 @@
+{
+  "ablation_pairs": [
+    "episodic_store x memory",
+    "episodic_store x language"
+  ],
+  "artifacts": {
+    "eval": {
+      "path": "/akula-data/csd/reserve/x7/x7-eval.jsonl",
+      "rows": 1024,
+      "sha256": "9739cfab58e61aa021ed65a0bc9e984e9ded336dfe2b2f0f1867be3c734be570"
+    },
+    "train": {
+      "path": "/akula-data/csd/reserve/x7/x7-train.jsonl",
+      "rows": 10240,
+      "sha256": "3243ea098e457bc9f625919bd4690ba91299f40aa62c242d4103f14e2a1affce"
+    }
+  },
+  "balance": {
+    "aqua_rat_source_row_share": 0.5556,
+    "b1_hard_line": 0.5,
+    "b1_operating_cap": 0.4,
+    "note": "B1 binds on the reserve as a whole, not on one shape; this is X7's own contribution to that share, printed so it can be summed."
+  },
+  "bin": "episodic_store x memory",
+  "branch": "text-only-slip (design 5.4: X8' replaces X8, R=4, 6 pairs, >=5 of 6, null 0.109)",
+  "config": {
+    "branch": "text-only-slip",
+    "build_seed": 0,
+    "eval_per_pair": 512,
+    "eval_permille": 100,
+    "n_options": 5,
+    "omp_num_threads": "1",
+    "pool_size": 4,
+    "statement_chars": 1200,
+    "train_per_pair": 5120
+  },
+  "corpus_root": "/mnt/bulk/csd-corpus",
+  "counts": {
+    "apps_usable": 10000,
+    "aqua_usable_unburned": 40254,
+    "eval": 1024,
+    "per_variant_per_split": {
+      "api_record/eval": 512,
+      "api_record/train": 5120,
+      "passage_claim/eval": 512,
+      "passage_claim/train": 5120
+    },
+    "train": 10240
+  },
+  "dec38": {
+    "episodes_with_shared_turn_rows": 0,
+    "granularity": "source row",
+    "source_rows_on_both_sides": 0,
+    "unique_source_rows": 33307
+  },
+  "generator": {
+    "config_hash": "6d4b78d6c0f762c4b43ecb6a4d22d010e7423df1ea4549abceb06395c5816e5c",
+    "licence": "none -- no generating model is in the provenance chain",
+    "model": "none",
+    "name": "x7_recall_dependent_episode",
+    "revision": "70ab887691f9e681248c54b47df06876d6e3ee97957e6d2192cd35b16fef1855",
+    "source_sha256": "70ab887691f9e681248c54b47df06876d6e3ee97957e6d2192cd35b16fef1855"
+  },
+  "harness_interface": {
+    "commit": "turn 1's write must return a committed receipt before turn 2 is scored. The code's type is WriteReceipt(committed=True); 'LearnReceipt' in the design prose has no symbol in this repo.",
+    "negative_control": "re-run the identical turn 2 after committing counterfactual.substituted_turn1's fact instead, and require the item to be FAILED. The item names the option index that substitution must select.",
+    "owned_by": "the episode harness (W3's other half) -- NOT this generator",
+    "per_episode_partition": "derive_scope(principal, session=f'x7-{item_id}'). A fresh session per episode is the only partition reset the current store API offers: there is no clear/reset call on EpisodicStoreImpl, and stop() is terminal.",
+    "read": "turn 2's read is expected to be CONTENT-ADDRESSED by a query vector. On main today retrieve() takes no query and returns a scope-ranked bank, which is why phase A's read is a constant; the query parameter lands with fix/episodic-store-query-read. Content belongs in the query, never in the partition key.",
+    "scoring": "turn 2 is scored as a closed 5-way choice over episode.turns[1].options; chance is 1/5 and is printed on every item.",
+    "turn_boundary": "one WhiteMatter.forward(inputs) per turn. forward reads the store at entry and writes at exit, so an episode is two successive forward() calls sharing one Scope and one domain, with distinct per-item logical_keys."
+  },
+  "item_schema": "csd-x7-episode/v1",
+  "ledger": {
+    "path": "/akula-data/csd/reserve/x7/source-rows.jsonl",
+    "rows": 33307,
+    "sha256": "3d0fa6b40f8eb1a0c8bd2eadb927cfef60a5b65c05edf38d97c1e315d75eecd5"
+  },
+  "ledger_schema": "csd-reserve-source-rows/v1",
+  "not_done": [
+    "the episode harness (W3's other half)",
+    "NSRS admission (s_r): GPU-blocked, blocked on W2b",
+    "X8' items (the other pre-committed slip-branch shape)"
+  ],
+  "rejection_totals": {
+    "answer_in_probe_window": 40,
+    "dec38_shared_source_row": 27,
+    "fact_in_probe_window": 328,
+    "fact_value_collision": 2249,
+    "negative_control_solved_with_wrong_turn1": 22,
+    "negative_control_solved_without_turn1": 0,
+    "option_value_collision": 0
+  },
+  "rejections": {
+    "api_record/eval": {
+      "answer_in_probe_window": 0,
+      "dec38_shared_source_row": 8,
+      "fact_in_probe_window": 0,
+      "fact_value_collision": 0,
+      "negative_control_solved_with_wrong_turn1": 1,
+      "negative_control_solved_without_turn1": 0,
+      "option_value_collision": 0
+    },
+    "api_record/train": {
+      "answer_in_probe_window": 1,
+      "dec38_shared_source_row": 14,
+      "fact_in_probe_window": 5,
+      "fact_value_collision": 0,
+      "negative_control_solved_with_wrong_turn1": 3,
+      "negative_control_solved_without_turn1": 0,
+      "option_value_collision": 0
+    },
+    "passage_claim/eval": {
+      "answer_in_probe_window": 3,
+      "dec38_shared_source_row": 1,
+      "fact_in_probe_window": 32,
+      "fact_value_collision": 207,
+      "negative_control_solved_with_wrong_turn1": 0,
+      "negative_control_solved_without_turn1": 0,
+      "option_value_collision": 0
+    },
+    "passage_claim/train": {
+      "answer_in_probe_window": 36,
+      "dec38_shared_source_row": 4,
+      "fact_in_probe_window": 291,
+      "fact_value_collision": 2042,
+      "negative_control_solved_with_wrong_turn1": 18,
+      "negative_control_solved_without_turn1": 0,
+      "option_value_collision": 0
+    }
+  },
+  "schema": "csd-x7-manifest/v1",
+  "shape": "X7",
+  "sources": {
+    "apps": {
+      "declared_columns": [
+        "question",
+        "solutions"
+      ],
+      "licence_tier": "permissive",
+      "license": "mit (verified via HF dataset_info tags)",
+      "repo_id": "codeparrot/apps",
+      "revision": "refs/convert/parquet",
+      "rows": 10000,
+      "shard": "/mnt/bulk/csd-corpus/code/apps/train.parquet",
+      "shard_sha256": "dd072a9d4d91dfecdd2851ea1a635c122a6daec9236ea9efc3331fc27ca58733"
+    },
+    "aqua_rat": {
+      "declared_columns": [
+        "question",
+        "rationale"
+      ],
+      "licence_tier": "permissive",
+      "license": "apache-2.0 (verified via HF dataset_info tags)",
+      "repo_id": "deepmind/aqua_rat",
+      "revision": "unpinned (MANIFEST.json declares none)",
+      "rows": 97467,
+      "shard": "/mnt/bulk/csd-corpus/reason/aqua_rat-raw/train.parquet",
+      "shard_sha256": "04570944a9259b4bab32f1445f73d2371d838ee0f8cb89dd3c015ae60351dfb2"
+    }
+  },
+  "sources_not_consumed": {
+    "deepmind/code_contests": "landed and reserved for compose, but its MANIFEST-declared fingerprint columns are ('description','solutions') and `solutions` is most of a 19 GB shard. Fingerprinting it at DEC-38 granularity needs a streaming reader this row did not build, so X7 draws its code half from `apps` only. This is a stated limitation, not an oversight."
+  },
+  "split_key": {
+    "eval_permille": 100,
+    "granularity": "source row (DEC-38)",
+    "key_id": "22460801d35ccbb6",
+    "key_source": "vault:akula/csd-k-split",
+    "scheme": "HMAC-SHA256(k_split, pair_fingerprint(source_row)) mod 1000"
+  },
+  "variants": {
+    "api_record": "{episodic_store, language} -- turn 1 retrieves an apps record",
+    "passage_claim": "{episodic_store, memory} -- turn 1 retrieves an aqua_rat passage"
+  }
+}
