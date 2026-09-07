@@ -173,7 +173,12 @@ def test_write_back_changes_h_at_iteration_1_not_0(
 
     def spy(inputs, *, context_tokens, condition=None):
         h, mask = original_tokens(inputs, context_tokens=context_tokens, condition=condition)
-        if context_tokens == exec_ctx:
+        # `torch.is_grad_enabled()` separates the EXECUTION pass from `_store_query`'s
+        # store-free no-grad pre-pass (spec amendment A4), which runs the same loop once
+        # more to build the step-8 read's query. This claim is about one pass; counting
+        # across both would conflate two runs of it. `test_store_is_usable.py` pins the
+        # pre-pass's own cost separately.
+        if context_tokens == exec_ctx and torch.is_grad_enabled():
             calls.append(
                 (h.detach().clone(), None if condition is None else condition.detach().clone())
             )
@@ -250,7 +255,12 @@ def test_bank_is_load_bearing(white_matter, toy_scope) -> None:
         bank_k, bank_v, key_mask, slot_region = original_forward(
             slot_budget, adapted_tokens, store_latents
         )
-        bank_v.retain_grad()
+        # `_store_query`'s pre-pass (spec amendment A4) assembles a bank too, under
+        # `no_grad`, and `retain_grad` refuses a tensor that carries no graph. The
+        # execution pass runs last, so `captured` still ends up holding the one this
+        # claim is about.
+        if bank_v.requires_grad:
+            bank_v.retain_grad()
         captured["bank_v"] = bank_v
         return bank_k, bank_v, key_mask, slot_region
 
@@ -292,7 +302,10 @@ def test_unadmitted_region_is_unencoded_and_unread_at_that_iteration(
     original_tokens = visual_fac.tokens
 
     def spy(inputs, *, context_tokens, condition=None):
-        call_count["n"] += 1
+        # Execution pass only -- see the note in `test_write_back_changes_h_at_iteration_1`:
+        # `_store_query`'s no-grad pre-pass runs the same loop once more.
+        if torch.is_grad_enabled():
+            call_count["n"] += 1
         return original_tokens(inputs, context_tokens=context_tokens, condition=condition)
 
     visual_fac.tokens = spy  # type: ignore[method-assign]

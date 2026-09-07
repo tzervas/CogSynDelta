@@ -327,6 +327,51 @@ per active iteration and region", which is the same quantity, and `receipts.py` 
 per-node `intensity` field is deferred until some consumer needs it on the `Schedule` specifically;
 `ScheduleNode` stays a pure input to execution.
 
+**Amendment A4 (2026-09-07): the store read takes a query, and the write identity is per
+item.** Step 8 above ranks the store's latents "by residency score" and names no query, so
+`EpisodicStore.read` took none. That made the read a pure function of `(scope, domain)`.
+
+What that cost, measured: every item of a batch shares one scope, so the store bank was a
+constant -- max absolute difference `0.0` across items, across batches, and before versus
+after 50 training steps. Mutual information with the target was exactly zero, so
+`dL/d(store attention)` was ~0 and the store's attention direction was unidentified; it
+random-walked. Two further defects compounded it. Ranking ties broke toward the OLDER
+record, and every write on the forward path takes the default importance, so a resident set
+of primers permanently outranked everything the model wrote (an 8-record store and a
+32-record store trained to bit-identical results, to 17 significant figures). And step 13's
+"one record per turn" was implemented once per REQUEST rather than once per item, so
+last-write-wins collapsed each batch to a single record: 12 records after 800 steps at
+`B = 8`, not 6,408.
+
+The amendment, in three parts:
+
+| Part | Before | After |
+| --- | --- | --- |
+| step 8 ranking | residency score only | cosine to a `[D]` query, residency score as the tie-break; `query=None` keeps the old order |
+| read tie-break | older record first | newer record first, matching the direction eviction already spills in |
+| step 13 identity | `(scope, domain, logical_key)` per request | per item -- an explicit `logical_keys` sequence, else the request key suffixed with the batch index |
+
+The query is the item's own `z_N`, taken from a store-free no-grad pre-pass. Measured
+against that: MI excess +1.58 to +1.86 bits, held-out accuracy 0.855-0.996 against a null of
+0.29, and 98.6% of items retrieving a top-1 record of their own class at step 0, before any
+optimizer step, over memories whose maximum off-diagonal cosine was 0.9993. Near collinearity
+compresses the scores but not their order.
+
+`query` is CONTENT and `scope` stays ISOLATION. Per-item scoping was measured as an
+alternative and failed below its own noise floor (MI under null, held-out accuracy under
+chance at all four seeds), and a content-derived scope key would repurpose the
+`derive_scope`/G32/DEC-64 boundary as a content index -- different principals' memories in
+one partition. The two axes stay separate.
+
+**Amendment A5 (2026-09-07): the store is read once per request, not once per iteration.**
+`WhiteMatter._read_store` runs before the iteration loop and `_write_store` after it, so the
+workspace cannot re-query the store as it refines `z` within a turn. Step 8 sits inside the
+per-iteration sequence in this section's numbering, which reads as though it should. Moving
+it there is mid-loop retrieval: it needs interconnect re-entrancy the `Schedule` cannot
+express today (the slot layout is fixed for the whole request by `KVBank`'s own contract, and
+`b_store` is a request-wide budget), and it changes what a turn IS rather than repairing a
+defect. Recorded as an architectural decision for the operator, not carried by A4.
+
 **Admission matrix semantics.** `depth(r) = min{i : A[i, r] = 1}`; a region with `depth 0` and
 `A[:, r] ≡ 1` is asynchronous; regions first admitted at the same `i ≥ 1` with `accepts_condition`
 form a lockstep group, because each reads `z_{i−1}` and writes `z_i` (TAX:1443-1456). The

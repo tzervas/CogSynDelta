@@ -7,14 +7,35 @@ WHAT ROW E1 ASKS FOR, and where each clause is answered here:
     A request-supplied value never reaches a key.
   - *"BYTE capacity from section 8 gap (a)'s formula computed per host per scheduler tick"* --
     a `capacity_provider` callable, invoked on every admission and never memoised. See
-    `capacity.py` for the formula and `_enforce_capacity` for the one place its answer is
+    `capacity.py` for the formula and `_enforce_placement` for the one place its answer is
     consumed.
   - *"scored eviction `importance + gpu_resident_bonus - staleness(last_accessed)` with ties
-    by older timestamp then key"* -- `_score` and `_enforce_capacity`.
+    by older timestamp then key"* -- `_score` and `_enforce_placement`.
   - *"the six lifecycle verbs with REFUSING backpressure at `max_in_flight = 32`"* --
     `start`/`learn`/`retrieve`/`drain`/`flush`/`stop`, and `AdmissionGuard`.
   - *"SQLite as the durability oracle with in-memory as the conformance oracle"* -- both are
     `StoreBackend`s in `backends.py`; this class holds one and does not know which.
+
+THREE CONCEPTS, NOT TWO, AND ONLY ONE OF THEM MAY DEPEND ON THE HOST (DEC-63 as amended
+2026-09-07):
+
+  - **Placement** -- where a record lives. MAY depend on the host, and should: `capacity_bytes`
+    is derived from live VRAM, and a dynamic capacity is the point. Placement costs LATENCY.
+    `_enforce_placement`, `_score_meta`.
+  - **Membership** -- whether a record exists at all. MUST NOT depend on the host.
+    `_enforce_membership`, bounded by `TierBudget.max_records`, a declared record count no card
+    can move.
+  - **Selection** -- which records a query returns. MUST NOT depend on the host either.
+    `_read_score`, which carries no residency term, so two hosts holding the same records
+    return the same read.
+
+Each has its own method and its own score, and none calls another: `_enforce_placement` demotes
+and deletes nothing, `_enforce_membership` deletes and demotes nothing (`learn` and `evict`
+invoke both, membership first), and `retrieve` scores through neither of them. Demotion under
+VRAM pressure is untouched and stays -- DEC-70 ratifies it, and it costs latency, not membership
+and not the answer. The read latency the residency bonus used to buy moves to PREFETCH: making
+the right records resident before the query is the same saving without changing what comes back.
+That is a scheduler's job and is not built here.
 
 AND WHAT IT ASKS NOT TO BUILD, which is the harder half of the row. *"The store's two
 projections are NOT trained here -- they are white-matter parameters and E2 trains them. This
@@ -431,6 +452,9 @@ class EpisodicStoreImpl:
             self._resident_bytes += sign * meta.span_bytes
             self._resident_count += sign
         else:
+            # Index accounting only. Since DEC-63's 2026-09-07 amendment this tally no longer
+            # triggers anything: deletion counts every record against a declared ceiling
+            # (`_enforce_membership`), not the spilled subset against a tier bound.
             self._disk_count += sign
 
     def _index_put(self, key: RecordKey, meta: IndexRow) -> None:
@@ -645,7 +669,11 @@ class EpisodicStoreImpl:
                         last_accessed=now,
                     ),
                 )
-                self._enforce_capacity(now)
+                # Membership before placement: the declared record ceiling decides WHAT the
+                # store holds, host-invariantly, and only then does the VRAM-derived capacity
+                # decide WHERE the survivors sit (DEC-63 as amended 2026-09-07).
+                self._enforce_membership()
+                self._enforce_placement(now)
             return WriteReceipt(
                 scope=scope,
                 domain=domain,
@@ -663,12 +691,17 @@ class EpisodicStoreImpl:
         domain: str | None = None,
         global_query: bool = False,
         b_store: int,
+        query: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Read up to `b_store` episodes for one scope, merged across residency tiers.
 
         `retrieve_merges_tiers` (E0 fixture 9/9) is this sentence: a spilled record is still a
-        record, so the read path does not filter on residency. Ranking is the same score
-        eviction uses, so what survives eviction is what a read prefers -- one policy, not two.
+        record, so the read path does not filter on residency. Nor does it SCORE on residency
+        (`_read_score`): two hosts holding the same records return the same read, whatever
+        tier those records happen to sit in. With no `query`, ranking is
+        `importance - staleness`, newest first on a tie. With a `query`, cosine to it ranks
+        first and that becomes the tie-break: relevance decides WHICH record answers this
+        request, and nothing about where the bytes live gets a vote.
 
         Args:
             scope: A `Scope` from `derive_scope`, or `None` for an unknown principal (which
@@ -676,6 +709,10 @@ class EpisodicStoreImpl:
             domain: Restrict to one domain, or `None` with `global_query=True`.
             global_query: Must be `True` when `domain` is `None`.
             b_store: Workspace store budget; the read pads or truncates to exactly this many.
+            query: `[D]` float, what this read is looking for; `None` keeps the original
+                score-only order. See `episodic_store.py`'s ambiguity note 6 for the
+                measurement that added it, and for why content belongs here rather than in
+                the scope.
 
         Returns:
             `(latents [b_store, D], mask [b_store])`, `mask` `True` for a real record.
@@ -684,7 +721,8 @@ class EpisodicStoreImpl:
             StoreScopeError: G32 -- a scope the request supplied rather than derived.
             StoreLifecycleError: the store is not running.
             StoreBackpressureError: `max_in_flight` operations are already in flight.
-            ValueError: `domain` is `None` without `global_query`, or is outside the enum.
+            ValueError: `domain` is `None` without `global_query`, is outside the enum, or
+                `query` is not a 1-D floating-point tensor of the store's width.
         """
         with self._admission.slot("retrieve"):
             self._check_running("retrieve")
@@ -697,8 +735,7 @@ class EpisodicStoreImpl:
                 if not matches:
                     return self._empty_partition(b_store)
                 now = time.time()
-                matches.sort(key=lambda r: self._rank_key(r, now))
-                selected = matches[:b_store]
+                selected = self._rank(matches, query, now)[:b_store]
                 # A read touches `last_accessed` in the INDEX only, not in the backend. The
                 # index is what eviction scores over, so recency is exact where it is used;
                 # writing it through would turn every read into N durable writes for a field
@@ -812,28 +849,119 @@ class EpisodicStoreImpl:
             return int(self._capacity_provider())
 
     def _score_meta(self, meta: IndexRow, now: float) -> float:
-        """`importance + gpu_resident_bonus - staleness(last_accessed)`, over an index row."""
+        """`importance + gpu_resident_bonus - staleness(last_accessed)`, over an index row.
+
+        THE EVICTION score, and residency belongs in it: eviction decides PLACEMENT, and
+        preferring to spill the record that is not already on the card is exactly the right
+        thing for a decision whose currency is latency. `_read_score` is the SELECTION score
+        and deliberately does not share this term -- see there.
+        """
         bonus = GPU_RESIDENT_BONUS if meta.residency is Residency.GPU else 0.0
         penalty = staleness_penalty(meta.last_accessed, now, self.half_life_s)
         return meta.importance + bonus - penalty
 
-    def _rank_key(self, record: StoredRecord, now: float) -> tuple[float, float, RecordKey]:
-        """Read ranking: eviction score descending, then older first, then key.
+    def _read_score(self, importance: float, last_accessed: float, now: float) -> float:
+        """`importance - staleness(last_accessed)`, with NO residency term.
 
-        Scored off the INDEX where the record has one, so a read and an eviction never
-        disagree about the same record -- one policy, evaluated once per tick.
+        SELECTION, NOT PLACEMENT (DEC-63 as amended 2026-09-07). Three concepts, not two:
+        placement is where a record lives and may depend on the host, because it costs
+        latency; membership is whether a record exists and may not; SELECTION is which
+        records a query returns, and may not either. A read that scored the GPU bonus meant
+        two hosts holding exactly the same records returned DIFFERENT answers -- identical
+        membership, different reads, decided by where the bytes happened to sit.
+
+        The bonus is not kept as a tie-break either. A tie-break still changes the returned
+        set whenever relevance ties, and relevance ties often: the memories this store holds
+        are mean-pooled `z_N` latents whose maximum off-diagonal cosine was measured at
+        0.9993, so "ties" is the normal case rather than the corner one.
+
+        THE LATENCY BENEFIT MOVES TO PREFETCH, and is not lost. Preferring a resident record
+        was an optimisation that bought a cheap read by changing the answer; making the RIGHT
+        records resident BEFORE the query buys the same read cheaply without touching what
+        comes back. That is a scheduler job and is not built here.
+
+        ONE RESIDUAL PATH, recorded rather than quietly closed: `promote` refreshes
+        `last_accessed`, so a host that promotes more often makes those records marginally
+        less stale and therefore marginally better-ranked. `mark_gpu` does not. Closing that
+        needs a decision about whether `promote` should count as an access at all, which is a
+        different question from this one.
+
+        Args:
+            importance: The record's importance.
+            last_accessed: The record's last-access timestamp.
+            now: The scoring tick.
+
+        Returns:
+            The selection score; higher ranks earlier.
+        """
+        return importance - staleness_penalty(last_accessed, now, self.half_life_s)
+
+    def _rank_key(self, record: StoredRecord, now: float) -> tuple[float, float, RecordKey]:
+        """Read ranking: SELECTION score descending, then NEWEST first, then key.
+
+        Scored off the INDEX where the record has one, so two reads of the same record in one
+        tick cannot disagree.
+
+        AMENDED 2026-09-07, twice. (1) The timestamp tie-break used to be ascending (older
+        first), which is the direction `_enforce_placement` SPILLS in: the read preferred
+        exactly the record eviction had judged least valuable. Under a uniform importance --
+        what every write through `mind.py` carries, since nothing on the forward path sets one
+        -- that made a resident set of primers a permanent wall in front of everything written
+        afterwards; `episodic_store.py::_tie_break` carries the measurement. (2) The score was
+        the EVICTION score, `_score_meta`, which carries `gpu_resident_bonus`; it is now
+        `_read_score`, which does not, so what a query returns no longer depends on where the
+        bytes sit. Eviction's own orderings are untouched: `_enforce_placement` and
+        `_enforce_membership` sort with their own keys, not through this method.
         """
         meta = self._index.get(record.key)
         if meta is not None:
-            score = self._score_meta(meta, now)
+            score = self._read_score(meta.importance, meta.last_accessed, now)
         else:
-            bonus = GPU_RESIDENT_BONUS if record.residency is Residency.GPU else 0.0
-            score = (
-                record.importance
-                + bonus
-                - staleness_penalty(record.last_accessed, now, self.half_life_s)
+            score = self._read_score(record.importance, record.last_accessed, now)
+        return (-score, -record.written_at, record.key)
+
+    def _check_query(self, query: Tensor) -> None:
+        """Hold a read's query to the same shape rule `learn` holds a record's latent to."""
+        if not torch.is_floating_point(query):
+            raise ValueError(
+                f"retrieve() query has dtype {query.dtype}, which is not floating point."
             )
-        return (-score, record.written_at, record.key)
+        if query.dim() != 1:
+            raise ValueError(f"retrieve() query must be 1-D [D], got {tuple(query.shape)}")
+        if self._dim is not None and int(query.shape[0]) != self._dim:
+            raise ValueError(
+                f"retrieve() query width {query.shape[0]} disagrees with this store's "
+                f"established width {self._dim} (a query is compared against records)."
+            )
+
+    def _rank(
+        self, matches: list[StoredRecord], query: Tensor | None, now: float
+    ) -> list[StoredRecord]:
+        """Order one partition's matches best-first: cosine to `query`, then `_rank_key`.
+
+        Cosine on the DIRECTION only: a record is a mean-pooled `z_N`, whose norm carries
+        turn length and workspace confidence rather than relevance. `_rank_key` stays as the
+        tie-break, so two records the query cannot separate are still separated by the same
+        eviction score the rest of this store is ordered by.
+
+        Args:
+            matches: The partition's records; non-empty.
+            query: `[D]` float, or `None` for the score-only order.
+            now: The scoring tick, shared with `_rank_key`.
+
+        Returns:
+            `matches`, ordered best-first.
+        """
+        if query is None:
+            return sorted(matches, key=lambda record: self._rank_key(record, now))
+        self._check_query(query)
+        with torch.no_grad():
+            bank = torch.stack([record.latent for record in matches]).to(torch.float32)
+            vector = query.detach().to(dtype=torch.float32, device=bank.device)
+            similarity = torch.cosine_similarity(bank, vector.unsqueeze(0), dim=1)
+        scored = list(zip(similarity.tolist(), matches))
+        scored.sort(key=lambda pair: (-pair[0], *self._rank_key(pair[1], now)))
+        return [record for _similarity, record in scored]
 
     def score(self, key: RecordKey, *, now: float | None = None) -> float:
         """The eviction score of one record, exposed so a gate can construct a known ordering.
@@ -864,21 +992,33 @@ class EpisodicStoreImpl:
             record.residency = residency
             self._backend.put(record)
 
-    def _enforce_capacity(self, now: float) -> int:
+    def _enforce_placement(self, now: float) -> int:
         """Spill the lowest-scored resident records until the byte and item budgets hold.
+
+        PLACEMENT ONLY. This method's bound is `capacity_bytes`, which is derived from live
+        VRAM and is therefore different on every card by design -- that is what makes the
+        capacity dynamic, and it is the right kind of host dependence: which tier a span sits
+        in costs LATENCY. It must never decide EXISTENCE, so nothing here deletes, and this
+        method does not call `_enforce_membership`. See DEC-63 as amended 2026-09-07.
 
         One sort, not one scan per victim: the score of a record does not change while this
         runs (`now` is fixed), so the spill order is a single ascending sort by
         `(score, written_at, key)` -- lowest score first, ties to the older record, then to
         the lexicographically smaller key. That is `pick_spill_victim`'s order applied
         repeatedly, computed once.
+
+        Args:
+            now: The scoring tick.
+
+        Returns:
+            How many records were demoted to disk.
         """
         capacity = int(self._capacity_provider())
         if (
             self._resident_bytes <= capacity
             and self._resident_count <= self.tier_budget.ram_max_items
         ):
-            return self._prune_disk()
+            return 0
         resident = [(k, m) for k, m in self._index.items() if m.residency in GPU_TIERS]
         total = self._resident_bytes
 
@@ -895,20 +1035,36 @@ class EpisodicStoreImpl:
             total -= meta.span_bytes
             count -= 1
             spilled += 1
-        return spilled + self._prune_disk()
+        return spilled
 
-    def _prune_disk(self) -> int:
-        """Hard-delete the lowest-importance spilled records once the disk tier overflows.
+    def _enforce_membership(self) -> int:
+        """Hard-delete the lowest-importance records once the DECLARED record ceiling overflows.
 
         Section 1.3 clause (2): *"overflow at the lower tier HARD-DELETES the lowest-importance
         rows -- the only data-loss path in the store"* (`tiered.rs:180-198`). Importance, not
-        the full score: upstream prunes on importance, and a disk row earns no GPU bonus.
+        the full score: upstream prunes on importance, the GPU bonus is deliberately excluded,
+        and neither `residency` nor `span_bytes` appears in the key. The SCORE was always
+        clean; the TRIGGER was not.
+
+        WHAT THE TRIGGER USED TO BE, AND WHY IT WAS WRONG (DEC-63 as amended 2026-09-07). The
+        overflow was `disk_count - disk_max_items`, and `disk_count` is the spill rate, which
+        follows `capacity_bytes`, which follows live VRAM. A smaller card spilled more, hit the
+        ceiling at a smaller working set, and hard-deleted rows a larger card still held: the
+        same input sequence produced a different STORE depending on which card ran it, through
+        the one path the store documents as its only data-loss path. Counting every record
+        against a declared ceiling makes deletion a function of the workload and the
+        configuration alone. Demotion under VRAM pressure is untouched (DEC-70 ratifies it, and
+        it is correct: demotion costs latency, not membership).
+
+        Returns:
+            How many records were deleted.
         """
-        overflow = self._disk_count - self.tier_budget.disk_max_items
+        overflow = len(self._index) - self.tier_budget.max_records
         if overflow <= 0:
             return 0
-        disk = [(k, m) for k, m in self._index.items() if m.residency is Residency.DISK]
-        order = sorted(disk, key=lambda km: (km[1].importance, km[1].written_at, km[0]))
+        order = sorted(
+            self._index.items(), key=lambda km: (km[1].importance, km[1].written_at, km[0])
+        )
         for key, _meta in order[:overflow]:
             self._backend.delete(key)
             self._index_drop(key)
@@ -917,14 +1073,20 @@ class EpisodicStoreImpl:
     def evict(self) -> int:
         """Run one eviction pass at the current tick.
 
+        Membership first, then placement: what the store holds is decided before where it sits,
+        so a spill never feeds a deletion. Both are invoked here explicitly rather than one
+        calling the other -- an eviction pass is a caller's request for both, not evidence that
+        they are one policy.
+
         Returns:
-            How many records were spilled to disk or hard-deleted.
+            How many records were hard-deleted or spilled to disk.
 
         Raises:
             StoreBackpressureError: `max_in_flight` operations are already in flight.
         """
         with self._admission.slot("evict"), self._lock:
-            return self._enforce_capacity(time.time())
+            deleted = self._enforce_membership()
+            return deleted + self._enforce_placement(time.time())
 
     # -- residency ---------------------------------------------------------------------
 
@@ -973,7 +1135,8 @@ class EpisodicStoreImpl:
             now = time.time()
             self._index[key].last_accessed = now
             self._set_residency(key, Residency.RAM)
-            self._enforce_capacity(now)
+            # Placement only. A promotion admits no record, so membership cannot have changed.
+            self._enforce_placement(now)
 
     # -- DEC-64's session bounding -----------------------------------------------------
 
@@ -1056,6 +1219,7 @@ class EpisodicStoreImpl:
         domain: str | None = None,
         global_query: bool = False,
         b_store: int,
+        query: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """`EpisodicStore.read` -- the protocol's name for `retrieve`.
 
@@ -1064,11 +1228,15 @@ class EpisodicStoreImpl:
             domain: Restrict to one domain, or `None` with `global_query=True`.
             global_query: Must be `True` when `domain` is `None`.
             b_store: Workspace store budget.
+            query: `[D]` float, what this read is looking for; `None` for the score-only
+                order.
 
         Returns:
             `(latents [b_store, D], mask [b_store])`.
         """
-        return self.retrieve(scope, domain=domain, global_query=global_query, b_store=b_store)
+        return self.retrieve(
+            scope, domain=domain, global_query=global_query, b_store=b_store, query=query
+        )
 
     # -- receipts -------------------------------------------------------------------------
 

@@ -7,9 +7,12 @@ against `InMemoryStoreStub`, so `tests/interconnect/test_episodic_store.py` is a
 STUB: making the stub implement DEC-63 would turn that file red, which is the same forbidden
 move by a different door. So E1 adds a second implementation of E0's protocol beside the stub
 and re-runs the nine fixtures against it here, verbatim in assertion and in name, minus the
-`ContractGap` wrapper that only ever described the stub. `git diff` on this branch shows
+`ContractGap` wrapper that only ever described the stub. `git diff` on E1's OWN branch showed
 `tests/interconnect/test_episodic_store.py` and `src/cogsyndelta/interconnect/episodic_store.py`
-untouched; that is gate (i)'s evidence, and it is checkable rather than asserted.
+untouched; that was gate (i)'s evidence, and it was checkable rather than asserted. Later
+branches may edit both -- gate (i) forbids editing a gate to make it pass, not fixing a
+measured defect in the contract both files implement (see `episodic/__init__.py`'s 2026-09-07
+note); the nine fixtures below are unchanged by any of it.
 
 BOTH ORACLES, ONE SUITE. Every test here is parameterised over `InMemoryBackend` (the
 conformance oracle) and a file-backed `SqliteBackend` (the durability oracle), because row E1
@@ -19,6 +22,7 @@ the dict.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from contextlib import ExitStack
 from pathlib import Path
@@ -96,7 +100,7 @@ def _store(
         capacity_provider=lambda: capacity,
         host="test-host",
         half_life_s=half_life_s,
-        tier_budget=tier_budget or TierBudget(ram_max_items=1024, disk_max_items=4096),
+        tier_budget=tier_budget or TierBudget(ram_max_items=1024, max_records=4096),
     )
     store.start()
     return store
@@ -287,7 +291,7 @@ def test_e0_disk_prune_drops_lowest(backend_factory) -> None:
     store = _store(
         backend_factory,
         capacity=0,
-        tier_budget=TierBudget(ram_max_items=1, disk_max_items=2),
+        tier_budget=TierBudget(ram_max_items=1, max_records=2),
     )
     scope = derive_scope("alice")
     for i in range(5):
@@ -295,6 +299,215 @@ def test_e0_disk_prune_drops_lowest(backend_factory) -> None:
 
     surviving = {key[2] for key in store._index}
     assert surviving == {"k3", "k4"}, f"disk prune kept the wrong rows: {surviving}"
+
+
+# ---------------------------------------------------------------------------------------
+# The read tie-break: newest first, so a resident set is not a wall (2026-09-07).
+# ---------------------------------------------------------------------------------------
+
+
+def _tied_pair(backend_factory) -> tuple[EpisodicStoreImpl, Scope]:
+    """Two records whose eviction SCORE is exactly equal, so only the tie-break can decide.
+
+    Equal importance, equal residency and a `last_accessed` pinned to one instant on both,
+    which zeroes the staleness term's difference -- the same pinning
+    `test_e1_eviction_order.py` uses to isolate one term of the score at a time.
+    """
+    store = _store(backend_factory)
+    scope = derive_scope("alice")
+    store.learn(scope, "chat", "older", _latent(fill=1.0), importance=0.5)
+    store.learn(scope, "chat", "newer", _latent(fill=2.0), importance=0.5)
+    now = time.time()
+    for logical_key in ("older", "newer"):
+        store._index[(partition_scope_key(scope), "chat", logical_key)].last_accessed = now
+    return store, scope
+
+
+def test_a_tied_read_prefers_the_newer_record(backend_factory) -> None:
+    """`episodic_store.py::_tie_break`'s repair, in the store that replaces that stub.
+
+    The stub's oldest-first tie-break made a set of equally-important primers permanently
+    outrank everything written later; this store inherited the same direction through
+    `_rank_key`. Preferring the newer record also puts the read back in agreement with
+    `_enforce_placement`, which spills the OLDER record when scores tie.
+    """
+    store, scope = _tied_pair(backend_factory)
+    latents, _mask = store.retrieve(scope, domain="chat", b_store=1)
+    assert torch.allclose(latents[0], _latent(fill=2.0))
+
+
+def test_the_old_ascending_tie_break_would_have_returned_the_older_record(
+    backend_factory,
+) -> None:
+    """The can-fail control: the same records, ranked by the expression that was wrong."""
+    store, scope = _tied_pair(backend_factory)
+    now = time.time()
+    matches = store._backend.partition(partition_scope_key(scope), "chat")
+    scores = {r.key: store._rank_key(r, now)[0] for r in matches}
+    assert len(set(scores.values())) == 1, "the fixture no longer ties the score"
+
+    old_first = sorted(matches, key=lambda r: (scores[r.key], r.written_at, r.key))[0]
+    assert old_first.logical_key == "older"
+    new_first = sorted(matches, key=lambda r: (scores[r.key], -r.written_at, r.key))[0]
+    assert new_first.logical_key == "newer"
+
+
+# ---------------------------------------------------------------------------------------
+# The query (`episodic_store.py` ambiguity note 6), on the built store and both oracles.
+# ---------------------------------------------------------------------------------------
+
+
+def _basis_store(backend_factory) -> tuple[EpisodicStoreImpl, Scope]:
+    """Four records at the four coordinate axes of a `D = 4` space, uniform importance."""
+    store = _store(backend_factory)
+    scope = derive_scope("alice")
+    for axis in range(4):
+        record = torch.zeros(4)
+        record[axis] = 1.0
+        store.learn(scope, "chat", f"axis-{axis}", record)
+    return store, scope
+
+
+def test_the_query_reaches_the_built_store_through_both_verb_names(backend_factory) -> None:
+    """`retrieve` and its protocol alias `read` must rank identically for one query.
+
+    `mind.py` is typed against `EpisodicStore` and calls `read`; this store's `read` is a
+    thin forward to `retrieve`, and a forward that dropped the new argument would silently
+    put the constant back for every caller holding the real store instead of the stub.
+    """
+    store, scope = _basis_store(backend_factory)
+    query = torch.tensor([0.0, 0.0, 1.0, 0.0])
+    through_retrieve, _mask = store.retrieve(scope, domain="chat", b_store=4, query=query)
+    through_read, _mask = store.read(scope, domain="chat", b_store=4, query=query)
+
+    assert torch.equal(through_retrieve, through_read)
+    assert torch.allclose(through_read[0], query)
+
+
+def test_the_built_store_read_is_not_constant_across_queries(backend_factory) -> None:
+    """The repair's own assertion, on the store that replaces the stub in production."""
+    store, scope = _basis_store(backend_factory)
+    bank_a, _mask = store.read(
+        scope, domain="chat", b_store=4, query=torch.tensor([1.0, 0.0, 0.0, 0.0])
+    )
+    bank_b, _mask = store.read(
+        scope, domain="chat", b_store=4, query=torch.tensor([0.0, 1.0, 0.0, 0.0])
+    )
+    assert float((bank_a - bank_b).abs().max()) > 0.0
+
+
+def test_the_built_store_read_stays_constant_with_no_query(backend_factory) -> None:
+    """The compatibility control: `query=None` is the merged contract, unchanged."""
+    store, scope = _basis_store(backend_factory)
+    first, _mask = store.read(scope, domain="chat", b_store=4)
+    second, _mask = store.read(scope, domain="chat", b_store=4)
+    assert float((first - second).abs().max()) == 0.0
+
+
+def test_a_query_does_not_cross_a_scope_on_the_built_store(backend_factory) -> None:
+    """Scope stays the isolation axis: a query pointing at another principal reads nothing."""
+    store = _store(backend_factory)
+    alice = derive_scope("alice")
+    bob = derive_scope("bob")
+    secret = torch.tensor([9.0, 9.0, 9.0, 9.0])
+    store.learn(bob, "chat", "bobs-episode", secret)
+
+    _latents, mask = store.read(alice, domain="chat", b_store=4, query=secret)
+    assert not bool(mask.any())
+
+
+def test_a_query_of_the_wrong_width_is_refused_by_the_built_store(backend_factory) -> None:
+    """One `D` per store, checked on the read edge as well as the write edge."""
+    store, scope = _basis_store(backend_factory)
+    with pytest.raises(ValueError, match="width"):
+        store.read(scope, domain="chat", b_store=4, query=torch.zeros(7))
+
+
+# ---------------------------------------------------------------------------------------
+# Selection is host-invariant: residency changes latency, never the answer (2026-09-07).
+#
+# THE DEFECT. The read ranked on the EVICTION score, which carries `gpu_resident_bonus`, so
+# two hosts holding exactly the same records returned DIFFERENT reads whenever those records
+# sat in different tiers. Membership had already been made host-invariant; selection had not.
+# The bonus is a PLACEMENT term -- prefer a read that is already on the card -- that had
+# leaked into SELECTION, where it changes the answer. It is removed outright rather than
+# demoted to a tie-break: a tie-break still changes the returned set when relevance ties, and
+# these memories tie often (measured maximum off-diagonal cosine 0.9993).
+# ---------------------------------------------------------------------------------------
+
+
+def _five_records(backend_factory) -> tuple[EpisodicStoreImpl, Scope]:
+    """Five records at one importance, so only the score's other terms can separate them."""
+    store = _store(backend_factory)
+    scope = derive_scope("alice")
+    for i in range(5):
+        store.learn(scope, "chat", f"k{i}", _latent(fill=float(i)), importance=0.5)
+    return store, scope
+
+
+def test_a_read_returns_the_same_records_whatever_tier_they_sit_in(backend_factory) -> None:
+    """The property being bought: same records, same query, different placement, same answer.
+
+    One arm leaves every record where `learn` put it; the other tags two of them GPU-resident,
+    which is the only difference between the arms. Under the eviction score those two would
+    have jumped the queue by `GPU_RESIDENT_BONUS = 1.0`, which is twice every record's whole
+    importance here.
+    """
+    flat, flat_scope = _five_records(backend_factory)
+    tiered, tiered_scope = _five_records(backend_factory)
+    tiered.mark_gpu(tiered_scope, "chat", "k0")
+    tiered.mark_gpu(tiered_scope, "chat", "k1")
+
+    flat_read, flat_mask = flat.retrieve(flat_scope, domain="chat", b_store=3)
+    tiered_read, tiered_mask = tiered.retrieve(tiered_scope, domain="chat", b_store=3)
+
+    assert torch.equal(flat_mask, tiered_mask)
+    assert torch.equal(flat_read, tiered_read), (
+        "residency changed which records the read returned: "
+        f"flat={[float(row[0]) for row in flat_read]} "
+        f"tiered={[float(row[0]) for row in tiered_read]}"
+    )
+
+
+def test_a_query_ranked_read_is_also_unmoved_by_residency(backend_factory) -> None:
+    """The same, with a query supplied -- the path `mind.py` actually takes."""
+    flat, flat_scope = _five_records(backend_factory)
+    tiered, tiered_scope = _five_records(backend_factory)
+    tiered.mark_gpu(tiered_scope, "chat", "k4")
+
+    query = _latent(fill=2.0)
+    flat_read, _mask = flat.retrieve(flat_scope, domain="chat", b_store=2, query=query)
+    tiered_read, _mask = tiered.retrieve(tiered_scope, domain="chat", b_store=2, query=query)
+    assert torch.equal(flat_read, tiered_read)
+
+
+def test_the_eviction_score_would_have_reordered_this_read(backend_factory) -> None:
+    """The can-fail control: rank the SAME records by the score the read used to use.
+
+    `_score_meta` is still the store's eviction score and still carries the bonus -- correctly,
+    because eviction decides placement. Ranking the read through it puts the GPU-tagged records
+    first, which is the reordering the test above asserts is gone. If this control ever stops
+    diverging, the test above has stopped measuring anything.
+    """
+    tiered, tiered_scope = _five_records(backend_factory)
+    tiered.mark_gpu(tiered_scope, "chat", "k0")
+    tiered.mark_gpu(tiered_scope, "chat", "k1")
+
+    now = time.time()
+    matches = tiered._backend.partition(partition_scope_key(tiered_scope), "chat")
+    by_read = [r.logical_key for r in sorted(matches, key=lambda r: tiered._rank_key(r, now))]
+    by_eviction = [
+        r.logical_key
+        for r in sorted(
+            matches,
+            key=lambda r: (-tiered._score_meta(tiered._index[r.key], now), -r.written_at, r.key),
+        )
+    ]
+    assert by_eviction[:2] == ["k1", "k0"], f"the GPU bonus did not dominate: {by_eviction}"
+    assert by_read[:2] != by_eviction[:2], (
+        "the read and the eviction score agree here, so the control is not reconstructed"
+    )
+    assert GPU_RESIDENT_BONUS > 0.0, "a zero bonus would make this control vacuous"
 
 
 # ---------------------------------------------------------------------------------------
