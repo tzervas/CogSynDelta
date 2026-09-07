@@ -140,7 +140,8 @@ tensor for `visual`); plus, optionally, `"candidates"` (`[B, k-1, D_w]`, Q7's
 pre-embedded content candidates, out of this lane's scope per `readout.py`'s own
 docstring), `"scope"` (one `episodic_store.Scope`, broadcast to every batch item) or
 `"scopes"` (`Sequence[Scope | None]`, one per item), and `"domain"` /
-`"logical_key"` for the store's read/write partition (spec section 3 steps 8 and 13).
+`"logical_key"` (or `"logical_keys"`, one per item -- `_logical_keys_for`) for the
+store's read/write partition (spec section 3 steps 8 and 13).
 `episodic_store` is never a key of `inputs` itself -- the store is a constructor
 argument, not a per-request input, and its scope/domain travel through `inputs` only
 because *deriving* a scope is server-side (`derive_scope`, `episodic_store.py`), never
@@ -734,6 +735,50 @@ class WhiteMatter(nn.Module):
             return scopes
         return [inputs.get("scope")] * batch_size
 
+    @staticmethod
+    def _logical_keys_for(inputs: Mapping[str, Any], batch_size: int) -> list[str]:
+        """One `logical_key` per batch item -- `_scopes_for`'s sibling on the write axis.
+
+        WHY THIS EXISTS (measured defect, 2026-09-07). `logical_key` arrives as ONE string
+        for the whole request (module docstring's "What `inputs` looks like"), and
+        `(scope, domain, logical_key)` is the store's full identity, so a batch of `B`
+        items sharing a scope wrote `B` records under ONE key -- last-write-wins
+        (`episodic_store.py`'s own contract) collapsed them to a single surviving record
+        per turn. Measured on the phase-A synthetic stream, whose `cli.synthetic_batches`
+        sets `logical_key = f"turn-{index}"` per BATCH: after 800 steps at `B = 8` the
+        store held 12 records rather than 6,408. Items are independent turns, so each one
+        gets its own identity.
+
+        Two ways to get one, mirroring `scope`/`scopes` exactly:
+
+          - `inputs["logical_keys"]`: an explicit per-item sequence, for a caller that has
+            real episode ids (a served request batch, where each item is a different
+            conversation turn with a name of its own).
+          - `inputs["logical_key"]`: the request-wide base, suffixed `#i` with the item's
+            batch index. Deterministic, collision-free within the request, and stable
+            across runs -- the same fallback shape `_scopes_for` uses when only the
+            singular key is present.
+
+        Args:
+            inputs: The forward pass's `inputs` mapping.
+            batch_size: `B`.
+
+        Returns:
+            `batch_size` logical keys, one per item, all distinct.
+
+        Raises:
+            ValueError: `inputs["logical_keys"]` is present with the wrong length.
+        """
+        if "logical_keys" in inputs:
+            keys = [str(key) for key in inputs["logical_keys"]]
+            if len(keys) != batch_size:
+                raise ValueError(
+                    f"inputs['logical_keys'] has {len(keys)} entries, expected {batch_size}."
+                )
+            return keys
+        base = str(inputs.get("logical_key", "turn"))
+        return [f"{base}#{i}" for i in range(batch_size)]
+
     def _read_store(
         self, inputs: Mapping[str, Any], batch_size: int, b_store: int, device: torch.device
     ) -> tuple[Tensor, Tensor]:
@@ -765,20 +810,21 @@ class WhiteMatter(nn.Module):
 
     def _write_store(self, inputs: Mapping[str, Any], z_final: Tensor) -> list[Any] | None:
         """Spec section 3 step 13: one record per turn, the mean of the final-normed
-        latents, under `(scope, domain, logical_key)`.
+        latents, under `(scope, domain, logical_key)`. One TURN is one batch ITEM, so the
+        identity is per item too -- see `_logical_keys_for` for the collision this closes.
         """
         if self.store is None:
             return None
         batch_size = z_final.shape[0]
         scopes = self._scopes_for(inputs, batch_size)
         domain = inputs.get("domain", "general")
-        logical_key = inputs.get("logical_key", "turn")
+        logical_keys = self._logical_keys_for(inputs, batch_size)
         record = z_final.mean(dim=1)
         receipts = []
         for i, scope in enumerate(scopes):
             if scope is None:
                 continue  # G32: an unknown principal cannot write (episodic_store.py).
-            receipts.append(self.store.write(scope, domain, logical_key, record[i].detach()))
+            receipts.append(self.store.write(scope, domain, logical_keys[i], record[i].detach()))
         return receipts
 
     # ------------------------------------------------------------------
