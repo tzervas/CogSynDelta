@@ -7,14 +7,23 @@ WHAT ROW E1 ASKS FOR, and where each clause is answered here:
     A request-supplied value never reaches a key.
   - *"BYTE capacity from section 8 gap (a)'s formula computed per host per scheduler tick"* --
     a `capacity_provider` callable, invoked on every admission and never memoised. See
-    `capacity.py` for the formula and `_enforce_capacity` for the one place its answer is
+    `capacity.py` for the formula and `_enforce_placement` for the one place its answer is
     consumed.
   - *"scored eviction `importance + gpu_resident_bonus - staleness(last_accessed)` with ties
-    by older timestamp then key"* -- `_score` and `_enforce_capacity`.
+    by older timestamp then key"* -- `_score` and `_enforce_placement`.
   - *"the six lifecycle verbs with REFUSING backpressure at `max_in_flight = 32`"* --
     `start`/`learn`/`retrieve`/`drain`/`flush`/`stop`, and `AdmissionGuard`.
   - *"SQLite as the durability oracle with in-memory as the conformance oracle"* -- both are
     `StoreBackend`s in `backends.py`; this class holds one and does not know which.
+
+PLACEMENT IS HOST-DEPENDENT; MEMBERSHIP IS NOT (DEC-63 as amended 2026-09-07). `capacity_bytes`
+is derived from live VRAM, so every decision it drives differs card by card -- which is correct
+for WHERE a span sits, and was wrong for WHETHER a record exists. The two now have separate
+methods and separate triggers: `_enforce_placement` demotes against the VRAM-derived capacity
+and deletes nothing, and `_enforce_membership` deletes against `TierBudget.max_records`, a
+declared record count that no card can move. `_enforce_placement` does not call
+`_enforce_membership`; `learn` and `evict` invoke both, membership first. Demotion under VRAM
+pressure is untouched and stays -- DEC-70 ratifies it, and it costs latency, not membership.
 
 AND WHAT IT ASKS NOT TO BUILD, which is the harder half of the row. *"The store's two
 projections are NOT trained here -- they are white-matter parameters and E2 trains them. This
@@ -431,6 +440,9 @@ class EpisodicStoreImpl:
             self._resident_bytes += sign * meta.span_bytes
             self._resident_count += sign
         else:
+            # Index accounting only. Since DEC-63's 2026-09-07 amendment this tally no longer
+            # triggers anything: deletion counts every record against a declared ceiling
+            # (`_enforce_membership`), not the spilled subset against a tier bound.
             self._disk_count += sign
 
     def _index_put(self, key: RecordKey, meta: IndexRow) -> None:
@@ -645,7 +657,11 @@ class EpisodicStoreImpl:
                         last_accessed=now,
                     ),
                 )
-                self._enforce_capacity(now)
+                # Membership before placement: the declared record ceiling decides WHAT the
+                # store holds, host-invariantly, and only then does the VRAM-derived capacity
+                # decide WHERE the survivors sit (DEC-63 as amended 2026-09-07).
+                self._enforce_membership()
+                self._enforce_placement(now)
             return WriteReceipt(
                 scope=scope,
                 domain=domain,
@@ -832,14 +848,14 @@ class EpisodicStoreImpl:
         disagree about the same record -- one policy, evaluated once per tick.
 
         AMENDED 2026-09-07. The timestamp tie-break used to be ascending (older first),
-        which is the direction `_enforce_capacity` SPILLS in: the read preferred exactly the
+        which is the direction `_enforce_placement` SPILLS in: the read preferred exactly the
         record eviction had judged least valuable, so the two halves of "one policy, not
         two" pointed opposite ways. Under a uniform importance -- which is what every write
         through `mind.py` carries, since nothing on the forward path sets one -- that made a
         resident set of primers a permanent wall in front of everything written afterwards.
         `episodic_store.py::_tie_break` carries the measurement; this is the same repair in
         the store that replaces that stub. Eviction's own ordering is untouched: it sorts in
-        `_enforce_capacity`/`_prune_disk` with their own keys, not through this method.
+        `_enforce_placement`/`_enforce_membership` with their own keys, not through this method.
         """
         meta = self._index.get(record.key)
         if meta is not None:
@@ -925,21 +941,33 @@ class EpisodicStoreImpl:
             record.residency = residency
             self._backend.put(record)
 
-    def _enforce_capacity(self, now: float) -> int:
+    def _enforce_placement(self, now: float) -> int:
         """Spill the lowest-scored resident records until the byte and item budgets hold.
+
+        PLACEMENT ONLY. This method's bound is `capacity_bytes`, which is derived from live
+        VRAM and is therefore different on every card by design -- that is what makes the
+        capacity dynamic, and it is the right kind of host dependence: which tier a span sits
+        in costs LATENCY. It must never decide EXISTENCE, so nothing here deletes, and this
+        method does not call `_enforce_membership`. See DEC-63 as amended 2026-09-07.
 
         One sort, not one scan per victim: the score of a record does not change while this
         runs (`now` is fixed), so the spill order is a single ascending sort by
         `(score, written_at, key)` -- lowest score first, ties to the older record, then to
         the lexicographically smaller key. That is `pick_spill_victim`'s order applied
         repeatedly, computed once.
+
+        Args:
+            now: The scoring tick.
+
+        Returns:
+            How many records were demoted to disk.
         """
         capacity = int(self._capacity_provider())
         if (
             self._resident_bytes <= capacity
             and self._resident_count <= self.tier_budget.ram_max_items
         ):
-            return self._prune_disk()
+            return 0
         resident = [(k, m) for k, m in self._index.items() if m.residency in GPU_TIERS]
         total = self._resident_bytes
 
@@ -956,20 +984,36 @@ class EpisodicStoreImpl:
             total -= meta.span_bytes
             count -= 1
             spilled += 1
-        return spilled + self._prune_disk()
+        return spilled
 
-    def _prune_disk(self) -> int:
-        """Hard-delete the lowest-importance spilled records once the disk tier overflows.
+    def _enforce_membership(self) -> int:
+        """Hard-delete the lowest-importance records once the DECLARED record ceiling overflows.
 
         Section 1.3 clause (2): *"overflow at the lower tier HARD-DELETES the lowest-importance
         rows -- the only data-loss path in the store"* (`tiered.rs:180-198`). Importance, not
-        the full score: upstream prunes on importance, and a disk row earns no GPU bonus.
+        the full score: upstream prunes on importance, the GPU bonus is deliberately excluded,
+        and neither `residency` nor `span_bytes` appears in the key. The SCORE was always
+        clean; the TRIGGER was not.
+
+        WHAT THE TRIGGER USED TO BE, AND WHY IT WAS WRONG (DEC-63 as amended 2026-09-07). The
+        overflow was `disk_count - disk_max_items`, and `disk_count` is the spill rate, which
+        follows `capacity_bytes`, which follows live VRAM. A smaller card spilled more, hit the
+        ceiling at a smaller working set, and hard-deleted rows a larger card still held: the
+        same input sequence produced a different STORE depending on which card ran it, through
+        the one path the store documents as its only data-loss path. Counting every record
+        against a declared ceiling makes deletion a function of the workload and the
+        configuration alone. Demotion under VRAM pressure is untouched (DEC-70 ratifies it, and
+        it is correct: demotion costs latency, not membership).
+
+        Returns:
+            How many records were deleted.
         """
-        overflow = self._disk_count - self.tier_budget.disk_max_items
+        overflow = len(self._index) - self.tier_budget.max_records
         if overflow <= 0:
             return 0
-        disk = [(k, m) for k, m in self._index.items() if m.residency is Residency.DISK]
-        order = sorted(disk, key=lambda km: (km[1].importance, km[1].written_at, km[0]))
+        order = sorted(
+            self._index.items(), key=lambda km: (km[1].importance, km[1].written_at, km[0])
+        )
         for key, _meta in order[:overflow]:
             self._backend.delete(key)
             self._index_drop(key)
@@ -978,14 +1022,20 @@ class EpisodicStoreImpl:
     def evict(self) -> int:
         """Run one eviction pass at the current tick.
 
+        Membership first, then placement: what the store holds is decided before where it sits,
+        so a spill never feeds a deletion. Both are invoked here explicitly rather than one
+        calling the other -- an eviction pass is a caller's request for both, not evidence that
+        they are one policy.
+
         Returns:
-            How many records were spilled to disk or hard-deleted.
+            How many records were hard-deleted or spilled to disk.
 
         Raises:
             StoreBackpressureError: `max_in_flight` operations are already in flight.
         """
         with self._admission.slot("evict"), self._lock:
-            return self._enforce_capacity(time.time())
+            deleted = self._enforce_membership()
+            return deleted + self._enforce_placement(time.time())
 
     # -- residency ---------------------------------------------------------------------
 
@@ -1034,7 +1084,8 @@ class EpisodicStoreImpl:
             now = time.time()
             self._index[key].last_accessed = now
             self._set_residency(key, Residency.RAM)
-            self._enforce_capacity(now)
+            # Placement only. A promotion admits no record, so membership cannot have changed.
+            self._enforce_placement(now)
 
     # -- DEC-64's session bounding -----------------------------------------------------
 

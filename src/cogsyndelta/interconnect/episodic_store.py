@@ -269,7 +269,7 @@ def _tie_break(record: Record) -> tuple[float, float, str]:
 
     Newest-first is the smallest honest repair. It keeps the order total, deterministic and
     seed-free (ambiguity note 3's actual requirement), and it agrees with the direction the
-    real store's eviction already scores in -- `episodic/store.py::_enforce_capacity` spills
+    real store's eviction already scores in -- `episodic/store.py::_enforce_placement` spills
     the OLDER record when scores tie, so preferring the older one on a read was the read
     and the eviction disagreeing about the same record. `logical_key` last keeps two records
     written inside the same clock tick in a fixed order.

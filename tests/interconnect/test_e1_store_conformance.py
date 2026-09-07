@@ -100,7 +100,7 @@ def _store(
         capacity_provider=lambda: capacity,
         host="test-host",
         half_life_s=half_life_s,
-        tier_budget=tier_budget or TierBudget(ram_max_items=1024, disk_max_items=4096),
+        tier_budget=tier_budget or TierBudget(ram_max_items=1024, max_records=4096),
     )
     store.start()
     return store
@@ -291,7 +291,7 @@ def test_e0_disk_prune_drops_lowest(backend_factory) -> None:
     store = _store(
         backend_factory,
         capacity=0,
-        tier_budget=TierBudget(ram_max_items=1, disk_max_items=2),
+        tier_budget=TierBudget(ram_max_items=1, max_records=2),
     )
     scope = derive_scope("alice")
     for i in range(5):
@@ -329,7 +329,7 @@ def test_a_tied_read_prefers_the_newer_record(backend_factory) -> None:
     The stub's oldest-first tie-break made a set of equally-important primers permanently
     outrank everything written later; this store inherited the same direction through
     `_rank_key`. Preferring the newer record also puts the read back in agreement with
-    `_enforce_capacity`, which spills the OLDER record when scores tie.
+    `_enforce_placement`, which spills the OLDER record when scores tie.
     """
     store, scope = _tied_pair(backend_factory)
     latents, _mask = store.retrieve(scope, domain="chat", b_store=1)
