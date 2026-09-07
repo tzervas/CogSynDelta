@@ -400,7 +400,7 @@ Table 6 — trainable sets, losses and gates per phase; regions are frozen at th
 |---|---|---|---|---|
 | A dense: W5 (`R = 4`), E2 (`R = 5`) | workspace, LayerNorms, adapters, scorers, type embeddings, latent bank, frontal, rank head, `NULL`, unify probes; `W_k`/`W_v` in E2; prefixes only when write-back is on | controller (bypassed), regions | `L_A = L_task + δ·L_unify` | `min_r mean(a_r) ≥ η/R`, printed as the expression and its value beside the receipt's own `R`; G1, G2, G0; overfit gap < 5 points; the `NULL` gate (TAX:1659-1669, TAX:1701-1702, TAX:2661) |
 | W5b write-back | as A, with the prefixes and prefix queries enabled | as A | `L_A` | conditioned regions' own-bin drop ≤ 1 point and the composed metric improves, else write-back off and `topology: not demonstrated` (TAX:1433-1439, TAX:2663) |
-| E2 admit the store | as A at `R = 5` plus `W_k`/`W_v`; episode items X7 and X8 in the mix | as A | `L_A` | G2 holds; the composed metric improves over W5; `mean(a_store) ≥ η/R = 3.0%`, else the store is reverted and `R` returns to 4 (TAX:2662) |
+| E2 admit the store | as A at `R = 5` plus `W_k`/`W_v`; episode items X7 and X8 in the mix | as A | `L_A` | G2 holds; the composed metric improves over W5; `mean(a_store) ≥ η/R = 3.0%`, else the store is reverted and `R` returns to 4 (TAX:2662). **AMENDED 2026-09-07 BY A6, INTERPRETATION ONLY:** the floor clause, its threshold and the revert are unchanged; a pass on it is **necessary, not sufficient** — it establishes that mass was allocated to the store's slots, never that the store carried information or that the composite used what it read |
 | B distil: W8 | controller only | everything else; unify probes stay frozen from here on | `L_B = Σ_i Σ_r KL(softmax_r(a/τ) ‖ softmax_r(ŝ/τ)) + β·\|Σ_r b̂_r − B_read\|`, the softmax over the region axis per item and active iteration, plus the halt target `[spec]` | Spearman `ρ(ŝ, a) > 0.6` held-out; a region below the phase-A floor is excluded from the targets and named (TAX:1715-1727) |
 | C sparse: W8 | workspace, adapters, prefixes, heads; the controller through its straight-through estimators | regions | `L_task + distil(dense read-out)`, ε-exploration at `p = 0.1` on one region's budget | within 2% relative of dense at ≤ 50% of region-token FLOPs; an accuracy gain here is a bug report against A (TAX:1729-1736) |
 | D task-loss: W8 | controller, workspace, prefixes, adapters, heads | regions | `L_D = L_task + δ·L_unify + λ_flops·relu(FLOPs / FLOPs_target − 1)` | beats C on the composed metric at equal or lower FLOPs, else reverted with `scheduler: imitative` (TAX:1738-1755) |
@@ -454,7 +454,7 @@ Table 8 — guards, proposed G-numbers, what fires them and what firing does.
 |---|---|---|---|
 | G27 | W5b write-back gate, `gates.py` | a conditioned region's own-bin score drops > 1 point, or the composed metric does not improve | write-back disabled for that region; `edges` and `lockstep_groups` omitted; `topology: not demonstrated` (TAX:1435-1439) |
 | G28 | topology agreement, `gates.py` | the two derivations agree on < 95% of items | the disagreement is reported as a bug; void, and declared void, under the no-write-back fallback (TAX:1469-1490) |
-| G29 | attention-mass floor, `gates.py` | any region's `mean(a_r) < η/R` in phase A; `mean(a_store) < η/R` in E2; a receipt whose printed floor ≠ `η/R` at its own `R` | the region is named in `collapsed_in_phase_A` and excluded from B's targets; the store is reverted in E2; the receipt is refused (TAX:1659-1669, TAX:2661-2662) |
+| G29 | attention-mass floor, `gates.py` | any region's `mean(a_r) < η/R` in phase A; `mean(a_store) < η/R` in E2; a receipt whose printed floor ≠ `η/R` at its own `R` | the region is named in `collapsed_in_phase_A` and excluded from B's targets; the store is reverted in E2; the receipt is refused (TAX:1659-1669, TAX:2661-2662). **AMENDED 2026-09-07 BY A6, INTERPRETATION ONLY:** the predicate, the threshold and every consequence in this row stand exactly as specified. What is corrected is what a run that does **not** fire may be read to mean — see Amendment A6 |
 | G30 | `Schedule` validator, `schedule.py` | any B1 bound violated, including `region_token_flops > flops_ceiling`, a malformed `admitted` and a `depth ≠ min{i : admitted[i]}`; `trace_id` present; a store namespace named; a modality outside `allowed_modalities` or with no resident head | the `Schedule` is refused before execution and the dense fallback runs (TAX:5822-5830, TAX:1616-1626) |
 | G31 | latent-tract assertion, `adapters.py` and `kv_bank.py` | an integer-typed or vocabulary-indexed payload on `h_r`, the adapted tokens, `z` or `cond_r` | raises at the boundary (TAX:2667) |
 | G32 | store scope, `episodic_store.py` | a read or write with no server-derived scope, or a scope supplied by the request | refused; an unknown principal reads an empty partition (TAX:5854-5857) |
@@ -462,6 +462,44 @@ Table 8 — guards, proposed G-numbers, what fires them and what firing does.
 | G34 | phase-D revert, `gates.py` | D does not beat C at equal or lower FLOPs | C ships with `scheduler: imitative` (TAX:1753-1755) |
 | G35 | overfit gate, `gates.py` | the train/held-out gap is ≥ 5 points | the phase-A receipt is marked FAIL (TAX:1757-1761) |
 | G36 | `NULL` gate, `gates.py` | `NULL` recall on the general bin ≤ 0.50, or `NULL` false-positive rate ≥ 0.05 on any other bin | the phase-A receipt is marked FAIL per bin (TAX:1701-1702) |
+
+**Amendment A6 (2026-09-07): what G29's floor establishes, and what it does not.** **No gate is
+weakened here.** G29's predicate, its `η/R` threshold, its `η` and `R`, and every consequence
+Table 8 lists for it are unchanged. What is corrected is a claim this spec and the taxonomy both
+made *about the result*: that clearing the floor shows the store is being attended to, in the sense
+of being used.
+
+`mean(a_store) ≥ η/R` establishes exactly one thing — **attention mass was allocated to the store's
+slots**, so the read simplex did not collapse away from it. It does **not** establish that the
+store's read carried information about the target, and it does not establish that the composite
+used what it read. **On a stream with no recall dependency the two quantities are decoupled, and
+that was measured rather than argued.**
+
+Measured on phase A's synthetic stream as it stood before Amendment A4 made the read
+query-dependent: the store bank was a constant across items and batches, so its mutual information
+with the target was exactly **zero**, `dL/d(store attention)` was ~0, and the mass was an
+unidentified direction that random-walked. `mean(a_store)` read **0.0468 at 5, 8 and 64 primed
+records — identical to four decimal places — and 0.0488 with an EMPTY store**. Emptying the store
+at evaluation moved dev loss by ~1e-4 nats and dev `recall@1` **not at all**, while `mean(a_store)`
+ranged over **70x** (0.0043 to 0.3029). G29 fired on **2 of 8** seeds, and at a fixed seed it
+flipped on `OMP_NUM_THREADS` alone (1/2/4/16 PASS, 8 FAIL). It is also non-monotone in the step
+count — 0.118 → 0.101 → 0.068 → **0.047 FAIL** → 0.201 → 0.329 — so training longer un-collapses
+it.
+
+**The gate is sound; the input was wrong.** Run unchanged on a stream where the store is the only
+route to the label, the same predicate reads **0.191–0.640** over the whole trajectory and never
+fires — a 3.8x–12.8x margin. That is a working gate starved of a valid input, which is why nothing
+about it moves here.
+
+**The consequence, and it is the whole amendment: a pass is NECESSARY, NOT SUFFICIENT.** A receipt
+may be read as evidence that the store was admitted only when it also carries independent evidence
+that the store's read is identified — non-zero mutual information between the read and the target,
+or a measured effect on the composed metric from emptying the store. Without that, the honest
+verdict on the run is **INCONCLUSIVE, not PASS**. Amendment A4's query-dependent read is the input
+change this calls for (MI excess +1.58 to +1.86 bits, held-out accuracy 0.855–0.996 against a null
+of 0.29), which is why the correction lands on the interpretation and not on the gate.
+Evidence: `/akula-data/session-backup-staging/notes/GATE-DISCRIMINATION-2026-09-07.md` and
+`DECISIONS-AND-RENAMES-2026-09-07.md` §1.
 
 Table 8a — disposition of every §2.5 `Schedule` field this module does not compute from a head (TAX:1496-1517, TAX:1546-1557).
 
@@ -521,6 +559,19 @@ parametric region claiming `nonparametric_store` (G33); a D receipt worse than C
 gap (G35); a general-bin `NULL` recall of 0.40 and an off-bin `NULL` false-positive rate of 0.10
 (G36). Each test also asserts the positive control passes, so a guard that refuses everything is
 caught.
+
+**Amended 2026-09-07 (A6): G29's store falsifier stands as written, and it needs replication and a
+verified pin to mean anything.** The construction above is unchanged — `b_store` at its legal floor
+of 8, episodes with no recall dependency, asserting `mean(a_store) < 3.0%`. Two measured facts
+about *running* it. **(1) One seed is not a demonstration.** Phase A's own synthetic stream is an
+instance of that input, and on it the assertion held on only **2 of 8** seeds and flipped on
+`OMP_NUM_THREADS` alone at a fixed seed, so this test must be run **seed-replicated and
+thread-pinned**; a single-seed green is a draw from a statistic that random-walks across the
+threshold. **(2) The pin has to be checked, not assumed.** In the phase-A toy the store was given a
+2–8 read-token range against `η/R · B_read = 0.8`, so `b_store` was floored by the participant's
+own minimum rather than by `η/R` — and whether `b_store` sat at its legal floor is precisely what
+separates *"the store was not attended to"* from a starvation artefact. Neither point moves the
+assertion or the threshold.
 
 **CPU smoke.** `tests/interconnect/test_smoke.py::test_forward_backward_under_30s` runs one forward
 and backward on the integration configuration at `B = 4`, asserts every trainable parameter received
