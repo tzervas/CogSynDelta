@@ -741,6 +741,33 @@ def _schema_mismatch(shards: list[str], cols: tuple[str, str]) -> str | None:
     return None
 
 
+def _auxiliary_weights(
+    region: str, token_loss_weight: float | None, decorr_weight: float | None
+) -> tuple[float, float]:
+    """Resolve `(ζ, γ)` for a region: the declared pair unless overridden.
+
+    `None` means "not overridden" and `0.0` means zero, which is the whole point of the
+    signature: `TOKEN_AWARE_REGIONS` used to be the only source, so this runner could not
+    express the auxiliaries-off configuration a pre-registered arm requires, and a round
+    launched through it would have trained the production objective and completed
+    normally. A falsy check (`token_loss_weight or declared`) would reintroduce exactly
+    that bug, since `0.0` is falsy.
+
+    Args:
+        region: Region key.
+        token_loss_weight: Override, or None to keep the declared value.
+        decorr_weight: Override, or None to keep the declared value.
+
+    Returns:
+        `(token_loss_weight, decorr_weight)` as the run will use them.
+    """
+    declared_token, declared_decorr = TOKEN_AWARE_REGIONS.get(region, (0.0, 0.0))
+    return (
+        declared_token if token_loss_weight is None else token_loss_weight,
+        declared_decorr if decorr_weight is None else decorr_weight,
+    )
+
+
 def run_region(
     name: str,
     state: Path,
@@ -754,6 +781,8 @@ def run_region(
     allow_missing: bool = False,
     init_embedding_from: str | None = None,
     seed: int = 0,
+    token_loss_weight: float | None = None,
+    decorr_weight: float | None = None,
 ) -> dict | None:
     """Train one region and return its receipt.
 
@@ -798,6 +827,19 @@ def run_region(
             again at `receipt["untrained_baseline_seed"]` (a dedicated field naming the
             seed the untrained baseline's weights were constructed with) -- this
             parameter is what makes either value something other than always 0.
+        token_loss_weight: Override `TOKEN_AWARE_REGIONS`' `ζ` for this run. `None` (the
+            default) keeps the region's own declared value, so nothing changes for a
+            normal run. `0.0` is a REAL value, not "unset": an experiment whose
+            pre-registration requires the auxiliary terms off (see
+            PREREG-RETRIEVAL-NEGATIVES-2026-09-06 rev 3 section 2.1, where both weights
+            are 0.0 in every arm) could previously not be launched through this runner at
+            all -- it hard-coded `memory`'s 0.1/0.1 -- so an arm started here would have
+            silently trained the production objective and completed looking fine. The
+            weights the loss ACTUALLY used are recorded in the receipt
+            (`objective_weights.measured`) and graded against the pre-registration by
+            `cogsyndelta.eval.prereg` (G40), which is what protects the result no matter
+            which entry point launched it.
+        decorr_weight: Override `TOKEN_AWARE_REGIONS`' `γ` for this run, same contract.
 
     Returns:
         The receipt, or None when the region has no usable sources or `dry` is set.
@@ -926,7 +968,7 @@ def run_region(
         # default: printing `graded_columns: ["sentence1","sentence2","score"]` for
         # `code`/`retrieve`/`reason`, which have no graded set at all, would misread as
         # those columns being attached to that region.
-        token_loss_weight, decorr_weight = TOKEN_AWARE_REGIONS.get(name, (0.0, 0.0))
+        declared_token, declared_decorr = _auxiliary_weights(name, token_loss_weight, decorr_weight)
         plan = {
             # NOT canonicalized -- matches exactly what the real (non-dry) run below
             # writes as `PretrainConfig.region`, which is also deliberately left as
@@ -949,10 +991,11 @@ def run_region(
             "graded_shards": graded_shards,
             "graded_columns": list(graded_cols) if graded_cols is not None else None,
             "graded_name": graded_name,
-            # §4.0's token-aware terms (row W4) -- see TOKEN_AWARE_REGIONS.
-            "token_loss_weight": token_loss_weight,
-            "decorr_weight": decorr_weight,
-            "token_aware": bool(token_loss_weight or decorr_weight),
+            # §4.0's token-aware terms (row W4) -- see TOKEN_AWARE_REGIONS, and
+            # `--token-loss-weight`/`--decorr-weight`, which override them (0.0 included).
+            "token_loss_weight": declared_token,
+            "decorr_weight": declared_decorr,
+            "token_aware": bool(declared_token or declared_decorr),
             # DEC-24 -- see SHARED_EMBEDDING_TABLE_SOURCE. `applied` is what actually
             # happens THIS run (a real path was given), `designed_source` is the intent
             # named regardless of whether one was.
@@ -970,7 +1013,9 @@ def run_region(
     from cogsyndelta.regions import PretrainConfig, pretrain_region
     from cogsyndelta.regions.text_encoder import TextEncoderConfig
 
-    token_loss_weight, decorr_weight = TOKEN_AWARE_REGIONS.get(name, (0.0, 0.0))
+    resolved_token_weight, resolved_decorr_weight = _auxiliary_weights(
+        name, token_loss_weight, decorr_weight
+    )
     cfg = PretrainConfig(
         # Deliberately NOT canonicalized, unlike the dry-run plan's display above:
         # `cogsyndelta.regions.pretrain.pretrain_region` derives the checkpoint
@@ -1017,8 +1062,8 @@ def run_region(
         graded_columns=graded_cols or ("sentence1", "sentence2", "score"),
         graded_name=graded_name or "",
         allow_unfingerprinted_resume=allow_unfingerprinted_resume,
-        token_loss_weight=token_loss_weight,
-        decorr_weight=decorr_weight,
+        token_loss_weight=resolved_token_weight,
+        decorr_weight=resolved_decorr_weight,
         init_embedding_from=init_embedding_from,
     )
     started = time.time()
@@ -1624,6 +1669,24 @@ def main() -> int:
             "checkpoint path; naming the design without it trains from a random init."
         ),
     )
+    ap.add_argument(
+        "--token-loss-weight",
+        type=float,
+        default=None,
+        help=(
+            "override the region's declared token-loss weight (ζ). Unset keeps "
+            "TOKEN_AWARE_REGIONS' value; 0.0 turns the term OFF, which a "
+            "pre-registered arm may require (PREREG-RETRIEVAL-NEGATIVES-2026-09-06 "
+            "section 2.1 runs both weights at 0.0 in every arm). Forwarded to "
+            "run_region only."
+        ),
+    )
+    ap.add_argument(
+        "--decorr-weight",
+        type=float,
+        default=None,
+        help="override the region's declared decorrelation weight (γ); see --token-loss-weight.",
+    )
     args = ap.parse_args()
     _require_train_deps(args.dry_run)
 
@@ -1691,6 +1754,8 @@ def main() -> int:
                     allow_missing=args.allow_missing,
                     init_embedding_from=args.init_embedding_from,
                     seed=args.seed,
+                    token_loss_weight=args.token_loss_weight,
+                    decorr_weight=args.decorr_weight,
                 )
         except Exception as exc:
             print(f"  {name}: FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)

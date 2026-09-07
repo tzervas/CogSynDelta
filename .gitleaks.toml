@@ -81,3 +81,36 @@ description = "metric-table test fixtures: MetricRow(key=...) is a metric name, 
 paths = [
   '''tests/test_cards_tables\.py$''',
 ]
+
+# fleet-security / gitleaks flagged one finding on branch feat/lexical-baseline:
+#
+#   File:        src/cogsyndelta/eval/lexical.py:116
+#   Commit:      b628e00b15b87301d0dd5f8701b66bf83168c5e5
+#   RuleID:      generic-api-key
+#   Fingerprint: b628e00b15b87301d0dd5f8701b66bf83168c5e5:src/cogsyndelta/eval/lexical.py:generic-api-key:116
+#
+# The flagged text is the module's own docstring:
+# `"""Log-tf x smoothed-idf vector for one tokenised document, L2-normalised."""`
+# -- a metric description, not a credential. "tokenised" contains the substring
+# "token" (one of generic-api-key's keywords), and the comma before
+# "L2-normalised" reads as a key/value separator, making "L2-normalised" look
+# like the secret value. Because fleet-security scans every ref on a
+# fetch-depth-0 checkout (gitleaks detect --source . --verbose --redact), this
+# false positive would turn every branch -- including main -- red, not just
+# this one.
+#
+# Same class of false positive as the two entries above, scoped the same way:
+# `condition = "AND"` requires BOTH the path AND the exact phrase to match, so
+# this cannot swallow an unrelated secret elsewhere in lexical.py -- a
+# path-only allowlist would.
+[[allowlists]]
+description = "generic-api-key false positive: docstring reads as key/value across the comma in \"...one tokenised document, L2-normalised.\" (src/cogsyndelta/eval/lexical.py:116, commit b628e00b)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^src/cogsyndelta/eval/lexical\.py$''',
+]
+regexes = [
+  '''tokenised document, L2-normalised''',
+]

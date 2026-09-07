@@ -15,7 +15,7 @@ retired, or demoted are marked inline where they diverge -- check §15's depreca
 trusting an unmarked §1-§11 field name against a receipt written after this migration.
 Sections 12-19 are the `csd-metrics/v2` layer: the canonical name each v1 field maps to (now
 IMPLEMENTED, not only proposed -- `compare()`, §14, is the refuse-function in production,
-`src/cogsyndelta/eval/metrics.py:763-843`), a retire list, and the standing statements a card
+`src/cogsyndelta/eval/metrics.py:828-908`), a retire list, and the standing statements a card
 or harness must not contradict. **v2 is a naming and comparison-discipline layer over the same
 measurements, not a formula rewrite** -- a v1 field name in a receipt written before the
 migration is not wrong, and nothing in §§12-19 licenses inventing a receipt field this
@@ -45,7 +45,7 @@ instances of it legitimately, **(f)** known caveats.
 
 1. [The untrained baseline](#1-the-untrained-baseline)
 2. [The training held-out battery (`kind: train` receipts)](#2-the-training-held-out-battery-kind-train-receipts)
-3. [The eval battery (`kind: eval` / `eval-quantized` receipts)](#3-the-eval-battery-kind-eval-eval-quantized-receipts)
+3. [The eval battery (`kind: eval` / `eval-quantized` receipts)](#3-the-eval-battery-kind-eval-eval-quantized-receipts) (incl. [§3.14 lexical baseline](#314-lexical_baselinetfidf--lexical_baselinebm25))
 4. [The battery distinction -- quant vs. eval](#4-the-battery-distinction----quant-vs-eval)
 5. [Quantization / compression metrics (`kind: quant` receipts)](#5-quantization-compression-metrics-kind-quant-receipts)
 6. [Contamination, corpus-fingerprint, and split-manifest fields](#6-contamination-and-corpus-fingerprint-fields)
@@ -80,10 +80,10 @@ improvement without the comparison that makes it checkable.
 the encoder, optionally warm-starts its token-embedding table from another region
 (`init_embedding_from`, DEC-24), and calls `evaluate()` / `evaluate_graded()` on the held-out
 split **before the first optimizer step** --
-`src/cogsyndelta/regions/pretrain.py:1332-1343`. That result is stored as `untrained_baseline`
+`src/cogsyndelta/regions/pretrain.py:1435-1446`. That result is stored as `untrained_baseline`
 / `untrained_graded_baseline` in the checkpoint payload
-(`src/cogsyndelta/regions/pretrain.py:1219-1220`) and carried forward unchanged through every
-resume (`src/cogsyndelta/regions/pretrain.py:1354-1355`) -- a resumed run's model is no longer
+(`src/cogsyndelta/regions/pretrain.py:1322-1323`) and carried forward unchanged through every
+resume (`src/cogsyndelta/regions/pretrain.py:1457-1458`) -- a resumed run's model is no longer
 untrained, so re-measuring it there would compare the model against itself, not against a
 genuine floor.
 
@@ -91,11 +91,11 @@ genuine floor.
 random noise: its sinusoidal position embedding dominates its small token embeddings, so
 embeddings cluster and one "attractor" pair can dominate similarity, landing recall@1 near or
 sometimes at the `1/eval_pairs` chance floor. That is a real, reproducible number, not a bug --
-see the investigation recorded in `src/cogsyndelta/regions/pretrain.py:764-817`.
+see the investigation recorded in `src/cogsyndelta/regions/pretrain.py:872-925`.
 
 **The sanity gate.** `beats_untrained` (`recall@1`, `recall@10`, and `spearman` where a graded
 set exists) is not a bare `final > baseline` comparison. `_beats_untrained_gate`
-(`src/cogsyndelta/regions/pretrain.py:755-869`) requires **all** of:
+(`src/cogsyndelta/regions/pretrain.py:863-977`) requires **all** of:
 
 ```text
 chance["recall@1"]  = 1 / eval_pairs
@@ -108,7 +108,7 @@ beats[metric] = baseline_sane AND final[metric] > max(baseline[metric], chance[m
 
 `baseline_sane` on real (quantised) data has exactly one live outcome: it fails only when the
 untrained baseline's `recall@1` is **exactly** zero hits out of `eval_pairs` --
-`src/cogsyndelta/regions/pretrain.py:796-817` spells out why this is a "the eval produced
+`src/cogsyndelta/regions/pretrain.py:904-925` spells out why this is a "the eval produced
 literally zero hits" detector and not a graduated quality gate. **Caveat:** `beats_untrained
 == True` says the trained model cleared a *sane, non-degenerate* baseline by at least one
 recall point (or 0.01 spearman); it does not say the baseline itself was a *good* score, only
@@ -118,13 +118,13 @@ that it was not zero.
 
 ## 2. The training held-out battery (`kind: train` receipts)
 
-Produced by `pretrain_region` (`src/cogsyndelta/regions/pretrain.py:1468`) via
+Produced by `pretrain_region` (`src/cogsyndelta/regions/pretrain.py:1641`) via
 `evaluate()` / `evaluate_graded()`. This is the battery every region's own training receipt
 reports, and the one `scripts/csd-quantize.py` reads from for its sensitivity search (§4).
 
 **Evaluation set, every field in this section:** the region's own held-out split -- the FIRST
 `cfg.holdout_pairs` (default 512) pairs of the deduplicated, shuffled, contamination-screened
-corpus, per `build_splits` (`src/cogsyndelta/regions/pretrain.py:1047`). Membership is drawn
+corpus, per `build_splits` (`src/cogsyndelta/regions/pretrain.py:1150`). Membership is drawn
 with `cfg.split_seed` (default 0), **not** the training seed, and locked by a hashed
 manifest (`split.manifest` / `split.sha256` / `split.seed`, §6.4). It is the SAME split
 every stage (train / quant / eval / eval-quantized) reconstructs, gated on the corpus
@@ -144,10 +144,10 @@ re-sampled from `cfg.seed`.
   ```
 
 - **(c)** formula: `src/cogsyndelta/eval/metrics.py:545-560`. Called from
-  `src/cogsyndelta/regions/pretrain.py:558-559` inside `evaluate()`
-  (`src/cogsyndelta/regions/pretrain.py:513-562`).
+  `src/cogsyndelta/regions/pretrain.py:666-667` inside `evaluate()`
+  (`src/cogsyndelta/regions/pretrain.py:621-670`).
 - **(d)** `scores = a @ p.T` where `a`, `p` are L2-normalised encodings of **every** anchor and
-  every positive in the held-out split (`src/cogsyndelta/regions/pretrain.py:529-538`), so the
+  every positive in the held-out split (`src/cogsyndelta/regions/pretrain.py:637-646`), so the
   candidate pool **is the holdout itself** (512 candidates at the project's default), and
   `relevant[i] = i` -- each anchor's positive is the diagonal entry. This is a **closed,
   in-holdout** ranking task, not a search over an external corpus; contrast with §7's BEIR-FiQA
@@ -171,7 +171,7 @@ re-sampled from `cfg.seed`.
   mrr = (1.0 / ranks.float()).mean().item()
   ```
 
-- **(c)** `src/cogsyndelta/eval/metrics.py:563-575`.
+- **(c)** `src/cogsyndelta/eval/metrics.py:610-639`.
 - **(d)** Same closed 512-candidate pool as §2.1.
 - **(e)** Same rule as §2.1.
 - **(f)** None beyond §2.1's pool-size caveat.
@@ -188,19 +188,19 @@ re-sampled from `cfg.seed`.
   ```
 
 - **(c)** Computed **inline**, not via the shared helper: `evaluate()` at
-  `src/cogsyndelta/regions/pretrain.py:561` and `evaluate_graded()` at
-  `src/cogsyndelta/regions/pretrain.py:612`. The identical formula also exists as a
+  `src/cogsyndelta/regions/pretrain.py:669` and `evaluate_graded()` at
+  `src/cogsyndelta/regions/pretrain.py:720`. The identical formula also exists as a
   standalone, tested function, `representation_std()`
-  (`src/cogsyndelta/eval/metrics.py:671-687`) -- since csd-metrics/v2 this IS also a
+  (`src/cogsyndelta/eval/metrics.py:736-752`) -- since csd-metrics/v2 this IS also a
   production call site: `benchmark_embeddings()` calls `representation_std(a)` for the eval
   battery's `repr.emb_std_anchor` (§12.5, §11.5). `held_out.emb_std` /
   `graded_held_out.emb_std` here still duplicate the formula inline rather than calling the
   shared function, so those two train-receipt fields and the eval-receipt field are the same
   formula from separate call sites, not one calling the other.
 - **(d)** `held_out.emb_std` / `untrained_baseline.emb_std`: the **anchor side only** (`a` in
-  `evaluate()`, `src/cogsyndelta/regions/pretrain.py:534,561`) of the held-out split.
+  `evaluate()`, `src/cogsyndelta/regions/pretrain.py:642,669`) of the held-out split.
   `graded_held_out.emb_std`: the **left side only** (`a` in `evaluate_graded()`,
-  `src/cogsyndelta/regions/pretrain.py:600,607,612`) of the graded set.
+  `src/cogsyndelta/regions/pretrain.py:708,715,720`) of the graded set.
 - **(e)** Comparable only across receipts computed on the same side, of the same split, of the
   same region -- and note the pool difference from §3's `repr.*` family below.
 - **(f)** **This is anchor-side-only, not anchor+positive.** §3's representation family
@@ -215,7 +215,7 @@ re-sampled from `cfg.seed`.
 - **(a)** `graded_held_out.spearman`, `untrained_graded_baseline.spearman`. Only present for
   regions that declare a graded corpus (`PretrainConfig.graded_shards`, e.g. `compress`'s
   STS-B validation set, `memory`'s inherited gate) -- `_assert_graded_gate_present`
-  (`src/cogsyndelta/regions/pretrain.py:683-742`) refuses to write a receipt that silently
+  (`src/cogsyndelta/regions/pretrain.py:791-850`) refuses to write a receipt that silently
   drops a declared graded gate.
 - **(b)** Spearman rank correlation, implemented as Pearson correlation over **average ranks**
   (ties share the mean rank of the tied block) -- not scipy, this project's own
@@ -230,23 +230,23 @@ re-sampled from `cfg.seed`.
   spearman = cov / sqrt(var_p * var_g)     # 0.0 if var_p<=0 or var_g<=0 (a constant side)
   ```
 
-- **(c)** `spearman_correlation()`: `src/cogsyndelta/eval/metrics.py:607-652`.
-  `_average_ranks()`: `src/cogsyndelta/eval/metrics.py:578-604`. Called from
-  `evaluate_graded()`: `src/cogsyndelta/regions/pretrain.py:565-615`.
+- **(c)** `spearman_correlation()`: `src/cogsyndelta/eval/metrics.py:672-717`.
+  `_average_ranks()`: `src/cogsyndelta/eval/metrics.py:641-669`. Called from
+  `evaluate_graded()`: `src/cogsyndelta/regions/pretrain.py:673-723`.
 - **(d)** `predicted` is the cosine similarity of each graded pair's two encodings; `gold` is
   the corpus's human score. The graded set for a region is a **different corpus** from its
   training pairs by design (e.g. `compress` trains on AllNLI, is graded on STS-B) -- see the
-  `graded_shards` field docstring, `src/cogsyndelta/regions/pretrain.py:137-144`, and the
+  `graded_shards` field docstring, `src/cogsyndelta/regions/pretrain.py:142-149`, and the
   contamination handling in §6.4.
 - **(e)** Comparable only across receipts with the same `graded_corpus.fingerprint` and the
   same `graded_columns`. Two regions graded on different corpora (or the same corpus under a
   different fingerprint scheme) are not comparable by this number alone.
 - **(f)** Returns exactly `0.0`, not an error or `nan`, when either side of the pair is
   constant -- "no monotone relationship detectable," which is also what a fully collapsed
-  encoder legitimately produces (`src/cogsyndelta/eval/metrics.py:644-651`). **Read `cos_std`
+  encoder legitimately produces (`src/cogsyndelta/eval/metrics.py:709-716`). **Read `cos_std`
   alongside `spearman`**: a near-zero `cos_std` next to a plausible `spearman` means the
   correlation is being decided by floating-point noise, not a real signal
-  (`src/cogsyndelta/regions/pretrain.py:585-589`).
+  (`src/cogsyndelta/regions/pretrain.py:693-697`).
 
 ### 2.5 `chance`, `beats_untrained`
 
@@ -257,10 +257,10 @@ Not metrics on their own -- gate/context fields. See §1 for `chance`'s formula 
 
 - **(a)** `capability_per_param` (training receipt, top level).
 - **(b)** `final["recall@1"] / (params / 1e6)` -- §2.1's `recall@1`, per million parameters.
-- **(c)** `src/cogsyndelta/regions/pretrain.py:1648`. (The identical name in an eval receipt,
+- **(c)** `src/cogsyndelta/regions/pretrain.py:1847`. (The identical name in an eval receipt,
   `eff.capability_per_param`, is a *different* computation over a *different* battery -- §3.7.)
 - **(d)** Same held-out split as §2.1; `params` is `sum(p.numel() for p in
-  model.parameters())` (`src/cogsyndelta/regions/pretrain.py:1280`), the encoder's raw
+  model.parameters())` (`src/cogsyndelta/regions/pretrain.py:1383`), the encoder's raw
   parameter count (fp32, unquantized).
 - **(e)** Comparable across regions only when both used the same holdout size (both do, by
   project convention: 512) and the same `k=1` recall definition. This is the project's
@@ -278,22 +278,22 @@ Not metrics on their own -- gate/context fields. See §1 for `chance`'s formula 
   token_global_pr_rank, token_global_entropy_rank, n_tokens}`. Recorded on **every** training
   receipt, whether or not `token_loss_weight`/`decorr_weight` are nonzero -- an "off" receipt
   is the comparison arm for an "on" one over the identical corpus/seed
-  (`src/cogsyndelta/regions/pretrain.py:1503-1508`).
+  (`src/cogsyndelta/regions/pretrain.py:1676-1681`).
 - **(b)** Two **different** effective-rank definitions (§9 explains why both are recorded, and
   why conflating them is the exact ambiguity this project was previously bitten by), each
   computed twice: once on the mean-**pooled** held-out embeddings, once on the **token-global**
   surface (every real, non-padding token position of the held-out anchors, batch-flattened
   into one `[n_tokens, dim]` matrix). `pr_*` is participation-ratio rank; `*_entropy_rank` is
   Shannon-entropy rank (§9's formulas).
-- **(c)** `_final_block_rank_stats()`: `src/cogsyndelta/regions/pretrain.py:273-343`. Calls
+- **(c)** `_final_block_rank_stats()`: `src/cogsyndelta/regions/pretrain.py:381-451`. Calls
   `pr_effective_rank()` (`src/cogsyndelta/eval/benchmark.py:251-293`) for the `pr_*` fields and
   `effective_rank()` (`src/cogsyndelta/eval/benchmark.py:159-186`) for the `*_entropy_rank`
   fields.
 - **(d)** The **anchor side only** of the held-out split (index 0 of each pair) -- the same
   side W1's own pre-committed harness measured
-  (`src/cogsyndelta/regions/pretrain.py:283-292,324-327`), not both sides. Both rank functions
+  (`src/cogsyndelta/regions/pretrain.py:391-400,432-435`), not both sides. Both rank functions
   are called with `sample` set to the **full** size of the surface being measured
-  (`src/cogsyndelta/regions/pretrain.py:338-341`), so **neither is subsampled here** --
+  (`src/cogsyndelta/regions/pretrain.py:446-449`), so **neither is subsampled here** --
   contrast with §3.9/§9's default-`sample=2048` behaviour when these same functions are called
   elsewhere.
 - **(e)** Comparable only across receipts for the same region, at the same holdout size,
@@ -303,7 +303,7 @@ Not metrics on their own -- gate/context fields. See §1 for `chance`'s formula 
   2.0 * pooled_pr_rank`). That gate is **measured not discriminating** at the harness's current
   (50-step smoke) step count: the control arm, with both token-aware terms fully off, already
   clears the ratio on its own at 2.0191x
-  (`src/cogsyndelta/eval/beir_fiqa.py:422-434`, `docs/design/evidence/
+  (`src/cogsyndelta/eval/beir_fiqa.py:513-525`, `docs/design/evidence/
   w4-control-arm-2026-09-03/`). A `passed: True` on this clause at 50 steps does not by itself
   distinguish "the token-aware terms worked" from "the terms were never turned on."
 
@@ -322,11 +322,11 @@ Written as `Receipt(kind="eval" | "eval-quantized", ...)`
 
 **Evaluation set, every field in this section:** the same held-out split §2 uses, rebuilt from
 the training receipt's own recorded config and cross-checked by corpus fingerprint
-(`_region_eval_context()`, `scripts/csd-benchmark.py:490-555`) -- **never** re-globbed. `kind:
+(`_region_eval_context()`, `scripts/csd-benchmark.py:572-637`) -- **never** re-globbed. `kind:
 "eval"` scores the fp32 checkpoint; `kind: "eval-quantized"` scores the actual packed `.ptq.pt`
-artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:915-1109`), not
+artifact loaded back off disk and unpacked to fp32 (`scripts/csd-benchmark.py:1024-1316`), not
 the in-memory quantization plan (§4). `_run_battery()`
-(`scripts/csd-benchmark.py:584-605`) encodes the **whole** holdout as one closed candidate
+(`scripts/csd-benchmark.py:706-727`) encodes the **whole** holdout as one closed candidate
 pool -- identical in shape to §2's `scores = a @ p.T`, `relevant = arange(...)` construction,
 which is why `rank.recall@1` in this battery is numerically identical to `held_out.recall@1`
 in §2 for the same checkpoint (confirmed against a real receipt pair in §10).
@@ -438,10 +438,10 @@ context for reading every `rank.*` figure beside it.
   receipt, or `packed_stored_bytes(packed)`
   (`src/cogsyndelta/quant/ptq.py:488-504`) for a `kind: "eval-quantized"` one -- both
   weights-only counts, recorded as `provenance.stored_bytes_definition: "weights-only"`
-  (`scripts/csd-benchmark.py:379,535`), **never** a checkpoint file's raw `stat().st_size`
+  (`scripts/csd-benchmark.py:461,617`), **never** a checkpoint file's raw `stat().st_size`
   (which for a resumable training checkpoint also carries the Adam optimizer's momentum and
   variance buffers, routinely ~2x the weights themselves --
-  `scripts/csd-benchmark.py:324-341`).
+  `scripts/csd-benchmark.py:406-423`).
 - **(e)** `eff.capability_per_param` is invariant to quantization (same architecture, same
   `recall@1` if quantization did not move it) -- compare it across regions freely once §10's
   rules hold. `eff.capability_per_mb` is the metric that actually moves with quantization
@@ -467,7 +467,7 @@ context for reading every `rank.*` figure beside it.
   ```
 
 - **(c)** `src/cogsyndelta/eval/benchmark.py:269-311`. Called from
-  `scripts/csd-benchmark.py:249` with `runs=40`, a batch of up to 64 held-out rows.
+  `scripts/csd-benchmark.py:331` with `runs=40`, a batch of up to 64 held-out rows.
 - **(d)** A fixed-size batch drawn from the held-out split, not the full 512 rows -- this is a
   latency probe, not a ranking measurement, and its size is independent of `rank.candidates`.
 - **(e)** Comparable only across runs on the **same physical device** (GPU model, driver, and
@@ -505,8 +505,8 @@ context for reading every `rank.*` figure beside it.
   healthy, spread-out space); near 1 means the space has collapsed into a narrow cone. The
   project used to gate on `>= 0.9` as unhealthy under the name `not_anisotropic`; that gate is
   now **demoted to a recorded value, not a written pass/fail field** (`repr.anisotropy` is
-  still measured and printed, the boolean is not) -- `scripts/csd-benchmark.py:450-453`
-  (fp32 pass), `scripts/csd-benchmark.py:630-632` (quantized pass) -- not as "anisotropy
+  still measured and printed, the boolean is not) -- `scripts/csd-benchmark.py:532-535`
+  (fp32 pass), `scripts/csd-benchmark.py:739-741` (quantized pass) -- not as "anisotropy
   should be minimised" -- a healthy encoder is not at 0.0 either. Do not rank two models by
   "lower anisotropy is better" without also checking `rank.recall@1` moved the direction you
   expect; anisotropy alone cannot tell you retrieval quality (`src/cogsyndelta/eval/
@@ -572,7 +572,7 @@ context for reading every `rank.*` figure beside it.
 - **(e)** Comparable across receipts at the same embedding dimension directly; across
   different dimensions, compare `effective_rank_ratio` instead of the raw rank.
 - **(f)** The project's own gate treats `effective_rank_ratio <= 0.05` as unhealthy
-  (`uses_its_dimensions`, `scripts/csd-benchmark.py:453,632`) -- an encoder nominally 256-d but
+  (`uses_its_dimensions`, `scripts/csd-benchmark.py:535,741`) -- an encoder nominally 256-d but
   effectively 12-d is "paying to store 256"
   (`src/cogsyndelta/eval/benchmark.py:164-165`). **This is the entropy definition, not the
   participation-ratio one §2.7 reports** -- see §9 before comparing a `repr.effective_rank`
@@ -601,7 +601,7 @@ context for reading every `rank.*` figure beside it.
   uses_its_dimensions = repr.effective_rank_ratio > 0.05
   ```
 
-- **(c)** `scripts/csd-benchmark.py:444-453` (fp32 pass), `scripts/csd-benchmark.py:628-632`
+- **(c)** `scripts/csd-benchmark.py:526-535` (fp32 pass), `scripts/csd-benchmark.py:737-741`
   (quantized pass).
 - **(d)** As named above.
 - **(e)** Booleans, not compared numerically; compare the underlying figures per their own
@@ -611,6 +611,42 @@ context for reading every `rank.*` figure beside it.
   `baseline_sane` precondition) -- the two fields share a name across receipt kinds but not an
   implementation. Do not assume a training receipt's `beats_untrained: True` and an eval
   receipt's `gates.beats_untrained: True` were decided by the same rule.
+
+### 3.14 `lexical_baseline.tfidf.*`, `lexical_baseline.bm25.*`
+
+The bag-of-words ceiling on the **same closed holdout** the eval battery ranks, so a card
+that prints `rank.recall@1` beside only the untrained baseline cannot overstate what was
+learned. Source: the 2026-09-06 reason-region diagnosis
+(`docs/design/evidence/reason-region-diagnosis-2026-09-06/`); this project's scorer is that
+script's formula, not a second implementation.
+
+- **(a)** `lexical_baseline.tfidf.recall@1` / `.recall@5` / `.recall@10` / `.mrr` / `.ndcg@10`,
+  the same keys under `lexical_baseline.bm25`, plus `lexical_baseline.scorer_version`
+  (`csd-lexical/v1`) and `lexical_baseline.split_sha256`. Written by
+  `_lexical_baseline_block()` (`scripts/csd-benchmark.py:680-690`) onto every text
+  `kind: eval` / `eval-quantized` receipt, and by `backfill_one()`
+  (`scripts/csd-lexical-baseline.py:77-121`) as a sidecar
+  `cogsyndelta-<region>-lexical-<ts>.json` for existing seed-0 cells **without rewriting**
+  those cells' train/eval/quant receipts.
+- **(b)** Closed-pool ranking with relevant item `i` on the diagonal -- the same pool
+  §3.1-§3.3 use. TF-IDF: log-tf × smoothed idf (`log((N+1)/(df+1))+1`) cosine, IDF over
+  anchors+positives combined. BM25: k1=1.5, b=0.75, positives-only IDF
+  `log(1+(Np-df+0.5)/(df+0.5))`. Tokenizer: `[a-z]+|\\d+(?:\\.\\d+)?`. Seed-0 uniform
+  `1e-9` tie-break (TF-IDF then BM25, one RNG stream). **Not** `eval.beir_fiqa.BM25`
+  (BEIR k1=0.9/b=0.4, different word regex, full-corpus FiQA pool -- §7).
+- **(c)** `score_holdout()` (`src/cogsyndelta/eval/lexical.py:164-188`);
+  `rank_metrics()` (`src/cogsyndelta/eval/lexical.py:63-89`);
+  `build_lexical_baseline()` (`src/cogsyndelta/eval/lexical.py:191-218`).
+- **(d)** The manifested held-out split this eval reconstructed (`split.sha256`, §6.4).
+- **(e)** Comparable only when `lexical_baseline.split_sha256` equals both receipts'
+  `split.sha256` and `scorer_version` agrees. A TF-IDF recall@1 and a `rank.recall@1`
+  share a pool and a battery; the former is the ceiling, not a second model.
+- **(f)** `verify_lexical_baseline_split()` (`src/cogsyndelta/eval/lexical.py:243-274`)
+  refuses (G26, fail closed) when the field is present and its sha is missing or does
+  not match the receipt's `split.sha256`. Absent field is "not measured", not a pass.
+  Cards print a third column "lexical baseline (TF-IDF)" on text `region_variant` /
+  `region_main` ranking tables; missing field prints "lexical baseline: not measured"
+  rather than omitting the column. Visual cards are unchanged.
 
 ---
 
@@ -637,7 +673,7 @@ about the *plan*, not about the bytes that end up published.
 every other `rank.*`/`eff.*`/`repr.*` field) is computed via **§3's eval battery**
 (`benchmark_embeddings()`), run against a `TextEncoder` rebuilt by `load_packed_artifact()` +
 `unpack_state_dict()` from the **actual `.ptq.pt` file read off disk**
-(`scripts/csd-benchmark.py:388-420,488-493`). This receipt's own module docstring names the
+(`scripts/csd-benchmark.py:470-502,570-575`). This receipt's own module docstring names the
 gap directly:
 
 > "`csd-quantize.py`'s own `quantized_metric` is measured on the in-memory model with the
@@ -836,7 +872,7 @@ Produced by `quantize_text_region()` (`scripts/csd-quantize.py:54-272`), backed 
   `src/cogsyndelta/eval/metrics.py:406-542`. `REMOVAL_CEILING = 0.01`:
   `src/cogsyndelta/eval/metrics.py:467-485` -- caps how much of *training* a repair may delete
   (not how much of the holdout may have leaked) before refusing to train at all. Called from
-  `build_splits()`: `src/cogsyndelta/regions/pretrain.py:1047`.
+  `build_splits()`: `src/cogsyndelta/regions/pretrain.py:1150`.
 - **(d)** The full training corpus (streamed, never fully materialised, per
   `src/cogsyndelta/eval/metrics.py:419-421`) against the held-out split.
 - **(e)** `train_pairs_removed` and each channel's `eval_fraction_contaminated` are
@@ -875,7 +911,7 @@ Produced by `quantize_text_region()` (`scripts/csd-quantize.py:54-272`), backed 
 ### 6.4 `split.manifest`, `split.sha256`, `split.seed` (and `batch_order.*`)
 
 - **(a)** `split.manifest`, `split.sha256`, `split.seed` on every `kind: train` receipt
-  (`pretrain_region`, `src/cogsyndelta/regions/pretrain.py:1468`); copied onto eval /
+  (`pretrain_region`, `src/cogsyndelta/regions/pretrain.py:1641`); copied onto eval /
   eval-quantized `provenance.split` (`scripts/csd-benchmark.py`) and the quant receipt
   (`scripts/csd-quantize.py`). `batch_order.manifest`, `batch_order.sha256`,
   `batch_order.seed` stamp the training-pair permutation the same way.
@@ -886,7 +922,7 @@ Produced by `quantize_text_region()` (`scripts/csd-quantize.py:54-272`), backed 
   touch membership. Guard **G26** refuses: a split sha that does not match the corpus
   fingerprint it was generated from; a held-out item in a training batch;
   a receipt whose `split.sha256` is not the manifest the benchmark/quantizer is scoring.
-- **(c)** `build_splits()`: `src/cogsyndelta/regions/pretrain.py:1047`. Manifest schema
+- **(c)** `build_splits()`: `src/cogsyndelta/regions/pretrain.py:1150`. Manifest schema
   and G26 checks: `verify_split_manifest()` (`src/cogsyndelta/splits.py:273`),
   `verify_receipt_split()` (`src/cogsyndelta/splits.py:394`),
   `assert_no_held_out_in_pairs()` (`src/cogsyndelta/splits.py:369`).
@@ -942,7 +978,7 @@ carries a genuine lexical baseline rather than only a random-init one.
   recall@k, mrr = recall_at_k(masked_scores, pick), mean_reciprocal_rank(masked_scores, pick)
   ```
 
-- **(c)** `src/cogsyndelta/eval/beir_fiqa.py:237-276`.
+- **(c)** `src/cogsyndelta/eval/beir_fiqa.py:237-316`.
 - **(d)** The pool from §7.1 (57,638 passages under `pool="corpus"`); gold from the BeIR qrels.
 - **(e)** Comparable only at the same pool mode (`corpus` vs `split`) and the same split
   (`dev`/`test` -- ranking `train` measures memorisation, not generalisation, per
@@ -964,8 +1000,8 @@ carries a genuine lexical baseline rather than only a random-init one.
   idf(t) = log(1 + (N - df(t) + 0.5) / (df(t) + 0.5))
   ```
 
-- **(c)** `src/cogsyndelta/eval/beir_fiqa.py:279-324` (class `BM25`); `bm25_metrics()`:
-  `src/cogsyndelta/eval/beir_fiqa.py:390-398`.
+- **(c)** `src/cogsyndelta/eval/beir_fiqa.py:319-364` (class `BM25`); `bm25_metrics()`:
+  `src/cogsyndelta/eval/beir_fiqa.py:484-489`.
 - **(d)** Scored through the **identical** `rank_metrics()` code path as the trained encoder
   (§7.2), over the same pool and qrels -- "reporting a win for a loss" (beating "beats random
   init" while losing to word counting) is what this module exists to make structurally
@@ -985,17 +1021,17 @@ naming one pass/fail condition:
 
 | gate | condition | anchor |
 |---|---|---|
-| `a_beats_both_parents` | `memory`'s `recall@1` >= max(`compress`, `retrieve` parents' `recall@1`) AND `memory`'s graded spearman >= `compress`'s | `src/cogsyndelta/eval/beir_fiqa.py:612-641` |
-| `b_full_pool_thresholds` | full-pool `recall@10 > 0.20` AND `mrr > 0.10` | `src/cogsyndelta/eval/beir_fiqa.py:644-661` |
-| `c_beats_bm25` | trained `recall@10` > BM25 `recall@10`, same pool/qrels | `src/cogsyndelta/eval/beir_fiqa.py:664-677` |
-| `d_beats_random_init` | trained `recall@10` > this region's own untrained-encoder `recall@10`, same pool | `src/cogsyndelta/eval/beir_fiqa.py:680-690` |
-| `e_retrain_gate` | `token_global_pr_rank >= 2.0 * pooled_pr_rank` (§2.7/§9) AND no more than 1-point regression against either parent | `src/cogsyndelta/eval/beir_fiqa.py:693-760` |
+| `a_beats_both_parents` | `memory`'s `recall@1` >= max(`compress`, `retrieve` parents' `recall@1`) AND `memory`'s graded spearman >= `compress`'s | `src/cogsyndelta/eval/beir_fiqa.py:703-732` |
+| `b_full_pool_thresholds` | full-pool `recall@10 > 0.20` AND `mrr > 0.10` | `src/cogsyndelta/eval/beir_fiqa.py:735-752` |
+| `c_beats_bm25` | trained `recall@10` > BM25 `recall@10`, same pool/qrels | `src/cogsyndelta/eval/beir_fiqa.py:755-768` |
+| `d_beats_random_init` | trained `recall@10` > this region's own untrained-encoder `recall@10`, same pool | `src/cogsyndelta/eval/beir_fiqa.py:771-781` |
+| `e_retrain_gate` | `token_global_pr_rank >= 2.0 * pooled_pr_rank` (§2.7/§9) AND no more than 1-point regression against either parent | `src/cogsyndelta/eval/beir_fiqa.py:784-851` |
 
 **(f)** `e_retrain_gate`'s rank clause is the one flagged in §2.7(f) as measured
 not-discriminating at 50 steps -- see that caveat before treating a `passed: True` here as
 proof the token-aware objective helped. `e_retrain_gate` also explicitly does **not** check the
 `banking77` damage-detector probe §4.0 of the design doc names
-(`src/cogsyndelta/eval/beir_fiqa.py:547-550`) -- recorded as `"not measured; out of scope"`
+(`src/cogsyndelta/eval/beir_fiqa.py:638-641`) -- recorded as `"not measured; out of scope"`
 in the gate's own output, not silently omitted.
 
 ### 7.5 Explicit field names for `beir.*` and `token.*` surfaces (schema v2)
@@ -1064,7 +1100,7 @@ by" answerable.
 
 - **(c)** `info_nce()`: `src/cogsyndelta/regions/text_encoder.py:183-244`. The receipt's
   `method` field literally names this: `"symmetric InfoNCE over in-batch negatives"`
-  (`src/cogsyndelta/regions/pretrain.py:1556`).
+  (`src/cogsyndelta/regions/pretrain.py:1735`).
 - **(f)** The loss is forced to fp32 even under a bf16 autocast -- at `temperature=0.05` a
   unit-cosine logit lands near ±20, where bf16's ~0.125 quantum would be a real perturbation of
   a 1000+-class softmax (`src/cogsyndelta/regions/text_encoder.py:217-228`). `in_batch_acc`
@@ -1089,7 +1125,7 @@ by" answerable.
   ```
 
 - **(c)** `_mlm_token_loss()`: `src/cogsyndelta/regions/_token_objective.py:122-205`. Invoked
-  from the training loop: `src/cogsyndelta/regions/pretrain.py:1431-1454`.
+  from the training loop: `src/cogsyndelta/regions/pretrain.py:1604-1627`.
 - **(f)** Chunked processing (`token_loss_chunk`, default 2048) is a **memory** knob only -- the
   chunked and unchunked forms are mathematically identical, proven via
   `torch.utils.checkpoint`'s exact (non-reentrant) backward
@@ -1121,10 +1157,10 @@ by" answerable.
   the defaults trains byte-identically to a plain-InfoNCE run; the two auxiliary terms are
   additive and opt-in, never structural.
 - **(c)** Weights: `PretrainConfig.token_loss_weight` /
-  `.decorr_weight`, `src/cogsyndelta/regions/pretrain.py:168-193`. Loop:
-  `src/cogsyndelta/regions/pretrain.py:1421-1461`.
+  `.decorr_weight`, `src/cogsyndelta/regions/pretrain.py:173-198`. Loop:
+  `src/cogsyndelta/regions/pretrain.py:1594-1634`.
 - **(f)** A training receipt's `token_aware.enabled` field
-  (`src/cogsyndelta/regions/pretrain.py:1656-1663`) is `True` iff **either** weight is nonzero
+  (`src/cogsyndelta/regions/pretrain.py:1855-1869`) is `True` iff **either** weight is nonzero
   -- check the individual weights, not just `enabled`, before assuming both terms were active
   for a given receipt.
 
@@ -1222,7 +1258,7 @@ measurement and a difference between them says nothing about the model.
    uncommitted changes and cannot be reproduced from the named sha alone.
 7. **Same seed**, for anything sampled: `config.seed` (training) drives the corpus reservoir
    sample, the shuffle, and the untrained model's initial weights;
-   `untrained_baseline_seed` (`src/cogsyndelta/regions/pretrain.py:1645`) records the seed the
+   `untrained_baseline_seed` (`src/cogsyndelta/regions/pretrain.py:1824`) records the seed the
    untrained model specifically was constructed with.
 
 Two published cards satisfying all seven are the only pair this project considers a
@@ -1260,7 +1296,7 @@ legitimate "before vs. after" comparison.
    (`src/cogsyndelta/eval/metrics.py:1-8`) -- if a future card or receipt does show a
    `perplexity` field, its formula is `token_weighted_perplexity()`'s (§2's `emb_std`
    sibling), and it should cite this document's entry for it rather than an assumed standard
-   definition. `representation_std()` (`src/cogsyndelta/eval/metrics.py:671-687`) is
+   definition. `representation_std()` (`src/cogsyndelta/eval/metrics.py:736-752`) is
    DIFFERENT: since csd-metrics/v2 it IS a production call site --
    `benchmark_embeddings()` calls `representation_std(a)` for the eval battery's
    `repr.emb_std_anchor` (§12.5, §2.3(c)) -- `held_out.emb_std` and `graded_held_out.emb_std`
@@ -1327,8 +1363,8 @@ one §12.2 reports).
 - **Why this metric:** the raw rank alone is not comparable across two encoders of different
   embedding width; the ratio is (§3.12(e)).
 - **Falsifies:** `gate.uses_its_dimensions` (`effective_rank_entropy_ratio > 0.05`,
-  `scripts/csd-benchmark.py:453,632`, §12.9) -- the `0.05` floor is slack, not a tight bound:
-  W1's own production regions sit at `~0.45-0.51` (`csd-benchmark.py:453`), so a value near the
+  `scripts/csd-benchmark.py:535,741`, §12.9) -- the `0.05` floor is slack, not a tight bound:
+  W1's own production regions sit at `~0.45-0.51` (`csd-benchmark.py:535`), so a value near the
   floor is a genuine "paying to store more than it uses" signal, not measurement noise (§13).
 - **Comparison rule:** same as `repr.effective_rank_entropy` above.
 - **Sameness special-case:** none.
@@ -1561,7 +1597,7 @@ linear-probe top-1 (`probe.top1`), not closed-pool `recall_at_k(k=1)`.
 - **Formula:** `plan_probe_top1` = in-memory plan's EuroSAT probe top-1
   (`quantize_visual_region()`, `scripts/csd-quantize.py:340-460`). `artifact_probe_top1` = packed
   EMA-target-encoder artifact's EuroSAT probe top-1
-  (`benchmark_visual_region_quantized()`, `scripts/csd-benchmark.py:833-912`).
+  (`benchmark_visual_region_quantized()`, `scripts/csd-benchmark.py:942-1021`).
   `drop_probe_top1 = fp32_metric_recomputed - plan_probe_top1`. `quant.compression_ratio`
   is the same byte-accounting name as the text receipts (`fp32_bytes / stored_bytes`).
 - **Battery:** EuroSAT official test linear probe, `n_eval=5400`, 10-way, chance 0.1.
@@ -1618,7 +1654,7 @@ linear-probe top-1 (`probe.top1`), not closed-pool `recall_at_k(k=1)`.
   at `0.015-0.123` (W1). Do not ship a tighter or looser bound on this field without a study.
 - **Rename `uses_its_dimensions` to `repr.effective_rank_entropy_ratio`.** The `0.05` floor is
   slack, not a tight bound -- W1's own production regions sit at `~0.45-0.51`
-  (`csd-benchmark.py:453`).
+  (`csd-benchmark.py:535`).
 - **A single `beats_untrained` spanning train and eval -- retire.** Split into
   `gate.beats_untrained_train` / `gate.beats_untrained_eval` (§12.9).
 - **Untrained CKA on seed-0 twins -- never a baseline.** W1's cross-region CKA is `1.0` **by
@@ -1678,10 +1714,10 @@ same seed                                 # this doc's §10 item 7
 ```
 
 **IMPLEMENTED as a function, not a comment.** `compare()`
-(`src/cogsyndelta/eval/metrics.py:763-843`) IS this refuse-predicate: it walks every
+(`src/cogsyndelta/eval/metrics.py:828-908`) IS this refuse-predicate: it walks every
 `MetricIdentity` field in the declared order above and returns a `ComparisonRefusal` (not a
 diff) the moment one differs, before ever touching `values`
-(`src/cogsyndelta/eval/metrics.py:806-830`) -- see `tests/test_eval_metrics.py`'s
+(`src/cogsyndelta/eval/metrics.py:871-895`) -- see `tests/test_eval_metrics.py`'s
 per-identity-key parametrisation and `tests/test_guards_can_fail.py`'s DEFECT 7 mutation
 proofs. The v1 version this replaced diffed only shared keys and checked none of schema,
 fingerprint, `battery_id`, pooling, or sha; shipping v2 field names without this predicate
@@ -1941,6 +1977,7 @@ Receipt field -> section. `kind` is the receipt this field is written into
 | `metrics["repr.uniformity"]` | eval, eval-quantized | [§3.11](#311-repruniformity) |
 | `metrics["repr.effective_rank"]`, `["repr.dimensions"]`, `["repr.effective_rank_ratio"]` | eval, eval-quantized | [§3.12](#312-repreffective_rank-reprdimensions-repreffective_rank_ratio) |
 | `gates.beats_untrained`, `.not_anisotropic`, `.uses_its_dimensions` | eval, eval-quantized | [§3.13](#313-gatesbeats_untrained-gatesnot_anisotropic-gatesuses_its_dimensions) |
+| `lexical_baseline.tfidf.*`, `lexical_baseline.bm25.*`, `.scorer_version`, `.split_sha256` | eval, eval-quantized, lexical sidecar | [§3.14](#314-lexical_baselinetfidf--lexical_baselinebm25) |
 | `provenance.stored_bytes_definition` | eval, eval-quantized | [§3.7](#37-effparameters-effstored_mb-effcapability_per_param-effcapability_per_mb) |
 | `fp32_bytes` | quant | [§5.1](#51-fp32_bytes) |
 | `stored_bytes`, `compression_ratio` | quant | [§5.2](#52-stored_bytes-compression_ratio) |
@@ -1952,6 +1989,8 @@ Receipt field -> section. `kind` is the receipt this field is written into
 | `derive.recall@1`, `.mrr`, `.n_items`, `.chance` | eval (E1 battery) | [§22](#22-e1-corrupted-derivation-battery-kind-eval) |
 | `derive.tfidf.recall@1`, `derive.bm25.recall@1` | eval (E1 oracles) | [§22](#22-e1-corrupted-derivation-battery-kind-eval) |
 | `derive.wrong_problem.tfidf.recall@1` | eval (E1 control a) | [§22](#22-e1-corrupted-derivation-battery-kind-eval) |
+| `metrics["quant.geometry.mean_cosine"]`, `.min_cosine`, `.p05_cosine`, `.nn_agreement_at_10`, `.latent_std_ratio` | eval-quantized, text and visual | [§23](#23-representation-geometry-after-quantization-quantgeometry) |
+| `provenance["quant.geometry.reference"]` | eval-quantized, text and visual | [§23](#23-representation-geometry-after-quantization-quantgeometry) |
 
 ### `csd-metrics/v2` canonical names (§12)
 
@@ -1963,7 +2002,7 @@ the publish script's read-time normalisation: `csd-quantize.py` writes
 `quant.plan_recall@1`, `quant.drop_recall@1`, and `quant.compression_ratio` into the quant
 receipt, and `csd-benchmark.py` writes `quant.artifact_recall@1` into the eval-quantized
 receipt's `metrics` (`scripts/csd-quantize.py:270,271,275`,
-`scripts/csd-benchmark.py:1042`). Only `token.*` (§12.2) and `beir.*` (§12.7) remain
+`scripts/csd-benchmark.py:1181`). Only `token.*` (§12.2) and `beir.*` (§12.7) remain
 unwritten by any production receipt; check §15 before assuming an unmarked name below is on
 disk for a given battery.
 
@@ -1989,7 +2028,7 @@ predicate every comparison across these names must pass.
 ## 21. Visual probe metrics (`kind: eval` on the I-JEPA region)
 
 These names are written by `benchmark_visual_region()`
-(`scripts/csd-benchmark.py:227-337`) for `--regions visual`. They are **not**
+(`scripts/csd-benchmark.py:309-419`) for `--regions visual`. They are **not**
 closed-pool `rank.*` scores. The battery is the same linear probe training used:
 `_linear_probe()` (`src/cogsyndelta/regions/vl_pretrain.py:367-421`) on frozen
 `IJEPA.encode` features — the EMA target encoder. Collapse std is
@@ -2068,3 +2107,117 @@ untrained encoder at the W2c region-specific seed. Go: any checkpoint ≥ 0.30 �
 derivation sensitivity, E3 next. Kill: all ≤ 0.25 → learned nothing about
 structure, E5 ahead of E4. Diagonal r@1 is demoted to a lexical-ceiling fraction
 (model ÷ TF-IDF). Reasoning is not lookup.
+
+## 23. Representation geometry after quantization (`quant.geometry.*`)
+
+**Why these metrics exist.** `docs/design/evidence/visual-ptq-sensitivity-2026-09-06/README.md`
+measured the visual region's 3-to-8-bit PTQ ladder against every linear-probe read-out this
+project has -- the production pooled EuroSAT probe, a Fashion-t10k transfer probe, and a new
+pre-pool token-surface probe -- and found all three flat within measurement noise across the
+whole ladder (max spread 0.0028 on `probe.top1`, 0.0070 on `transfer.top1`, 0.0026 on
+`token.top1`). Over the identical ladder, the encoder's actual output geometry moved by an
+order of magnitude more and monotonically: mean per-image cosine similarity to the fp32 latent
+fell from 0.999972 (8-bit) to 0.952436 (3-bit), and top-10 nearest-neighbour identity
+agreement fell from 0.996259 to 0.908500. The evidence's own verdict: **"the probe is
+insensitive, not the encoder"** -- a mean-pooled linear classifier's decision boundary can
+survive a disturbance that a nearest-neighbour retrieval consumer, or anything reading patch
+tokens directly, would not. §5 and §12.8/§12.8.1's quantization metrics are all TASK-PROBE
+read-outs (`recall@1`, EuroSAT top-1); none of them are built to see this. `quant.geometry.*`
+is the fix: a receipt-level measurement of the encoder's OUTPUT, holding the ITEMS fixed,
+independent of whatever a downstream probe happens to be sensitive to.
+
+**(a)** Receipt fields (`metrics`, `kind: eval-quantized`, every region -- text and visual):
+`quant.geometry.mean_cosine`, `quant.geometry.min_cosine`, `quant.geometry.p05_cosine`,
+`quant.geometry.nn_agreement_at_10`, `quant.geometry.latent_std_ratio`. A sixth,
+non-numeric field, `quant.geometry.reference` (`provenance`, not `metrics` -- it names a
+receipt/checkpoint/artifact sha, not a score), records which fp32 checkpoint, quantized
+artifact and holdout the comparison was measured against. `battery_id` is
+`eval_quantized_holdout`, `pooling` is `matched` (row `i` of the fp32 side against row `i`
+of the quantized side -- the SAME item, never a retrieval pool).
+
+**(b)** Formula (`src/cogsyndelta/eval/geometry.py`, `compute_geometry`): given
+`fp32_latents`/`quantized_latents`, both `[n_items, dim]`, row-aligned --
+
+- `mean_cosine` / `min_cosine`: mean / minimum over items of
+  `cosine_similarity(fp32_latent_i, quantized_latent_i)`.
+- `p05_cosine`: the 5th-percentile (linear interpolation) of that same per-item cosine
+  distribution -- the smallest value not dominated by one outlier item the way `min_cosine`
+  can be.
+- `nn_agreement_at_10`: mean over items of `|top-10 cosine neighbours(fp32_latent_i) ∩
+  top-10 cosine neighbours(quantized_latent_i)| / 10`, self-similarity excluded before the
+  top-10 selection. This is **identity agreement, not Jaccard**: both neighbour sets have
+  exactly 10 members by construction, so the fraction is simultaneously each set's precision
+  and recall against the other. True Jaccard (`|intersection| / |union|`) would read smaller
+  whenever the two sets differ at all (`|union| = 20 - |intersection|`); this field matches
+  the evidence script's own `_geometry_vs_fp32`/`nn_agreement_at_k` definition exactly, so the
+  two numbers mean the same thing.
+- `latent_std_ratio`: `quantized_latents.std(dim=0).mean() / fp32_latents.std(dim=0).mean()`
+  -- a second, cheap collapse signal on this exact population (the evidence dir's own
+  `eval_latents_std_ratio`), independent of `repr.rep_std`'s collapse-batch definition (§3.9's
+  neighbour, `held_out.rep_std` vs. `untrained_baseline.rep_std`).
+
+**(c)** Guard (G37, `cogsyndelta.eval.geometry.verify_geometry_reference`, fail-closed): a
+`GeometryReference(split_sha256, n_items, checkpoint_sha256, quantized_sha256)` names which
+items, fp32 checkpoint and quantized artifact one side of the comparison was computed over.
+The writer refuses (`GeometryReferenceError`) before `compute_geometry` ever runs if the fp32
+side's reference disagrees with the quantized side's on ANY field -- a stale cached fp32 pass,
+a split rebuilt under a different seed, a truncated batch on one side, a re-trained fp32
+checkpoint compared against an artifact quantized from a DIFFERENT draw, or a quantized
+artifact loaded from a different packed file than the one this comparison names, would
+otherwise produce numbers that describe a mismatched pairing, not quantization.
+Proved in `tests/test_guards_can_fail.py` (DEFECT 9 / G37), the same file and pattern §10's
+"how a comparison can be legitimately refused" discipline already uses for G26.
+
+Guard number G37, not G27: `docs/design/INTERCONNECT-MODULE-SPEC.md` Table 8 reserves G27
+through G36 for the interconnect module's own guards (merged to main, PR #67, after this
+guard's number was first chosen but before it was committed) -- see
+`cogsyndelta.eval.geometry`'s module docstring for the "next number after this one" pointer.
+
+**(d)** Pool: the eval-quantized battery's own held-out set -- text's `split.sha256` (§6.4)
+manifest, or, for visual (no split-manifest of its own), a content fingerprint of the decoded
+probe-eval tensor. Both sides of one comparison are computed in the SAME process, from the
+SAME held-out object and the SAME `checkpoint_sha256`/`quantized_sha256` values, so the
+reference match is a fact about the wiring, not a coincidence; G37 exists to catch a FUTURE
+divergence (a refactor, a stale cache, a re-trained checkpoint compared against an artifact
+quantized from a different draw), not a defect observed in production today.
+
+**(e)** Unit: `mean_cosine`/`min_cosine`/`p05_cosine` ∈ `[-1, 1]` (in practice close to 1 for
+a lightly-perturbed encoder); `nn_agreement_at_10` ∈ `[0, 1]`; `latent_std_ratio` a unitless
+multiplier (1.0 = unchanged spread).
+
+**(f)** Citation: none external -- this project's own PTQ pipeline
+(`src/cogsyndelta/quant/ptq.py`) and the evidence measurement above
+(`docs/design/evidence/visual-ptq-sensitivity-2026-09-06/measure_visual_ptq_sensitivity.py`,
+whose `_topk_neighbor_mask`/`_geometry_vs_fp32` this module's `compute_geometry` reproduces).
+
+**(g) No thresholds are set.** This module reports; it does not gate. The evidence ladder
+shows geometry drift is continuous and bit-width dependent (0.952 mean cosine at 3-bit,
+0.998 at 5-bit, 0.99997 at 8-bit on the one region measured so far) with no operator
+tolerance chosen yet for any region or bit width. `within_budget` (§5.4) is UNCHANGED by
+this section -- it still gates on the task-probe drop alone. A future gate on
+`quant.geometry.*` is an explicit operator decision, not implied by this section existing.
+
+**(h)** Comparison rule: compare two `quant.geometry.*` numbers only when `battery_id`,
+checkpoint sha, and split identity all match (§10) -- the same discipline as every other
+`eval_quantized_holdout` field. Never compare against a task-probe metric (`probe.top1`,
+`rank.recall@1`, `quant.artifact_recall@1`): the claim differs (representation displacement
+vs. a learned decision boundary) even when the pool happens to be the same items.
+
+**(i)** Cards: `cogsyndelta.cards.tables.build_quant_geometry_table` renders a dedicated
+"Representation geometry after quantization" row group on the eval-quantized battery's
+table set. Unlike every other table this library builds, all five numeric fields are always
+printed when an eval-quantized receipt is supplied -- `"not measured"` (never a fabricated
+number, never a silently omitted row) for a receipt written before this feature existed or a
+region/pass where the fp32 reference could not be established.
+
+**(j)** When this is `"not measured"` in production. Two cases, both by design, neither a
+defect: (1) the fp32 checkpoint this pass would compare against has no known sha256 (a text
+eval run with `--allow-unbound-train-receipt` and no quant-receipt-carried fp32 sha) --
+`scripts/csd-benchmark.py`'s `benchmark_region_quantized` skips the block entirely rather
+than load an unverified checkpoint to name in `quant.geometry.reference`; visual has no such
+case (`require_bound_visual_train_receipt` never returns without a sha). (2) the held-out set
+is no larger than `DEFAULT_NN_K` (10) -- `nn_agreement_at_10` needs more neighbours to rank
+than that, so `compute_geometry` refuses outright and the wiring catches this and skips
+rather than aborting the whole receipt. Production probe-eval sets never come close (EuroSAT
+alone is `n_eval=5400`); this case is reachable only by a CPU-cheap test fixture (4-16 items),
+several of which exercise exactly this path in `tests/`.

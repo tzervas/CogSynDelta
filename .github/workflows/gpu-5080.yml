@@ -22,6 +22,50 @@ permissions:
   contents: read
 
 jobs:
+  # Row E1 gate (ii), the 5080 half. The 3090 Ti half runs on akula-prime and its receipt is
+  # committed under docs/design/evidence/; this job re-measures the deployment card on every
+  # PR so the number cannot go stale unnoticed.
+  #
+  # DELIBERATELY UNSKIPPABLE. No `if:`, no `continue-on-error`, and a timeout -- a GPU gate
+  # that quietly passes because no runner claimed it has measured nothing. If the 5080 runner
+  # is offline this job times out RED, which is the intended failure. The wiring itself is
+  # asserted by tests/interconnect/test_e1_capacity.py::test_the_5080_probe_is_wired_to_the_gpu_runner
+  # so that a future edit cannot soften it without turning the CPU suite red first.
+  e1-store-capacity-probe:
+    name: E1 dynamic-capacity probe on RTX 5080
+    runs-on: [self-hosted, linux, x64, gpu, 5080, host-gpu5080]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Dynamic-capacity probe on the 5080
+        run: |
+          set -euo pipefail
+          LOCK=/home/tzervas/akula-harness/scripts/gpu5080-lock
+          RECEIPT=/home/tzervas/akula-harness/state/ci-gpu/${GITHUB_RUN_ID:-manual}
+          mkdir -p "$RECEIPT"
+          nvidia-smi --query-gpu=name,memory.total --format=csv \
+            | tee "$RECEIPT/e1-smi.csv"
+          IMG=$(sudo -n podman images --format '{{.ID}}' | head -1)
+          "$LOCK" -- sudo -n podman run --rm --security-opt label=disable \
+            --device nvidia.com/gpu=all \
+            -v "$PWD":/work:ro \
+            -v "$RECEIPT":/out \
+            --workdir /work \
+            --entrypoint python3.13 "$IMG" \
+            /work/scripts/run_store_capacity_probe.py --host gpu5080 \
+            --out /out/e1-capacity-5080.json
+          echo "receipt=$RECEIPT/e1-capacity-5080.json"
+      - name: Assert the measured capacity is positive and card-specific
+        run: |
+          set -euo pipefail
+          RECEIPT=/home/tzervas/akula-harness/state/ci-gpu/${GITHUB_RUN_ID:-manual}
+          python3 scripts/check_store_capacity_receipt.py \
+            --live "$RECEIPT/e1-capacity-5080.json" \
+            --committed-other \
+            docs/design/evidence/e1-episodic-store-2026-09-06/capacity-probe-3090ti.json \
+            --committed-self \
+            docs/design/evidence/e1-episodic-store-2026-09-06/capacity-probe-5080.json
+
   poc-cuda:
     name: PoC CUDA on RTX 5080
     runs-on: [self-hosted, linux, x64, gpu, 5080, host-gpu5080]

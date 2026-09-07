@@ -50,15 +50,18 @@ from cogsyndelta.cards.sizes import (
     build_size_report,
 )
 from cogsyndelta.cards.tables import (
+    LEXICAL_COLUMN,
     V1_FOOTNOTE,
     MetricTable,
     assert_schemas_agree,
     build_eval_tables,
     build_gate_table,
+    build_quant_geometry_table,
     build_quant_table,
     build_training_table,
     render_table_markdown,
 )
+from cogsyndelta.eval.lexical import verify_lexical_baseline_split
 from cogsyndelta.regions.aliases import canonical_region
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -102,6 +105,75 @@ PLACEHOLDER_REFERENT: dict[str, str] = {
     "docs/design/LICENCE-FOR-OPEN-WEIGHTS.md and is not what this repo, once "
     "populated, is meant to hold",
 }
+
+
+def _show_lexical_column(kind: str, region: str) -> bool:
+    """Text region_variant / region_main print the TF-IDF column; visual does not."""
+    if kind not in ("region_variant", "region_main"):
+        return False
+    return canonical_region(region) != "visual"
+
+
+def _lexical_reading_markdown(eval_receipt: dict[str, Any] | None, *, show_lexical: bool) -> str:
+    """One-line reading of model recall@1 over the TF-IDF ceiling, or not-measured.
+
+    Args:
+        eval_receipt: The fp32 eval receipt, if any.
+        show_lexical: False for visual / non-variant cards (no reading).
+
+    Returns:
+        A markdown paragraph, or empty when this card kind has no ranking table.
+    """
+    if not show_lexical:
+        return ""
+    metrics = (eval_receipt or {}).get("metrics") or {}
+    if "rank.recall@1" not in metrics:
+        return ""
+    field = (eval_receipt or {}).get("lexical_baseline") or {}
+    tfidf = field.get("tfidf") if isinstance(field, dict) else None
+    ceiling = tfidf.get("recall@1") if isinstance(tfidf, dict) else None
+    if not isinstance(ceiling, int | float) or ceiling == 0:
+        return "lexical baseline: not measured"
+    model = metrics.get("rank.recall@1")
+    if not isinstance(model, int | float):
+        return "lexical baseline: not measured"
+    n_pairs = field.get("n_pairs") if isinstance(field, dict) else None
+    items = f"{int(n_pairs)} items" if isinstance(n_pairs, int | float) else "its own battery"
+    scorer = field.get("scorer_version") if isinstance(field, dict) else None
+    scorer_note = f" (`{scorer}`)" if scorer else ""
+    frac = float(model) / float(ceiling)
+    return f"this variant reaches {frac:.2f} of the bag-of-words ceiling on {items}{scorer_note}."
+
+
+def _assert_text_card_has_lexical_column(
+    kind: str, region: str, eval_receipt: dict[str, Any] | None, card: str
+) -> None:
+    """Refuse a text card that would hide a measured lexical ceiling.
+
+    Once the eval receipt carries `lexical_baseline.tfidf`, the ranking table must
+    print the TF-IDF column. A renderer that drops the column while the field is
+    present is the defect g49 exists to close.
+
+    Args:
+        kind: Card kind.
+        region: Region id (aliases resolved by the caller).
+        eval_receipt: Fp32 eval receipt, if supplied.
+        card: Fully rendered markdown.
+
+    Raises:
+        CardError: The receipt has the field and the column is missing.
+    """
+    if not _show_lexical_column(kind, region):
+        return
+    field = (eval_receipt or {}).get("lexical_baseline") or {}
+    if not isinstance(field, dict) or not field.get("tfidf"):
+        return
+    if LEXICAL_COLUMN not in card:
+        raise CardError(
+            "eval receipt carries lexical_baseline but the ranking table has no "
+            f"{LEXICAL_COLUMN!r} column -- refusing to render a text card that "
+            "would hide the bag-of-words ceiling"
+        )
 
 
 def _template_path(kind: str) -> Path:
@@ -369,6 +441,11 @@ def render_card(
     metrics_schema = assert_schemas_agree(supplied) if supplied else "(no receipts supplied)"
 
     meth = methodology_for_region(region)
+    show_lexical = _show_lexical_column(kind, region)
+    if show_lexical:
+        for labelled in (eval_receipt, eval_quantized_receipt):
+            if labelled is not None:
+                verify_lexical_baseline_split(labelled)
     tables: list[MetricTable] = []
     if train_receipt is not None:
         tables.append(build_training_table(train_receipt, methodology=meth))
@@ -381,6 +458,7 @@ def render_card(
             comparators=comparators,
             heading_suffix=" (fp32)" if eval_quantized_receipt is not None else "",
             methodology=meth,
+            show_lexical_column=show_lexical,
         )
     )
     if eval_quantized_receipt is not None:
@@ -389,17 +467,28 @@ def render_card(
                 eval_receipt=eval_quantized_receipt,
                 heading_suffix=" (quantized artifact)",
                 methodology=meth,
+                show_lexical_column=show_lexical,
             )
         )
     quant_table = build_quant_table(quant_receipt, methodology=meth)
     if quant_table is not None:
         tables.append(quant_table)
+    quant_geometry_table = build_quant_geometry_table(eval_quantized_receipt, methodology=meth)
+    if quant_geometry_table is not None:
+        tables.append(quant_geometry_table)
 
     footnote_numbers = _assign_footnotes(tables, meth)
-    tables_md = _append_markdown(
-        _render_tables_block(tables, footnote_numbers, meth),
-        _visual_h1_and_transfer_markdown(train_receipt),
+    if show_lexical and "lexical_baseline" in meth:
+        m = meth["lexical_baseline"]
+        fnkey = (m.definition, m.battery_id, m.pooling, m.source)
+        if fnkey not in footnote_numbers:
+            footnote_numbers[fnkey] = len(footnote_numbers) + 1
+    reading = _lexical_reading_markdown(eval_receipt, show_lexical=show_lexical)
+    tables_block = _render_tables_block(tables, footnote_numbers, meth)
+    tables_md = (
+        _append_markdown(reading, tables_block, sep="\n\n") if reading.strip() else tables_block
     )
+    tables_md = _append_markdown(tables_md, _visual_h1_and_transfer_markdown(train_receipt))
     footnotes_md = _footnotes_markdown(footnote_numbers)
 
     sizes = build_size_report(
@@ -506,6 +595,7 @@ def render_card(
     # here rather than leaving every caller (and the golden fixture) to re-add it.
     if not text.endswith("\n"):
         text += "\n"
+    _assert_text_card_has_lexical_column(kind, region, eval_receipt, text)
     return text
 
 

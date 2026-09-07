@@ -75,7 +75,10 @@ QUANT_METRIC_ALIASES_V1: dict[str, str] = {
 
 # Stages a pipeline may report. Open by convention rather than enforced, because a new
 # architecture may have a stage nobody anticipated; the reader groups by whatever it finds.
-STAGES = ("pretrain", "finetune", "eval", "quantize", "compose", "publish")
+# "schedule" (interconnect lane IC-10, docs/design/INTERCONNECT-MODULE-SPEC.md section 4)
+# is the envelope stage for DEC-50 phases B, C and D, alongside "compose" for A, W5b and E2
+# -- both written through `cogsyndelta.interconnect.receipts.ComposeReceipt`.
+STAGES = ("pretrain", "finetune", "eval", "quantize", "compose", "schedule", "publish")
 
 
 @dataclass
@@ -100,6 +103,14 @@ class Receipt:
     """Flat name -> number. Plottable without interpretation."""
     baseline: dict[str, float] = field(default_factory=dict)
     """What `metrics` should be read against -- an untrained model, an fp32 reference."""
+    lexical_baseline: dict[str, Any] = field(default_factory=dict)
+    """Bag-of-words ceiling on the same closed holdout (`lexical_baseline.{tfidf,bm25}.*`).
+
+    Empty means not measured (visual eval, or a receipt written before g49). When
+    present it MUST carry `split_sha256` equal to this receipt's `split.sha256`
+    (`verify_lexical_baseline_split`, fail closed, G26). `write()` drops an empty
+    dict so visual receipts do not grow a vacuous key.
+    """
     gates: dict[str, bool] = field(default_factory=dict)
     """The producer's verdict. A run passes only if every gate is true."""
     artifacts: dict[str, Any] = field(default_factory=dict)
@@ -220,12 +231,20 @@ class Receipt:
         # stale metrics_schema.
         self.metrics_schema = METRICS_SCHEMA
 
+        payload = asdict(self)
+        if payload.get("lexical_baseline"):
+            from cogsyndelta.eval.lexical import verify_lexical_baseline_split
+
+            verify_lexical_baseline_split(payload)
+        else:
+            payload.pop("lexical_baseline", None)
+
         out_dir.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
         p = self.producer
         segment = self.kind or self.stage
         path = out_dir / f"{p.project}-{p.component}-{segment}-{stamp}.json"
-        path.write_text(json.dumps(asdict(self), indent=2, default=str) + "\n")
+        path.write_text(json.dumps(payload, indent=2, default=str) + "\n")
         return path
 
 
@@ -254,6 +273,7 @@ def adapt(raw: dict[str, Any], path: Path) -> Receipt | None:
             stage=raw.get("stage", "unknown"),
             metrics=raw.get("metrics", {}),
             baseline=raw.get("baseline", {}),
+            lexical_baseline=raw.get("lexical_baseline", {}) or {},
             gates=raw.get("gates", {}),
             artifacts=raw.get("artifacts", {}),
             provenance=raw.get("provenance", {}),

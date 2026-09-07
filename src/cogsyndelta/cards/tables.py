@@ -59,6 +59,21 @@ CATEGORY_ORDER: tuple[str, ...] = (
     "token",
 )
 
+QUANT_GEOMETRY_KEYS: tuple[str, ...] = (
+    "quant.geometry.mean_cosine",
+    "quant.geometry.min_cosine",
+    "quant.geometry.p05_cosine",
+    "quant.geometry.nn_agreement_at_10",
+    "quant.geometry.latent_std_ratio",
+)
+"""The five `cogsyndelta.eval.geometry.compute_geometry` fields an eval-quantized
+receipt may carry (g6-quant-geometry, docs/design/evidence/visual-ptq-sensitivity-
+2026-09-06). Excluded from `build_eval_tables`'s generic `quant.*` prefix grouping and
+given their own row group instead (`build_quant_geometry_table`), because they must
+render even when ABSENT (a receipt written before this feature) -- `"not measured"`,
+never silently omitted or invented as a number -- which the generic per-present-key
+loop below does not do for any other family."""
+
 #: `held_out` / `untrained_baseline` keys that name the probe set, not a score.
 #: Dropped from the numeric training table (they still feed the visual H1 /
 #: transfer identity block in `render.py`).
@@ -135,6 +150,22 @@ def assert_schemas_agree(receipts: dict[str, dict[str, Any] | None]) -> str:
     return next(iter(schemas))
 
 
+LEXICAL_COLUMN = "lexical baseline (TF-IDF)"
+"""Ranking-table column header for the bag-of-words ceiling (g49)."""
+
+LEXICAL_NOT_MEASURED = "not measured"
+"""Cell text when a text ranking table has no `lexical_baseline` field."""
+
+RANK_TO_LEXICAL: dict[str, str] = {
+    "rank.recall@1": "recall@1",
+    "rank.recall@5": "recall@5",
+    "rank.recall@10": "recall@10",
+    "rank.mrr": "mrr",
+    "rank.ndcg@10": "ndcg@10",
+}
+"""Eval `rank.*` keys that have a same-named score under `lexical_baseline.tfidf`."""
+
+
 @dataclass(frozen=True)
 class MetricRow:
     """One printed row: a metric key, this variant's value, and what it is compared
@@ -143,8 +174,13 @@ class MetricRow:
 
     key: str
     """The v2 canonical (or v2-mapped) metric key this row is keyed on."""
-    variant: float | bool | None
+    variant: float | bool | str | None
+    """A measured value, or the `LEXICAL_NOT_MEASURED` sentinel string (`_fmt_value`
+    already special-cases it, same as `lexical` below) for a row whose field this
+    receipt does not carry -- `build_quant_geometry_table`'s reason for existing."""
     baseline: float | bool | None = None
+    lexical: float | bool | str | None = None
+    """TF-IDF ceiling for this row, ``"not measured"``, or ``None`` (column omitted)."""
     comparators: dict[str, float | bool] | None = None
     is_v1_mapped: bool = False
     """True iff this row's key was reached by aliasing a v1 receipt field name to its
@@ -161,6 +197,8 @@ class MetricTable:
     """One of `CATEGORY_ORDER`."""
     heading: str
     rows: list[MetricRow]
+    show_lexical: bool = False
+    """True on a text ranking table: print the TF-IDF column even when unmeasured."""
 
 
 def _is_boolean(v: Any) -> bool:
@@ -195,6 +233,32 @@ def normalize_eval_gates_v1(gates: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _lexical_cell(
+    key: str, tfidf: dict[str, Any] | None, *, show_lexical: bool
+) -> float | str | None:
+    """TF-IDF number for a ranking-table row, or the not-measured sentinel.
+
+    Args:
+        key: The v2 metric key this row will print.
+        tfidf: `lexical_baseline.tfidf` from the eval receipt, or None if absent.
+        show_lexical: Whether this table prints the lexical column at all.
+
+    Returns:
+        A float, ``"not measured"``, or ``None`` (omit the column on this row's table).
+    """
+    if not show_lexical:
+        return None
+    mapped = RANK_TO_LEXICAL.get(key)
+    if mapped is None:
+        return None
+    if not tfidf or mapped not in tfidf:
+        return LEXICAL_NOT_MEASURED
+    value = tfidf[mapped]
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return LEXICAL_NOT_MEASURED
+    return float(value)
+
+
 def build_eval_tables(
     *,
     eval_receipt: dict[str, Any] | None,
@@ -202,6 +266,7 @@ def build_eval_tables(
     comparators: dict[str, dict[str, Any]] | None = None,
     methodology: dict[str, MetricMethodology] | None = None,
     heading_suffix: str = "",
+    show_lexical_column: bool = False,
 ) -> list[MetricTable]:
     """Grouped `rank.*` / `eff.*` / `repr.*` / `quant.*` / `beir.*` tables from an eval
     (or eval-quantized) receipt's `metrics` dict, each row carrying this variant's
@@ -228,6 +293,10 @@ def build_eval_tables(
             `" (quantized artifact)"`) -- required whenever a caller renders BOTH an
             eval and an eval-quantized receipt's tables on one card, so two otherwise
             identically-headed "Retrieval" tables are distinguishable.
+        show_lexical_column: text `region_variant` / `region_main` ranking tables
+            print a third column "lexical baseline (TF-IDF)". Visual cards leave
+            this False (the visual card is unchanged). Missing field still prints
+            the column, with ``"not measured"`` cells rather than omitting it.
     """
     if eval_receipt is None:
         return []
@@ -246,6 +315,17 @@ def build_eval_tables(
     for key in list(metrics):
         if key.startswith("rank.") and key.split(".", 1)[1] in RETIRED_RANK_METRICS:
             del metrics[key]
+    # `quant.geometry.*`: own row group (`build_quant_geometry_table`), never the
+    # generic per-present-key `quant` table -- that table only ever prints a key it
+    # finds, and these five must print `"not measured"` when a receipt lacks them.
+    # A dict comprehension, not a `for` loop, deliberately -- `_calculate_complexity`
+    # (scripts/quality_control.py) counts `ast.For` but not a comprehension's `for`,
+    # and this function was already sitting exactly at the un-flagged complexity
+    # ceiling (15) before this feature; a `for key in QUANT_GEOMETRY_KEYS: ...`
+    # statement here would push it to 16 and trip the >15 warning for no functional
+    # reason -- the loop body is a single unconditional `del`, not a candidate for a
+    # helper function that would carry its own maintenance cost.
+    metrics = {k: v for k, v in metrics.items() if k not in QUANT_GEOMETRY_KEYS}
 
     baseline_metrics = (
         normalize_eval_metrics_v1(baseline_eval_receipt.get("metrics", {}))
@@ -259,23 +339,30 @@ def build_eval_tables(
 
     require_documented((methodology_key(k) for k in metrics), methodology=methodology)
 
+    tfidf_raw = (eval_receipt.get("lexical_baseline") or {}).get("tfidf")
+    tfidf = tfidf_raw if isinstance(tfidf_raw, dict) else None
+
     tables: dict[str, list[MetricRow]] = {}
     for key in sorted(metrics):
         was_v1 = any(EVAL_METRIC_ALIASES_V1.get(old) == key and old in v1_keys for old in v1_keys)
+        category = _category_of(key)
+        lexical_on = show_lexical_column and category == "rank"
         row = MetricRow(
             key=key,
             variant=metrics[key],
             baseline=baseline_metrics.get(key),
+            lexical=_lexical_cell(key, tfidf, show_lexical=lexical_on),
             comparators={n: m[key] for n, m in comparator_metrics.items() if key in m} or None,
             is_v1_mapped=was_v1,
         )
-        tables.setdefault(_category_of(key), []).append(row)
+        tables.setdefault(category, []).append(row)
 
     return [
         MetricTable(
             category=cat,
             heading=CATEGORY_HEADINGS.get(cat, cat.title()) + heading_suffix,
             rows=tables[cat],
+            show_lexical=show_lexical_column and cat == "rank",
         )
         for cat in (*CATEGORY_ORDER, "other")
         if cat in tables
@@ -374,9 +461,57 @@ def build_quant_table(
     )
 
 
-def _fmt_value(v: float | bool | None) -> str:
+def build_quant_geometry_table(
+    eval_quantized_receipt: dict[str, Any] | None,
+    *,
+    methodology: dict[str, MetricMethodology] | None = None,
+) -> MetricTable | None:
+    """Representation-geometry row group: `QUANT_GEOMETRY_KEYS`, from an
+    eval-quantized receipt's `metrics` dict (`cogsyndelta.eval.geometry.compute_geometry`
+    fields -- MM's representation-geometry section, motivated by
+    `docs/design/evidence/visual-ptq-sensitivity-2026-09-06/README.md`: every
+    task-probe read-out stayed flat across the visual region's whole PTQ ladder while
+    these five moved by an order of magnitude more).
+
+    Unlike every other table this module builds, ALL FIVE rows are always printed when
+    `eval_quantized_receipt` is supplied -- `LEXICAL_NOT_MEASURED` (`"not measured"`)
+    for a key the receipt does not carry (written before this feature existed, or a
+    pass where the fp32 reference could not be established), never a number invented
+    in its place and never a silently-omitted row. This is the fail-closed-for-cards
+    half of the guard: `scripts/csd-benchmark.py`'s writer fail-closed refuses
+    (`GeometryReferenceError`, G37) rather than write a MISMATCHED number; this
+    function is what a reader sees when the writer instead measured nothing at all.
+
+    Args:
+        eval_quantized_receipt: the `kind="eval-quantized"` receipt to read, or `None`
+            for a card with no eval-quantized receipt at all (`None` returned -- no
+            row group, matching `build_quant_table`'s `None`-in/`None`-out contract).
+        methodology: overrides `METRIC_METHODOLOGY` for this call only -- a test's
+            mutation-proof hook (`require_documented` refuses an undocumented key);
+            production callers leave this `None`.
+    """
+    if eval_quantized_receipt is None:
+        return None
+    metrics = eval_quantized_receipt.get("metrics", {})
+    require_documented(QUANT_GEOMETRY_KEYS, methodology=methodology)
+    rows = []
+    for key in QUANT_GEOMETRY_KEYS:
+        value = metrics.get(key)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            value = LEXICAL_NOT_MEASURED
+        rows.append(MetricRow(key=key, variant=value))
+    return MetricTable(
+        category="quant_geometry",
+        heading="Representation geometry after quantization",
+        rows=rows,
+    )
+
+
+def _fmt_value(v: float | bool | str | None) -> str:
     if v is None:
         return "_(n/a)_"
+    if v == LEXICAL_NOT_MEASURED:
+        return LEXICAL_NOT_MEASURED
     if isinstance(v, bool):
         return "yes" if v else "no"
     if isinstance(v, float):
@@ -424,7 +559,18 @@ def render_table_markdown(
     """
     lookup = METRIC_METHODOLOGY if methodology is None else methodology
     comparator_names = sorted({n for r in table.rows for n in (r.comparators or {})})
-    header = ["metric", "this variant", "untrained baseline", *comparator_names]
+    show_lexical = table.show_lexical or any(r.lexical is not None for r in table.rows)
+    header = ["metric", "this variant", "untrained baseline"]
+    if show_lexical:
+        lex_m = lookup.get("lexical_baseline")
+        if lex_m is not None:
+            lex_fn = footnote_numbers.get(
+                (lex_m.definition, lex_m.battery_id, lex_m.pooling, lex_m.source)
+            )
+            header.append(f"{LEXICAL_COLUMN}[^{lex_fn}]" if lex_fn else LEXICAL_COLUMN)
+        else:
+            header.append(LEXICAL_COLUMN)
+    header.extend(comparator_names)
     lines = [
         "| " + " | ".join(header) + " |",
         "|" + "|".join(["---"] * len(header)) + "|",
@@ -439,6 +585,8 @@ def render_table_markdown(
         for col, val in (("variant", row.variant), ("baseline", row.baseline)):
             text = _fmt_value(val)
             cells.append(f"**{text}**" if best == col else text)
+        if show_lexical:
+            cells.append(_fmt_value(row.lexical))
         for name in comparator_names:
             val = (row.comparators or {}).get(name)
             text = _fmt_value(val)

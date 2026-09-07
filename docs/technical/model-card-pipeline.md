@@ -23,7 +23,7 @@ They are separate on purpose, not because nobody got around to merging them: `bu
 already-published `tzervas/cogsyndelta-region-*` repo's `README.md` carries today, and
 dozens of tests in `tests/test_publish_checkpoint.py` and `tests/test_metrics_
 methodology.py` pin that shape — changing it changes what is already live on the Hub.
-`cogsyndelta.cards.render_card` (`src/cogsyndelta/cards/render.py:305`) is the newer,
+`cogsyndelta.cards.render_card` (`src/cogsyndelta/cards/render.py:377`) is the newer,
 richer library (grouped metric tables, numbered footnotes, MEASURED sizes, five card
 `kind`s) that CARD SPEC (operator, 2026-09-04) actually asked for; `csd-card.py` is its
 one command-line front end. The two DO share one thing deliberately: the audited
@@ -44,7 +44,7 @@ quant receipt ───┘            ├─ cogsyndelta.cards.tables      → g
                                └─ templates/<kind>.md.j2        → the rendered markdown
 ```
 
-`render_card` (`src/cogsyndelta/cards/render.py:305`) is the one public entry point.
+`render_card` (`src/cogsyndelta/cards/render.py:377`) is the one public entry point.
 `receipts` is `{"train": ..., "eval": ..., "eval_quantized": ..., "quant": ...}`, every
 key optional — a `placeholder` card supplies none, a train-only cell supplies one.
 `region_cfg` is the region's `config/mind/csd-regions.json` entry, EXTENDED by the
@@ -82,9 +82,9 @@ suite.
 
 | refusal | raised by | when |
 |---|---|---|
-| undocumented metric | `CardError` (`require_documented`, `src/cogsyndelta/cards/methodology.py:807`) | a receipt carries a metric key with no entry in `METRIC_METHODOLOGY` — no stated formula/battery/source to print beside it |
-| `metrics_schema` disagreement | `CardError` (`assert_schemas_agree`, `src/cogsyndelta/cards/tables.py:110`) | the train/eval/quant receipts merged into one card's tables stamp different `metrics_schema` values — `cogsyndelta.cards` refuses outright (stricter than `csd-publish-checkpoint.py`'s own `_metrics_schema_line`, which prints a `train=... eval=... quant=...` breakdown instead, because that script must keep publishing already-trained checkpoints whose receipts predate a schema migration) |
-| unresolved licence tier | `CardError` (`_licence_block`, `src/cogsyndelta/cards/render.py:275`) | any `kind` except `placeholder`/`composed` with no `region_cfg["licence_tier"]` set — a `placeholder` (no weights) or `composed` (licence resolution is the operator's call, CARD SPEC §9) renders a stated placeholder line instead |
+| undocumented metric | `CardError` (`require_documented`, `src/cogsyndelta/cards/methodology.py:874`) | a receipt carries a metric key with no entry in `METRIC_METHODOLOGY` — no stated formula/battery/source to print beside it |
+| `metrics_schema` disagreement | `CardError` (`assert_schemas_agree`, `src/cogsyndelta/cards/tables.py:125`) | the train/eval/quant receipts merged into one card's tables stamp different `metrics_schema` values — `cogsyndelta.cards` refuses outright (stricter than `csd-publish-checkpoint.py`'s own `_metrics_schema_line`, which prints a `train=... eval=... quant=...` breakdown instead, because that script must keep publishing already-trained checkpoints whose receipts predate a schema migration) |
+| unresolved licence tier | `CardError` (`_licence_block`, `src/cogsyndelta/cards/render.py:347`) | any `kind` except `placeholder`/`composed` with no `region_cfg["licence_tier"]` set — a `placeholder` (no weights) or `composed` (licence resolution is the operator's call, CARD SPEC §9) renders a stated placeholder line instead |
 | unaudited region | `PublishAbortError` (`licence_tier`, `scripts/csd-publish-checkpoint.py:390`) | `--region` has no entry in `LICENCE_TIER` at all — refuses rather than default to MIT |
 | BLOCKING region | `PublishAbortError` (`licence_tier`, same function) | `--region visual` (or its legacy alias `vl_latent`) whose training receipt is not the admitted Mix B pin (`visual-clean-v1` + fingerprint) — unreleasable as trained (`docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` §4). Mix B resolves to MIT; `csd-card.py` must pass the train receipt into `licence_tier` |
 | region mismatch | `CardCliError` (`scripts/csd-card.py`, `_build_receipts_and_region`) | `--region` disagrees with `--cell`'s own `cell.json` `region` field — the licence tier and repo name are derived from `--region`, so a mismatch would launder a receipt's real tier under a different region's name |

@@ -1,0 +1,14 @@
+{
+  "BATTERY-DEFECT.md": "9f78a0910fe7df40a8f25aba61bdd7a748964f5f60607b000c8b88225e67e9ec",
+  "GO_KILL.md": "369ff7f2e7adb3d1f06fbb7c0d63e7256a6fab84175bd03bbe65ffe782a39c48",
+  "PREREG.md": "c5bbfc84a15e4e81bc9dbc1d14649bb6e320ec00b026e396eea3e44ae0547f7a",
+  "README.md": "262bb180b38e43a2ee9cb8ff7a49fff5bd36448483b337c921d7b6e928cddb64",
+  "grade_e5.py": "3d3c5337fc0d2ec2050bb5fa2df34e86a9ad1c3baf5a984c9aeb8fd17d347cf8",
+  "receipts/reason-e5-latent-step-s0-20260906T043659Z.json": "65bc6c82c34671a4f2435850970c76ad1526ea3410eef140de5f8d17c83062b7",
+  "receipts/reason-e5-latent-step-s1-20260906T050808Z.json": "01074b1e4127bb770a63e9219160380422f4925baf32e0f59861afce2cd55027",
+  "receipts/reason-e5-latent-step-s2-20260906T060614Z.json": "17f68eb6456e97c6bca9b82ab610fa43a57227100d42e43dc42a626b863710e6",
+  "receipts/reason-e5-sequence-blind-s0-20260906T044700Z.json": "4d8197315cc898ea9ed850eb874fa511a644324a8eec87d6470d6e734e2b5e72",
+  "receipts/reason-e5-sequence-blind-s1-20260906T051944Z.json": "0acffeec20ae54eff41985b06c0458524f4dad9452133ae01184e30c7d425684",
+  "receipts/reason-e5-sequence-blind-s2-20260906T085530Z.json": "4a8e2a7e8d0efe9b0e5c9fa80805b745668d52159bbb1ccaa81c1ea8da0dc970",
+  "results.json": "6e3f17e2bca01c3afa4f38f31924404bc3432097943c3715474c04d986a85f7d"
+}
