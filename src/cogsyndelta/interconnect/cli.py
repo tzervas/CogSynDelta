@@ -553,8 +553,19 @@ def _build_parser() -> argparse.ArgumentParser:
     # Which side of that a run landed on was then decided by float reduction order
     # (measured: identical seed and command line, `OMP_NUM_THREADS` 1/2/6/8 -> dev 1.0000,
     # 3/4 -> dev 0.9375), not by anything the run did. 8 batches is `N = 64`, a
-    # 1.5625-point resolution, 3.2x finer than the ceiling; the same measurement puts the
-    # toy's real gap at 0.00-1.56 points across every thread count.
+    # 1.5625-point resolution, 3.2x finer than the ceiling.
+    #
+    # Corrected 2026-09-07. This comment used to end "the same measurement puts the
+    # toy's real gap at 0.00-1.56 points across every thread count", which read as a
+    # statement about the gap and was a statement about the THREAD axis at one seed.
+    # On the SEED axis at the same `N = 64` the gap spans 0.00-10.94 points (24 seeds,
+    # 200 steps, threads pinned; sd 2.80, 3 of 24 over G35's 5.00-point ceiling). So
+    # `N = 64` buys RESOLUTION and buys no POWER: raising `N` 16x to 1024 drops the
+    # observed seed-axis sd only 2.86 -> 2.41 points, against the 4x fall pure split
+    # sampling predicts, because ~2.4 points of it is variance in the trained model and
+    # is flat in `N`. Do not read this default as evidence that a single run's G35
+    # verdict is reliable; that needs seed replication, not a bigger split.
+    # `/akula-data/session-backup-staging/notes/GATE-DISCRIMINATION-2026-09-07.md`
     phase_a.add_argument(
         "--dev-batches",
         type=int,
