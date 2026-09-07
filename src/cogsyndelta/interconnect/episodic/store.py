@@ -663,12 +663,16 @@ class EpisodicStoreImpl:
         domain: str | None = None,
         global_query: bool = False,
         b_store: int,
+        query: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Read up to `b_store` episodes for one scope, merged across residency tiers.
 
         `retrieve_merges_tiers` (E0 fixture 9/9) is this sentence: a spilled record is still a
-        record, so the read path does not filter on residency. Ranking is the same score
-        eviction uses, so what survives eviction is what a read prefers -- one policy, not two.
+        record, so the read path does not filter on residency. With no `query`, ranking is
+        the same score eviction uses, so what survives eviction is what a read prefers -- one
+        policy, not two. With a `query`, cosine to it ranks first and that score becomes the
+        tie-break: relevance decides WHICH record answers this request, the eviction score
+        decides which records exist to answer it at all.
 
         Args:
             scope: A `Scope` from `derive_scope`, or `None` for an unknown principal (which
@@ -676,6 +680,10 @@ class EpisodicStoreImpl:
             domain: Restrict to one domain, or `None` with `global_query=True`.
             global_query: Must be `True` when `domain` is `None`.
             b_store: Workspace store budget; the read pads or truncates to exactly this many.
+            query: `[D]` float, what this read is looking for; `None` keeps the original
+                score-only order. See `episodic_store.py`'s ambiguity note 6 for the
+                measurement that added it, and for why content belongs here rather than in
+                the scope.
 
         Returns:
             `(latents [b_store, D], mask [b_store])`, `mask` `True` for a real record.
@@ -684,7 +692,8 @@ class EpisodicStoreImpl:
             StoreScopeError: G32 -- a scope the request supplied rather than derived.
             StoreLifecycleError: the store is not running.
             StoreBackpressureError: `max_in_flight` operations are already in flight.
-            ValueError: `domain` is `None` without `global_query`, or is outside the enum.
+            ValueError: `domain` is `None` without `global_query`, is outside the enum, or
+                `query` is not a 1-D floating-point tensor of the store's width.
         """
         with self._admission.slot("retrieve"):
             self._check_running("retrieve")
@@ -697,8 +706,7 @@ class EpisodicStoreImpl:
                 if not matches:
                     return self._empty_partition(b_store)
                 now = time.time()
-                matches.sort(key=lambda r: self._rank_key(r, now))
-                selected = matches[:b_store]
+                selected = self._rank(matches, query, now)[:b_store]
                 # A read touches `last_accessed` in the INDEX only, not in the backend. The
                 # index is what eviction scores over, so recency is exact where it is used;
                 # writing it through would turn every read into N durable writes for a field
@@ -844,6 +852,49 @@ class EpisodicStoreImpl:
                 - staleness_penalty(record.last_accessed, now, self.half_life_s)
             )
         return (-score, -record.written_at, record.key)
+
+    def _check_query(self, query: Tensor) -> None:
+        """Hold a read's query to the same shape rule `learn` holds a record's latent to."""
+        if not torch.is_floating_point(query):
+            raise ValueError(
+                f"retrieve() query has dtype {query.dtype}, which is not floating point."
+            )
+        if query.dim() != 1:
+            raise ValueError(f"retrieve() query must be 1-D [D], got {tuple(query.shape)}")
+        if self._dim is not None and int(query.shape[0]) != self._dim:
+            raise ValueError(
+                f"retrieve() query width {query.shape[0]} disagrees with this store's "
+                f"established width {self._dim} (a query is compared against records)."
+            )
+
+    def _rank(
+        self, matches: list[StoredRecord], query: Tensor | None, now: float
+    ) -> list[StoredRecord]:
+        """Order one partition's matches best-first: cosine to `query`, then `_rank_key`.
+
+        Cosine on the DIRECTION only: a record is a mean-pooled `z_N`, whose norm carries
+        turn length and workspace confidence rather than relevance. `_rank_key` stays as the
+        tie-break, so two records the query cannot separate are still separated by the same
+        eviction score the rest of this store is ordered by.
+
+        Args:
+            matches: The partition's records; non-empty.
+            query: `[D]` float, or `None` for the score-only order.
+            now: The scoring tick, shared with `_rank_key`.
+
+        Returns:
+            `matches`, ordered best-first.
+        """
+        if query is None:
+            return sorted(matches, key=lambda record: self._rank_key(record, now))
+        self._check_query(query)
+        with torch.no_grad():
+            bank = torch.stack([record.latent for record in matches]).to(torch.float32)
+            vector = query.detach().to(dtype=torch.float32, device=bank.device)
+            similarity = torch.cosine_similarity(bank, vector.unsqueeze(0), dim=1)
+        scored = list(zip(similarity.tolist(), matches))
+        scored.sort(key=lambda pair: (-pair[0], *self._rank_key(pair[1], now)))
+        return [record for _similarity, record in scored]
 
     def score(self, key: RecordKey, *, now: float | None = None) -> float:
         """The eviction score of one record, exposed so a gate can construct a known ordering.
@@ -1066,6 +1117,7 @@ class EpisodicStoreImpl:
         domain: str | None = None,
         global_query: bool = False,
         b_store: int,
+        query: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """`EpisodicStore.read` -- the protocol's name for `retrieve`.
 
@@ -1074,11 +1126,15 @@ class EpisodicStoreImpl:
             domain: Restrict to one domain, or `None` with `global_query=True`.
             global_query: Must be `True` when `domain` is `None`.
             b_store: Workspace store budget.
+            query: `[D]` float, what this read is looking for; `None` for the score-only
+                order.
 
         Returns:
             `(latents [b_store, D], mask [b_store])`.
         """
-        return self.retrieve(scope, domain=domain, global_query=global_query, b_store=b_store)
+        return self.retrieve(
+            scope, domain=domain, global_query=global_query, b_store=b_store, query=query
+        )
 
     # -- receipts -------------------------------------------------------------------------
 

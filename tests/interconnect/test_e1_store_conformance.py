@@ -353,6 +353,77 @@ def test_the_old_ascending_tie_break_would_have_returned_the_older_record(
 
 
 # ---------------------------------------------------------------------------------------
+# The query (`episodic_store.py` ambiguity note 6), on the built store and both oracles.
+# ---------------------------------------------------------------------------------------
+
+
+def _basis_store(backend_factory) -> tuple[EpisodicStoreImpl, Scope]:
+    """Four records at the four coordinate axes of a `D = 4` space, uniform importance."""
+    store = _store(backend_factory)
+    scope = derive_scope("alice")
+    for axis in range(4):
+        record = torch.zeros(4)
+        record[axis] = 1.0
+        store.learn(scope, "chat", f"axis-{axis}", record)
+    return store, scope
+
+
+def test_the_query_reaches_the_built_store_through_both_verb_names(backend_factory) -> None:
+    """`retrieve` and its protocol alias `read` must rank identically for one query.
+
+    `mind.py` is typed against `EpisodicStore` and calls `read`; this store's `read` is a
+    thin forward to `retrieve`, and a forward that dropped the new argument would silently
+    put the constant back for every caller holding the real store instead of the stub.
+    """
+    store, scope = _basis_store(backend_factory)
+    query = torch.tensor([0.0, 0.0, 1.0, 0.0])
+    through_retrieve, _mask = store.retrieve(scope, domain="chat", b_store=4, query=query)
+    through_read, _mask = store.read(scope, domain="chat", b_store=4, query=query)
+
+    assert torch.equal(through_retrieve, through_read)
+    assert torch.allclose(through_read[0], query)
+
+
+def test_the_built_store_read_is_not_constant_across_queries(backend_factory) -> None:
+    """The repair's own assertion, on the store that replaces the stub in production."""
+    store, scope = _basis_store(backend_factory)
+    bank_a, _mask = store.read(
+        scope, domain="chat", b_store=4, query=torch.tensor([1.0, 0.0, 0.0, 0.0])
+    )
+    bank_b, _mask = store.read(
+        scope, domain="chat", b_store=4, query=torch.tensor([0.0, 1.0, 0.0, 0.0])
+    )
+    assert float((bank_a - bank_b).abs().max()) > 0.0
+
+
+def test_the_built_store_read_stays_constant_with_no_query(backend_factory) -> None:
+    """The compatibility control: `query=None` is the merged contract, unchanged."""
+    store, scope = _basis_store(backend_factory)
+    first, _mask = store.read(scope, domain="chat", b_store=4)
+    second, _mask = store.read(scope, domain="chat", b_store=4)
+    assert float((first - second).abs().max()) == 0.0
+
+
+def test_a_query_does_not_cross_a_scope_on_the_built_store(backend_factory) -> None:
+    """Scope stays the isolation axis: a query pointing at another principal reads nothing."""
+    store = _store(backend_factory)
+    alice = derive_scope("alice")
+    bob = derive_scope("bob")
+    secret = torch.tensor([9.0, 9.0, 9.0, 9.0])
+    store.learn(bob, "chat", "bobs-episode", secret)
+
+    _latents, mask = store.read(alice, domain="chat", b_store=4, query=secret)
+    assert not bool(mask.any())
+
+
+def test_a_query_of_the_wrong_width_is_refused_by_the_built_store(backend_factory) -> None:
+    """One `D` per store, checked on the read edge as well as the write edge."""
+    store, scope = _basis_store(backend_factory)
+    with pytest.raises(ValueError, match="width"):
+        store.read(scope, domain="chat", b_store=4, query=torch.zeros(7))
+
+
+# ---------------------------------------------------------------------------------------
 # Identity: the scope segment is derived, and the derivation is injective.
 # ---------------------------------------------------------------------------------------
 
