@@ -140,7 +140,8 @@ tensor for `visual`); plus, optionally, `"candidates"` (`[B, k-1, D_w]`, Q7's
 pre-embedded content candidates, out of this lane's scope per `readout.py`'s own
 docstring), `"scope"` (one `episodic_store.Scope`, broadcast to every batch item) or
 `"scopes"` (`Sequence[Scope | None]`, one per item), and `"domain"` /
-`"logical_key"` for the store's read/write partition (spec section 3 steps 8 and 13).
+`"logical_key"` (or `"logical_keys"`, one per item -- `_logical_keys_for`) for the
+store's read/write partition (spec section 3 steps 8 and 13).
 `episodic_store` is never a key of `inputs` itself -- the store is a constructor
 argument, not a per-request input, and its scope/domain travel through `inputs` only
 because *deriving* a scope is server-side (`derive_scope`, `episodic_store.py`), never
@@ -278,6 +279,13 @@ class InterconnectConfig:
     allowed_modalities: tuple[str, ...] = ("text",)
     resident_heads: tuple[str, ...] = ("text",)
     wall_ms_budget: float = 5_000.0
+    store_query: bool = True
+    """Rank the step-8 store read by cosine to each item's own `z_N`, taken from a store-free
+    no-grad pre-pass (`WhiteMatter._store_query`, spec amendment A4). `False` restores the
+    pre-2026-09-07 read, which is a pure function of `(scope, domain)` and therefore returns
+    the same records for every item of a batch -- measured as a literal constant, mutual
+    information with the target exactly zero. Kept as a switch so a run can MEASURE against
+    that control; it is not a supported production setting."""
 
 
 class WhiteMatterOutput(NamedTuple):
@@ -734,21 +742,82 @@ class WhiteMatter(nn.Module):
             return scopes
         return [inputs.get("scope")] * batch_size
 
+    @staticmethod
+    def _logical_keys_for(inputs: Mapping[str, Any], batch_size: int) -> list[str]:
+        """One `logical_key` per batch item -- `_scopes_for`'s sibling on the write axis.
+
+        WHY THIS EXISTS (measured defect, 2026-09-07). `logical_key` arrives as ONE string
+        for the whole request (module docstring's "What `inputs` looks like"), and
+        `(scope, domain, logical_key)` is the store's full identity, so a batch of `B`
+        items sharing a scope wrote `B` records under ONE key -- last-write-wins
+        (`episodic_store.py`'s own contract) collapsed them to a single surviving record
+        per turn. Measured on the phase-A synthetic stream, whose `cli.synthetic_batches`
+        sets `logical_key = f"turn-{index}"` per BATCH: after 800 steps at `B = 8` the
+        store held 12 records rather than 6,408. Items are independent turns, so each one
+        gets its own identity.
+
+        Two ways to get one, mirroring `scope`/`scopes` exactly:
+
+          - `inputs["logical_keys"]`: an explicit per-item sequence, for a caller that has
+            real episode ids (a served request batch, where each item is a different
+            conversation turn with a name of its own).
+          - `inputs["logical_key"]`: the request-wide base, suffixed `#i` with the item's
+            batch index. Deterministic, collision-free within the request, and stable
+            across runs -- the same fallback shape `_scopes_for` uses when only the
+            singular key is present.
+
+        Args:
+            inputs: The forward pass's `inputs` mapping.
+            batch_size: `B`.
+
+        Returns:
+            `batch_size` logical keys, one per item, all distinct.
+
+        Raises:
+            ValueError: `inputs["logical_keys"]` is present with the wrong length.
+        """
+        if "logical_keys" in inputs:
+            keys = [str(key) for key in inputs["logical_keys"]]
+            if len(keys) != batch_size:
+                raise ValueError(
+                    f"inputs['logical_keys'] has {len(keys)} entries, expected {batch_size}."
+                )
+            return keys
+        base = str(inputs.get("logical_key", "turn"))
+        return [f"{base}#{i}" for i in range(batch_size)]
+
     def _read_store(
-        self, inputs: Mapping[str, Any], batch_size: int, b_store: int, device: torch.device
+        self,
+        inputs: Mapping[str, Any],
+        batch_size: int,
+        b_store: int,
+        device: torch.device,
+        *,
+        query: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Spec section 3 step 8's store read, one item's scope at a time (the
         `EpisodicStore.read` contract is single-scope; see `episodic_store.py`'s own
         ambiguity note 2). Returns zero-width-safe `[B, b_store, D_w]`/`[B, b_store]`.
+
+        `query` is `[B, D_w]`, one row per item, and is what makes this read depend on the
+        ITEM rather than only on its scope. Without it the read is a pure function of
+        `(scope, domain)`, and since a batch shares one scope the returned bank was measured
+        to be a constant -- see `episodic_store.py`'s ambiguity note 6 and spec amendment A4.
+        The scopes still come from `_scopes_for`: the query ranks within a partition, it
+        never selects one.
         """
         assert self.store is not None
         domain = inputs.get("domain")
         scopes = self._scopes_for(inputs, batch_size)
         latents_list = []
         mask_list = []
-        for scope in scopes:
+        for i, scope in enumerate(scopes):
             lat, mask = self.store.read(
-                scope, domain=domain, global_query=(domain is None), b_store=b_store
+                scope,
+                domain=domain,
+                global_query=(domain is None),
+                b_store=b_store,
+                query=None if query is None else query[i],
             )
             latents_list.append(lat)
             mask_list.append(mask)
@@ -765,20 +834,21 @@ class WhiteMatter(nn.Module):
 
     def _write_store(self, inputs: Mapping[str, Any], z_final: Tensor) -> list[Any] | None:
         """Spec section 3 step 13: one record per turn, the mean of the final-normed
-        latents, under `(scope, domain, logical_key)`.
+        latents, under `(scope, domain, logical_key)`. One TURN is one batch ITEM, so the
+        identity is per item too -- see `_logical_keys_for` for the collision this closes.
         """
         if self.store is None:
             return None
         batch_size = z_final.shape[0]
         scopes = self._scopes_for(inputs, batch_size)
         domain = inputs.get("domain", "general")
-        logical_key = inputs.get("logical_key", "turn")
+        logical_keys = self._logical_keys_for(inputs, batch_size)
         record = z_final.mean(dim=1)
         receipts = []
         for i, scope in enumerate(scopes):
             if scope is None:
                 continue  # G32: an unknown principal cannot write (episodic_store.py).
-            receipts.append(self.store.write(scope, domain, logical_key, record[i].detach()))
+            receipts.append(self.store.write(scope, domain, logical_keys[i], record[i].detach()))
         return receipts
 
     # ------------------------------------------------------------------
@@ -807,52 +877,44 @@ class WhiteMatter(nn.Module):
         return {"depth": depth, "lockstep_groups": groups}
 
     # ------------------------------------------------------------------
-    # Forward
+    # The iteration loop (spec section 3 steps 5-11), and the query that precedes it
     # ------------------------------------------------------------------
 
-    def forward(
-        self, inputs: Mapping[str, Any], schedule: Schedule | None = None
-    ) -> WhiteMatterOutput:
-        """Run the fourteen-step forward pass (spec section 3).
+    def _iterate(
+        self,
+        inputs: Mapping[str, Any],
+        *,
+        ctx: dict[str, int],
+        b: dict[str, int],
+        admitted: dict[str, tuple[bool, ...]],
+        halt_at: int,
+        store_latents: tuple[Tensor, Tensor] | None,
+        batch_size: int,
+        n_regions: int,
+    ) -> tuple[Tensor, list[Tensor], list[Tensor]]:
+        """Spec section 3 steps 5-11, run to `halt_at`, plus tension 2's final norm.
+
+        Extracted from `forward` so it can be run TWICE for one request: once under
+        `no_grad` against an empty store bank to produce the read's query
+        (`_store_query`), and once for real. The `h_r` cache is local to each call, so the
+        pre-pass never leaks a graph-free tensor into the pass that trains.
 
         Args:
-            inputs: See the module docstring's "What `inputs` looks like" section.
-            schedule: `None` runs steps 1-4 (controller for phase-B exposure only, per
-                tension 1; the dense allocation drives execution) and validates the
-                result (G30). A validated `Schedule` skips straight to steps 5-14,
-                executed exactly as given -- the frozen-schedule arm (spec section 3's
-                preamble). Either way the returned `WhiteMatterOutput.schedule` is
-                step 14's re-emission of what actually ran, not the argument object.
+            inputs: The request's `inputs` mapping.
+            ctx: Per-participant context budget, request-wide (tension 1).
+            b: Per-participant read-token budget.
+            admitted: Per-participant admission row.
+            halt_at: The realised iteration bound.
+            store_latents: `(latents, mask)` for the store participant, or `None` when this
+                module has no store.
+            batch_size: `B`.
+            n_regions: `R`, for the attention-mass one-hot.
 
         Returns:
-            A `WhiteMatterOutput`.
-
-        Raises:
-            schedule.ScheduleViolationError: G30 -- `schedule` (whichever produced it)
-                violates a bound.
+            `(z_N, a_list, z_history)` -- the final normed latents, the per-iteration region
+            mass, and the un-normed `z` after each iteration.
         """
         cfg = self.config
-        sample_region = self.region_names[0]
-        sample_input = inputs[sample_region]
-        device = sample_input.device if isinstance(sample_input, Tensor) else torch.device("cpu")
-
-        controller_out: ControllerOutput | None = None
-        if schedule is None:
-            batch_size = self._batch_size(inputs)
-            raw_summary = self._raw_summary(inputs, batch_size, device)
-            controller_out = self.controller(raw_summary)
-            schedule = self._dense_schedule()
-        else:
-            schedule = self.schedule_validator.validate(schedule)
-
-        ctx, b, admitted, halt_at = self._unpack_schedule(schedule)
-        batch_size = self._batch_size(inputs)
-        n_regions = len(self.participant_names)
-
-        store_latents: tuple[Tensor, Tensor] | None = None
-        if self.has_store:
-            store_latents = self._read_store(inputs, batch_size, b[STORE_PARTICIPANT], device)
-
         z = self.workspace.latent_bank(batch_size)
         a_list: list[Tensor] = []
         z_history: list[Tensor] = []
@@ -902,7 +964,165 @@ class WhiteMatter(nn.Module):
             z = z_new
             z_history.append(z)
 
-        z = self.final_norm(z)  # Tension 2: z_N, the final normed latents.
+        return self.final_norm(z), a_list, z_history  # Tension 2: z_N.
+
+    def _empty_store_bank(
+        self, batch_size: int, b_store: int, device: torch.device
+    ) -> tuple[Tensor, Tensor]:
+        """A store bank with zero unmasked slots -- spec step 8's "no-store configuration".
+
+        `KVBank` refuses `store_latents=None` when it HAS a store participant ("`None` means
+        no store participant at all", its own docstring), so "run this request as if the
+        store were empty" is expressed as a real bank whose mask is all `False`, which is
+        exactly what a never-written partition returns.
+
+        Args:
+            batch_size: `B`.
+            b_store: The store's slot budget for this request.
+            device: Where the bank must live.
+
+        Returns:
+            `(zeros [B, b_store, D_w], all-False mask [B, b_store])`.
+        """
+        latents = torch.zeros(batch_size, b_store, self.config.workspace_dim, device=device)
+        mask = torch.zeros(batch_size, b_store, dtype=torch.bool, device=device)
+        return latents, mask
+
+    def _store_query(
+        self,
+        inputs: Mapping[str, Any],
+        *,
+        ctx: dict[str, int],
+        b: dict[str, int],
+        admitted: dict[str, tuple[bool, ...]],
+        halt_at: int,
+        batch_size: int,
+        n_regions: int,
+        device: torch.device,
+    ) -> Tensor | None:
+        """`[B, D_w]`: what each item is looking for, from a store-free no-grad pre-pass.
+
+        WHY A PRE-PASS AND NOT SOMETHING CHEAPER. The query has to live in the same space as
+        the records, and a record is `z_N.mean(dim=1)` (step 13). The only thing in that
+        space before the loop runs is `z_N` itself, so the pre-pass runs the loop once with
+        an empty store bank and mean-pools its result. Nothing else available at step 8 is
+        commensurate: the latent bank is input-independent, and `_raw_summary`'s features are
+        per-region `pooled_dim` vectors in the regions' own spaces, not `D_w`.
+
+        WHAT IT COSTS. One extra forward of steps 5-11 per request, under `no_grad` and with
+        no store slots -- roughly the cost of the inference half of a training step. The
+        `h_r` cache is NOT shared with the real pass: the pre-pass builds its tensors with no
+        graph, and handing those to the pass that trains would silently cut the gradient path
+        through `TopKSelect` and `RegionAdapter`. Paying the encode twice is the honest price
+        of that; sharing the cache is an optimisation with a correctness question attached and
+        is deliberately not taken here.
+
+        WHAT IT BOUGHT (measured 2026-09-07). MI excess +1.58 to +1.86 bits, held-out accuracy
+        0.855-0.996 against a null of 0.29, and 98.6% of items retrieving a top-1 record of
+        their own class at step 0 -- before any optimizer step. `config.store_query` turns it
+        off, which restores the pre-2026-09-07 constant read; it exists so a run can measure
+        against that control rather than argue about it.
+
+        Args:
+            inputs: The request's `inputs` mapping.
+            ctx: Per-participant context budget.
+            b: Per-participant read-token budget.
+            admitted: Per-participant admission row.
+            halt_at: The realised iteration bound.
+            batch_size: `B`.
+            n_regions: `R`.
+            device: The request's device.
+
+        Returns:
+            `[B, D_w]` queries, one per item, or `None` when `config.store_query` is off.
+        """
+        if not self.config.store_query:
+            return None
+        with torch.no_grad():
+            z_pre, _a_list, _z_history = self._iterate(
+                inputs,
+                ctx=ctx,
+                b=b,
+                admitted=admitted,
+                halt_at=halt_at,
+                store_latents=self._empty_store_bank(batch_size, b[STORE_PARTICIPANT], device),
+                batch_size=batch_size,
+                n_regions=n_regions,
+            )
+        return z_pre.mean(dim=1)
+
+    # ------------------------------------------------------------------
+    # Forward
+    # ------------------------------------------------------------------
+
+    def forward(
+        self, inputs: Mapping[str, Any], schedule: Schedule | None = None
+    ) -> WhiteMatterOutput:
+        """Run the fourteen-step forward pass (spec section 3).
+
+        Args:
+            inputs: See the module docstring's "What `inputs` looks like" section.
+            schedule: `None` runs steps 1-4 (controller for phase-B exposure only, per
+                tension 1; the dense allocation drives execution) and validates the
+                result (G30). A validated `Schedule` skips straight to steps 5-14,
+                executed exactly as given -- the frozen-schedule arm (spec section 3's
+                preamble). Either way the returned `WhiteMatterOutput.schedule` is
+                step 14's re-emission of what actually ran, not the argument object.
+
+        Returns:
+            A `WhiteMatterOutput`.
+
+        Raises:
+            schedule.ScheduleViolationError: G30 -- `schedule` (whichever produced it)
+                violates a bound.
+        """
+        cfg = self.config
+        sample_region = self.region_names[0]
+        sample_input = inputs[sample_region]
+        device = sample_input.device if isinstance(sample_input, Tensor) else torch.device("cpu")
+
+        controller_out: ControllerOutput | None = None
+        if schedule is None:
+            batch_size = self._batch_size(inputs)
+            raw_summary = self._raw_summary(inputs, batch_size, device)
+            controller_out = self.controller(raw_summary)
+            schedule = self._dense_schedule()
+        else:
+            schedule = self.schedule_validator.validate(schedule)
+
+        ctx, b, admitted, halt_at = self._unpack_schedule(schedule)
+        batch_size = self._batch_size(inputs)
+        n_regions = len(self.participant_names)
+
+        store_latents: tuple[Tensor, Tensor] | None = None
+        if self.has_store:
+            store_latents = self._read_store(
+                inputs,
+                batch_size,
+                b[STORE_PARTICIPANT],
+                device,
+                query=self._store_query(
+                    inputs,
+                    ctx=ctx,
+                    b=b,
+                    admitted=admitted,
+                    halt_at=halt_at,
+                    batch_size=batch_size,
+                    n_regions=n_regions,
+                    device=device,
+                ),
+            )
+
+        z, a_list, z_history = self._iterate(
+            inputs,
+            ctx=ctx,
+            b=b,
+            admitted=admitted,
+            halt_at=halt_at,
+            store_latents=store_latents,
+            batch_size=batch_size,
+            n_regions=n_regions,
+        )
         # Table 3's `a` is `[B, I, R]`, not `[B, halt_at, R]`: iterations past the halt
         # point are "all zero where not [active]", not absent. Padding here rather than
         # at every call site is what lets receipts from items with different `halt_at`

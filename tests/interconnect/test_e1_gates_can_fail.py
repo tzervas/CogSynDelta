@@ -50,7 +50,7 @@ def _store(capacity: dict) -> EpisodicStoreImpl:
         backend=InMemoryBackend(),
         capacity_provider=lambda: capacity["value"],
         host="test-host",
-        tier_budget=TierBudget(ram_max_items=10_000, disk_max_items=10_000),
+        tier_budget=TierBudget(ram_max_items=10_000, max_records=10_000),
     )
     store.start()
     return store
@@ -107,7 +107,7 @@ def test_gate_ii_fires_when_the_capacity_is_not_enforced_on_admission(monkeypatc
     capacity = {"value": 2 * SPAN}
     scope = derive_scope("alice")
 
-    monkeypatch.setattr(EpisodicStoreImpl, "_enforce_capacity", lambda self, now: 0)
+    monkeypatch.setattr(EpisodicStoreImpl, "_enforce_placement", lambda self, now: 0)
     broken = _store(capacity)
     for i in range(5):
         broken.learn(scope, "chat", f"k{i}", torch.ones(8), importance=float(i), span_bytes=SPAN)

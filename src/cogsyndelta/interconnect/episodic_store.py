@@ -61,13 +61,15 @@ report, per the task's instruction to record spec ambiguity and how it was resol
      `B` distinct scopes into one bank slot range is `kv_bank.py`'s / `mind.py`'s job
      (IC-2/IC-8, later waves) -- looping this call per batch item and stacking. Building
      that loop here would be scope creep into files this lane does not own.
-  3. `read()` ranks matches by `importance` descending, ties by earlier `written_at` (a
+  3. `read()` ranks matches by `importance` descending, ties by LATER `written_at` (a
      stable, RNG-free order) rather than the taxonomy's full residency score `importance +
      gpu_resident_bonus - staleness_penalty(last_accessed)` (TAX:683's clause 2): the GPU
      bonus and the staleness half-life are exactly DEC-63's un-adopted formula, so ranking by
      it here would silently ship a DEC-63 answer through the back door of `read()` instead of
      through a `ContractGap`. Importance-descending is the smallest honest substitute that
-     keeps `read()` usable by later lanes without pre-empting DEC-63.
+     keeps `read()` usable by later lanes without pre-empting DEC-63. AMENDED 2026-09-07:
+     the tie-break was `written_at` ASCENDING, which under a uniform importance made the
+     oldest records permanently unreachable-past; see `_tie_break` for the measurement.
   4. The constructor signature is fixed by the spec at `InMemoryStoreStub(domain_enum,
      half_life_s, importance_default)` -- no `dim` argument. `D` is therefore inferred from
      the first write; a `read()` against a partition that has never been written (including
@@ -79,6 +81,30 @@ report, per the task's instruction to record spec ambiguity and how it was resol
      DEC-63's config constant) but not yet READ by anything -- exponential staleness decay is
      exactly DEC-63's gap. Recording it unused rather than omitting it is what keeps the
      constructor signature exact, per this lane's brief.
+  6. `read()` TAKES A QUERY (added 2026-09-07, a change to a merged contract). It did not,
+     and that was measured to make the store dead weight: with no query, a read is a pure
+     function of `(scope, domain)`, so every item of a batch sharing one scope got the same
+     records, and the returned bank was a CONSTANT -- max absolute difference `0.0` across
+     items, across batches, and before versus after 50 training steps. Mutual information
+     with the target was exactly zero, `dL/d(store attention)` was therefore ~0, and the
+     store's attention direction was unidentified and random-walked. `query` is optional and
+     defaults to `None`, which reproduces the original ordering exactly, so no caller
+     written before this date changes behaviour.
+
+     WHAT THE QUERY IS, AND WHAT IT IS NOT. It is CONTENT: `[D]`, compared to each resident
+     record by cosine, best first. `scope` remains the ISOLATION axis -- a server-derived
+     `(principal, session)` that `derive_scope`/G32/DEC-64 make a security boundary. Per-item
+     SCOPING was measured as an alternative fix and failed below its own noise floor (MI
+     under null, held-out accuracy under chance at all four seeds), and a content-derived
+     scope key would have been worse than useless: it repurposes an isolation boundary as a
+     content index, putting different principals' memories in one partition. Content goes in
+     the query; identity stays in the scope.
+
+     WHAT IT BOUGHT. With the query being the item's own `z_N` from a store-free no-grad
+     pre-pass (`mind.py`'s `_store_query`): MI excess +1.58 to +1.86 bits, held-out accuracy
+     0.855-0.996 against a null of 0.29, and 98.6% of items retrieving a top-1 record of
+     their own class at step 0 -- before any optimizer step. The repair is to the read
+     mechanism, not to training.
 
 G32 -- STORE SCOPE (Table 8): *"a read or write with no server-derived scope, or a scope
 supplied by the request. Effect: refused; an unknown principal reads an empty partition."*
@@ -230,6 +256,33 @@ class Record:
     provenance: str | None
 
 
+def _tie_break(record: Record) -> tuple[float, float, str]:
+    """The RNG-free order a read falls back to: importance down, then NEWEST first, then key.
+
+    THE MEASURED DEFECT THIS CLOSES (2026-09-07). The tie-break used to be `written_at`
+    ASCENDING -- oldest first. Combined with a uniform `importance_default` (every write
+    from `mind.py` takes the default; nothing on the forward path sets one), that made the
+    priming records a permanent wall: with 8 primers resident and `b_store = 8`, every
+    later write the model made ranked strictly below them and was never readable. Measured:
+    an 8-record store and a 32-record store trained to bit-identical results, to 17
+    significant figures, because the extra 24 records could not be reached.
+
+    Newest-first is the smallest honest repair. It keeps the order total, deterministic and
+    seed-free (ambiguity note 3's actual requirement), and it agrees with the direction the
+    real store's eviction already scores in -- `episodic/store.py::_enforce_placement` spills
+    the OLDER record when scores tie, so preferring the older one on a read was the read
+    and the eviction disagreeing about the same record. `logical_key` last keeps two records
+    written inside the same clock tick in a fixed order.
+
+    Args:
+        record: The stored record to key.
+
+    Returns:
+        A sort key; `sorted` over it is the read's ranking when no query is supplied.
+    """
+    return (-record.importance, -record.written_at, record.logical_key)
+
+
 @runtime_checkable
 class EpisodicStore(Protocol):
     """The E0 interface every store implementation (this stub, and eventually E1's real
@@ -289,6 +342,7 @@ class EpisodicStore(Protocol):
         domain: str | None = None,
         global_query: bool = False,
         b_store: int,
+        query: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Read up to `b_store` episodes for one item's scope (spec section 3 step 8).
 
@@ -300,18 +354,26 @@ class EpisodicStore(Protocol):
                 `test_query_requires_domain_or_global_flag`).
             b_store: The workspace's floored store budget (`lo_store = 8` at v1, spec step
                 8). The read pads or truncates to exactly this many slots.
+            query: `[D]` float, WHAT this read is looking for -- the resident set is ranked
+                by cosine similarity to it (ambiguity note 6). `None` keeps the original,
+                query-free order, so every caller written before 2026-09-07 is unchanged.
+                `query` is content; `scope` is isolation. They are different axes and must
+                stay different: a content-derived scope would put two principals' memories
+                in one partition and break G32/DEC-64's boundary.
 
         Returns:
             `(latents [b_store, D], mask [b_store])`, `mask` `True` for a real record and
-            `False` for padding, ranked by descending importance (ambiguity note 3). Zero
-            unmasked slots is "the no-store configuration" (spec step 8) whether because the
-            partition is genuinely empty or because `scope` was `None` (G32).
+            `False` for padding, ranked by cosine to `query` when one is given and by
+            descending importance otherwise (ambiguity notes 3 and 6). Zero unmasked slots
+            is "the no-store configuration" (spec step 8) whether because the partition is
+            genuinely empty or because `scope` was `None` (G32).
 
         Raises:
             StoreScopeError: G32 -- `scope` is a value the request supplied directly rather
                 than one built by `derive_scope`. (`scope=None` does NOT raise here.)
-            ValueError: `domain` is `None` and `global_query` is `False`, or `domain` is
-                outside `domain_enum`.
+            ValueError: `domain` is `None` and `global_query` is `False`, `domain` is
+                outside `domain_enum`, or `query` is not a 1-D floating-point tensor of the
+                store's established width.
         """
         ...
 
@@ -479,6 +541,56 @@ class InMemoryStoreStub:
         dim = self._dim or 0
         return torch.zeros(b_store, dim), torch.zeros(b_store, dtype=torch.bool)
 
+    def _check_query(self, query: Tensor) -> None:
+        """Hold `query` to the same shape rule `write` holds a record's latent to."""
+        if not torch.is_floating_point(query):
+            raise ValueError(
+                f"read() query has dtype {query.dtype}, which is not floating point "
+                "(the same DEC-47 shape rule G31 enforces at the interconnect's other "
+                "tracts: a store query is never an integer-typed payload)."
+            )
+        if query.dim() != 1:
+            raise ValueError(f"read() query must be 1-D [D], got shape {tuple(query.shape)}")
+        if self._dim is not None and query.shape[0] != self._dim:
+            raise ValueError(
+                f"read() query width {query.shape[0]} disagrees with this store's "
+                f"established width {self._dim} (a query is compared against records)."
+            )
+
+    def _rank(self, matches: list[Record], query: Tensor | None) -> list[Record]:
+        """Order one partition's matches: by cosine to `query`, else by `_tie_break` alone.
+
+        Cosine, not dot product: the records are mean-pooled `z_N` latents whose NORMS carry
+        how long the turn was and how confident the workspace was, neither of which is a
+        relevance signal. Ranking on the direction alone is what survived the measurement --
+        98.6% of items retrieved a top-1 record of their own class at step 0, before any
+        optimizer step, over a store whose maximum off-diagonal cosine was 0.9993. Near
+        collinearity compresses the scores; it does not destroy their ORDER, and only the
+        order reaches the caller.
+
+        The whole partition is stacked into one `[N, D]` tensor per read. That is the same
+        `O(N)` this method already paid to build `matches`, and this stub is a CPU
+        conformance stand-in -- a store that needs an index over `N` needs `EpisodicStoreImpl`
+        and, past that, DEC-63's own machinery.
+
+        Args:
+            matches: The partition's records; non-empty.
+            query: `[D]` float, or `None` for the query-free order.
+
+        Returns:
+            `matches`, ordered best-first.
+        """
+        if query is None:
+            return sorted(matches, key=_tie_break)
+        self._check_query(query)
+        with torch.no_grad():
+            bank = torch.stack([record.latent for record in matches]).to(torch.float32)
+            vector = query.detach().to(dtype=torch.float32, device=bank.device)
+            similarity = torch.cosine_similarity(bank, vector.unsqueeze(0), dim=1)
+        scored = list(zip(similarity.tolist(), matches))
+        scored.sort(key=lambda pair: (-pair[0], *_tie_break(pair[1])))
+        return [record for _similarity, record in scored]
+
     def read(
         self,
         scope: Scope | None,
@@ -486,6 +598,7 @@ class InMemoryStoreStub:
         domain: str | None = None,
         global_query: bool = False,
         b_store: int,
+        query: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """See `EpisodicStore.read`."""
         checked = _require_scope(scope, action="read")
@@ -503,7 +616,7 @@ class InMemoryStoreStub:
         if not matches:
             return self._empty_partition(b_store)
 
-        matches.sort(key=lambda r: (-r.importance, r.written_at))
+        matches = self._rank(matches, query)
         now = time.time()
         selected = matches[:b_store]
         for record in selected:

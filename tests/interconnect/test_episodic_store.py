@@ -94,9 +94,9 @@ def test_empty_partition_yields_zero_unmasked_slots() -> None:
 
 
 def test_determinism_under_a_fixed_seed() -> None:
-    """No RNG is used anywhere in this module -- ranking is `(-importance, written_at)`,
-    a stable, seed-free order (ambiguity note 3) -- so two identically-seeded runs building
-    identical stores must read back bitwise identical tensors."""
+    """No RNG is used anywhere in this module -- ranking is `(-importance, -written_at,
+    logical_key)`, a stable, seed-free order (ambiguity note 3) -- so two identically-seeded
+    runs building identical stores must read back bitwise identical tensors."""
 
     def build_and_read() -> tuple[torch.Tensor, torch.Tensor]:
         torch.manual_seed(0)
@@ -110,6 +110,238 @@ def test_determinism_under_a_fixed_seed() -> None:
     latents_b, mask_b = build_and_read()
     assert torch.equal(latents_a, latents_b)
     assert torch.equal(mask_a, mask_b)
+
+
+# ---------------------------------------------------------------------------------------
+# The tie-break: a resident set must not become a wall (measured defect, 2026-09-07).
+# ---------------------------------------------------------------------------------------
+
+
+def _wall_fixture() -> tuple[InMemoryStoreStub, Scope]:
+    """Eight primers, then four later writes, all at the default (uniform) importance.
+
+    This is the phase-A shape exactly: `cli.prime_store` writes `records` episodes before
+    step 0 and the model then writes one record per turn, none of them overriding
+    `importance_default`, so `importance` cannot separate any of them.
+    """
+    store = _store()
+    scope = derive_scope("alice")
+    for i in range(8):
+        store.write(scope, "chat", f"primer-{i}", _latent(fill=float(i)))
+    for i in range(4):
+        store.write(scope, "chat", f"later-{i}", _latent(fill=100.0 + i))
+    return store, scope
+
+
+def test_a_read_reaches_records_written_after_the_resident_set() -> None:
+    """With importance uniform, the newest writes must be readable, not queued behind primers.
+
+    Measured on `main`: with the tie-break at `written_at` ASCENDING, `b_store = 8` over 8
+    primers returned the 8 primers forever. An 8-record store and a 32-record store trained
+    to bit-identical results to 17 significant figures, because nothing written after the
+    primers could ever be read.
+    """
+    store, scope = _wall_fixture()
+    latents, mask = store.read(scope, domain="chat", b_store=8)
+
+    assert bool(mask.all()), "eight slots, twelve records: every slot must be filled"
+    fills = [float(row[0]) for row in latents]
+    assert sum(1 for f in fills if f >= 100.0) == 4, (
+        f"the four post-primer writes are still unreachable: {fills}"
+    )
+
+
+def test_the_oldest_first_tie_break_is_what_walled_the_store_off() -> None:
+    """The can-fail control: rank the SAME records by the old key and the wall comes back.
+
+    `MEMORY.md`'s "verify guards by making them fail" applied to a fixed ordering bug -- the
+    green test above only means something beside a red one built from the exact expression
+    that was wrong.
+    """
+    store, scope = _wall_fixture()
+    records = [r for r in store._records.values() if r.scope == scope]
+    assert len(records) == 12
+
+    old_order = sorted(records, key=lambda r: (-r.importance, r.written_at))[:8]
+    assert all(r.logical_key.startswith("primer-") for r in old_order), (
+        "the fixture no longer reproduces the uniform-importance tie"
+    )
+
+    new_order = sorted(records, key=lambda r: (-r.importance, -r.written_at))[:8]
+    assert sum(1 for r in new_order if r.logical_key.startswith("later-")) == 4
+
+
+def test_importance_still_outranks_recency() -> None:
+    """Recency is the TIE-break, not the ranking: a deliberate importance still wins.
+
+    Guards the other direction -- a repair that made the read purely recency-ordered would
+    have thrown away DEC-63's importance axis rather than fixing its tie-break.
+    """
+    store = _store()
+    scope = derive_scope("alice")
+    store.write(scope, "chat", "old-but-important", _latent(fill=1.0), importance=0.9)
+    store.write(scope, "chat", "new-but-dull", _latent(fill=2.0), importance=0.1)
+
+    latents, _mask = store.read(scope, domain="chat", b_store=1)
+    assert torch.allclose(latents[0], _latent(fill=1.0))
+
+
+# ---------------------------------------------------------------------------------------
+# The query (ambiguity note 6): the read must depend on WHAT is being asked for.
+# ---------------------------------------------------------------------------------------
+
+
+def _basis_store() -> tuple[InMemoryStoreStub, Scope]:
+    """Four records at the four coordinate axes of a `D = 4` space, uniform importance.
+
+    Orthogonal on purpose: with these records, cosine to a one-hot query has exactly one
+    right answer, so "did the ranking use the query at all" is decidable rather than
+    approximate. The near-collinear case is the measured one and is covered separately by
+    `test_a_near_collinear_store_still_ranks_by_the_query`.
+    """
+    store = _store()
+    scope = derive_scope("alice")
+    for axis in range(4):
+        record = torch.zeros(4)
+        record[axis] = 1.0
+        store.write(scope, "chat", f"axis-{axis}", record)
+    return store, scope
+
+
+def test_the_read_is_constant_across_queries_when_no_query_is_supplied() -> None:
+    """The measured defect, still reproducible on the documented compatibility path.
+
+    `query=None` is the pre-2026-09-07 contract and MUST keep behaving as it did: a pure
+    function of `(scope, domain)`. This is why the store returned a constant -- every item
+    of a batch shares one scope, so every item got byte-identical records. Keeping this
+    reachable is what makes the query's effect measurable against a control.
+    """
+    store, scope = _basis_store()
+    first, _mask = store.read(scope, domain="chat", b_store=4)
+    second, _mask = store.read(scope, domain="chat", b_store=4)
+    assert torch.equal(first, second)
+    assert float((first - second).abs().max()) == 0.0
+
+
+def test_the_read_is_not_constant_once_a_query_is_supplied() -> None:
+    """Two different queries against ONE scope must return different banks.
+
+    This is the whole repair in one assertion: the store read stops being a constant with
+    respect to the item, which is what gave `dL/d(store attention)` something to be.
+    """
+    store, scope = _basis_store()
+    query_a = torch.tensor([1.0, 0.0, 0.0, 0.0])
+    query_b = torch.tensor([0.0, 0.0, 0.0, 1.0])
+
+    bank_a, mask_a = store.read(scope, domain="chat", b_store=4, query=query_a)
+    bank_b, mask_b = store.read(scope, domain="chat", b_store=4, query=query_b)
+
+    assert bool(mask_a.all()) and bool(mask_b.all()), "both reads must be full"
+    assert float((bank_a - bank_b).abs().max()) > 0.0, "the read ignored the query"
+    assert torch.allclose(bank_a[0], query_a), "top-1 is not the record the query points at"
+    assert torch.allclose(bank_b[0], query_b)
+
+
+def test_every_record_is_reachable_as_top_one_by_its_own_query() -> None:
+    """Rank, not filter: each of the four records wins for exactly the query that names it."""
+    store, scope = _basis_store()
+    for axis in range(4):
+        query = torch.zeros(4)
+        query[axis] = 1.0
+        bank, _mask = store.read(scope, domain="chat", b_store=4, query=query)
+        assert torch.allclose(bank[0], query), f"axis {axis} was not retrievable"
+
+
+def test_a_near_collinear_store_still_ranks_by_the_query() -> None:
+    """The measured condition: memories at max off-diagonal cosine 0.9993 still rank.
+
+    A common mean plus a tiny per-record direction is what a real store of mean-pooled `z_N`
+    looks like -- everything points nearly the same way. Cosine compresses those scores into
+    a narrow band, but the ORDER survives, and only the order reaches the caller. Measured:
+    98.6% top-1 same-class retrieval at step 0, before any optimizer step.
+    """
+    store = _store()
+    scope = derive_scope("alice")
+    common = torch.ones(16) * 10.0
+    for axis in range(4):
+        record = common.clone()
+        record[axis] += 0.2
+        store.write(scope, "chat", f"axis-{axis}", record)
+
+    resident = torch.stack([r.latent for r in store._records.values()])
+    normed = resident / resident.norm(dim=1, keepdim=True)
+    cosines = normed @ normed.T
+    off_diagonal = cosines[~torch.eye(4, dtype=torch.bool)]
+    assert float(off_diagonal.max()) > 0.999, "the fixture is not near-collinear any more"
+
+    for axis in range(4):
+        query = common.clone()
+        query[axis] += 0.2
+        bank, _mask = store.read(scope, domain="chat", b_store=4, query=query)
+        assert int(bank[0].argmax()) == axis, f"axis {axis} lost its own query"
+
+
+def test_the_query_does_not_widen_the_partition_it_can_see() -> None:
+    """A query ranks WITHIN a scope; it never reaches across one.
+
+    `scope` is the isolation axis (`derive_scope`/G32/DEC-64) and `query` is the content
+    axis. A query that pointed exactly at another principal's record must still return
+    nothing, or the two axes have been confused -- which is precisely why the fix is a query
+    parameter and not a content-derived scope key.
+    """
+    store = _store()
+    alice = derive_scope("alice")
+    bob = derive_scope("bob")
+    secret = torch.tensor([9.0, 9.0, 9.0, 9.0])
+    store.write(bob, "chat", "bobs-episode", secret)
+
+    latents, mask = store.read(alice, domain="chat", b_store=4, query=secret)
+    assert not bool(mask.any()), "a query crossed a scope boundary"
+    assert float(latents.abs().max()) == 0.0
+
+
+def test_a_query_of_the_wrong_width_is_refused() -> None:
+    """Same rule `write` applies to a latent: one `D` per store, checked at the edge."""
+    store, scope = _basis_store()
+    with pytest.raises(ValueError, match="width"):
+        store.read(scope, domain="chat", b_store=4, query=torch.zeros(7))
+
+
+def test_an_integer_typed_query_is_refused() -> None:
+    """G31's shape rule at this module's boundary: a query is never an integer payload."""
+    store, scope = _basis_store()
+    with pytest.raises(ValueError, match="floating point"):
+        store.read(scope, domain="chat", b_store=4, query=torch.zeros(4, dtype=torch.long))
+
+
+def test_a_two_dimensional_query_is_refused() -> None:
+    """`read` is single-item (ambiguity note 2); a `[B, D]` query is a caller-side batching
+    mistake, and broadcasting it silently would rank against a mean nobody asked for."""
+    store, scope = _basis_store()
+    with pytest.raises(ValueError, match="1-D"):
+        store.read(scope, domain="chat", b_store=4, query=torch.zeros(2, 4))
+
+
+def test_a_query_against_an_empty_partition_is_still_the_no_store_configuration() -> None:
+    """G32 and the never-written partition answer before the query is ever consulted."""
+    store, _scope = _basis_store()
+    latents, mask = store.read(
+        derive_scope("nobody"), domain="chat", b_store=4, query=torch.zeros(4)
+    )
+    assert not bool(mask.any())
+    assert latents.shape == (4, 4)
+
+
+def test_a_query_does_not_take_a_gradient_out_of_the_store() -> None:
+    """The ranking is a selection, not a differentiable path back to the query.
+
+    The store returns records it holds by value; `read` must not hand the caller a tensor
+    wired into the query's graph, or a backward pass would flow through a sort.
+    """
+    store, scope = _basis_store()
+    query = torch.tensor([1.0, 0.0, 0.0, 0.0], requires_grad=True)
+    bank, _mask = store.read(scope, domain="chat", b_store=4, query=query)
+    assert not bank.requires_grad
 
 
 # ---------------------------------------------------------------------------------------

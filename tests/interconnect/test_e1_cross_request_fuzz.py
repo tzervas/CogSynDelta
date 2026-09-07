@@ -97,7 +97,7 @@ def _fuzz_store(backend: StoreBackend) -> EpisodicStoreImpl:
         backend=backend,
         capacity_provider=lambda: BIG,
         host="fuzz-host",
-        tier_budget=TierBudget(ram_max_items=WRITES * 2, disk_max_items=WRITES * 2),
+        tier_budget=TierBudget(ram_max_items=WRITES * 2, max_records=WRITES * 2),
     )
     store.start()
     return store
@@ -178,7 +178,7 @@ def test_the_fuzz_catches_a_crossing_when_the_key_is_mis_derived(tmp_path: Path)
             backend=InMemoryBackend(),
             capacity_provider=lambda: BIG,
             host="fuzz-host",
-            tier_budget=TierBudget(ram_max_items=WRITES * 2, disk_max_items=WRITES * 2),
+            tier_budget=TierBudget(ram_max_items=WRITES * 2, max_records=WRITES * 2),
         )
         store.start()
         observed = _run_fuzz(store, scopes, read_partitions=4)

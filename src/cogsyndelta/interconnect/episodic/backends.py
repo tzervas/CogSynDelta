@@ -80,8 +80,9 @@ class Residency(str, Enum):
 
     DISK = "disk"
     """The span has been spilled. Does NOT count against `capacity_bytes` (that bound is the
-    VRAM residual of section 8 gap (a), and a disk span occupies none of it); bounded instead
-    by `TierBudget.disk_max_items`, whose overflow hard-deletes."""
+    VRAM residual of section 8 gap (a), and a disk span occupies none of it), and -- since the
+    2026-09-07 amendment to DEC-63 -- is NOT bounded separately either: membership is one
+    ceiling over the whole store (`TierBudget.max_records`), and residency is placement."""
 
 
 GPU_TIERS: frozenset[Residency] = frozenset({Residency.GPU, Residency.RAM})
@@ -91,21 +92,40 @@ GPU_TIERS: frozenset[Residency] = frozenset({Residency.GPU, Residency.RAM})
 
 @dataclass(frozen=True, slots=True)
 class TierBudget:
-    """Item budgets for the lower tier, ported from `types.rs:458-473`.
+    """Item budgets, ported from `types.rs:458-473` and split by what they decide.
 
-    Byte capacity (section 8 gap (a)) bounds the resident tiers; this bounds the disk tier,
-    which the VRAM residual says nothing about. Upstream's numbers are kept
-    (`ram_max_items 256`, `disk_max_items 4096`) rather than re-derived: they are what the
-    ported eviction fixtures were written against.
+    PLACEMENT versus MEMBERSHIP, and why the split is load-bearing (DEC-63 as amended
+    2026-09-07). Byte capacity (section 8 gap (a)) is derived from live VRAM, so everything
+    it drives is HOST-DEPENDENT by construction -- that is the point of a dynamic capacity,
+    and it is correct for placement: which tier a span sits in costs latency, not existence.
+    Deletion is not placement. `max_records` therefore bounds what the store HOLDS,
+    independently of any card, and `ram_max_items` bounds only where those records SIT.
+
+    Upstream's numbers are kept (`ram_max_items 256`, and 4,096 for the record ceiling)
+    rather than re-derived: they are what the ported eviction fixtures were written against.
     """
 
     ram_max_items: int = 256
-    """Upper bound on resident items, alongside the byte capacity. Whichever binds first wins;
-    both spill through the same scored path."""
+    """Upper bound on RESIDENT items, alongside the byte capacity. Whichever binds first wins;
+    both spill through the same scored path. Placement only -- overflow here demotes a span to
+    disk and never deletes it."""
 
-    disk_max_items: int = 4096
-    """Upper bound on spilled items. Overflow here HARD-DELETES the lowest-importance rows --
-    section 1.3 clause (2): *"the only data-loss path in the store"* (`tiered.rs:180-198`)."""
+    max_records: int = 4096
+    """Upper bound on records the store HOLDS, over every residency tier. Overflow HARD-DELETES
+    the lowest-importance rows -- section 1.3 clause (2): *"the only data-loss path in the
+    store"* (`tiered.rs:180-198`).
+
+    IN RECORDS, DELIBERATELY, AND NOT IN BYTES. A quantised model has narrower latents, so a
+    byte ceiling would silently admit MORE records after quantisation -- changing what the
+    store holds, and therefore what it answers, out of a step that was supposed to be
+    behaviour-preserving. Re-quantisation is already a memory-gate migration trigger; it must
+    not also move membership.
+
+    OVER EVERY TIER, ALSO DELIBERATELY. This was `disk_max_items`, a bound on the SPILLED
+    tier, and the spill rate follows `capacity_bytes`, which follows live VRAM. A smaller card
+    spilled more, reached this ceiling at a smaller working set, and hard-deleted rows a larger
+    card still held: same input sequence, different membership, decided by the host. Counting
+    every record instead makes the trigger a declared number rather than a measured one."""
 
 
 @dataclass(slots=True)

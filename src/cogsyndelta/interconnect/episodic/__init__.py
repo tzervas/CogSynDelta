@@ -40,8 +40,17 @@ no test file*. Editing the stub to implement DEC-63 would turn E0's file red, wh
 same failure mode by a different door: a build that rewrites its own gate. So E1 adds a second
 implementation of the same protocol beside the stub, leaves E0's module and E0's test file
 byte-identical, and re-runs the nine fixtures against `EpisodicStoreImpl` over both durability
-oracles in `tests/interconnect/test_e1_store_conformance.py`. `git diff` on this branch shows
-`tests/interconnect/test_episodic_store.py` untouched; that is gate (i)'s evidence.
+oracles in `tests/interconnect/test_e1_store_conformance.py`. `git diff` on E1's own branch
+shows `tests/interconnect/test_episodic_store.py` untouched; that was gate (i)'s evidence.
+
+WHAT CHANGED SINCE, AND WHY IT IS NOT THAT MOVE (2026-09-07). The stub and its test file
+have since been edited -- deliberately, and for a reason gate (i) does not cover. Gate (i)
+forbids making a RED gate green by editing the gate; the 2026-09-07 change fixes a MEASURED
+defect in a merged contract (the read returned a constant, so the store contributed no
+learnable signal) and adds its own tests, red before the fix and green after. Both stores
+carry the repair, because both implement one protocol: the read's tie-break now prefers the
+newer record, and `read`/`retrieve` take an optional `query` and rank by cosine against it.
+None of E0's nine `ContractGap` fixtures moved.
 """
 
 from __future__ import annotations

@@ -49,8 +49,15 @@ BIG = 1 << 40
 class _Fixture:
     """A store with a mutable capacity and pinned record timestamps."""
 
-    def __init__(self, *, half_life_s: float = 3600.0) -> None:
-        self.capacity = {"value": BIG}
+    def __init__(
+        self,
+        *,
+        half_life_s: float = 3600.0,
+        capacity: int = BIG,
+        ram_max_items: int = 10_000,
+        max_records: int = 10_000,
+    ) -> None:
+        self.capacity = {"value": capacity}
         self.half_life_s = half_life_s
         self.now = time.time()
         self.store = EpisodicStoreImpl(
@@ -59,7 +66,7 @@ class _Fixture:
             capacity_provider=lambda: self.capacity["value"],
             host="test-host",
             half_life_s=half_life_s,
-            tier_budget=TierBudget(ram_max_items=10_000, disk_max_items=10_000),
+            tier_budget=TierBudget(ram_max_items=ram_max_items, max_records=max_records),
         )
         self.store.start()
         self.scope = derive_scope("alice")
@@ -95,6 +102,10 @@ class _Fixture:
     def survivors(self) -> set[str]:
         """Logical keys still holding a claim on the byte capacity."""
         return {key[2] for key in self.store.resident_keys()}
+
+    def members(self) -> set[str]:
+        """Logical keys the store still HOLDS, at any residency -- membership, not placement."""
+        return {key[2] for key in self.store._index}
 
     def evict_at(self, capacity: int) -> int:
         """Set the capacity for this tick and run one eviction pass."""
@@ -246,3 +257,140 @@ def test_spilled_records_carry_the_disk_tag_rather_than_disappearing() -> None:
     fixture.evict_at(SPAN)
     meta = fixture.store._index[(fixture.scope_key, "chat", "spill")]
     assert meta.residency is Residency.DISK
+
+
+# ---------------------------------------------------------------------------------------
+# Membership is host-invariant (DEC-63 as amended 2026-09-07).
+#
+# THE DEFECT. `_enforce_capacity` always ended in `_prune_disk()`, and the spill rate that fed
+# it follows `capacity_bytes`, which follows live VRAM. A smaller card spilled more, reached
+# the fixed `disk_max_items` at a smaller working set, and HARD-DELETED rows a larger card
+# still held: the same input sequence produced a different store depending on which card ran
+# it, through the one path the store documents as its only data-loss path. The deletion SCORE
+# was already clean -- importance only, GPU bonus deliberately excluded. The TRIGGER was not.
+# Spilling is placement and may depend on the host; deletion is membership and must not.
+# ---------------------------------------------------------------------------------------
+
+MEMBERSHIP_CEILING = 6
+"""Declared record ceiling for the two-card arms below -- small enough to bite at ten writes."""
+
+
+def _ten_writes(*, capacity: int) -> _Fixture:
+    """Ten records, distinct importances, one declared ceiling, one caller-chosen capacity.
+
+    `capacity` is the ONLY difference between the two arms: it stands for the card. Everything
+    the store is told about what it should HOLD is identical.
+    """
+    fixture = _Fixture(capacity=capacity, ram_max_items=10_000, max_records=MEMBERSHIP_CEILING)
+    for i in range(10):
+        fixture.write(f"k{i}", importance=i / 10.0)
+    return fixture
+
+
+def test_membership_is_identical_on_a_big_card_and_a_small_one() -> None:
+    """Same writes, wildly different capacities: the store HOLDS the same records.
+
+    The two arms must genuinely diverge in placement for this to mean anything, so the second
+    assertion checks that they did -- otherwise a store that simply never spills would pass.
+    """
+    big = _ten_writes(capacity=BIG)
+    small = _ten_writes(capacity=2 * SPAN)
+
+    expected = {f"k{i}" for i in range(4, 10)}
+    assert big.members() == expected, f"big card holds {big.members()}"
+    assert small.members() == expected, f"small card holds {small.members()}"
+    assert big.survivors() != small.survivors(), (
+        "the two arms placed records identically, so this test never exercised the divergence "
+        "it exists to bound"
+    )
+
+
+def _old_trigger_victims(fixture: _Fixture) -> set[str]:
+    """The PRE-AMENDMENT deletion set: overflow of the SPILLED tier against the ceiling.
+
+    Reconstructed here rather than described, so the can-fail control below is the expression
+    that was wrong, applied to the two arms' real, divergent residency.
+    """
+    disk = [(k, m) for k, m in fixture.store._index.items() if m.residency is Residency.DISK]
+    overflow = len(disk) - MEMBERSHIP_CEILING
+    if overflow <= 0:
+        return set()
+    order = sorted(disk, key=lambda km: (km[1].importance, km[1].written_at, km[0]))
+    return {key[2] for key, _meta in order[:overflow]}
+
+
+def test_the_old_spill_fed_trigger_deleted_different_rows_on_different_cards(monkeypatch) -> None:
+    """The can-fail control: the trigger that was replaced, on the same two arms.
+
+    With membership enforcement stubbed out, both arms hold all ten records and differ only in
+    residency. Applying the old expression to each then deletes DIFFERENT rows -- nothing on
+    the big card, real rows on the small one. That difference is the defect, and it is what
+    the test above bounds.
+    """
+    monkeypatch.setattr(EpisodicStoreImpl, "_enforce_membership", lambda self: 0)
+    big = _ten_writes(capacity=BIG)
+    small = _ten_writes(capacity=2 * SPAN)
+    assert big.members() == small.members(), "the stub did not disable deletion"
+
+    big_victims = _old_trigger_victims(big)
+    small_victims = _old_trigger_victims(small)
+    assert big_victims == set(), "the big card should have spilled too little to trigger a prune"
+    assert small_victims, "the small card should have spilled past the ceiling"
+    assert big_victims != small_victims, (
+        "the old trigger did not diverge across cards here, so it is not reconstructed"
+    )
+
+
+def test_a_spill_deletes_nothing() -> None:
+    """`_enforce_placement` demotes and never deletes -- the two paths are unhooked."""
+    fixture = _Fixture(capacity=BIG, max_records=10_000)
+    for i in range(10):
+        fixture.write(f"k{i}", importance=i / 10.0)
+    before = fixture.members()
+
+    fixture.evict_at(2 * SPAN)
+    assert fixture.members() == before, "a spill removed a record from the store"
+    assert len(fixture.survivors()) < len(before), "nothing spilled; the arm proves nothing"
+
+
+def test_demotion_under_capacity_pressure_still_happens() -> None:
+    """DEC-70's positive control: the fix must not have removed demotion.
+
+    Demotion costs latency, not membership, and it is the correct response to VRAM pressure.
+    A repair that made the store host-invariant by refusing to spill at all would pass every
+    membership assertion above and be a worse store.
+    """
+    fixture = _Fixture(capacity=BIG, max_records=10_000)
+    for i in range(10):
+        fixture.write(f"k{i}", importance=i / 10.0)
+    assert len(fixture.survivors()) == 10
+
+    fixture.evict_at(3 * SPAN)
+    assert len(fixture.survivors()) == 3, "the store did not demote under capacity pressure"
+    assert fixture.survivors() == {"k7", "k8", "k9"}, "demotion kept the wrong three"
+
+
+def test_the_membership_budget_is_counted_in_records_not_bytes() -> None:
+    """A narrower latent must not change WHAT the store holds.
+
+    Quantisation makes records smaller. Under a byte ceiling that silently admits more of them,
+    what the store answers would change out of a step that was supposed to preserve behaviour
+    -- and re-quantisation is already a memory-gate migration trigger. Two arms, same records,
+    one at a quarter the span: the membership must be identical.
+    """
+    wide = _Fixture(capacity=BIG, max_records=MEMBERSHIP_CEILING)
+    narrow = _Fixture(capacity=BIG, max_records=MEMBERSHIP_CEILING)
+    for i in range(10):
+        wide.store.learn(
+            wide.scope, "chat", f"k{i}", torch.ones(8), importance=i / 10.0, span_bytes=SPAN
+        )
+        narrow.store.learn(
+            narrow.scope,
+            "chat",
+            f"k{i}",
+            torch.ones(2),
+            importance=i / 10.0,
+            span_bytes=SPAN // 4,
+        )
+
+    assert wide.members() == narrow.members() == {f"k{i}" for i in range(4, 10)}
