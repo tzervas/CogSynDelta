@@ -250,7 +250,34 @@ class ComposeReceipt:
     def set_placement_knobs(self, payload: Mapping[str, Any]) -> ComposeReceipt:
         """Table 7 placement-and-knobs group: `placement{}` from W7p and `knobs{}` from
         W7k.
+
+        Both values must be MAPPINGS, and `None` is refused by name, because `None` is the
+        shape this group actually shipped in: `{"placement": null, "knobs": null}` on all
+        thirty phase-A receipts written before 2026-09-07, among them eleven that
+        disagreed about `checkpoint_sha256` at one seed and one command line because the
+        knob that decided the weights -- the intra-op thread count -- had nowhere here to
+        be recorded. Table 7 writes both as `{}`, so a caller with nothing to say in this
+        group still says it with an empty mapping, the way `set_baselines` does; that
+        keeps "measured nothing" distinguishable from "recorded nothing", which a `None`
+        does not.
+
+        Args:
+            payload: Must carry `placement` and `knobs`, each a mapping.
+
+        Returns:
+            `self`, for chaining.
+
+        Raises:
+            ValueError: `placement` or `knobs` is absent or is not a mapping.
         """
+        for key in ("placement", "knobs"):
+            value = payload.get(key)
+            if not isinstance(value, Mapping):
+                raise ValueError(
+                    f"ComposeReceipt.set_placement_knobs: {key!r} must be a mapping, got "
+                    f"{value!r}. Table 7 writes this group as `{key} {{}}`; None is the "
+                    "shape that let a run's thread pin go unrecorded."
+                )
         return self._set("placement_knobs", payload)
 
     def build(self) -> dict[str, Any]:
