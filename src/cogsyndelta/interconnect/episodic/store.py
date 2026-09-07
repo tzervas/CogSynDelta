@@ -16,14 +16,26 @@ WHAT ROW E1 ASKS FOR, and where each clause is answered here:
   - *"SQLite as the durability oracle with in-memory as the conformance oracle"* -- both are
     `StoreBackend`s in `backends.py`; this class holds one and does not know which.
 
-PLACEMENT IS HOST-DEPENDENT; MEMBERSHIP IS NOT (DEC-63 as amended 2026-09-07). `capacity_bytes`
-is derived from live VRAM, so every decision it drives differs card by card -- which is correct
-for WHERE a span sits, and was wrong for WHETHER a record exists. The two now have separate
-methods and separate triggers: `_enforce_placement` demotes against the VRAM-derived capacity
-and deletes nothing, and `_enforce_membership` deletes against `TierBudget.max_records`, a
-declared record count that no card can move. `_enforce_placement` does not call
-`_enforce_membership`; `learn` and `evict` invoke both, membership first. Demotion under VRAM
-pressure is untouched and stays -- DEC-70 ratifies it, and it costs latency, not membership.
+THREE CONCEPTS, NOT TWO, AND ONLY ONE OF THEM MAY DEPEND ON THE HOST (DEC-63 as amended
+2026-09-07):
+
+  - **Placement** -- where a record lives. MAY depend on the host, and should: `capacity_bytes`
+    is derived from live VRAM, and a dynamic capacity is the point. Placement costs LATENCY.
+    `_enforce_placement`, `_score_meta`.
+  - **Membership** -- whether a record exists at all. MUST NOT depend on the host.
+    `_enforce_membership`, bounded by `TierBudget.max_records`, a declared record count no card
+    can move.
+  - **Selection** -- which records a query returns. MUST NOT depend on the host either.
+    `_read_score`, which carries no residency term, so two hosts holding the same records
+    return the same read.
+
+Each has its own method and its own score, and none calls another: `_enforce_placement` demotes
+and deletes nothing, `_enforce_membership` deletes and demotes nothing (`learn` and `evict`
+invoke both, membership first), and `retrieve` scores through neither of them. Demotion under
+VRAM pressure is untouched and stays -- DEC-70 ratifies it, and it costs latency, not membership
+and not the answer. The read latency the residency bonus used to buy moves to PREFETCH: making
+the right records resident before the query is the same saving without changing what comes back.
+That is a scheduler's job and is not built here.
 
 AND WHAT IT ASKS NOT TO BUILD, which is the harder half of the row. *"The store's two
 projections are NOT trained here -- they are white-matter parameters and E2 trains them. This
@@ -684,11 +696,12 @@ class EpisodicStoreImpl:
         """Read up to `b_store` episodes for one scope, merged across residency tiers.
 
         `retrieve_merges_tiers` (E0 fixture 9/9) is this sentence: a spilled record is still a
-        record, so the read path does not filter on residency. With no `query`, ranking is
-        the same score eviction uses, so what survives eviction is what a read prefers -- one
-        policy, not two. With a `query`, cosine to it ranks first and that score becomes the
-        tie-break: relevance decides WHICH record answers this request, the eviction score
-        decides which records exist to answer it at all.
+        record, so the read path does not filter on residency. Nor does it SCORE on residency
+        (`_read_score`): two hosts holding the same records return the same read, whatever
+        tier those records happen to sit in. With no `query`, ranking is
+        `importance - staleness`, newest first on a tie. With a `query`, cosine to it ranks
+        first and that becomes the tie-break: relevance decides WHICH record answers this
+        request, and nothing about where the bytes live gets a vote.
 
         Args:
             scope: A `Scope` from `derive_scope`, or `None` for an unknown principal (which
@@ -836,37 +849,75 @@ class EpisodicStoreImpl:
             return int(self._capacity_provider())
 
     def _score_meta(self, meta: IndexRow, now: float) -> float:
-        """`importance + gpu_resident_bonus - staleness(last_accessed)`, over an index row."""
+        """`importance + gpu_resident_bonus - staleness(last_accessed)`, over an index row.
+
+        THE EVICTION score, and residency belongs in it: eviction decides PLACEMENT, and
+        preferring to spill the record that is not already on the card is exactly the right
+        thing for a decision whose currency is latency. `_read_score` is the SELECTION score
+        and deliberately does not share this term -- see there.
+        """
         bonus = GPU_RESIDENT_BONUS if meta.residency is Residency.GPU else 0.0
         penalty = staleness_penalty(meta.last_accessed, now, self.half_life_s)
         return meta.importance + bonus - penalty
 
+    def _read_score(self, importance: float, last_accessed: float, now: float) -> float:
+        """`importance - staleness(last_accessed)`, with NO residency term.
+
+        SELECTION, NOT PLACEMENT (DEC-63 as amended 2026-09-07). Three concepts, not two:
+        placement is where a record lives and may depend on the host, because it costs
+        latency; membership is whether a record exists and may not; SELECTION is which
+        records a query returns, and may not either. A read that scored the GPU bonus meant
+        two hosts holding exactly the same records returned DIFFERENT answers -- identical
+        membership, different reads, decided by where the bytes happened to sit.
+
+        The bonus is not kept as a tie-break either. A tie-break still changes the returned
+        set whenever relevance ties, and relevance ties often: the memories this store holds
+        are mean-pooled `z_N` latents whose maximum off-diagonal cosine was measured at
+        0.9993, so "ties" is the normal case rather than the corner one.
+
+        THE LATENCY BENEFIT MOVES TO PREFETCH, and is not lost. Preferring a resident record
+        was an optimisation that bought a cheap read by changing the answer; making the RIGHT
+        records resident BEFORE the query buys the same read cheaply without touching what
+        comes back. That is a scheduler job and is not built here.
+
+        ONE RESIDUAL PATH, recorded rather than quietly closed: `promote` refreshes
+        `last_accessed`, so a host that promotes more often makes those records marginally
+        less stale and therefore marginally better-ranked. `mark_gpu` does not. Closing that
+        needs a decision about whether `promote` should count as an access at all, which is a
+        different question from this one.
+
+        Args:
+            importance: The record's importance.
+            last_accessed: The record's last-access timestamp.
+            now: The scoring tick.
+
+        Returns:
+            The selection score; higher ranks earlier.
+        """
+        return importance - staleness_penalty(last_accessed, now, self.half_life_s)
+
     def _rank_key(self, record: StoredRecord, now: float) -> tuple[float, float, RecordKey]:
-        """Read ranking: eviction score descending, then NEWEST first, then key.
+        """Read ranking: SELECTION score descending, then NEWEST first, then key.
 
-        Scored off the INDEX where the record has one, so a read and an eviction never
-        disagree about the same record -- one policy, evaluated once per tick.
+        Scored off the INDEX where the record has one, so two reads of the same record in one
+        tick cannot disagree.
 
-        AMENDED 2026-09-07. The timestamp tie-break used to be ascending (older first),
-        which is the direction `_enforce_placement` SPILLS in: the read preferred exactly the
-        record eviction had judged least valuable, so the two halves of "one policy, not
-        two" pointed opposite ways. Under a uniform importance -- which is what every write
-        through `mind.py` carries, since nothing on the forward path sets one -- that made a
-        resident set of primers a permanent wall in front of everything written afterwards.
-        `episodic_store.py::_tie_break` carries the measurement; this is the same repair in
-        the store that replaces that stub. Eviction's own ordering is untouched: it sorts in
-        `_enforce_placement`/`_enforce_membership` with their own keys, not through this method.
+        AMENDED 2026-09-07, twice. (1) The timestamp tie-break used to be ascending (older
+        first), which is the direction `_enforce_placement` SPILLS in: the read preferred
+        exactly the record eviction had judged least valuable. Under a uniform importance --
+        what every write through `mind.py` carries, since nothing on the forward path sets one
+        -- that made a resident set of primers a permanent wall in front of everything written
+        afterwards; `episodic_store.py::_tie_break` carries the measurement. (2) The score was
+        the EVICTION score, `_score_meta`, which carries `gpu_resident_bonus`; it is now
+        `_read_score`, which does not, so what a query returns no longer depends on where the
+        bytes sit. Eviction's own orderings are untouched: `_enforce_placement` and
+        `_enforce_membership` sort with their own keys, not through this method.
         """
         meta = self._index.get(record.key)
         if meta is not None:
-            score = self._score_meta(meta, now)
+            score = self._read_score(meta.importance, meta.last_accessed, now)
         else:
-            bonus = GPU_RESIDENT_BONUS if record.residency is Residency.GPU else 0.0
-            score = (
-                record.importance
-                + bonus
-                - staleness_penalty(record.last_accessed, now, self.half_life_s)
-            )
+            score = self._read_score(record.importance, record.last_accessed, now)
         return (-score, -record.written_at, record.key)
 
     def _check_query(self, query: Tensor) -> None:

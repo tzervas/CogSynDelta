@@ -424,6 +424,93 @@ def test_a_query_of_the_wrong_width_is_refused_by_the_built_store(backend_factor
 
 
 # ---------------------------------------------------------------------------------------
+# Selection is host-invariant: residency changes latency, never the answer (2026-09-07).
+#
+# THE DEFECT. The read ranked on the EVICTION score, which carries `gpu_resident_bonus`, so
+# two hosts holding exactly the same records returned DIFFERENT reads whenever those records
+# sat in different tiers. Membership had already been made host-invariant; selection had not.
+# The bonus is a PLACEMENT term -- prefer a read that is already on the card -- that had
+# leaked into SELECTION, where it changes the answer. It is removed outright rather than
+# demoted to a tie-break: a tie-break still changes the returned set when relevance ties, and
+# these memories tie often (measured maximum off-diagonal cosine 0.9993).
+# ---------------------------------------------------------------------------------------
+
+
+def _five_records(backend_factory) -> tuple[EpisodicStoreImpl, Scope]:
+    """Five records at one importance, so only the score's other terms can separate them."""
+    store = _store(backend_factory)
+    scope = derive_scope("alice")
+    for i in range(5):
+        store.learn(scope, "chat", f"k{i}", _latent(fill=float(i)), importance=0.5)
+    return store, scope
+
+
+def test_a_read_returns_the_same_records_whatever_tier_they_sit_in(backend_factory) -> None:
+    """The property being bought: same records, same query, different placement, same answer.
+
+    One arm leaves every record where `learn` put it; the other tags two of them GPU-resident,
+    which is the only difference between the arms. Under the eviction score those two would
+    have jumped the queue by `GPU_RESIDENT_BONUS = 1.0`, which is twice every record's whole
+    importance here.
+    """
+    flat, flat_scope = _five_records(backend_factory)
+    tiered, tiered_scope = _five_records(backend_factory)
+    tiered.mark_gpu(tiered_scope, "chat", "k0")
+    tiered.mark_gpu(tiered_scope, "chat", "k1")
+
+    flat_read, flat_mask = flat.retrieve(flat_scope, domain="chat", b_store=3)
+    tiered_read, tiered_mask = tiered.retrieve(tiered_scope, domain="chat", b_store=3)
+
+    assert torch.equal(flat_mask, tiered_mask)
+    assert torch.equal(flat_read, tiered_read), (
+        "residency changed which records the read returned: "
+        f"flat={[float(row[0]) for row in flat_read]} "
+        f"tiered={[float(row[0]) for row in tiered_read]}"
+    )
+
+
+def test_a_query_ranked_read_is_also_unmoved_by_residency(backend_factory) -> None:
+    """The same, with a query supplied -- the path `mind.py` actually takes."""
+    flat, flat_scope = _five_records(backend_factory)
+    tiered, tiered_scope = _five_records(backend_factory)
+    tiered.mark_gpu(tiered_scope, "chat", "k4")
+
+    query = _latent(fill=2.0)
+    flat_read, _mask = flat.retrieve(flat_scope, domain="chat", b_store=2, query=query)
+    tiered_read, _mask = tiered.retrieve(tiered_scope, domain="chat", b_store=2, query=query)
+    assert torch.equal(flat_read, tiered_read)
+
+
+def test_the_eviction_score_would_have_reordered_this_read(backend_factory) -> None:
+    """The can-fail control: rank the SAME records by the score the read used to use.
+
+    `_score_meta` is still the store's eviction score and still carries the bonus -- correctly,
+    because eviction decides placement. Ranking the read through it puts the GPU-tagged records
+    first, which is the reordering the test above asserts is gone. If this control ever stops
+    diverging, the test above has stopped measuring anything.
+    """
+    tiered, tiered_scope = _five_records(backend_factory)
+    tiered.mark_gpu(tiered_scope, "chat", "k0")
+    tiered.mark_gpu(tiered_scope, "chat", "k1")
+
+    now = time.time()
+    matches = tiered._backend.partition(partition_scope_key(tiered_scope), "chat")
+    by_read = [r.logical_key for r in sorted(matches, key=lambda r: tiered._rank_key(r, now))]
+    by_eviction = [
+        r.logical_key
+        for r in sorted(
+            matches,
+            key=lambda r: (-tiered._score_meta(tiered._index[r.key], now), -r.written_at, r.key),
+        )
+    ]
+    assert by_eviction[:2] == ["k1", "k0"], f"the GPU bonus did not dominate: {by_eviction}"
+    assert by_read[:2] != by_eviction[:2], (
+        "the read and the eviction score agree here, so the control is not reconstructed"
+    )
+    assert GPU_RESIDENT_BONUS > 0.0, "a zero bonus would make this control vacuous"
+
+
+# ---------------------------------------------------------------------------------------
 # Identity: the scope segment is derived, and the derivation is injective.
 # ---------------------------------------------------------------------------------------
 
