@@ -26,14 +26,16 @@ from typing import Any
 import pytest
 
 from cogsyndelta.interconnect import phase_a
-from cogsyndelta.interconnect.gates import GateFailure
+from cogsyndelta.interconnect.gates import GateFailure, GateInconclusive
 from cogsyndelta.interconnect.mind import WhiteMatter
 from cogsyndelta.interconnect.phase_a import (
     PhaseAConfig,
+    PhaseAGuardReport,
     PhaseATrainer,
     check_phase_a_frozen_set,
     check_receipt_collapse_floor,
     phase_a_guards,
+    replicate_phase_a_guards,
 )
 from tests.interconnect.test_phase_a import honest_frozen_set, identity_for, toy_batch
 
@@ -485,3 +487,156 @@ def test_a_deep_copy_of_the_healthy_report_is_not_accidentally_shared() -> None:
     assert first.collapsed_in_phase_A == ["language"]
     assert second.collapsed_in_phase_A == []
     assert copy.deepcopy(first).collapsed_in_phase_A == ["language"]
+
+
+# ----------------------------------------------------------------------------------
+# R5 -- the replicated verdict. Constructed cases for the invariant that makes it safe:
+# "inconclusive" may only ever replace a "pass", never a "fail".
+# ----------------------------------------------------------------------------------
+
+
+def _run_report(*, store_mass: float, held_out: float, train: float = 1.0) -> PhaseAGuardReport:
+    """One seed's `PhaseAGuardReport` at a chosen store mass and held-out metric."""
+    masses = _healthy_masses()
+    masses["episodic_store"] = store_mass
+    return phase_a_guards(
+        mean_per_region=masses,
+        eta=0.15,
+        r=3,
+        train_metric=train,
+        held_out_metric=held_out,
+        general_null_recall=0.90,
+        per_bin_null_fpr={"content": 0.01},
+        held_out_n=64,
+    )
+
+
+def test_r5_a_mixed_g29_verdict_is_inconclusive_and_is_not_a_pass() -> None:
+    """2 of 8 seeds fire, exactly as measured on phase A's stream: INCONCLUSIVE.
+
+    This is the case R5 exists for. Each of these eight runs is individually a legitimate
+    single-run verdict, and which one a receipt records is decided by the seed -- so the
+    combined answer must be neither "pass" (which would vote away a real collapse) nor
+    "fail" (which would promote a noise-driven minority into a hard failure and send the
+    loop chasing a collapse that is not there).
+    """
+    below, above = 0.045, 0.20  # the floor is eta/R = 0.05
+    runs = [_run_report(store_mass=m, held_out=0.99) for m in [below, below, *([above] * 6)]]
+
+    verdict = replicate_phase_a_guards(runs)
+
+    assert verdict.combined == "inconclusive"
+    assert verdict.passed is False
+    assert verdict.seeds == 8
+    g29 = next(r for r in verdict.per_gate if r.gate == "G29" and r.subject == "episodic_store")
+    assert g29.verdict == "inconclusive"
+    assert "2 of 8 replicate seeds fired" in "; ".join(g29.notes)
+    with pytest.raises(GateInconclusive, match="G29"):
+        verdict.require_pass()
+
+
+def test_r5_a_unanimous_fire_still_fails_however_wide_the_spread() -> None:
+    """THE INVARIANT: precision never rescues a gate that fired on every seed.
+
+    The masses below are deliberately spread across an order of magnitude, so the seed-axis
+    spread is large next to the margin -- the exact configuration that turns a non-firing
+    run "inconclusive". A firing run must be immune to that argument, or the third verdict
+    would be a way to talk a real collapse out of failing.
+    """
+    runs = [_run_report(store_mass=m, held_out=0.99) for m in (0.0005, 0.005, 0.048, 0.0495)]
+
+    verdict = replicate_phase_a_guards(runs)
+
+    assert verdict.combined == "fail"
+    assert verdict.passed is False
+    g29 = next(r for r in verdict.per_gate if r.gate == "G29" and r.subject == "episodic_store")
+    assert g29.fired is True
+    assert g29.verdict == "fail"
+    # The spread exceeds the margin's magnitude, which is exactly the configuration that
+    # would make a NON-firing run "inconclusive" (`_classify`: margin < spread). It does
+    # not rescue this one, and that is the invariant.
+    assert g29.spread is not None
+    assert g29.spread > abs(g29.margin)
+    with pytest.raises(GateFailure, match="G29"):
+        verdict.require_pass()
+
+
+def test_r5_a_unanimous_g35_fire_also_survives_the_precision_test() -> None:
+    """The same invariant on the other replicated gate, from the other direction."""
+    runs = [_run_report(store_mass=0.25, held_out=h) for h in (0.80, 0.86, 0.90, 0.93)]
+
+    verdict = replicate_phase_a_guards(runs)
+
+    g35 = next(r for r in verdict.per_gate if r.gate == "G35")
+    assert g35.fired is True
+    assert g35.verdict == "fail"
+    assert verdict.combined == "fail"
+
+
+def test_r5_positive_control_clean_and_precise_replicates_pass() -> None:
+    """Without this the three cases above cannot tell a verdict from a refusal machine.
+
+    Every seed clear of both gates, and tightly enough clustered that each mean margin sits
+    outside its own seed-axis spread -- which is what a conclusive PASS means here.
+    """
+    runs = [_run_report(store_mass=m, held_out=0.99) for m in (0.40, 0.41, 0.42, 0.405)]
+
+    verdict = replicate_phase_a_guards(runs)
+
+    assert verdict.combined == "pass"
+    assert verdict.passed is True
+    assert verdict.verdict().startswith("PASS")
+    verdict.require_pass()  # does not raise
+    assert all(r.verdict == "pass" for r in verdict.per_gate)
+
+
+def test_r5_g36_is_declared_unreplicated_rather_than_silently_dropped() -> None:
+    """`check_null_gate` has no evaluator, so G36 cannot be combined -- say so, loudly.
+
+    A failure on any seed is still a hard fail: unanimity is the rule for a statistic whose
+    spread is known, and G36's is not, so the conservative reading is the only honest one.
+    """
+    runs = [_run_report(store_mass=0.40, held_out=0.99) for _ in range(3)]
+    runs[1].null_failure = "G36: constructed"
+
+    verdict = replicate_phase_a_guards(runs)
+
+    assert verdict.unreplicated_gates == ("G36",)
+    assert verdict.null_failures == 1
+    assert verdict.combined == "fail"
+    with pytest.raises(GateFailure, match="G36"):
+        verdict.require_pass()
+
+
+def test_r5_refuses_one_run_and_refuses_arms_that_differ_by_more_than_the_seed() -> None:
+    """One draw is not a replication, and neither is averaging two different experiments."""
+    with pytest.raises(ValueError, match="at least 2 seeds"):
+        replicate_phase_a_guards([_run_report(store_mass=0.4, held_out=0.99)])
+
+    four_regions = phase_a_guards(
+        mean_per_region={**_healthy_masses(), "reasoning": 0.10},
+        eta=0.15,
+        r=4,
+        train_metric=1.0,
+        held_out_metric=0.99,
+        general_null_recall=0.90,
+        per_bin_null_fpr={"content": 0.01},
+    )
+    with pytest.raises(ValueError, match="differ from run 0"):
+        replicate_phase_a_guards([_run_report(store_mass=0.4, held_out=0.99), four_regions])
+
+
+def test_r5_a_single_run_report_says_it_is_a_single_draw() -> None:
+    """The single-run path is unchanged, and now admits what it is.
+
+    `phase_a_guards` still answers from one draw and still returns PASS -- no verdict moved
+    -- but the `GateReport` beside it carries the note that no spread was supplied, so a
+    reader cannot mistake one draw for a precision claim.
+    """
+    report = _run_report(store_mass=0.40, held_out=0.99)
+
+    assert report.passed
+    assert report.verdict().startswith("PASS")
+    assert {r.gate for r in report.gate_reports} == {"G29", "G35"}
+    assert all(r.spread is None for r in report.gate_reports)
+    assert any("no spread supplied" in note for r in report.gate_reports for note in r.notes)

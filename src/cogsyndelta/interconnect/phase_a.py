@@ -80,10 +80,15 @@ from torch import Tensor, nn
 
 from cogsyndelta.interconnect.gates import (
     GateFailure,
+    GateInconclusive,
+    GateReport,
     check_attention_mass_floor,
     check_frozen_set_identity,
     check_null_gate,
     check_overfit_gate,
+    evaluate_attention_mass_floor,
+    evaluate_overfit_gate,
+    replicate_verdict,
 )
 from cogsyndelta.interconnect.kv_bank import STORE_PARTICIPANT
 from cogsyndelta.interconnect.losses import RankLoss, UnifyLoss
@@ -101,6 +106,7 @@ __all__ = [
     "PhaseABatch",
     "PhaseAConfig",
     "PhaseAGuardReport",
+    "PhaseAReplicatedVerdict",
     "PhaseAResult",
     "PhaseATrainer",
     "StepRecord",
@@ -109,6 +115,7 @@ __all__ = [
     "loss_decreased",
     "phase_a_guards",
     "phase_a_parameter_partition",
+    "replicate_phase_a_guards",
 ]
 
 #: Section 2.3 Table 4's "trainable in phase A, heads included, `R = 5`" figure, which is
@@ -381,6 +388,16 @@ class PhaseAGuardReport:
     null_failure: str | None = None
     """G36's message when `NULL` recall or a per-bin false-positive rate failed, else
     `None`."""
+    gate_reports: tuple[GateReport, ...] = ()
+    """One `GateReport` per evaluated G29/G35 check on THIS run, carrying the statistic,
+    the threshold and the margin rather than only the boolean.
+
+    These are evidence, not verdict: `passed` and `verdict()` below still key off the gate
+    predicate alone, so nothing recorded here can turn a pass into a fail or a fail into a
+    pass. What they add is the ability to say how close the run came, and to be combined
+    across seeds by `replicate_phase_a_guards` -- which is where a single draw of a
+    statistic with a ~2.4-point seed-axis spread stops being read as a verdict. A run that
+    supplied no spread carries the `_classify` note saying exactly that."""
     unimplemented_gates: tuple[str, ...] = ("G0", "G1", "G2")
     """Table 6 row A's gate column also names G0, G1 and G2. They are taxonomy-level
     gates with no function in `gates.py` and no Table 7 field, so they are declared
@@ -416,6 +433,7 @@ def phase_a_guards(
     held_out_metric: float,
     general_null_recall: float,
     per_bin_null_fpr: Mapping[str, float],
+    held_out_n: int | None = None,
 ) -> PhaseAGuardReport:
     """Evaluate G29, G35 and G36 over one phase-A run's measurements.
 
@@ -441,9 +459,15 @@ def phase_a_guards(
         held_out_metric: The composed metric on the dev split.
         general_null_recall: `NULL` recall on the general bin.
         per_bin_null_fpr: `{bin: NULL false-positive rate}` for every non-general bin.
+        held_out_n: Number of held-out items, when the caller knows it. It changes no
+            verdict; it lets G35's `GateReport` state the ceiling the metric can actually
+            express (`recall@1` over `N` moves in steps of `1/N`, and 5.00 points is not
+            on that lattice at `N = 64`, where the enforced ceiling is 6.25).
 
     Returns:
-        A `PhaseAGuardReport`.
+        A `PhaseAGuardReport`. Its verdict is one draw; see `replicate_phase_a_guards`
+        for the combined verdict over k seeds, which is the only thing that answers the
+        precision question this report can only pose.
 
     Raises:
         ValueError: `mean_per_region` is empty, so no floor can be checked at all.
@@ -454,7 +478,15 @@ def phase_a_guards(
     collapse_floor = {"expression": "eta/R", "R": r, "value": floor_value}
 
     report = PhaseAGuardReport(collapse_floor=collapse_floor)
+    reports: list[GateReport] = []
     for name, mean_a in mean_per_region.items():
+        # The `check_*` call decides the verdict and owns the message, exactly as before;
+        # the `evaluate_*` call records the margin beside it. They share one predicate
+        # (`_attention_floor_fired`), so they cannot disagree, and running both is what
+        # keeps this wiring free of any behaviour change: no existing message, verdict or
+        # receipt field moves, and the evidence a replicated verdict needs is now on the
+        # report.
+        reports.append(evaluate_attention_mass_floor(name, mean_a, eta, r))
         try:
             check_attention_mass_floor(name, mean_a, eta, r)
         except GateFailure as exc:
@@ -462,10 +494,12 @@ def phase_a_guards(
             report.floor_failures[name] = str(exc)
 
     report.overfit_gap = train_metric - held_out_metric
+    reports.append(evaluate_overfit_gate(train_metric, held_out_metric, held_out_n=held_out_n))
     try:
         check_overfit_gate(train_metric, held_out_metric)
     except GateFailure as exc:
         report.overfit_failure = str(exc)
+    report.gate_reports = tuple(reports)
 
     try:
         check_null_gate(general_null_recall, per_bin_null_fpr)
@@ -473,6 +507,148 @@ def phase_a_guards(
         report.null_failure = str(exc)
 
     return report
+
+
+@dataclass(frozen=True)
+class PhaseAReplicatedVerdict:
+    """Phase A's gates combined over k replicate seeds -- R5's deliverable.
+
+    WHY THIS TYPE EXISTS. `phase_a_guards` answers each gate from ONE run, and both gates
+    it can evaluate have a seed-axis spread comparable to their own threshold: over 24
+    pinned seeds G35's gap spans 0.00-10.94 points with an sd of 2.80 against a 5.00-point
+    ceiling, and G29 fires on 2 of 8 seeds on phase A's synthetic stream. Raising the
+    held-out split does not fix that -- 64 to 1024 is a 16x raise that drops the observed
+    sd only 2.86 to 2.41, because ~2.4 points of it is variance in the trained model and is
+    flat in `N`. **No split size and no device fixes a single-draw verdict; only
+    replication does.**
+
+    THE INVARIANT, inherited from `replicate_verdict` and preserved here: `"inconclusive"`
+    may only ever replace a `"pass"`, never a `"fail"`. `combined` takes the worst verdict
+    with fail ranked above inconclusive, so a gate that fired on every seed still fails
+    however noisy its neighbours were.
+
+    G36 is NOT replicated and is not silently dropped: `check_null_gate` has no `evaluate_*`
+    counterpart in `gates.py`, so there is no `GateReport` to combine. The per-seed failure
+    count is carried in `null_failures` and named in `unreplicated_gates`, on the same
+    principle as `PhaseAGuardReport.unimplemented_gates` -- a reader must be able to see
+    which gate was not covered rather than infer it from silence.
+
+    Attributes:
+        combined: `"pass"`, `"inconclusive"` or `"fail"` over every replicated gate.
+        per_gate: One combined `GateReport` per `(gate, subject)`, from `replicate_verdict`.
+        seeds: How many runs were combined.
+        null_failures: The number of replicate runs whose G36 check failed.
+        unreplicated_gates: Gates present in the runs that this verdict does not cover.
+    """
+
+    combined: str
+    per_gate: tuple[GateReport, ...]
+    seeds: int
+    null_failures: int = 0
+    unreplicated_gates: tuple[str, ...] = ("G36",)
+
+    @property
+    def passed(self) -> bool:
+        """Return whether every replicated gate is a trustworthy pass.
+
+        `"inconclusive"` is not a pass. That is the whole point: a run that cannot tell
+        which side of the threshold it is on must not be banked as though it could.
+        """
+        return self.combined == "pass"
+
+    def verdict(self) -> str:
+        """Return a one-line verdict string carrying every replicated gate's summary."""
+        head = f"{self.combined.upper()}: phase A over {self.seeds} replicate seeds"
+        details = [r.summary() for r in self.per_gate]
+        if self.null_failures:
+            details.append(f"G36: {self.null_failures} of {self.seeds} replicate seeds failed")
+        return head + ("; " + "; ".join(details) if details else "")
+
+    def require_pass(self) -> None:
+        """Raise unless every replicated gate passed -- the fail-closed call site.
+
+        Raises:
+            GateFailure: A replicated gate fired on every seed, or G36 failed on any seed.
+            GateInconclusive: No gate fired unanimously, but at least one gate's replicates
+                disagreed or its mean margin sat inside the seed-axis spread. Route this to
+                a reviewer; treating it as a pass is the failure this verdict prevents.
+        """
+        if self.combined == "fail":
+            raise GateFailure(self.verdict())
+        if self.combined == "inconclusive":
+            raise GateInconclusive(self.verdict())
+
+
+def replicate_phase_a_guards(
+    runs: Sequence[PhaseAGuardReport],
+    *,
+    subject: str | None = None,
+) -> PhaseAReplicatedVerdict:
+    """Combine k single-seed `PhaseAGuardReport`s into one replicated verdict (R5).
+
+    This is the piece the diagnosis handed over rather than built: the evaluators and
+    `replicate_verdict` already existed and were tested, and what remained was for a driver
+    to run k seeds and combine them. Vary ONLY the seed across `runs`. The thread count is
+    a nuisance parameter to pin, not to sample -- it moved the checkpoint 11 distinct ways
+    at one seed without meaning anything about the model -- so replicating over threads
+    would measure the host.
+
+    Args:
+        runs: Two or more reports from runs that differ only in seed.
+        subject: Optional subject label for the combined reports.
+
+    Returns:
+        A `PhaseAReplicatedVerdict`.
+
+    Raises:
+        ValueError: Fewer than two runs, a run carrying no `gate_reports`, or runs whose
+            gate/subject sets differ -- which means the arms are not the same experiment
+            and combining them would average over a difference, not over noise.
+    """
+    if len(runs) < 2:
+        raise ValueError(
+            f"replicate_phase_a_guards: {len(runs)} run(s); a replicated verdict needs at "
+            "least 2 seeds, because the whole point is the spread across them"
+        )
+    keyed: list[dict[tuple[str, str], GateReport]] = []
+    for index, run in enumerate(runs):
+        if not run.gate_reports:
+            raise ValueError(
+                f"replicate_phase_a_guards: run {index} carries no gate_reports; it was "
+                "built before this wiring existed and cannot be replicated"
+            )
+        keyed.append({(r.gate, r.subject): r for r in run.gate_reports})
+    keys = set(keyed[0])
+    for index, mapping in enumerate(keyed[1:], start=1):
+        if set(mapping) != keys:
+            missing = sorted(str(k) for k in keys ^ set(mapping))
+            raise ValueError(
+                f"replicate_phase_a_guards: run {index} gates {missing} differ from run 0; "
+                "replicates must differ only in seed"
+            )
+
+    combined_reports = tuple(
+        replicate_verdict([mapping[key] for mapping in keyed], subject=subject)
+        for key in sorted(keys)
+    )
+    null_failures = sum(1 for run in runs if run.null_failure)
+
+    # Fail outranks inconclusive outranks pass. This ordering IS the invariant: a gate
+    # that fired unanimously reaches "fail" and no amount of noise elsewhere can soften it.
+    verdicts = {r.verdict for r in combined_reports}
+    if null_failures or "fail" in verdicts:
+        combined = "fail"
+    elif "inconclusive" in verdicts:
+        combined = "inconclusive"
+    else:
+        combined = "pass"
+
+    return PhaseAReplicatedVerdict(
+        combined=combined,
+        per_gate=combined_reports,
+        seeds=len(runs),
+        null_failures=null_failures,
+    )
 
 
 def check_receipt_collapse_floor(receipt: Mapping[str, Any]) -> None:
@@ -897,6 +1073,7 @@ class PhaseATrainer:
             held_out_metric=float(dev_eval["recall_at_1"]),
             general_null_recall=float(dev_eval["general_null_recall"]),
             per_bin_null_fpr=dev_eval["null_fpr_per_bin"],
+            held_out_n=int(dev_eval["count"]) or None,
         )
 
         return PhaseAResult(
