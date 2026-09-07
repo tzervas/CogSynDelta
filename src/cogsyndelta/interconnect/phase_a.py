@@ -64,6 +64,16 @@ no Table 7 field of their own; this file wires the four Table 8 guards that DO e
 G29, G33, G35, G36 -- and names the other three IN THE WRITTEN RECEIPT, under
 `verdicts.unimplemented_gates`, so a reader holding only the JSON can see which gates were
 never evaluated instead of reading the verdict as an unqualified pass.
+
+WHY A TRAINING FILE PINS A THREAD COUNT
+Because without one, a phase-A receipt is not citable. Measured: identical seed, identical
+command line, `OMP_NUM_THREADS` swept 1..28, eleven distinct `checkpoint_sha256`, and G29's
+verdict reading FAIL at eight threads while it read PASS at 1, 2, 4 and 16. Evaluation is
+innocent -- re-scoring one fixed checkpoint across the same sweep moves the metrics by
+1.8e-7 -- so the divergence is manufactured during training, by fp32 reduction order
+feeding AdamW. `DEFAULT_PHASE_A_THREADS` carries the full measurement and the reasoning
+behind the number; `pin_threads` applies it, `PhaseATrainer.build_receipt` records what the
+process gave back, and `check_receipt_thread_pin` refuses a receipt that does not say.
 """
 
 from __future__ import annotations
@@ -71,7 +81,7 @@ from __future__ import annotations
 import math
 import time
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -92,23 +102,28 @@ from cogsyndelta.interconnect.receipts import ComposeReceipt
 
 __all__ = [
     "CONTROLLER_R5",
+    "DEFAULT_PHASE_A_THREADS",
     "PHASE_A_FROZEN_PREFIXES",
     "PHASE_A_STORE_PREFIXES",
     "PHASE_A_TRAINABLE_PREFIXES",
     "PHASE_A_TRAINABLE_R5",
     "PHASE_A_WRITE_BACK_PREFIXES",
     "TABLE_4_TOTAL_R5",
+    "THREAD_KNOB_KEYS",
     "PhaseABatch",
     "PhaseAConfig",
     "PhaseAGuardReport",
     "PhaseAResult",
     "PhaseATrainer",
     "StepRecord",
+    "ThreadPin",
     "check_phase_a_frozen_set",
     "check_receipt_collapse_floor",
+    "check_receipt_thread_pin",
     "loss_decreased",
     "phase_a_guards",
     "phase_a_parameter_partition",
+    "pin_threads",
 ]
 
 #: Section 2.3 Table 4's "trainable in phase A, heads included, `R = 5`" figure, which is
@@ -153,6 +168,152 @@ POINT = 0.01
 #: Fixed histogram edges for the per-region attention-mass histogram (Table 7's
 #: "the per-region histogram"): ten equal buckets over `[0, 1]`.
 HISTOGRAM_BUCKETS = 10
+
+#: The intra-op thread count phase A pins when no caller names one.
+#:
+#: WHY A PIN EXISTS AT ALL. Measured on this repo at `efd9ef5`: one seed, one command
+#: line, `OMP_NUM_THREADS` swept over 1..28, and ELEVEN distinct `checkpoint_sha256` came
+#: out -- 69 differing parameter tensors, max |dW| 0.109 to 0.136. Evaluation is not the
+#: cause; re-scoring one fixed checkpoint across the same sweep moves the metrics by
+#: 1.8e-7 at most. The divergence is manufactured during TRAINING. fp32 reduction order
+#: depends on how `at::parallel_for` splits a reduction, which depends on the thread
+#: count; that perturbs the forward pass by ~1e-7, and AdamW -- which divides by a running
+#: `sqrt(v)` and therefore has no small-gradient regime -- converts ~1e-7 of forward
+#: difference into ~3e-5 of weight delta in ONE step, and roughly 100x that over fifty.
+#: The visible consequence was a gate verdict changing on identical code and an identical
+#: seed: G29 read FAIL at eight threads while 1, 2, 4 and 16 read PASS. A receipt whose
+#: `checkpoint_sha256` is decided by an ambient environment variable cannot be cited, so
+#: the entry path sets the number itself and the receipt records what the process gave
+#: back (`PhaseATrainer.build_receipt`).
+#:
+#: WHY 8, AND WHY NOT 1. A pin at any value makes a run reproducible; the value only
+#: decides what it costs. Measured on this host (28 logical cores), 2048x2048 fp32
+#: matmul: 1 thread 101.8 ms, 4 threads 26.0 ms, 8 threads 19.8 ms, 16 threads 13.8 ms,
+#: 20 threads 15.0 ms. Pinning to 1 is the simplest reproducibility story and is rejected
+#: on that table -- it costs 5.1x at the scale a real phase-A row runs at. Pinning high is
+#: rejected from the other side: this is a THREAD count, not a core count, so a runner
+#: with fewer cores honours it by oversubscribing, and oversubscription has a cliff -- the
+#: toy stream measured 190 ms at 8 threads against 36 s at 28, twice in a row. Eight keeps
+#: 5.1x of the 5.7x available while costing 2.4x (190 ms -> 454 ms) when a single CPU is
+#: visible, which is the shape a two-core CI runner sees.
+#:
+#: WHY A FIXED NUMBER AND NOT `os.cpu_count()`. The point of the pin is that two hosts
+#: running the same row produce the same weights. Measured: at a fixed pin of 8 the toy's
+#: `checkpoint_sha256` is byte-identical under `taskset -c 0`, `taskset -c 0,1` and all 28
+#: CPUs, and identical again under a hostile `OMP_NUM_THREADS=13`; at a fixed pin of 4 the
+#: same holds, and pins of 1 and 4 differ on every one of those hosts. Deriving the pin
+#: from the host would put back exactly the dependence this constant removes.
+DEFAULT_PHASE_A_THREADS = 8
+
+#: The keys `ThreadPin.as_receipt_knob` writes and `check_receipt_thread_pin` requires,
+#: named once so the writer and the reader cannot drift apart.
+THREAD_KNOB_KEYS: tuple[str, ...] = ("requested", "source", "default", "effective", "interop")
+
+#: The two values `knobs.threads.source` may take: `"explicit"` when a caller named the
+#: pin, `"default"` when `DEFAULT_PHASE_A_THREADS` supplied it. A receipt that says
+#: neither is refused rather than read as "probably explicit".
+_THREAD_PIN_SOURCES = frozenset({"explicit", "default"})
+
+
+@dataclass(frozen=True)
+class ThreadPin:
+    """What the process actually got when phase A pinned its intra-op thread count.
+
+    `effective` and `interop` are READ BACK from `torch` after the set, never copied from
+    the request, for the reason `PhaseATrainer.observed_loss_site` gives about the loss
+    weights: a field that reports what was ASKED FOR has measured nothing. The two numbers
+    are kept as separate fields precisely so a reader can see when they disagree -- an
+    unpinned process on a 28-core host reports 20, and a build with a thread limit can
+    clamp a request downward without saying so.
+    """
+
+    requested: int
+    """The number handed to `torch.set_num_threads`."""
+    source: str
+    """`"explicit"` or `"default"` -- which of the two supplied `requested`."""
+    default: int
+    """`DEFAULT_PHASE_A_THREADS` as it stood at the time of the pin, so a receipt written
+    under `source: "default"` still states what that default was rather than sending a
+    reader to whatever the constant says today."""
+    effective: int
+    """`torch.get_num_threads()`, read back after the set."""
+    interop: int
+    """`torch.get_num_interop_threads()`, read back. Phase A does not pin this one:
+    torch refuses to change it once any parallel work has run, so it is recorded as an
+    observed property of the process rather than claimed as a setting."""
+
+    def observed(self) -> ThreadPin:
+        """Return this pin with `effective` and `interop` re-read from the live process.
+
+        Returns:
+            A copy whose two measured fields come from `torch` as it is right now, and
+            whose `requested`, `source` and `default` are unchanged -- those describe the
+            request, and re-reading cannot tell you anything about a request.
+        """
+        return replace(
+            self,
+            effective=torch.get_num_threads(),
+            interop=torch.get_num_interop_threads(),
+        )
+
+    def as_receipt_knob(self) -> dict[str, Any]:
+        """Return this pin as the receipt's `placement_knobs.knobs.threads` mapping."""
+        return {
+            "requested": self.requested,
+            "source": self.source,
+            "default": self.default,
+            "effective": self.effective,
+            "interop": self.interop,
+        }
+
+
+def pin_threads(requested: int | None = None) -> ThreadPin:
+    """Pin torch's intra-op thread count for this process and record what it became.
+
+    Call this BEFORE the first tensor operation on the phase-A path -- before the module
+    is constructed, not merely before the first optimizer step. Weight initialisation is
+    itself a tensor operation, so a pin applied after construction leaves the starting
+    point at the mercy of the ambient environment and only the steps after it pinned.
+    `cli.run_phase_a` calls it as its first statement for exactly that reason;
+    `PhaseATrainer.__init__` calls it again so that a driver which never goes through the
+    CLI still cannot take a step unpinned.
+
+    Re-pinning within one process is permitted and is not a warning. A caller that
+    deliberately runs two differently pinned rows in one process needs it -- the control
+    arm in `tests/interconnect/test_thread_pin.py` is that caller, and without it the
+    same-pin guard could not be shown to be non-vacuous. What is refused is a receipt
+    built after the count moved out from under the run it describes; that check lives in
+    `PhaseATrainer.build_receipt`, where the run's own pin is in scope to compare against.
+
+    Args:
+        requested: Threads to pin, or `None` to use `DEFAULT_PHASE_A_THREADS` and record
+            the pin as `source: "default"`.
+
+    Returns:
+        The applied `ThreadPin`, with `effective` and `interop` read back from `torch`.
+
+    Raises:
+        ValueError: `requested` is below 1. `torch.set_num_threads` treats a non-positive
+            argument as a request to pick its own number, which is the one behaviour this
+            function exists to prevent, so it is refused here instead of silently honoured
+            as "unpinned".
+    """
+    source = "default" if requested is None else "explicit"
+    threads = DEFAULT_PHASE_A_THREADS if requested is None else int(requested)
+    if threads < 1:
+        raise ValueError(
+            f"pin_threads: the thread pin must be >= 1, got {threads}. A non-positive "
+            "value asks torch to choose, which is the ambient behaviour this pin exists "
+            "to remove."
+        )
+    torch.set_num_threads(threads)
+    return ThreadPin(
+        requested=threads,
+        source=source,
+        default=DEFAULT_PHASE_A_THREADS,
+        effective=torch.get_num_threads(),
+        interop=torch.get_num_interop_threads(),
+    )
 
 
 def _matches(name: str, prefixes: Sequence[str]) -> bool:
@@ -317,6 +478,15 @@ class PhaseAConfig:
     """Global grad-norm clip, or `None` to disable."""
     seed: int = 0
     """`torch.manual_seed` before the first step; Table 7's identity group records it."""
+    threads: int | None = None
+    """The intra-op thread pin, or `None` for `DEFAULT_PHASE_A_THREADS`.
+
+    This belongs in the RECIPE, beside `seed` and `lr`, because the trained weights depend
+    on it in the same way they depend on those: at one seed and one command line an
+    unpinned sweep of `OMP_NUM_THREADS` over 1..28 produced eleven distinct
+    `checkpoint_sha256`. `None` is not "unpinned" -- there is no unpinned path through
+    `PhaseATrainer` -- it means the default supplied the number, and the receipt says so
+    under `knobs.threads.source`."""
 
 
 @dataclass(frozen=True)
@@ -521,6 +691,85 @@ def check_receipt_collapse_floor(receipt: Mapping[str, Any]) -> None:
         check_attention_mass_floor(name, float(masses[name]), eta, r, printed_floor=printed_value)
 
 
+def check_receipt_thread_pin(receipt: Mapping[str, Any]) -> None:
+    """Refuse a phase-A receipt that does not record the thread pin its weights came from.
+
+    This is the DOCUMENT half of the pin, split the same way `check_receipt_collapse_floor`
+    splits G29. The process half -- "the count did not move between the first step and the
+    receipt" -- is only checkable while the process that trained is still alive, and lives
+    in `PhaseATrainer.build_receipt`. What a reader holding nothing but the JSON can check
+    is that the run recorded a pin at all, that the number is a usable one, and that the
+    receipt says which of the flag and the default supplied it. That is what makes
+    `{"placement": null, "knobs": null}` -- the shape all thirty phase-A receipts on disk
+    carried before this guard existed -- REFUSABLE rather than merely disappointing.
+
+    `requested != effective` is deliberately NOT a failure. A torch build that clamps a
+    request is a real outcome and recording both numbers is the whole reason they are
+    separate fields; a guard that refused it would push callers toward printing the
+    request, which is the defect this module is fixing.
+
+    Args:
+        receipt: A built phase-A receipt, i.e. `ComposeReceipt.build()`'s output or the
+            JSON read back off disk.
+
+    Raises:
+        GateFailure: `placement` or `knobs` is not a mapping (the `None` shape), the
+            `knobs.threads` block is missing or missing one of `THREAD_KNOB_KEYS`,
+            `source` is neither `"explicit"` nor `"default"`, `effective` is not an
+            integer of at least 1, or `placement` names neither the device nor the torch
+            version the run used.
+        KeyError: The receipt has no `placement_knobs` group at all.
+    """
+    group = receipt["placement_knobs"]
+    placement = group.get("placement")
+    knobs = group.get("knobs")
+    for name, value in (("placement", placement), ("knobs", knobs)):
+        if not isinstance(value, Mapping):
+            raise GateFailure(
+                f"phase A: the receipt's placement_knobs.{name} is {value!r}, not a "
+                "mapping. A receipt that records no placement and no knobs cannot say "
+                "which thread pin produced its checkpoint_sha256, and eleven such "
+                "receipts at one seed disagreed about that sha; the receipt is refused."
+            )
+
+    threads = knobs.get("threads")  # type: ignore[union-attr]
+    if not isinstance(threads, Mapping):
+        raise GateFailure(
+            f"phase A: the receipt's placement_knobs.knobs.threads is {threads!r}, not a "
+            "mapping; the run recorded no intra-op thread pin and the receipt is refused."
+        )
+    missing = [key for key in THREAD_KNOB_KEYS if key not in threads]
+    if missing:
+        raise GateFailure(
+            f"phase A: the receipt's thread pin is missing {missing}; the receipt is "
+            f"refused. Every one of {list(THREAD_KNOB_KEYS)} is required -- `requested` "
+            "and `effective` are separate because they can differ, and `source` is what "
+            "tells a reader whether a human chose the number."
+        )
+
+    source = threads["source"]
+    if source not in _THREAD_PIN_SOURCES:
+        raise GateFailure(
+            f"phase A: the receipt's thread pin source is {source!r}, not one of "
+            f"{sorted(_THREAD_PIN_SOURCES)}; the receipt is refused."
+        )
+    effective = threads["effective"]
+    if not isinstance(effective, int) or isinstance(effective, bool) or effective < 1:
+        raise GateFailure(
+            f"phase A: the receipt's effective thread count is {effective!r}, which is "
+            "not an integer of at least 1, so it did not come from a read of "
+            "torch.get_num_threads(); the receipt is refused."
+        )
+
+    missing_placement = [key for key in ("device", "torch_version") if key not in placement]
+    if missing_placement:
+        raise GateFailure(
+            f"phase A: the receipt's placement is missing {missing_placement}; a thread "
+            "pin only reproduces weights on the build and device it was measured on, so "
+            "the receipt is refused."
+        )
+
+
 @dataclass
 class PhaseAResult:
     """Everything one phase-A run produces, and everything its receipt is built from."""
@@ -565,9 +814,10 @@ class PhaseAResult:
 class PhaseATrainer:
     """The phase-A optimizer, loss site and receipt builder (spec section 4, Table 6 row A).
 
-    Construction applies G33 and then the Table 6 partition, in that order: a run whose
-    frozen set does not match must refuse before any parameter's `requires_grad` is
-    touched, so a refused run leaves the module exactly as it found it.
+    Construction applies G33, then the intra-op thread pin, then the Table 6 partition, in
+    that order: a run whose frozen set does not match must refuse before any parameter's
+    `requires_grad` is touched, so a refused run leaves the module exactly as it found it,
+    and the pin has to land before the constructor's first tensor operation (`.to(device)`).
     """
 
     def __init__(
@@ -591,12 +841,19 @@ class PhaseATrainer:
         Raises:
             GateFailure: G33 refused the frozen set, or the Table 6 partition is not
                 total over `white_matter.named_parameters()`.
+            ValueError: `config.threads` is below 1 -- see `pin_threads`.
         """
         check_phase_a_frozen_set(
             frozen_set,
             expected_participants=white_matter.participant_names,
             expected_r=len(white_matter.participant_names),
         )
+        # Before `.to(device)`, which is this constructor's first tensor operation, and
+        # before the optimizer exists. `cli.run_phase_a` has already pinned the same
+        # number earlier still -- before the module was BUILT, so that initialisation is
+        # covered too -- which makes this call a no-op on that path and the only pin on
+        # any other. See `DEFAULT_PHASE_A_THREADS` for what goes wrong without it.
+        self.thread_pin = pin_threads(config.threads)
         self.white_matter = white_matter.to(device)
         self.config = config
         self.device = torch.device(device)
@@ -961,6 +1218,11 @@ class PhaseATrainer:
 
         Returns:
             The built `ComposeReceipt`, ready for `.write(out_dir, filename)`.
+
+        Raises:
+            GateFailure: `torch.get_num_threads()` no longer matches the pin this trainer
+                was built under, so the run spanned more than one reduction order and no
+                single value could honestly be printed for it.
         """
         cfg = self.white_matter.config
         participants = list(self.white_matter.participant_names)
@@ -1098,7 +1360,42 @@ class PhaseATrainer:
                 },
             }
         )
-        receipt.set_placement_knobs({"placement": None, "knobs": None})
+        # Table 7's placement-and-knobs group -- and the reason it is no longer `None`.
+        # Every phase-A receipt written before this change carried
+        # `{"placement": null, "knobs": null}`; among the thirty on disk were eleven that
+        # disagreed about `checkpoint_sha256` at one seed and one command line, because
+        # the single knob that decided which weights came out -- the intra-op thread
+        # count -- had nowhere in the receipt to be recorded. Table 7 already reserved
+        # this group for exactly that.
+        #
+        # `observed()` re-reads the count from the LIVE process here rather than echoing
+        # `self.thread_pin` or `PhaseAConfig`, on `observed_loss_site`'s rule: a field
+        # that reports what was requested rather than what happened has measured nothing.
+        observed = self.thread_pin.observed()
+        if observed.effective != self.thread_pin.effective:
+            raise GateFailure(
+                "phase A: the intra-op thread count moved during this run -- pinned at "
+                f"{self.thread_pin.effective} when the trainer was built, "
+                f"{observed.effective} now. The weights this receipt would name were "
+                "produced under more than one reduction order, so no single pin "
+                "describes them and the receipt is refused."
+            )
+        receipt.set_placement_knobs(
+            {
+                # W7p: where the run happened. `torch_version` is here rather than under
+                # knobs because reduction order is a property of the BUILD as well as of
+                # the thread count -- the same pin on a different torch can still land on
+                # different weights, and a reader comparing two receipts needs to be able
+                # to see that before blaming the run.
+                "placement": {
+                    "device": str(self.device),
+                    "torch_version": torch.__version__,
+                },
+                # W7k: the dials. One today; `THREAD_KNOB_KEYS` names its shape and
+                # `check_receipt_thread_pin` re-derives it from the written JSON.
+                "knobs": {"threads": observed.as_receipt_knob()},
+            }
+        )
         return receipt
 
     def write_receipt(
@@ -1122,10 +1419,14 @@ class PhaseATrainer:
         Raises:
             GateFailure: G29's receipt half -- the built receipt prints a floor that is
                 not `eta/R` at its own `R`, or names no surviving region, or leaves a
-                region below the floor out of `collapsed_in_phase_A`. Nothing is written:
-                Table 8 row G29's effect for this half is that the receipt is REFUSED, so
-                the refusal has to land before the file exists rather than after a reader
-                could already have cited it.
+                region below the floor out of `collapsed_in_phase_A`; or the built receipt
+                does not record a readable intra-op thread pin
+                (`check_receipt_thread_pin`). Nothing is written in either case: Table 8
+                row G29's effect for this half is that the receipt is REFUSED, so the
+                refusal has to land before the file exists rather than after a reader
+                could already have cited it, and an unrecorded pin is refused on the same
+                principle -- a receipt on disk is citable, and this one would not deserve
+                to be.
         """
         receipt = self.build_receipt(result, identity)
         # G29's receipt half, on the path every caller actually takes. `phase_a_guards`
@@ -1133,7 +1434,12 @@ class PhaseATrainer:
         # during a run, only the two numbers it would be re-derived from); this is the
         # first point at which the comparison is capable of failing at all. `build()` is
         # deterministic, so running it here and again inside `write` costs a dict.
-        check_receipt_collapse_floor(receipt.build())
+        built = receipt.build()
+        check_receipt_collapse_floor(built)
+        # The pin's document half, on the same path and for the same reason: once the file
+        # exists somebody can cite it, so a receipt that cannot say which thread pin
+        # produced its checkpoint has to be stopped before it lands, not annotated after.
+        check_receipt_thread_pin(built)
         return receipt.write(out_dir, filename)
 
 

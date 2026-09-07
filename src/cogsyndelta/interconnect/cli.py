@@ -1,7 +1,15 @@
 """The interconnect's command line -- the harness entry point over `phase_a.py`.
 
     python -m cogsyndelta.interconnect.cli phase-a --steps 3 --device cpu --out-dir DIR
+    python -m cogsyndelta.interconnect.cli phase-a --threads 8 --out-dir DIR
     python -m cogsyndelta.interconnect.cli params
+
+WHY `run_phase_a`'S FIRST STATEMENT IS A THREAD PIN
+The trained weights depend on the intra-op thread count: at one seed and one command line,
+an unpinned sweep of `OMP_NUM_THREADS` over 1..28 produced eleven distinct
+`checkpoint_sha256` and flipped G29's verdict. `phase_a.DEFAULT_PHASE_A_THREADS` carries
+the measurement. Omitting `--threads` picks that default and stamps the receipt
+`source: "default"`; there is no argv here that produces an unpinned run.
 
 WHY THIS IS A SEPARATE FILE FROM `phase_a.py`
 `phase_a.py` defines what phase A trains, freezes, optimises and gates; this file is
@@ -39,12 +47,14 @@ from cogsyndelta.interconnect.episodic_store import InMemoryStoreStub, derive_sc
 from cogsyndelta.interconnect.kv_bank import STORE_PARTICIPANT
 from cogsyndelta.interconnect.mind import InterconnectConfig, ParticipantSpec, WhiteMatter
 from cogsyndelta.interconnect.phase_a import (
+    DEFAULT_PHASE_A_THREADS,
     PHASE_A_TRAINABLE_R5,
     TABLE_4_TOTAL_R5,
     PhaseABatch,
     PhaseAConfig,
     PhaseATrainer,
     phase_a_parameter_partition,
+    pin_threads,
 )
 
 __all__ = ["main"]
@@ -397,7 +407,15 @@ def run_phase_a(args: argparse.Namespace) -> int:
         `0` when every evaluated gate passed, `1` otherwise -- a failing gate is a
         non-zero exit so a run cannot be scripted past without noticing, matching
         `cogsyndelta.regions.compress.main`.
+
+    Raises:
+        ValueError: `--threads` is below 1 (`phase_a.pin_threads`).
     """
+    # FIRST, before `_build_synthetic` and therefore before any tensor exists. Weight
+    # initialisation is a tensor operation, so pinning after construction would leave the
+    # run's starting point decided by the ambient environment even though every step after
+    # it was pinned. See `phase_a.DEFAULT_PHASE_A_THREADS` for the measurement.
+    pin = pin_threads(args.threads)
     white_matter = _build_synthetic(k=args.k, write_back=not args.no_write_back, seed=args.seed)
     trainer = PhaseATrainer(
         white_matter,
@@ -407,6 +425,9 @@ def run_phase_a(args: argparse.Namespace) -> int:
             lr=args.lr,
             steps=args.steps,
             seed=args.seed,
+            # The same value `pin_threads` above already applied, so the trainer's own
+            # pin is a no-op re-application rather than a second, different opinion.
+            threads=args.threads,
         ),
         synthetic_frozen_set(white_matter),
         device=args.device,
@@ -452,6 +473,10 @@ def run_phase_a(args: argparse.Namespace) -> int:
         json.dumps(
             {
                 "receipt": str(path),
+                # Printed, not merely written, so an operator watching a run sees the pin
+                # its weights depend on without opening the receipt. `pin` is what
+                # `pin_threads` read back, not what was asked for.
+                "threads": pin.as_receipt_knob(),
                 "store_records_primed": primed,
                 "steps": len(result.steps),
                 "loss_first": result.loss_curve[0],
@@ -569,6 +594,25 @@ def _build_parser() -> argparse.ArgumentParser:
     phase_a.add_argument("--delta", type=float, default=1.0)
     phase_a.add_argument("--task-weight", type=float, default=1.0)
     phase_a.add_argument("--seed", type=int, default=0)
+    # Not optional in effect, only in spelling: omitting it selects
+    # DEFAULT_PHASE_A_THREADS and the receipt records `source: "default"`, so there is no
+    # argv that produces an UNPINNED run. The alternative -- refusing to start without
+    # --threads -- was rejected because it makes every existing invocation fail closed
+    # while buying nothing a recorded default does not already buy: what has to be
+    # impossible is an unpinned receipt that looks citable, not an unpinned command line.
+    phase_a.add_argument(
+        "--threads",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Intra-op thread pin, applied before the module is built. Omit for "
+            f"{DEFAULT_PHASE_A_THREADS}, which the receipt records as source=default. "
+            "The trained weights depend on this number: at one seed and one command "
+            "line, an unpinned sweep of OMP_NUM_THREADS over 1..28 produced eleven "
+            "distinct checkpoint_sha256 and flipped a gate verdict."
+        ),
+    )
     phase_a.add_argument("--out-dir", default="receipts")
     phase_a.add_argument(
         "--prime-store",
