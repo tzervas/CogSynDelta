@@ -91,13 +91,28 @@ def test_phase_a_smoke_at_three_steps_writes_a_valid_receipt(
 
 
 def test_phase_a_gates_all_pass_once_the_toy_is_actually_trained(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
+    capsys: pytest.CaptureFixture[str], tmp_path: Path, pinned_threads: None
 ) -> None:
     """The positive control for the smoke above: with enough steps every gate clears.
 
     Without this, `test_phase_a_smoke_at_three_steps_writes_a_valid_receipt` could not tell
     a guard that works from a guard that refuses everything -- the same reason spec section
     5 pairs every constructed failure with a positive control.
+
+    THREAD-PINNED, and the pin is load-bearing rather than tidy. This assertion is a
+    single draw of a statistic whose value moves with float reduction order: the same code
+    and the same seed put `dev_recall_at_1` at 1.0000 for `OMP_NUM_THREADS` 1, 2, 6 and 8
+    and at 0.9375 for 3 and 4 (`cli.py`'s `--dev-batches` comment), and unpinned on a
+    28-core host this test fails G35 with a 23.44-point gap and G36 with a 0.36 NULL
+    false-positive rate while nothing about the code has changed. The thread axis is a
+    nuisance parameter to PIN, not to sample -- it moves the checkpoint (11 distinct
+    `checkpoint_sha256` across thread counts at one seed) without meaning anything about
+    the model. Pinning makes this test measure the toy instead of the host it ran on.
+
+    What the pin does NOT buy is power: one seed is still one draw, and the seed-axis
+    spread of G35's gap is ~2.4 points against a 5.00-point ceiling and is flat in the
+    split size. That is what `replicate_phase_a_guards` is for; this test is a plumbing
+    positive control, not a verdict on the gates.
     """
     code, out = _run(
         capsys,

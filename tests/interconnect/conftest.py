@@ -11,6 +11,7 @@ choice, recorded per fixture.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -95,6 +96,34 @@ class FakeVisual(nn.Module):
     def pool(self, h: Tensor, mask: Tensor) -> Tensor:
         denom = mask.sum(dim=1, keepdim=True).clamp(min=1).to(h.dtype)
         return (h * mask.unsqueeze(-1)).sum(dim=1) / denom
+
+
+@pytest.fixture
+def pinned_threads() -> Iterator[None]:
+    """Pin intra-op threads to 1 for the test, then restore the previous count.
+
+    WHY, MEASURED. Float reduction order changes with the thread count, and phase A's
+    optimiser amplifies it: a ~1e-7 forward perturbation becomes ~3e-5 of weight delta in
+    one AdamW step and ~100x that per 50 steps, which is how one seed and one command line
+    produced 11 distinct `checkpoint_sha256` across thread counts. Downstream, the same
+    seed puts `dev_recall_at_1` at 1.0000 for `OMP_NUM_THREADS` 1, 2, 6 and 8 and 0.9375
+    for 3 and 4, and `mean(a_store)` at 0.0642 / 0.0914 / 0.1177 / 0.0468 / 0.0736 for
+    1 / 2 / 4 / 8 / 16 -- only the 8-thread draw is below G29's floor.
+
+    So a gate assertion run unpinned is measuring the host's core count. The thread axis
+    is a nuisance parameter to PIN; the SEED axis is the one that carries real variance
+    and the one `replicate_verdict` samples. This fixture does the first and says so; it
+    is not a substitute for the second.
+
+    `torch.set_num_threads` is process-wide, so the previous value is restored on the way
+    out rather than left changed for whatever runs next in the same worker.
+    """
+    previous = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        yield
+    finally:
+        torch.set_num_threads(previous)
 
 
 @pytest.fixture
