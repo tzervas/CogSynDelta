@@ -8,6 +8,7 @@ spec from quietly describing something other than what gets built.
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from cogsyndelta.contracts.region_spec import (
     RegionSpec,
 )
 from cogsyndelta.poc.route import build_mind_from_spec
+from cogsyndelta.regions.aliases import canonical_region
 
 CATALOGUE = Path(__file__).resolve().parents[1] / "config" / "mind" / "csd-regions.json"
 
@@ -34,11 +36,23 @@ def test_duplicate_region_names_rejected() -> None:
         MindSpec(stream_dim=64, regions=[_region("a"), _region("a")])
 
 
-def test_stream_width_mismatch_rejected() -> None:
-    """Every region reads and writes the same stream; a width mismatch is a shape error
-    at the first activate() and is far cheaper to catch at declaration."""
-    with pytest.raises(ValueError, match="stream_dim"):
-        MindSpec(stream_dim=64, regions=[_region("a", stream_dim=128)])
+def test_stream_width_mismatch_warns_not_rejected() -> None:
+    """DEC-14/DEC-15 (taxonomy section 2.2): regions keep their own native widths and
+    adapt into the shared workspace stream_dim via a per-region adapter, so a mismatch
+    is expected -- not a shape error -- and only warns."""
+    with pytest.warns(UserWarning, match="stream_dim"):
+        spec = MindSpec(stream_dim=64, regions=[_region("a", stream_dim=128)])
+    assert spec.regions[0].stream_dim == 128
+    assert spec.stream_dim == 64
+
+
+def test_stream_width_uniform_case_still_passes_with_no_warning() -> None:
+    """The pre-DEC-14 uniform-width case (every region matches the mind's stream_dim)
+    is still valid and must not warn."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        spec = MindSpec(stream_dim=64, regions=[_region("a", stream_dim=64)])
+    assert spec.regions[0].stream_dim == spec.stream_dim == 64
 
 
 def test_latent_vae_requires_latent_dim() -> None:
@@ -153,14 +167,74 @@ def test_catalogue_records_the_dec02_merge() -> None:
     assert not by_name["memory"].live
 
 
-def test_catalogue_records_vl_as_latent_not_text() -> None:
-    """VL regions consume visual latents, not tokens. If this flips to 'text' someone has
-    misunderstood the architecture -- the whole point of the [B, D] activate surface is
-    that a vision region is a peer of a text region, fed by a different encoder."""
+def test_catalogue_records_memory_corpus_as_available_and_on_disk() -> None:
+    """`memory.pretrain.available` used to say `false` / "NOT on disk" even though the
+    corpus has been on the fleet mount and in production receipts since W4 (2026-09-03)
+    -- stale documentation, never read by any training/eval/publish code path
+    (`available` is `PretrainSpec` prose, not a gate). Fixed 2026-09-06.
+
+    This pins two things: the static claim (`available` is true, `paths` names the same
+    four globs `REGIONS["memory"]` in `scripts/csd-train-all.py` trains on) always, and,
+    when the fleet's NFS export is actually mounted, that those exact globs reproduce
+    the corpus fingerprint the committed split manifest
+    (`config/mind/splits/memory-6fc0cf23-split0.json`) was drawn from -- not merely that
+    files exist at those paths, but that they are the SAME files DEC-02's union names.
+    """
+    import os
+
+    from cogsyndelta.corpus import fingerprint_corpus
+
     spec = MindSpec.from_json(CATALOGUE)
-    vl = [r for r in spec.regions if r.name == "vl_latent"]
-    assert vl, "expected a vl_latent region in the catalogue"
-    assert vl[0].modality == "latent"
+    memory = {r.name: r for r in spec.regions}["memory"]
+    assert memory.pretrain is not None
+    assert memory.pretrain.available is True
+    assert memory.pretrain.paths == (
+        "region/retrieve/fiqa-pairs/train.parquet",
+        "region/compress/all-nli/pair/train*.parquet",
+        "region/retrieve/natural-questions/**/train*.parquet",
+        "region/retrieve/gooaq/**/train*.parquet",
+    )
+
+    root = Path(os.environ.get("CSD_MEMORY_ROOT", "/mnt/fleet-datasets/csd"))
+    if not root.is_dir():
+        pytest.skip("fleet NFS export not mounted here; static claim above still checked")
+
+    def resolve(pattern: str) -> list[str]:
+        return sorted(str(p) for p in root.glob(pattern))
+
+    primary_pattern, *extra_patterns = memory.pretrain.paths
+    extra_columns = [("anchor", "positive"), ("query", "answer"), ("question", "answer")]
+    extra_caps = [0, 0, 400_000]
+    extra_sources = [
+        {"shards": resolve(pat), "columns": list(cols), "limit": cap}
+        for pat, cols, cap in zip(extra_patterns, extra_columns, extra_caps, strict=True)
+    ]
+    fp = fingerprint_corpus(
+        resolve(primary_pattern), columns=("query", "passage"), extra_sources=extra_sources
+    )
+    assert fp == "6fc0cf23ff8591ff2241278f82c001d2", (
+        f"memory's declared paths now fingerprint to {fp}, not the value the committed "
+        "split manifest was drawn from -- either the corpus drifted or the paths above "
+        "no longer match REGIONS['memory']"
+    )
+
+
+def test_catalogue_records_vl_as_vision_not_text() -> None:
+    """The visual faculty consumes RGB images through an I-JEPA EMA target encoder and
+    emits [B, D] stream latents -- not tokens. `modality` is `vision` (catalogue
+    vocab), never `text`. `kind` is `i-jepa` (the deployed module), not the training
+    predictor.
+
+    Looks the region up by canonical id (`visual`, renamed from `vl_latent` per the
+    2026-09-04 naming rule) via the alias module rather than a literal name, so this
+    keeps passing whether the catalogue entry it finds is spelled either way."""
+    spec = MindSpec.from_json(CATALOGUE)
+    vl = [r for r in spec.regions if canonical_region(r.name) == "visual"]
+    assert vl, "expected a visual (nee vl_latent) region in the catalogue"
+    assert vl[0].modality == "vision"
+    assert vl[0].kind == "i-jepa"
+    assert "latent" not in vl[0].router_trigger.lower()
+    assert "RGB" in vl[0].router_trigger or "image" in vl[0].router_trigger.lower()
     assert not vl[0].live
 
 
@@ -169,3 +243,76 @@ def test_catalogue_json_is_sorted_stable() -> None:
     raw = json.loads(CATALOGUE.read_text())
     spec = MindSpec.from_dict(raw)
     assert [r["name"] for r in raw["regions"]] == [r.name for r in spec.regions]
+
+
+def test_shipped_catalogue_names_the_language_centre_with_its_code_specialisation() -> None:
+    """The region formerly called `code` is the LANGUAGE CENTRE (operator naming rule,
+    2026-09-04): id `language`, with `specialisation: "code"` recorded as metadata for
+    its current (code-flavoured) corpus and battery -- never the region name itself."""
+    spec = MindSpec.from_json(CATALOGUE)
+    by_name = {r.name: r for r in spec.regions}
+    assert "language" in by_name
+    assert "code" not in by_name, "the shipped catalogue must use the canonical name"
+    assert by_name["language"].specialisation == "code"
+    assert by_name["language"].region_alias_of is None, (
+        "the shipped catalogue already spells this canonically -- loading it is not an "
+        "alias resolution"
+    )
+
+
+def test_legacy_region_name_loads_through_the_alias_with_a_deprecation_warning() -> None:
+    """A config that still says `name: "code"` (an old copy, or a receipt-adjacent
+    config nobody has migrated yet) must keep loading -- through the SAME alias module
+    every other reader uses -- rather than raising, but it must say so."""
+    raw = json.loads(CATALOGUE.read_text())
+    data = {
+        "stream_dim": raw["stream_dim"],
+        "regions": [dict(r) for r in raw["regions"] if r["name"] == "language"],
+    }
+    data["regions"][0]["name"] = "code"
+    with pytest.warns(DeprecationWarning, match="code.*language"):
+        spec = MindSpec.from_dict(data)
+    region = spec.regions[0]
+    assert region.name == "language", "the loaded spec must carry the CANONICAL name"
+    assert region.region_alias_of == "code"
+
+
+def test_legacy_vl_latent_name_loads_through_the_alias_too() -> None:
+    raw = json.loads(CATALOGUE.read_text())
+    data = {
+        "stream_dim": raw["stream_dim"],
+        "regions": [dict(r) for r in raw["regions"] if r["name"] == "visual"],
+    }
+    data["regions"][0]["name"] = "vl_latent"
+    with pytest.warns(DeprecationWarning, match="vl_latent.*visual"):
+        spec = MindSpec.from_dict(data)
+    region = spec.regions[0]
+    assert region.name == "visual"
+    assert region.region_alias_of == "vl_latent"
+
+
+def test_canonical_region_name_loads_with_no_warning_and_no_alias_of() -> None:
+    """Loading a spec that already names a region canonically is not a deprecated path
+    -- it must not warn, and `region_alias_of` stays `None` (nothing to record)."""
+    raw = json.loads(CATALOGUE.read_text())
+    data = {
+        "stream_dim": raw["stream_dim"],
+        "regions": [dict(r) for r in raw["regions"] if r["name"] == "language"],
+    }
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        spec = MindSpec.from_dict(data)
+    assert spec.regions[0].name == "language"
+    assert spec.regions[0].region_alias_of is None
+
+
+def test_a_canonical_spec_written_and_reread_stays_canonical() -> None:
+    """Round-tripping a spec built directly with the canonical name (not through a
+    legacy config) must not spuriously attach a region_alias_of -- the writer emitted
+    the canonical id, so there is nothing to alias."""
+    spec = MindSpec(
+        stream_dim=64,
+        regions=[_region("language", kind="contrastive_encoder", specialisation="code")],
+    )
+    assert canonical_region(spec.regions[0].name) == "language"
+    assert spec.regions[0].region_alias_of is None

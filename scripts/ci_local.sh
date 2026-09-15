@@ -4,12 +4,34 @@
 # Default: OWN venv at .venv-ci (Python 3.12, CUDA torch from pyproject cu128); never
 #          the shared project .venv, and NOT overridable via UV_PROJECT_ENVIRONMENT --
 #          see the isolation comment below for why that has to be unconditional.
-# --cpu:   CI-identical CPU torch (--no-sources + pytorch.org/whl/cpu).
-# --poc:   skip full tests/ (only poc-ci surface + CLI smoke).
-# --pre-commit: also run pre-commit --all-files (CI job, not a required check).
+# --cpu:           CI-identical CPU torch (--no-sources + pytorch.org/whl/cpu).
+# --poc:           skip full tests/ (only poc-ci surface + CLI smoke).
+# --no-pre-commit: skip the lint gate below (default: it runs).
 #
 # Why: ruff S105, quality docstrings, and Python-floor drift landed on GitHub
 # before we ran the same commands locally. This script is the pre-push gate.
+#
+# 2026-09-04: the pytest / poc pytest / poc cli steps below now run with
+# CUDA_VISIBLE_DEVICES="" -- CPU-only, always -- regardless of which sync branch ran.
+# The PoC route-train test previously diverged between the tracked pre-push hook and CI:
+# the hook runs this script on whatever machine pushed, and on a GPU box the default
+# sync branch ("desktop CUDA torch from pyproject") installs cu128 wheels, so
+# torch.cuda.is_available() is true there and the test exercises CUDA kernels; CI's
+# runner has no GPU, so the identical test exercises CPU kernels. Same test, same
+# command, two different code paths. The torch *sync* is left exactly as-is (CUDA torch
+# still gets installed either way, matching what CI's own sync does); only test
+# *execution* is pinned CPU-only, by hiding the device rather than by not installing
+# CUDA support for it. tests/test_ci_local_cpu_gate.py makes this observable.
+#
+# 2026-09-04: the lint gate (`bash scripts/lint.sh`) now runs BY DEFAULT instead of
+# behind an opt-in `--pre-commit` flag. PR #33 (CI task 7597) landed two pydocstyle
+# D209 violations that the tracked `.githooks/pre-push` hook did not catch: it calls
+# this script with no flags, which used to mean the lint gate never ran locally at
+# all -- silently narrower than CI's "Lint gate (scripts/lint.sh)" job, which
+# .github/workflows/ci.yml lists as a REQUIRED merge context. A required CI check
+# must not be able to pass locally while failing on the server. `--no-pre-commit`
+# stays for a deliberate, fast WIP loop; like `.githooks/pre-push`'s own
+# `--no-verify`, it is documented so it stays visible, not to encourage routine use.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,14 +43,14 @@ PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 
 CPU_SYNC=0
 POC_ONLY=0
-RUN_PRECOMMIT=0
+RUN_PRECOMMIT=1
 for arg in "$@"; do
     case "$arg" in
         --cpu) CPU_SYNC=1 ;;
         --poc) POC_ONLY=1 ;;
-        --pre-commit) RUN_PRECOMMIT=1 ;;
+        --no-pre-commit) RUN_PRECOMMIT=0 ;;
         -h|--help)
-            echo "usage: $0 [--cpu] [--poc] [--pre-commit]"
+            echo "usage: $0 [--cpu] [--poc] [--no-pre-commit]"
             exit 0
             ;;
         *)
@@ -37,6 +59,28 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+# --- isolation: fail fast on a near-full temp filesystem -----------------------------
+# HAZARD (observed 2026-09-06 05:28Z, continued): once the shared /tmp actually filled to
+# 0 bytes free, the failure did not stop at pytest's basetemp race above -- `torch.save`
+# inside the "poc cli train" step raised `RuntimeError: basic_ios::clear: iostream error`,
+# an opaque C++ streambuf error with no mention of disk space. Catch the low-space
+# condition here, before minutes are spent on venv sync and lint, with a message that
+# names the actual cause.
+#
+# Resolved once, up front, and reused by every mktemp call below (PYTEST_BASETEMP,
+# SMOKE_DIR) so the filesystem checked here is exactly the filesystem those directories
+# land on -- not merely "whatever TMPDIR happened to be at check time".
+CI_LOCAL_TMPROOT="${TMPDIR:-/tmp}"
+mkdir -p "${CI_LOCAL_TMPROOT}"
+echo "== temp root: ${CI_LOCAL_TMPROOT} =="
+CI_LOCAL_TMP_AVAIL_KB="$(df --output=avail -k "${CI_LOCAL_TMPROOT}" | tail -n1 | tr -d '[:space:]')"
+CI_LOCAL_TMP_MIN_KB=$((2 * 1024 * 1024)) # 2 GiB
+if [[ "${CI_LOCAL_TMP_AVAIL_KB}" -lt "${CI_LOCAL_TMP_MIN_KB}" ]]; then
+    echo "ci_local: REFUSING to run -- ${CI_LOCAL_TMPROOT} has $((CI_LOCAL_TMP_AVAIL_KB / 1024)) MiB free, need >= 2048 MiB." >&2
+    echo "  Set TMPDIR to a filesystem with more room, or free space on ${CI_LOCAL_TMPROOT}, then retry." >&2
+    exit 1
+fi
 
 export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
 
@@ -59,18 +103,27 @@ fi
 #   A. `uv sync --group dev --inexact`  -- stops the pruning, minimal diff. Rejected:
 #      the venv can then accumulate packages this gate never asked for, so it drifts
 #      from a clean install and can hide a missing-dependency bug real CI would catch.
-#   B. Add `--group train` to the sync   -- keeps everything, minimal diff. Rejected:
-#      pyproject.toml already documents the train/dev split as deliberate ("pulling
-#      pyarrow + tokenizers into every lint job costs minutes for nothing"); this
-#      reintroduces exactly that cost on every single push, forever, not just while
-#      training happens to be running.
-#   C. Give this script its OWN project environment (CHOSEN) -- `uv sync --group dev`
-#      keeps pruning exactly as CI's clean-install check requires, but it prunes a venv
-#      nothing else reads from, so the hazard is structurally impossible rather than
-#      merely avoided. Cost is a second venv on disk and a slower first run, which is
-#      cheap next to "silently broke a multi-hour training run."
-# C preserves CI fidelity (A doesn't) and keeps the group split's build-minute savings
-# for the venv that matters (B doesn't), so it is strictly better than A or B here.
+#   B. Add `--group train` to the sync   -- keeps everything, minimal diff. This was
+#      rejected when this script still synced the shared interactive .venv, on the
+#      grounds that pyproject.toml documents the train/dev split as deliberate
+#      ("pulling pyarrow + tokenizers into every lint job costs minutes for nothing")
+#      and that this would reintroduce that cost on every push, forever. That objection
+#      does not survive C below: once this script has its own isolated venv, the
+#      pyproject comment no longer applies to it -- the comment is about CI's lint jobs
+#      (lint, shell-yaml-lint, lint-gate, quality), none of which sync this project's
+#      dependency groups at all, and never was about this gate's venv. ADOPTED, folded
+#      into C: this gate's pytest steps mirror CI's `test` job, which already syncs
+#      `--group dev --group train` every run (.github/workflows/ci.yml:191), so this
+#      venv pays the same, correct cost.
+#   C. Give this script its OWN project environment (CHOSEN) -- `uv sync --group dev
+#      --group train`, matching CI's `test` job (ci.yml:191), keeps pruning to exactly
+#      that set, but prunes a venv nothing else reads from, so the HAZARD above is
+#      structurally impossible rather than merely avoided. Cost is a second venv on
+#      disk and a slower first run, which is cheap next to "silently broke a
+#      multi-hour training run."
+# C preserves CI fidelity (A doesn't) and is what makes B safe rather than costly: an
+# isolated venv can sync CI's exact group set, train included, without the shared-venv
+# mutation hazard the HAZARD paragraph above describes.
 #
 # IMPORTANT: this must be an UNCONDITIONAL override, not `${UV_PROJECT_ENVIRONMENT:-...}`.
 # Confirmed on this host: ~/.config/nushell/env.nu sets `$env.UV_PROJECT_ENVIRONMENT =
@@ -165,12 +218,15 @@ echo "== python ${PYTHON_VERSION} + venv (${UV_PROJECT_ENVIRONMENT}) =="
 uv python install "${PYTHON_VERSION}"
 if [[ "${CPU_SYNC}" -eq 1 ]]; then
     echo "sync: CPU torch (CI Test/poc-ci wheels)"
-    ci_lock_sync --group dev --no-sources \
+    # Groups match CI's `test` job sync line: .github/workflows/ci.yml:191.
+    ci_lock_sync --group dev --group train --no-sources \
         --extra-index-url https://download.pytorch.org/whl/cpu \
         --index-strategy unsafe-best-match
 else
     echo "sync: project lock (desktop CUDA torch from pyproject)"
-    ci_lock_sync --group dev
+    # Same groups as the --cpu branch above: the pytest steps below run either way and
+    # need train's tokenizers/pyarrow (ci.yml:191) to collect, not just import, cleanly.
+    ci_lock_sync --group dev --group train
 fi
 
 uv run --no-sync python - <<'PY'
@@ -180,6 +236,46 @@ print(f"python {sys.version.split()[0]}  torch {torch.__version__}  cuda={torch.
 if torch.cuda.is_available():
     print(f"device {torch.cuda.get_device_name(0)}")
 PY
+
+# --- CPU-only test execution, matching the GPU-less CI runner ------------------------
+# See the header comment (2026-09-04) for why. This does not undo the sync above -- CUDA
+# torch is still installed -- it only hides the device from every step that runs after
+# this line (pytest, the poc pytest set, and the poc cli smoke commands below).
+export CUDA_VISIBLE_DEVICES=""
+echo "== CUDA_VISIBLE_DEVICES=\"\" for test execution (CI runner has no GPU) =="
+
+# --- isolation: private pytest basetemp per ci_local run ------------------------------
+# HAZARD (observed 2026-09-06 05:28Z): pytest's default basetemp is a numbered directory
+# shared by uid, `${TMPDIR:-/tmp}/pytest-of-<user>/pytest-NN`. Five concurrent
+# invocations of this script (several agent worktrees plus a pre-push hook, all the same
+# user) raced to create the next numbered dir there; pytest gave up after 10 tries
+# (`OSError: could not create numbered dir with prefix test_... after 10 tries`), failing
+# the full-suite step with an error that has nothing to do with the code under test -- a
+# docs-only push was blocked by an unrelated race between unrelated worktrees.
+#
+# Fix: give every pytest invocation in this script its own private basetemp, created
+# fresh with `mktemp -d` and removed on exit, so two concurrent runs of this script have
+# nothing to race over -- same shape of fix as the CI_VENV / CI_LOCK_PROJECT isolation
+# above (an isolated target the hazard cannot reach), not a retry/lock around the shared
+# default.
+#
+# PYTEST_ADDOPTS carries it (rather than a --basetemp arg on each call site) so one
+# directory covers every pytest invocation below -- poc pytest and the full tests/ run --
+# without editing each call, and any basetemp/opts a caller already exported are kept:
+# appended to, never clobbered, so a deliberate override still applies.
+CI_LOCAL_TMP_DIRS=()
+ci_local_cleanup() {
+    local dir
+    for dir in "${CI_LOCAL_TMP_DIRS[@]:-}"; do
+        [[ -n "${dir}" ]] && rm -rf "${dir}"
+    done
+}
+trap ci_local_cleanup EXIT
+
+PYTEST_BASETEMP="$(mktemp -d "${CI_LOCAL_TMPROOT}/csd-ci-local-pytest.XXXXXX")"
+CI_LOCAL_TMP_DIRS+=("${PYTEST_BASETEMP}")
+export PYTEST_ADDOPTS="${PYTEST_ADDOPTS:+${PYTEST_ADDOPTS} }--basetemp=${PYTEST_BASETEMP}"
+echo "== pytest basetemp: ${PYTEST_BASETEMP} (private to this run) =="
 
 fail=0
 run() {
@@ -223,6 +319,7 @@ POC_PYTESTS=(
     tests/test_poc_compress.py
     tests/test_poc_registry.py
     tests/test_poc_route_train.py
+    tests/test_ci_local_cpu_gate.py
 )
 if [[ -f tests/test_poc_cuda.py ]]; then
     POC_PYTESTS+=(tests/test_poc_cuda.py)
@@ -230,8 +327,8 @@ fi
 
 run "poc pytest" uv run --no-sync pytest "${POC_PYTESTS[@]}" -q --tb=short
 
-SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/csd-ci-local.XXXXXX")"
-trap 'rm -rf "${SMOKE_DIR}"' EXIT
+SMOKE_DIR="$(mktemp -d "${CI_LOCAL_TMPROOT}/csd-ci-local.XXXXXX")"
+CI_LOCAL_TMP_DIRS+=("${SMOKE_DIR}")
 # --stream synthetic mirrors CI exactly: the GitHub runners have no dataset export, so
 # the smoke must pass without one. The real-data path is covered by the corpus tests in
 # `pytest tests/`, which skip when the mount is absent.
@@ -254,7 +351,10 @@ if [[ "${POC_ONLY}" -eq 0 ]]; then
 fi
 
 if [[ "${RUN_PRECOMMIT}" -eq 1 ]]; then
-    run "pre-commit --all-files" uvx pre-commit run --all-files
+    # Exactly CI's "Lint gate (scripts/lint.sh)" job (.github/workflows/ci.yml), a
+    # required merge context -- not a reimplementation of it, so it cannot drift from
+    # what that job actually runs.
+    run "lint gate (scripts/lint.sh)" bash scripts/lint.sh
 fi
 
 echo

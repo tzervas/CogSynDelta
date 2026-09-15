@@ -27,11 +27,14 @@ weights before and after packing, not two runs that happen to share a region nam
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -39,6 +42,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from cogsyndelta.eval.benchmark import BenchmarkResult, benchmark_embeddings, profile_latency
 from cogsyndelta.pipeline.receipt import Producer, Receipt
+from cogsyndelta.regions.aliases import canonical_region, legacy_names
+
+if TYPE_CHECKING:
+    from cogsyndelta.model.vl_jepa import ViTEncoder
 
 STATE = Path("/akula-data/csd")
 
@@ -48,7 +55,382 @@ def _regions_spec() -> dict:
     spec = importlib.util.spec_from_file_location("csd_train_all", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return {"REGIONS": mod.REGIONS, "_shards": mod._shards, "region_spec": mod.region_spec}
+    return {
+        "REGIONS": mod.REGIONS,
+        "VL_REGIONS": mod.VL_REGIONS,
+        "_shards": mod._shards,
+        "region_spec": mod.region_spec,
+    }
+
+
+def _is_visual_region(region: str) -> bool:
+    names = _regions_spec().get("VL_REGIONS") or {}
+    return region in names or canonical_region(region) in names
+
+
+def _vl_cfg_from_train_receipt(region: str, train_receipt: dict) -> Any:
+    from cogsyndelta.model.vl_jepa import JEPAConfig
+    from cogsyndelta.regions.vl_pretrain import VLPretrainConfig
+
+    protocol = train_receipt.get("probe_protocol")
+    if not isinstance(protocol, dict):
+        legacy = train_receipt.get("probe")
+        protocol = legacy if isinstance(legacy, dict) else {}
+    cfg_d = train_receipt["config"]
+    ckpt = Path(str(train_receipt["checkpoint"]))
+    cache_dir = protocol.get("cache_dir") or str(ckpt.parent.parent.parent / "vl-cache")
+    return VLPretrainConfig(
+        region=canonical_region(region),
+        train_shards=list(protocol.get("jepa_train_shards") or []),
+        probe_train_shards=list(protocol.get("linear_train_shards") or []),
+        probe_eval_shards=list(protocol.get("linear_eval_shards") or []),
+        transfer_shards=list(protocol.get("transfer_shards") or []),
+        image_column=str(protocol.get("image_column") or "image"),
+        label_column=str(protocol.get("label_column") or "label"),
+        transfer_image_column=str(protocol.get("transfer_image_column") or "image"),
+        transfer_label_column=str(protocol.get("transfer_label_column") or "label"),
+        image_backend=str(protocol.get("image_backend") or "png_zip"),
+        steps=int(cfg_d["steps"]),
+        batch_size=int(cfg_d["batch_size"]),
+        seed=int(cfg_d.get("seed") or 0),
+        probe_steps=int(cfg_d.get("probe_steps") or 600),
+        probe_lr=float(cfg_d.get("probe_lr") or 1e-3),
+        jepa=JEPAConfig(**cfg_d["jepa"]),
+        probe_sets=list(protocol.get("sets") or []),
+        device="cpu" if not torch.cuda.is_available() else "auto",
+        cache_dir=str(cache_dir),
+        out_dir=str(ckpt.parent.parent),
+    )
+
+
+class DeployedVisualEncoder(torch.nn.Module):
+    """The EMA target encoder — the only module ``IJEPA.encode`` reads (vl_jepa.py:581-587).
+
+    Packed artifacts use ``target_encoder.*`` keys so a reader can see the online
+    context encoder and the predictor were excluded.
+    """
+
+    # nn.Module attribute access is Tensor | Module; declare so embed/__call__ type-check.
+    target_encoder: ViTEncoder
+
+    def __init__(self, target_encoder: ViTEncoder) -> None:
+        super().__init__()
+        self.target_encoder = target_encoder
+
+    def embed(self, images: torch.Tensor) -> torch.Tensor:
+        return self.target_encoder.embed(images)
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        return self.target_encoder(images)
+
+
+def wrap_deployed_visual_encoder(ijepa: Any) -> DeployedVisualEncoder:
+    """Reparent the EMA target encoder so packed keys are ``target_encoder.*``."""
+    return DeployedVisualEncoder(ijepa.target_encoder)
+
+
+def _visual_parameter_count(module: torch.nn.Module) -> int:
+    return sum(p.numel() for p in module.parameters())
+
+
+@dataclass
+class VisualSplits:
+    """Decoded Mix B / probe tensors. Load once per process; eval_fn must not reload."""
+
+    x_tr: Any
+    px_tr: torch.Tensor
+    py_tr: torch.Tensor
+    px_ev: torch.Tensor
+    py_ev: torch.Tensor
+    transfer: Any
+    n_classes: int
+
+
+def load_visual_splits(cfg: Any) -> VisualSplits:
+    from cogsyndelta.regions.vl_pretrain import _load_visual_splits
+
+    size = cfg.jepa.image_size
+    x_tr, px_tr, py_tr, px_ev, py_ev, transfer = _load_visual_splits(cfg, size, Path(cfg.cache_dir))
+    n_classes = int(max(py_tr.max().item(), py_ev.max().item())) + 1
+    return VisualSplits(x_tr, px_tr, py_tr, px_ev, py_ev, transfer, n_classes)
+
+
+def _visual_embed(module: Any, x_float: torch.Tensor) -> torch.Tensor:
+    if hasattr(module, "embed"):
+        return module.embed(x_float)  # type: ignore[no-any-return]
+    return module.encode(x_float)  # type: ignore[no-any-return]
+
+
+def _visual_latents(
+    module: Any, x_u8: torch.Tensor, device: torch.device, bs: int = 256
+) -> torch.Tensor:
+    from cogsyndelta.regions.vl_pretrain import _to_float
+
+    module.eval()
+    out = []
+    with torch.no_grad():
+        for i in range(0, x_u8.size(0), bs):
+            out.append(_visual_embed(module, _to_float(x_u8[i : i + bs], device)).float().cpu())
+    return torch.cat(out)
+
+
+def _visual_rep_std(
+    module: Any, x_tr: Any, batch_size: int, seed: int, device: torch.device
+) -> float:
+    from cogsyndelta.regions.vl_pretrain import _to_float, collapse_batch_indices
+
+    enc = getattr(module, "target_encoder", module)
+    idx = collapse_batch_indices(int(x_tr.size(0)), batch_size, seed)
+    feats = enc(_to_float(x_tr[idx], device))
+    return float(feats.mean(dim=1).std(dim=0).mean().item())
+
+
+def _measure_visual_probes(
+    model: Any,
+    cfg: Any,
+    device: torch.device,
+    splits: VisualSplits | None = None,
+) -> tuple[dict, dict | None]:
+    from cogsyndelta.regions.vl_pretrain import _linear_probe
+
+    if splits is None:
+        splits = load_visual_splits(cfg)
+    held = _linear_probe(
+        _visual_latents(model, splits.px_tr, device),
+        splits.py_tr,
+        _visual_latents(model, splits.px_ev, device),
+        splits.py_ev,
+        splits.n_classes,
+        device,
+        cfg.probe_steps,
+        cfg.probe_lr,
+        cfg.seed,
+    )
+    with torch.no_grad():
+        held["rep_std"] = _visual_rep_std(model, splits.x_tr, cfg.batch_size, cfg.seed, device)
+    xfer = None
+    if splits.transfer:
+        ttr, tytr, tev, tyev, tn = splits.transfer
+        xfer = _linear_probe(
+            _visual_latents(model, ttr, device),
+            tytr,
+            _visual_latents(model, tev, device),
+            tyev,
+            tn,
+            device,
+            cfg.probe_steps,
+            cfg.probe_lr,
+            cfg.seed,
+        )
+    return held, xfer
+
+
+def _visual_eval_split_identity(splits: VisualSplits) -> str:
+    """Content fingerprint of the visual probe-eval set (`splits.px_ev`/`.py_ev`) --
+    the visual counterpart of text's `split.sha256` (MM §6.4), which visual has no
+    manifest-based equivalent of. Hashes the DECODED tensors, not a config value or a
+    shard path, so a re-built split under a different seed/cap or a truncated batch
+    changes this string even if every path/config field involved looks unchanged --
+    exactly the failure shapes `cogsyndelta.eval.geometry`'s G37 guard exists to
+    catch (MM §23).
+    """
+    h = hashlib.sha256()
+    h.update(splits.px_ev.detach().cpu().numpy().tobytes())
+    h.update(splits.py_ev.detach().cpu().numpy().tobytes())
+    return h.hexdigest()
+
+
+def _quant_geometry_metrics(
+    *,
+    fp32_latents: torch.Tensor,
+    quantized_latents: torch.Tensor,
+    split_sha256: str,
+    checkpoint_sha256: str,
+    quantized_sha256: str,
+    source_training_receipt: dict[str, str],
+) -> tuple[dict[str, float], dict[str, Any] | None]:
+    """`quant.geometry.*` fields for an eval-quantized receipt (MM §23), shared by the
+    text and visual branches of `benchmark_region_quantized`.
+
+    `fp32_latents`/`quantized_latents` must already be the SAME held-out items in the
+    SAME order -- both callers compute them, in this same process, from the SAME
+    split object, so that pairing holds by construction. `verify_geometry_reference`
+    (G37) is still run explicitly rather than assumed: a future refactor that breaks
+    the pairing (a cached fp32 pass reused across a re-built split, a truncated batch
+    on one side, a stale fp32 draw, a quantized artifact from a different bit width)
+    must fail loudly here, not ship a number that silently compares the wrong items
+    or the wrong models. `checkpoint_sha256`/`quantized_sha256` are passed once and
+    used on BOTH sides' `GeometryReference` -- exactly like `split_sha256` -- so this
+    is a fact about the wiring today, not a live defect; the guard exists to catch a
+    FUTURE divergence (see `cogsyndelta.eval.geometry`'s module docstring).
+
+    A held-out set no bigger than `DEFAULT_NN_K` cannot support `nn_agreement_at_k`
+    (`compute_geometry` refuses outright) -- production probe-eval sets never come
+    close (EuroSAT alone is `n_eval=5400`), but a CPU-cheap test fixture routinely
+    holds 4-16 items. Rather than let that raise and abort the WHOLE eval-quantized
+    receipt over a fixture-only edge case, this returns `({}, None)` -- the same
+    "not measured" outcome a receipt written before this feature produces, printed
+    rather than silent so a real production run that hit this would be noticed.
+
+    Returns:
+        `(metrics, reference)` -- `metrics` keyed `quant.geometry.<field>` (empty
+        when skipped), ready to merge into a receipt's flat `metrics` dict;
+        `reference` is the non-numeric `quant.geometry.reference` block (MM §23(a))
+        naming which fp32 checkpoint/receipt, quantized artifact and split the
+        comparison used, for `provenance` -- `None` when skipped.
+    """
+    from cogsyndelta.eval.geometry import (
+        DEFAULT_NN_K,
+        GeometryReference,
+        compute_geometry,
+        verify_geometry_reference,
+    )
+
+    n_items = fp32_latents.shape[0]
+    if n_items <= DEFAULT_NN_K:
+        print(
+            f"    quant.geometry: skipped -- {n_items} held-out items is not more "
+            f"than DEFAULT_NN_K={DEFAULT_NN_K}; nn_agreement_at_{DEFAULT_NN_K} needs "
+            "a larger held-out set (fixture-scale eval, not a production one)",
+            flush=True,
+        )
+        return {}, None
+    fp32_reference = GeometryReference(
+        split_sha256=split_sha256,
+        n_items=n_items,
+        checkpoint_sha256=checkpoint_sha256,
+        quantized_sha256=quantized_sha256,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256=split_sha256,
+        n_items=quantized_latents.shape[0],
+        checkpoint_sha256=checkpoint_sha256,
+        quantized_sha256=quantized_sha256,
+    )
+    verify_geometry_reference(fp32_reference, quantized_reference)
+    geometry = compute_geometry(fp32_latents, quantized_latents)
+    metrics = {f"quant.geometry.{key}": value for key, value in geometry.items()}
+    reference = {
+        "checkpoint_sha256": checkpoint_sha256,
+        "quantized_sha256": quantized_sha256,
+        "source_training_receipt": source_training_receipt,
+        "split_sha256": split_sha256,
+        "n_items": n_items,
+    }
+    return metrics, reference
+
+
+def benchmark_visual_region(
+    region: str,
+    state: Path,
+    train_receipt_path: Path | None = None,
+    *,
+    allow_unbound_train_receipt: bool = False,
+) -> Receipt | None:
+    """fp32 visual eval: same linear-probe protocol training used, on the bound checkpoint."""
+    from cogsyndelta.model.vl_jepa import IJEPA
+    from cogsyndelta.quant.ptq import fp32_reference_bytes
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
+
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    t0 = time.time()
+    resolved_path = _find_train_receipt(region, state, train_receipt_path)
+    if resolved_path is None:
+        print(f"    no training receipt for {region}", flush=True)
+        return None
+    train_receipt = json.loads(resolved_path.read_text())
+    if allow_unbound_train_receipt:
+        raise UnboundTrainReceiptError(
+            "visual eval has no unbound fallback: the training receipt must name "
+            "checkpoint + checkpoint_sha256"
+        )
+    expected = require_bound_visual_train_receipt(train_receipt, resolved_path)
+    cfg = _vl_cfg_from_train_receipt(region, train_receipt)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = IJEPA(cfg.jepa).to(device).eval()
+    ckpt_sha_out: list[str] = []
+    ck = load_checkpoint(
+        train_receipt["checkpoint"],
+        expected_sha256=expected,
+        map_location=device,
+        sha256_out=ckpt_sha_out,
+    )
+    model.load_state_dict(ck["model"])
+    checkpoint_sha256 = ckpt_sha_out[0]
+    deployed = wrap_deployed_visual_encoder(model).to(device).eval()
+    splits = load_visual_splits(cfg)
+    held, xfer = _measure_visual_probes(deployed, cfg, device, splits)
+    baseline = train_receipt["untrained_baseline"]
+    collapse_ratio = held["rep_std"] / max(1e-9, float(baseline["rep_std"]))
+    collapsed = collapse_ratio < 0.1
+    stored = fp32_reference_bytes(deployed)
+    n_params = _visual_parameter_count(deployed)
+    metrics: dict[str, float] = {
+        "probe.top1": float(held["top1"]),
+        "probe.top5": float(held["top5"]),
+        "repr.rep_std": float(held["rep_std"]),
+    }
+    if xfer is not None:
+        metrics["transfer.top1"] = float(xfer["top1"])
+        metrics["transfer.top5"] = float(xfer["top5"])
+    print(
+        f"    probe  untrained top1={float(baseline['top1']):.4f} "
+        f"top5={float(baseline.get('top5') or 0):.4f}  ->  "
+        f"trained top1={float(held['top1']):.4f} top5={float(held['top5']):.4f}",
+        flush=True,
+    )
+    untrained_xfer = train_receipt.get("untrained_transfer")
+    if xfer is not None and isinstance(untrained_xfer, dict):
+        tname = (train_receipt.get("transfer") or {}).get("name") or "transfer"
+        print(
+            f"    transfer ({tname})  untrained top1={float(untrained_xfer['top1']):.4f}  "
+            f"->  trained top1={float(xfer['top1']):.4f}",
+            flush=True,
+        )
+    print(
+        f"    rep_std {float(baseline['rep_std']):.4f} -> {float(held['rep_std']):.4f} "
+        f"(ratio {collapse_ratio:.4f}, collapsed={collapsed})",
+        flush=True,
+    )
+    return Receipt(
+        producer=Producer("cogsyndelta", canonical_region(region), "i-jepa"),
+        stage="eval",
+        kind="eval",
+        metrics=metrics,
+        baseline={"probe.top1": float(baseline["top1"])},
+        gates={
+            "beats_untrained_eval": float(held["top1"]) > float(baseline["top1"]),
+            "not_collapsed": not collapsed,
+        },
+        artifacts={
+            "checkpoint": train_receipt["checkpoint"],
+            "checkpoint_sha256": checkpoint_sha256,
+            "source_training_receipt": {
+                "path": str(resolved_path),
+                "sha256": sha256_file(resolved_path),
+            },
+        },
+        provenance={
+            "eval_target": "fp32",
+            "stored_bytes_definition": "weights-only",
+            "fp32_reference_bytes": stored,
+            "parameters": n_params,
+            "quantized_module": "target_encoder",
+            "collapse_ratio": round(collapse_ratio, 4),
+            "probe_repeatability": "not-bitwise",
+            "probe_repeatability_reason": (
+                "_linear_probe re-seeds the Linear head from cfg.seed so train vs eval "
+                "no longer depend on how many global RNG draws the I-JEPA loop consumed; "
+                "CUDA GEMM/AdamW on the probe are still not bitwise-deterministic. "
+                "Smoke 24-step (same checkpoint): train held_out.top1 0.6269 vs eval "
+                "probe.top1 0.6215; rep_std matched bitwise."
+            ),
+        },
+        detail={"held_out": held, "transfer": xfer},
+        started_utc=started_utc,
+        seconds=time.time() - t0,
+        device=str(device),
+    )
 
 
 class AmbiguousTrainReceiptError(RuntimeError):
@@ -81,19 +463,38 @@ def _find_train_receipt(
 
     Returns `None` when nothing matches, same as the original behaviour: the caller
     prints "no training receipt" and skips the region.
+
+    ALIAS-AWARE GLOB (round-2 review, blocking). `region` may be spelled either way for
+    a renamed region (`code`/`language`, `vl_latent`/`visual`) -- a receipt on disk
+    carries whichever spelling was current when `csd-train-all.py` wrote it, and that
+    writer deliberately never rewrites its own spelling in place afterwards (see
+    `cogsyndelta.regions.aliases`'s module docstring). Resolving `region` to canonical
+    and searching every spelling that maps back to it (`canonical_region(region)` plus
+    `legacy_names(...)` of it) means a caller can pass either spelling and still find a
+    receipt filed under the other one. Without this, `--regions language` against a
+    state root that only has `receipts/code-*.json` (every cell on disk right now)
+    silently matched nothing and `benchmark_region` reported "no training receipt" --
+    the reader never resolved the name DEC-78 says every reader resolves. A region that
+    was never renamed has no legacy spellings, so this is a no-op for it -- identical
+    glob, identical result, to before this fix.
     """
     if train_receipt_path is not None:
         if not train_receipt_path.is_file():
             raise FileNotFoundError(f"--train-receipt {train_receipt_path} does not exist")
         return train_receipt_path
-    receipts = sorted(state.glob(f"receipts/{region}-2*.json"))
+    canonical = canonical_region(region)
+    spellings = (canonical, *legacy_names(canonical))
+    receipts = sorted(
+        {path for name in spellings for path in state.glob(f"receipts/{name}-2*.json")}
+    )
     if not receipts:
         return None
     if len(receipts) > 1:
         listed = "\n  ".join(str(path) for path in receipts)
         raise AmbiguousTrainReceiptError(
-            f"{len(receipts)} training receipts match region {region!r} under "
-            f"{state}/receipts and no --train-receipt was given:\n  {listed}\n"
+            f"{len(receipts)} training receipts match region {region!r} (spellings "
+            f"{spellings}) under {state}/receipts and no --train-receipt was given:\n"
+            f"  {listed}\n"
             "Pass --train-receipt PATH to name the one this eval is about."
         )
     return receipts[0]
@@ -160,6 +561,28 @@ def expected_checkpoint_sha256(
     )
 
 
+def require_bound_visual_train_receipt(train_receipt: dict, receipt_path: Path) -> str:
+    """checkpoint_sha256 for a visual train receipt, or refuse. Does not load.
+
+    Visual eval and quantize have no unbound fallback: missing ``checkpoint`` or
+    ``checkpoint_sha256`` raises :class:`UnboundTrainReceiptError` with the same
+    message shape as ``benchmark_visual_region``.
+    """
+    msg = (
+        f"{receipt_path}: visual has no unbound fallback: the training receipt must name "
+        "checkpoint + checkpoint_sha256"
+    )
+    if not train_receipt.get("checkpoint"):
+        raise UnboundTrainReceiptError(msg)
+    try:
+        sha = expected_checkpoint_sha256(train_receipt, receipt_path, allow_unbound=False)
+    except UnboundTrainReceiptError:
+        raise UnboundTrainReceiptError(msg) from None
+    if not sha:
+        raise UnboundTrainReceiptError(msg)
+    return sha
+
+
 def _region_eval_context(region: str, train_receipt: dict) -> tuple:
     """Everything a battery pass needs BEFORE it touches a checkpoint: the region's
     `PretrainConfig`, the held-out split, a tokenizer and the device -- rebuilt from the
@@ -175,6 +598,7 @@ def _region_eval_context(region: str, train_receipt: dict) -> tuple:
     from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
     from cogsyndelta.regions.pretrain import PretrainConfig, build_splits
     from cogsyndelta.regions.text_encoder import TextEncoderConfig
+    from cogsyndelta.splits import verify_receipt_split
 
     spec = _regions_spec()
     entry = spec["region_spec"](region)
@@ -208,6 +632,18 @@ def _region_eval_context(region: str, train_receipt: dict) -> tuple:
     verify_corpus_fingerprint(train_receipt.get("corpus", {}), fingerprint, region)
 
     enc = TextEncoderConfig(**cfg_d["encoder"])
+    split_block = train_receipt.get("split") if isinstance(train_receipt.get("split"), dict) else {}
+    order_block = (
+        train_receipt.get("batch_order")
+        if isinstance(train_receipt.get("batch_order"), dict)
+        else {}
+    )
+    split_manifest = split_block.get("manifest") or None
+    if split_manifest == "":
+        split_manifest = None
+    order_manifest = order_block.get("manifest") or None
+    if order_manifest == "":
+        order_manifest = None
     cfg = PretrainConfig(
         region=region,
         pair_columns=tuple(cfg_d["pair_columns"]),
@@ -218,14 +654,67 @@ def _region_eval_context(region: str, train_receipt: dict) -> tuple:
         max_len=cfg_d["max_len"],
         holdout_pairs=cfg_d["holdout_pairs"],
         seed=cfg_d["seed"],
+        split_seed=int(cfg_d.get("split_seed", split_block.get("seed", 0))),
+        order_seed=int(cfg_d.get("order_seed", order_block.get("seed", 0))),
+        split_manifest=split_manifest,
+        order_manifest=order_manifest,
         tokenizer_path=cfg_d["tokenizer_path"],
         encoder=enc,
     )
-    holdout, _t, _m = build_splits(cfg)
+    holdout, _t, meta = build_splits(cfg)
+    # G26: a receipt whose split.sha256 is not the manifest this pass scored against
+    # is a different eval set. Seed-1 cells without a split block are retired.
+    verify_receipt_split(
+        train_receipt,
+        {
+            "sha256": meta["split"]["sha256"],
+            "seed": meta["split"]["seed"],
+        },
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tok = Tokenizer.from_file(cfg.tokenizer_path)
-    return cfg, enc, holdout, tok, device
+    return cfg, enc, holdout, tok, device, meta
+
+
+def _lexical_baseline_block(holdout: list, split_meta: dict) -> dict:
+    """TF-IDF / BM25 ceiling on this pass's manifested holdout (g49).
+
+    CPU-cheap, deterministic, same scorer as the 2026-09-06 diagnosis. Bound to
+    `split.sha256` so a later reader can refuse a mismatch (G26). Visual eval
+    never calls this -- there is no bag-of-words instrument on images.
+    """
+    from cogsyndelta.eval.lexical import build_lexical_baseline
+
+    split = split_meta.get("split") if isinstance(split_meta.get("split"), dict) else {}
+    return build_lexical_baseline(holdout, str(split.get("sha256") or ""))
+
+
+def _embed_holdout_pooled_both(
+    model: torch.nn.Module, tok, holdout: list, max_len: int, device: torch.device
+) -> torch.Tensor:
+    """Anchor and positive embeddings for a text holdout, concatenated (`pooled_both`,
+    the same population `repr.anisotropy`/`.uniformity` are measured over -- MM §3.9)
+    -- the item population `cogsyndelta.eval.geometry.compute_geometry` compares
+    row-for-row between the fp32 and quantized passes (MM §23).
+
+    A separate tokenize-and-embed pass from `_run_battery`'s own, rather than a
+    shared return value: `_run_battery` is a stable, tested seam other callers rely
+    on unchanged, and this function's only two callers (the fp32 and quantized sides
+    of `benchmark_region_quantized`'s geometry block) need latents alone, not a full
+    `BenchmarkResult`. The extra forward pass this costs is the same trade the
+    evidence this module implements already made (`measure_visual_ptq_sensitivity.py`
+    calls `_visual_latents` a second time rather than plumb it out of the probe
+    battery).
+    """
+    from cogsyndelta.regions.pretrain import _tokenize
+
+    with torch.no_grad():
+        a_ids, a_mask = _tokenize(tok, [a for a, _ in holdout], max_len, device)
+        p_ids, p_mask = _tokenize(tok, [b for _, b in holdout], max_len, device)
+        anchors = model(a_ids, a_mask).float().cpu()
+        positives = model(p_ids, p_mask).float().cpu()
+    return torch.cat([anchors, positives], dim=0)
 
 
 def _run_battery(
@@ -252,10 +741,110 @@ def _run_battery(
     return benchmark_embeddings(anchors, positives, params, stored_bytes, lat)
 
 
+def _apply_metrics_v2_renames(res: BenchmarkResult) -> None:
+    """Rename `effective_rank_ratio` -> `effective_rank_entropy_ratio` in place
+    (g7-latent-eval-metrics.md §3.2: "Rename `uses_its_dimensions` to
+    `repr.effective_rank_entropy_ratio`" -- the ENTROPY definition, distinguished from
+    the participation-ratio one `token_aware.final_block_rank.*_pr_rank` reports;
+    MM §9). The 0.05 floor is unchanged ("kept as recorded"), only the name.
+
+    Mutates `res.representation` (and so `res.flat()`, which reads it) IN PLACE rather
+    than renaming the field at its source in `cogsyndelta.eval.benchmark.effective_rank`
+    / `BenchmarkResult` -- that module is outside this lane's file scope for this
+    change. Doing the rename here, at the one place this script turns a
+    `BenchmarkResult` into a receipt, keeps `eval/benchmark.py`'s own public dict shape
+    untouched for any other caller while still shipping the v2 name on disk.
+    """
+    if "effective_rank_ratio" in res.representation:
+        res.representation["effective_rank_entropy_ratio"] = res.representation.pop(
+            "effective_rank_ratio"
+        )
+
+
+def _metric_groups(battery_id: str, seed: int) -> dict:
+    """Per-metric-group provenance (g7-latent-eval-metrics.md §3.1/§3.3): every group
+    this receipt's `metrics` dict reports gets its own `battery_id`, `pooling` and
+    `seed`, because `compare()` refuses to diff two numbers unless (among other things)
+    those three agree -- a `rank.recall@1` and a `repr.anisotropy` from the SAME
+    receipt were measured over different pools and must never be treated as
+    interchangeable just because they share a `started_utc`.
+
+    ONE ENTRY PER *POOL*, NOT PER FIELD-NAME PREFIX. `BenchmarkResult.flat()` groups its
+    keys under three prefixes (`rank.`/`eff.`/`repr.`), but two `repr.*` fields are
+    measured over a DIFFERENT pool than the rest of that family (MM §3.10(d), §12.5) --
+    folding them into a bare `"repr"` entry would make a `MetricIdentity` (MM §14) built
+    off that entry read `pooling="pooled_both"` for a field that is actually `anchor`-
+    or `matched`-pooled, exactly the mismeasurement `compare()`'s refuse predicate exists
+    to catch, and a review caught it doing (an earlier review caught the same defect for
+    `quant.artifact_recall@1` and it was fixed by giving IT its own entry -- see the
+    `quant` entry `benchmark_region_quantized` adds below; this follows that shape). A
+    metric whose true pool differs from its prefix family's dominant one gets a key named
+    after its own dotted field name (`"repr.emb_std_anchor"`, `"repr.alignment"`), so a
+    reader/caller can always do `groups.get(full_name, groups[prefix])` and get the right
+    pool either way.
+
+    - `rank.*`: `recall_at_k`/`mean_reciprocal_rank`/`ndcg_at_k`/`average_precision`/
+      `precision_at_k`/`candidates`, MM §3.1-§3.6 -- the closed, single-relevant-item,
+      matched-diagonal pool (`relevant[i] = i`) built from THIS holdout
+      (`benchmark_embeddings`, `src/cogsyndelta/eval/benchmark.py:355-369`).
+    - `eff.*`: MM §3.7/§3.8. Not itself a pooled retrieval quantity, but
+      `capability_per_param`/`capability_per_mb` are `rank.recall@1` divided by a
+      constant (`src/cogsyndelta/eval/benchmark.py:378-379`) -- inherits `rank.*`'s
+      pool/battery/seed rather than invent a "no pooling" value the closed
+      `pooling` enum has no slot for.
+    - `repr.*`: MM §3.9/§3.11/§3.12 -- `anisotropy`/`uniformity`/`effective_rank`/
+      `dimensions`/`effective_rank_entropy_ratio` are computed over
+      `cat([anchors, positives])`, i.e. `pooled_both` (`benchmark_embeddings`,
+      `src/cogsyndelta/eval/benchmark.py:392-399`), subsample seed 0 by default (MM
+      §3.9(e)) -- NOT this battery's corpus/holdout seed, which is why this group
+      records `seed=0` rather than the `seed` argument.
+    - `repr.emb_std_anchor`: MM §12.5 -- anchors ONLY (`representation_std(a)`,
+      `src/cogsyndelta/eval/benchmark.py:455`), never `pooled_both`. Own entry,
+      `pooling="anchor"`, same `battery_id`/`seed=0` as the `repr` family it is
+      otherwise measured alongside.
+    - `repr.alignment`: MM §3.10(d)/§12.4 -- MATCHED pairs (anchor row `i` against
+      positive row `i`), never `pooled_both`. Own entry, `pooling="matched"`, same
+      `battery_id`/`seed=0` as the `repr` family it is otherwise measured alongside.
+
+    Args:
+        battery_id: `"eval_holdout"` for a `kind="eval"` receipt, `"eval_quantized_holdout"`
+            for `kind="eval-quantized"` (g7 §3.3's closed `battery_id` set) -- the two
+            are never the same battery even though they run the identical code path,
+            because one scores the fp32 checkpoint and the other the packed artifact.
+        seed: The corpus/holdout-construction seed this battery's split was rebuilt
+            from (`cfg.split_seed` / `split.seed`, never the training-init seed) -- E0
+            separated those. Applied to the `rank`/`eff` groups; every `repr*` group's
+            own subsample seed is fixed at 0 regardless (see above).
+    """
+    return {
+        "rank": {"battery_id": battery_id, "pooling": "matched", "seed": seed},
+        "eff": {"battery_id": battery_id, "pooling": "matched", "seed": seed},
+        "repr": {
+            "battery_id": battery_id,
+            "pooling": "pooled_both",
+            "seed": 0,
+        },
+        "repr.emb_std_anchor": {
+            "battery_id": battery_id,
+            "pooling": "anchor",
+            "seed": 0,
+        },
+        "repr.alignment": {
+            "battery_id": battery_id,
+            "pooling": "matched",
+            "seed": 0,
+        },
+    }
+
+
 def _print_battery(res: BenchmarkResult, *, size_note: str) -> None:
     r, e, rep = res.ranking, res.efficiency, res.representation
+    # `map` is deliberately not printed: metrics-v2 §3.2 retires it as a displayed
+    # column on this closed-pool battery (it is always == `mrr` here -- see
+    # `eval/benchmark.py`'s `benchmark_embeddings` comment) and `res.ranking` no
+    # longer carries a "map" key at all.
     print(
-        f"    rank  r@1={r['recall@1']:.4f} ndcg@10={r['ndcg@10']:.4f} map={r['map']:.4f}",
+        f"    rank  r@1={r['recall@1']:.4f} ndcg@10={r['ndcg@10']:.4f} mrr={r['mrr']:.4f}",
         flush=True,
     )
     print(
@@ -264,9 +853,12 @@ def _print_battery(res: BenchmarkResult, *, size_note: str) -> None:
         f"{e.get('throughput_per_s', 0):.0f}/s",
         flush=True,
     )
+    # `effective_rank` -> `effective_rank_entropy`: metrics-v2 §3.1 canonical name
+    # (`repr.effective_rank_entropy`); `res.representation` carries only the renamed
+    # key (see `eval/benchmark.py`'s `benchmark_embeddings`).
     print(
-        f"    repr  anisotropy={rep['anisotropy']:.4f}  eff_rank={rep['effective_rank']:.1f}"
-        f"/{rep['dimensions']:.0f} ({rep['effective_rank_ratio']:.1%})  "
+        f"    repr  anisotropy={rep['anisotropy']:.4f}  eff_rank={rep['effective_rank_entropy']:.1f}"
+        f"/{rep['dimensions']:.0f} ({rep['effective_rank_entropy_ratio']:.1%})  "
         f"align={rep['alignment']:.4f} unif={rep['uniformity']:.4f}",
         flush=True,
     )
@@ -285,6 +877,13 @@ def benchmark_region(
     allow_unbound_train_receipt: bool = False,
 ) -> Receipt | None:
     """The fp32 pass: score the checkpoint `region`'s training receipt names."""
+    if _is_visual_region(region):
+        return benchmark_visual_region(
+            region,
+            state,
+            train_receipt_path,
+            allow_unbound_train_receipt=allow_unbound_train_receipt,
+        )
     from cogsyndelta.quant.ptq import fp32_reference_bytes
     from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
     from cogsyndelta.regions.text_encoder import TextEncoder
@@ -298,7 +897,7 @@ def benchmark_region(
         return None
     train_receipt = json.loads(resolved_path.read_text())
 
-    cfg, enc, holdout, tok, device = _region_eval_context(region, train_receipt)
+    cfg, enc, holdout, tok, device, split_meta = _region_eval_context(region, train_receipt)
     model = TextEncoder(enc, name=region).to(device).eval()
     # load_checkpoint: `train_receipt["checkpoint"]` is a path read out of a receipt
     # JSON on the NFS-exported receipts tree (rw, no_root_squash) -- anyone who can write
@@ -341,8 +940,17 @@ def benchmark_region(
     stored = fp32_reference_bytes(model)
 
     res = _run_battery(model, tok, holdout, cfg, device, stored)
+    _apply_metrics_v2_renames(res)
     r, e, rep = res.ranking, res.efficiency, res.representation
     _print_battery(res, size_note="fp32")
+    lexical = _lexical_baseline_block(holdout, split_meta)
+    tfidf_r1 = lexical["tfidf"]["recall@1"]
+    bm25_r1 = lexical["bm25"]["recall@1"]
+    print(
+        f"    lexical  tfidf r@1={tfidf_r1:.4f}  bm25 r@1={bm25_r1:.4f}  "
+        f"scorer={lexical['scorer_version']}",
+        flush=True,
+    )
 
     return Receipt(
         producer=Producer("cogsyndelta", region, "dense-transformer"),
@@ -350,12 +958,17 @@ def benchmark_region(
         kind="eval",
         metrics=res.flat(),
         baseline={"rank.recall@1": train_receipt["untrained_baseline"]["recall@1"]},
+        lexical_baseline=lexical,
         gates={
-            "beats_untrained": r["recall@1"] > train_receipt["untrained_baseline"]["recall@1"],
-            # A space where unrelated items sit at cosine 0.9+ is degenerate even when the
-            # ranking metrics look healthy, so it is a gate rather than a note.
-            "not_anisotropic": rep["anisotropy"] < 0.9,
-            "uses_its_dimensions": rep["effective_rank_ratio"] > 0.05,
+            # g7 §3.2: "two names because two predicates" -- this receipt's own
+            # unmargined `rank.recall@1 > untrained_baseline.recall@1` (MM §3.13(f))
+            # is NOT the training receipt's `_beats_untrained_gate` (baseline_sane AND
+            # a +0.01 margin, MM §1); `beats_untrained_train` names that one.
+            "beats_untrained_eval": r["recall@1"] > train_receipt["untrained_baseline"]["recall@1"],
+            # `not_anisotropic` (g7 §3.2): DEMOTED from a gating admission test to a
+            # recorded value -- no new bound without a study; `repr.anisotropy` above
+            # is still recorded in `metrics`, it is simply no longer read as pass/fail.
+            "uses_its_dimensions": rep["effective_rank_entropy_ratio"] > 0.05,
         },
         artifacts={
             "checkpoint": train_receipt["checkpoint"],
@@ -374,11 +987,128 @@ def benchmark_region(
             "holdout_pairs": len(holdout),
             "eval_target": "fp32",
             # See the `stored` comment above: this is `fp32_reference_bytes`'s
-            # definition, the same one `compression_ratio`'s denominator uses -- never
-            # a checkpoint file's raw `stat().st_size`, which includes optimizer state.
+            # definition, the same one `quant.compression_ratio`'s denominator uses --
+            # never a checkpoint file's raw `stat().st_size`, which includes optimizer
+            # state.
             "stored_bytes_definition": "weights-only",
+            "metric_groups": _metric_groups("eval_holdout", cfg.split_seed),
+            "split": split_meta.get("split"),
+            "batch_order": split_meta.get("batch_order"),
         },
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
+        started_utc=started_utc,
+        seconds=time.time() - t0,
+        device=str(device),
+    )
+
+
+def benchmark_visual_region_quantized(
+    region: str,
+    state: Path,
+    quantized_path: Path,
+    quant_receipt_path: Path | None = None,
+    train_receipt_path: Path | None = None,
+) -> Receipt:
+    """Score a packed EMA-target-encoder artifact with the same visual probe battery.
+
+    Packed keys are ``target_encoder.*``. Do not ``load_state_dict`` onto a full
+    IJEPA — the predictor and online context encoder are not in the artifact.
+    """
+    from cogsyndelta.model.vl_jepa import IJEPA
+    from cogsyndelta.quant.ptq import load_packed_artifact, unpack_state_dict
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
+
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    t0 = time.time()
+    resolved_path = _find_train_receipt(region, state, train_receipt_path)
+    if resolved_path is None:
+        raise FileNotFoundError(f"no training receipt for {region}")
+    train_receipt = json.loads(resolved_path.read_text())
+    checkpoint_sha256 = require_bound_visual_train_receipt(train_receipt, resolved_path)
+    packed_sha = sha256_file(quantized_path)
+    if quant_receipt_path is not None:
+        qrec = json.loads(quant_receipt_path.read_text())
+        recorded = str((qrec.get("artifacts") or {}).get("quantized_sha256") or "")
+        if recorded and recorded != packed_sha:
+            raise ValueError(
+                f"{quant_receipt_path}: quantized_sha256 {recorded} != bytes at "
+                f"{quantized_path} ({packed_sha})"
+            )
+    packed = load_packed_artifact(quantized_path)
+    cfg = _vl_cfg_from_train_receipt(region, train_receipt)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    deployed = wrap_deployed_visual_encoder(IJEPA(cfg.jepa)).to(device)
+    deployed.load_state_dict(unpack_state_dict(packed))
+    deployed.eval()
+    splits = load_visual_splits(cfg)
+    held, xfer = _measure_visual_probes(deployed, cfg, device, splits)
+    baseline = train_receipt["untrained_baseline"]
+    n_params = _visual_parameter_count(deployed)
+    metrics: dict[str, float] = {
+        "probe.top1": float(held["top1"]),
+        "probe.top5": float(held["top5"]),
+        "repr.rep_std": float(held["rep_std"]),
+        "quant.artifact_probe_top1": float(held["top1"]),
+    }
+    if xfer is not None:
+        metrics["transfer.top1"] = float(xfer["top1"])
+
+    # Representation geometry (MM §23): the fp32 EMA target encoder is loaded FRESH,
+    # in this same process, so its eval latents are provably over the SAME decoded
+    # `splits.px_ev` the quantized artifact was just scored on -- `checkpoint_sha256`
+    # is unconditionally bound here (`require_bound_visual_train_receipt` above never
+    # returns without one), so unlike the text branch this has no "unbound, skip
+    # geometry" case.
+    fp32_model = IJEPA(cfg.jepa).to(device)
+    fp32_ckpt = load_checkpoint(
+        train_receipt["checkpoint"], expected_sha256=checkpoint_sha256, map_location=device
+    )
+    fp32_model.load_state_dict(fp32_ckpt["model"])
+    fp32_deployed = wrap_deployed_visual_encoder(fp32_model).to(device).eval()
+    fp32_latents = _visual_latents(fp32_deployed, splits.px_ev, device)
+    quantized_latents = _visual_latents(deployed, splits.px_ev, device)
+    geometry_metrics, geometry_reference = _quant_geometry_metrics(
+        fp32_latents=fp32_latents,
+        quantized_latents=quantized_latents,
+        split_sha256=_visual_eval_split_identity(splits),
+        checkpoint_sha256=checkpoint_sha256,
+        quantized_sha256=packed_sha,
+        source_training_receipt={
+            "path": str(resolved_path),
+            "sha256": sha256_file(resolved_path),
+        },
+    )
+    metrics.update(geometry_metrics)
+
+    return Receipt(
+        producer=Producer("cogsyndelta", canonical_region(region), "i-jepa"),
+        stage="eval",
+        kind="eval-quantized",
+        metrics=metrics,
+        baseline={"probe.top1": float(baseline["top1"])},
+        gates={
+            "beats_untrained_eval": float(held["top1"]) > float(baseline["top1"]),
+            "not_collapsed": (held["rep_std"] / max(1e-9, float(baseline["rep_std"]))) >= 0.1,
+        },
+        artifacts={
+            "checkpoint": train_receipt["checkpoint"],
+            "checkpoint_sha256": checkpoint_sha256,
+            "quantized_path": str(quantized_path),
+            "quantized_sha256": packed_sha,
+            "source_training_receipt": {
+                "path": str(resolved_path),
+                "sha256": sha256_file(resolved_path),
+            },
+        },
+        provenance=(
+            {
+                "eval_target": "quantized",
+                "parameters": n_params,
+                "quantized_module": "target_encoder",
+            }
+            | ({"quant.geometry.reference": geometry_reference} if geometry_reference else {})
+        ),
+        detail={"held_out": held, "transfer": xfer},
         started_utc=started_utc,
         seconds=time.time() - t0,
         device=str(device),
@@ -410,13 +1140,21 @@ def benchmark_region_quantized(
             training receipt's -- either means the files on disk are not the ones the
             receipts describe, and scoring them would produce a number bound to nothing.
     """
+    if _is_visual_region(region):
+        return benchmark_visual_region_quantized(
+            region,
+            state,
+            quantized_path,
+            quant_receipt_path=quant_receipt_path,
+            train_receipt_path=train_receipt_path,
+        )
     from cogsyndelta.quant.ptq import (
         load_packed_artifact,
         packed_stored_bytes,
         packed_width_histogram,
         unpack_state_dict,
     )
-    from cogsyndelta.regions._checkpoint import sha256_file
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
     from cogsyndelta.regions.text_encoder import TextEncoder
 
     started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -444,7 +1182,7 @@ def benchmark_region_quantized(
         )
     train_receipt = json.loads(train_receipt_path_final.read_text())
 
-    cfg, enc, holdout, tok, device = _region_eval_context(region, train_receipt)
+    cfg, enc, holdout, tok, device, split_meta = _region_eval_context(region, train_receipt)
 
     quantized_path = Path(quantized_path)
     packed = load_packed_artifact(quantized_path)
@@ -491,8 +1229,52 @@ def benchmark_region_quantized(
 
     stored = packed_stored_bytes(packed)
     res = _run_battery(model, tok, holdout, cfg, device, stored)
+    _apply_metrics_v2_renames(res)
     r, e, rep = res.ranking, res.efficiency, res.representation
     _print_battery(res, size_note="quantized artifact")
+
+    metrics = res.flat()
+    # `quant.artifact_recall@1` (g7 §3.1): the SAME number as `rank.recall@1` above,
+    # under the name the "plan-vs-artifact" sameness guard reads (MM §4's special
+    # case, g7 §3.3: `quant.plan_recall@1` vs `quant.artifact_recall@1` may be
+    # compared ACROSS battery ids by design, on the same sha/holdout, as a check that
+    # the quantizer's in-memory plan and the packed file it wrote agree -- never a
+    # general cross-battery compare). Recorded here, not only implied by `rank.*`, so
+    # a reader of THIS receipt does not have to know csd-quantize.py's field name to
+    # find the number that pairs with it.
+    metrics["quant.artifact_recall@1"] = metrics["rank.recall@1"]
+
+    # Representation geometry (MM §23): only attempted when the fp32 checkpoint this
+    # pass is bound to has a KNOWN sha256 -- an unbound (`--allow-unbound-train-
+    # receipt`) run has no fp32 reference this comparison could name, so it is
+    # skipped rather than loading an unverified checkpoint to compare against; the
+    # card renders "not measured" for that case (MM §23(i)), never a fabricated
+    # number. `_embed_holdout_pooled_both` is called a SECOND time for the quantized
+    # `model` here (already scored once inside `_run_battery` above) -- an accepted
+    # extra forward pass, same trade `_embed_holdout_pooled_both`'s own docstring
+    # explains.
+    geometry_reference: dict[str, Any] | None = None
+    if checkpoint_sha256 and train_receipt.get("checkpoint"):
+        fp32_model = TextEncoder(enc, name=region).to(device)
+        fp32_ckpt = load_checkpoint(
+            train_receipt["checkpoint"], expected_sha256=checkpoint_sha256, map_location=device
+        )
+        fp32_model.load_state_dict(fp32_ckpt["model"])
+        fp32_model = fp32_model.eval()
+        fp32_latents = _embed_holdout_pooled_both(fp32_model, tok, holdout, cfg.max_len, device)
+        quantized_latents = _embed_holdout_pooled_both(model, tok, holdout, cfg.max_len, device)
+        geometry_metrics, geometry_reference = _quant_geometry_metrics(
+            fp32_latents=fp32_latents,
+            quantized_latents=quantized_latents,
+            split_sha256=str((split_meta.get("split") or {}).get("sha256") or ""),
+            checkpoint_sha256=checkpoint_sha256,
+            quantized_sha256=quantized_sha256,
+            source_training_receipt={
+                "path": str(train_receipt_path_final),
+                "sha256": sha256_file(train_receipt_path_final),
+            },
+        )
+        metrics.update(geometry_metrics)
 
     artifacts = {
         "checkpoint": train_receipt.get("checkpoint", ""),
@@ -510,30 +1292,58 @@ def benchmark_region_quantized(
             "sha256": sha256_file(quant_receipt_final),
         }
 
+    provenance: dict[str, Any] = {
+        "holdout_pairs": len(holdout),
+        "quantized_size": True,
+        "eval_target": "quantized",
+        "width_histogram": packed_width_histogram(packed),
+        # `packed_stored_bytes` counts packed codes/scale/zero for quantized
+        # tensors and 4 bytes/element for the fp32-kept ones it stores verbatim --
+        # weights only, same as the fp32 pass's `fp32_reference_bytes` (see
+        # `benchmark_region`'s `stored` comment). The two receipts' `eff.stored_mb`
+        # are comparable by this shared definition, not by coincidence.
+        "stored_bytes_definition": "weights-only",
+        # `eval_quantized_holdout`, never `eval_holdout` -- same code path as the
+        # fp32 pass, but a DIFFERENT battery: this one scores the packed artifact
+        # read off disk, not the in-memory fp32 checkpoint (g7 §3.3's closed
+        # `battery_id` set names both separately for exactly this reason).
+        "split": split_meta.get("split"),
+        "batch_order": split_meta.get("batch_order"),
+        "metric_groups": {
+            **_metric_groups("eval_quantized_holdout", cfg.split_seed),
+            # `quant.artifact_recall@1` above is `rank.recall@1` verbatim (MM
+            # §12.8's plan-vs-artifact sameness special-case, g7 §3.3) -- not an
+            # independent measurement, so it shares the `rank` group's
+            # battery_id/pooling/seed rather than inventing its own. Without this
+            # entry, a caller building a `MetricIdentity` (MM §14) for
+            # `quant.artifact_recall@1` off THIS receipt has no
+            # battery_id/pooling/seed to read, even though the field is on
+            # `metrics`.
+            "quant": {
+                "battery_id": "eval_quantized_holdout",
+                "pooling": "matched",
+                "seed": cfg.split_seed,
+            },
+        },
+    }
+    if geometry_reference is not None:
+        provenance["quant.geometry.reference"] = geometry_reference
+
     return Receipt(
         producer=Producer("cogsyndelta", region, "dense-transformer"),
         stage="eval",
         kind="eval-quantized",
-        metrics=res.flat(),
+        metrics=metrics,
         baseline={"rank.recall@1": train_receipt["untrained_baseline"]["recall@1"]},
+        lexical_baseline=_lexical_baseline_block(holdout, split_meta),
         gates={
-            "beats_untrained": r["recall@1"] > train_receipt["untrained_baseline"]["recall@1"],
-            "not_anisotropic": rep["anisotropy"] < 0.9,
-            "uses_its_dimensions": rep["effective_rank_ratio"] > 0.05,
+            # See `benchmark_region`'s identical gate for the g7 §3.2 rename rationale
+            # (two predicates, two names) and the `not_anisotropic` demotion.
+            "beats_untrained_eval": r["recall@1"] > train_receipt["untrained_baseline"]["recall@1"],
+            "uses_its_dimensions": rep["effective_rank_entropy_ratio"] > 0.05,
         },
         artifacts=artifacts,
-        provenance={
-            "holdout_pairs": len(holdout),
-            "quantized_size": True,
-            "eval_target": "quantized",
-            "width_histogram": packed_width_histogram(packed),
-            # `packed_stored_bytes` counts packed codes/scale/zero for quantized
-            # tensors and 4 bytes/element for the fp32-kept ones it stores verbatim --
-            # weights only, same as the fp32 pass's `fp32_reference_bytes` (see
-            # `benchmark_region`'s `stored` comment). The two receipts' `eff.stored_mb`
-            # are comparable by this shared definition, not by coincidence.
-            "stored_bytes_definition": "weights-only",
-        },
+        provenance=provenance,
         detail={"family_split": {"ranking": r, "efficiency": e, "representation": rep}},
         started_utc=started_utc,
         seconds=time.time() - t0,
@@ -607,6 +1417,14 @@ def main() -> int:
             failures.append(region)
             continue
         if rec is None:
+            # A silent `continue` here used to let a region with no matching training
+            # receipt fall out of the loop uncounted -- `main()` then printed "0
+            # failure(s)" and exited 0 having scored nothing (round-2 review, blocking:
+            # exactly what an unresolved alias produced for `--regions language` before
+            # `_find_train_receipt` above searched every spelling). A region that
+            # genuinely has no training receipt yet is not a pass; it is reported the
+            # same as any other failure to score it.
+            failures.append(region)
             continue
         path = rec.write(state / "receipts")
         status = "PASS" if rec.passed else "GATE FAIL"

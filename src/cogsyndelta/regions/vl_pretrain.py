@@ -30,7 +30,8 @@ encoder. If gradient reached the encoder the probe would be fine-tuning, and the
 would measure the probe's capacity rather than the representation's quality.
 
 IN-DOMAIN AND TRANSFER
-Pretraining is on tiny-imagenet (100k images, natively 64x64 RGB, no resampling). The
+Pretraining source is caller-provided (VLPretrainConfig.train_shards); as of 2026-09-04
+(W7v-cfg) this harness is corpus-agnostic and no longer defaults to tiny-imagenet. The
 probe runs twice: on tiny-imagenet's held-out valid split, and on cifar100, a different
 dataset with different classes. The second number is the one that says whether the
 representation generalises rather than memorises -- the same reason `retrieve` is scored
@@ -54,10 +55,17 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from cogsyndelta.corpus import stable_cache_tag
-from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig
-from cogsyndelta.regions._checkpoint import atomic_save, load_resumable, rotate_checkpoints
+from cogsyndelta.corpus import CORPUS_FINGERPRINT_SCHEME, fingerprint_corpus, stable_cache_tag
+from cogsyndelta.model.vl_jepa import IJEPA, JEPAConfig, check_checkpoint_grid_compatible
+from cogsyndelta.regions._checkpoint import (
+    atomic_save,
+    load_resumable,
+    rotate_checkpoints,
+    sha256_file,
+)
 from cogsyndelta.regions._receipt import trainer_defaults, write_receipt
+
+__all__ = ["VLPretrainConfig", "collapse_batch_indices", "pretrain_vl_region"]
 
 
 @dataclass
@@ -71,8 +79,12 @@ class VLPretrainConfig:
     transfer_shards: list[str] = field(default_factory=list)
     image_column: str = "image"
     label_column: str = "label"
-    transfer_image_column: str = "img"
-    transfer_label_column: str = "fine_label"
+    # Fashion-MNIST (the Mix B transfer probe) uses image/label. CIFAR-100's
+    # img/fine_label are not a live transfer set (PREREG §3). Parquet backends that
+    # still call `_decode_split` for transfer reuse these names; the zip-landed Mix B
+    # path never reads them (`_decode_png_stores` labels from folder names).
+    transfer_image_column: str = "image"
+    transfer_label_column: str = "label"
 
     steps: int = 4000
     batch_size: int = 128
@@ -93,6 +105,39 @@ class VLPretrainConfig:
     jepa: JEPAConfig = field(default_factory=JEPAConfig)
     cache_dir: str = "/akula-data/csd/vl-cache"
     out_dir: str = "/akula-data/csd/receipts"
+    image_backend: str = "parquet"  # "parquet" | "png_zip"
+    probe_set_names: list[str] = field(default_factory=list)
+    probe_sets: list[dict[str, Any]] = field(default_factory=list)
+    corpus_source: str = ""
+
+
+def _probe_identity(cfg: VLPretrainConfig, role: str) -> dict[str, str] | None:
+    """`source` + `name` for one probe role, taken from the resolved manifest.
+
+    Never a literal: empty `probe_sets` (parquet unit fixtures) leaves the metric
+    block unstamped rather than inventing cifar100 / tiny-imagenet.
+    """
+    for entry in cfg.probe_sets:
+        if str(entry.get("role") or "") != role:
+            continue
+        source = str(entry.get("source") or "")
+        name = str(entry.get("name") or "")
+        if source and name:
+            return {"source": source, "name": name}
+    return None
+
+
+def _stamp_probe_identity(
+    block: dict[str, Any] | None, identity: dict[str, str] | None
+) -> dict[str, Any] | None:
+    if block is None:
+        return None
+    if not identity:
+        return block
+    out = dict(block)
+    out["source"] = identity["source"]
+    out["name"] = identity["name"]
+    return out
 
 
 def _resolve_device(want: str) -> torch.device:
@@ -188,6 +233,125 @@ def _decode_split(
     return torch.from_numpy(x), torch.from_numpy(y)
 
 
+def _decode_png_ref(ref: Any, size: int, reader: Any) -> np.ndarray:
+    from PIL import Image
+
+    raw = reader.read(ref)
+    with Image.open(io.BytesIO(raw)) as handle:
+        rgb = handle.convert("RGB")
+        if rgb.size != (size, size):
+            rgb = rgb.resize((size, size), Image.Resampling.BICUBIC)
+        return np.asarray(rgb, dtype=np.uint8)
+
+
+def _decode_png_stores(
+    shards: list[str], size: int, limit: int, seed: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Decode PNG zips/trees to uint8 ``[N,3,size,size]`` and labels from folder names."""
+    from cogsyndelta.vl.mix_corpus import (
+        ZipPngReader,
+        class_name_from_ref,
+        shuffled_pngs,
+    )
+
+    refs: list[Any] = []
+    for shard in shards:
+        refs.extend(shuffled_pngs(Path(shard), seed))
+        if limit and len(refs) >= limit:
+            refs = refs[:limit]
+            break
+    names = [class_name_from_ref(r) or "_" for r in refs]
+    classes = sorted(set(names))
+    class_to_i = {c: i for i, c in enumerate(classes)}
+    # slurp=True: this reader is transient (closed in `finally` right below, right
+    # after one bounded pass over `refs`), so the NFS-small-read win from slurping is
+    # free -- unlike PngTrain, nothing here keeps the cache alive for a whole run.
+    reader = ZipPngReader(slurp=True)
+    try:
+        images = [_decode_png_ref(r, size, reader) for r in refs]
+    finally:
+        reader.close()
+    x = np.stack(images).transpose(0, 3, 1, 2)
+    y = np.asarray([class_to_i[n] for n in names], dtype=np.int64)
+    return torch.from_numpy(x), torch.from_numpy(y)
+
+
+class PngTrain:
+    """Lazy Mix B train set: stream zip members, never extract, never hold 581k tensors."""
+
+    def __init__(self, shards: list[str], size: int, seed: int, limit: int) -> None:
+        """Index ``shards`` (zip or PNG tree) shuffled with ``seed``; ``limit`` 0 keeps all."""
+        from cogsyndelta.vl.mix_corpus import ZipPngReader, shuffled_pngs
+
+        refs: list[Any] = []
+        for shard in shards:
+            refs.extend(shuffled_pngs(Path(shard), seed))
+        if limit:
+            refs = refs[:limit]
+        self.refs = refs
+        self.size_px = size
+        # slurp=False: this reader lives for the whole training run and never closes
+        # or evicts a cached handle (training samples random indices across the whole
+        # corpus, not one pass), so slurping here would mean every shard under
+        # _SLURP_MAX_BYTES staying resident in RAM for the run's entire lifetime --
+        # multiplied across concurrently packed runs. Streaming keeps this path's
+        # memory behaviour exactly as it was before the slurp fix.
+        self.reader = ZipPngReader(slurp=False)
+
+    def size(self, dim: int = 0) -> int:
+        """Return the image count (``dim`` must be 0, matching a 1-D tensor API)."""
+        if dim != 0:
+            raise IndexError(dim)
+        return len(self.refs)
+
+    def __getitem__(self, idx: Any) -> torch.Tensor:
+        """Decode one image, a slice, or a 1-D index tensor to CHW float tensors."""
+        if isinstance(idx, slice):
+            chosen = self.refs[idx]
+            arr = np.stack([_decode_png_ref(r, self.size_px, self.reader) for r in chosen])
+            return torch.from_numpy(arr.transpose(0, 3, 1, 2))
+        if isinstance(idx, torch.Tensor):
+            chosen = [self.refs[int(i)] for i in idx.tolist()]
+            arr = np.stack([_decode_png_ref(r, self.size_px, self.reader) for r in chosen])
+            return torch.from_numpy(arr.transpose(0, 3, 1, 2))
+        rgb = _decode_png_ref(self.refs[int(idx)], self.size_px, self.reader)
+        return torch.from_numpy(rgb.transpose(2, 0, 1))
+
+
+def collapse_batch_indices(n: int, batch_size: int, seed: int) -> torch.Tensor:
+    """Draw a diagnostic batch the same way the train loop draws.
+
+    Training uses ``torch.randint`` over all refs with a Generator seeded from
+    the run seed. The F2 collapse diagnostic used to slice ``x_tr[:batch_size]``,
+    which after per-shard listing is the first 128 Mix B images -- all pxhere.
+    This helper uses a *fresh* Generator at ``seed`` so it does not consume the
+    training RNG; baseline and final therefore see the same mixed-batch indices.
+
+    Args:
+        n: Train-set length (``x_tr.size(0)``).
+        batch_size: Same ``cfg.batch_size`` the train loop passes to randint.
+        seed: ``cfg.seed``.
+
+    Returns:
+        Int64 index tensor of length ``batch_size``.
+    """
+    gen = torch.Generator().manual_seed(seed)
+    return torch.randint(0, n, (batch_size,), generator=gen)
+
+
+def _rep_std_on_mixed_batch(
+    model: IJEPA,
+    x_tr: torch.Tensor | PngTrain,
+    batch_size: int,
+    seed: int,
+    device: torch.device,
+) -> float:
+    """EMA-target ``rep_std`` on a mixed batch. Ratio definition is unchanged."""
+    idx = collapse_batch_indices(int(x_tr.size(0)), batch_size, seed)
+    feats = model.target_encoder(_to_float(x_tr[idx], device))
+    return feats.mean(dim=1).std(dim=0).mean().item()
+
+
 def _to_float(batch_u8: torch.Tensor, device: torch.device) -> torch.Tensor:
     """uint8 [B,3,H,W] -> normalised float on device."""
     x = batch_u8.to(device, non_blocking=True).float().div_(255.0)
@@ -232,7 +396,23 @@ def _linear_probe(
     fev = ((feats_ev - mu) / sigma).to(device)
     ytr, yev = y_tr.to(device), y_ev.to(device)
 
+    # Linear.reset_parameters uses the process-global RNG, not `g`. After a training
+    # loop that has drawn masks from that RNG, the head is a different draw than a
+    # fresh eval process that only loaded the checkpoint. Seed the head from `seed`
+    # and restore the global generators so this call does not perturb callers.
+    cpu_rng = torch.get_rng_state()
+    cuda_rng = (
+        torch.cuda.get_rng_state_all()
+        if device.type == "cuda" and torch.cuda.is_available()
+        else None
+    )
+    torch.manual_seed(seed)
+    if device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     head = nn.Linear(ftr.size(1), n_classes).to(device)
+    torch.set_rng_state(cpu_rng)
+    if cuda_rng is not None:
+        torch.cuda.set_rng_state_all(cuda_rng)
     opt = torch.optim.AdamW(head.parameters(), lr=lr, weight_decay=1e-4)
     bs = min(1024, ftr.size(0))
     for _ in range(steps):
@@ -322,6 +502,7 @@ def _resume_fields(cfg: VLPretrainConfig) -> dict[str, Any]:
         "label_column": cfg.label_column,
         "transfer_image_column": cfg.transfer_image_column,
         "transfer_label_column": cfg.transfer_label_column,
+        "image_backend": cfg.image_backend,
         "steps": cfg.steps,
         "batch_size": cfg.batch_size,
         "lr": cfg.lr,
@@ -391,6 +572,103 @@ def _checkpoint_payload(
     }
 
 
+def _probe_peak_vl(cfg: VLPretrainConfig) -> dict[str, Any]:
+    """Harness `GPU_PACK_PROBE` path: train steps only, no receipt, no checkpoint.
+
+    Peak VRAM is the train loop (forward + backward + EMA), not the linear probe.
+    Writes nothing under `cfg.out_dir`. Prints `GPU_PACK_PEAK_MIB=` via `report_peak`
+    when CUDA is on and the env opted in -- silent on CPU.
+    """
+    from cogsyndelta.util.gpu_budget import PROBE_STEPS, report_peak
+
+    steps = min(int(cfg.steps), PROBE_STEPS)
+    device = _resolve_device(cfg.device)
+    size = cfg.jepa.image_size
+    if cfg.image_backend == "png_zip":
+        x_tr: torch.Tensor | PngTrain = PngTrain(cfg.train_shards, size, cfg.seed, cfg.train_limit)
+    else:
+        x_tr, _ = _decode_split(
+            cfg.train_shards,
+            cfg.image_column,
+            cfg.label_column,
+            size,
+            cfg.train_limit,
+            Path(cfg.cache_dir),
+        )
+    n = x_tr.size(0)
+    if n <= 0:
+        raise ValueError("visual probe_peak: train set is empty")
+    model = IJEPA(cfg.jepa).to(device)
+    opt = torch.optim.AdamW(
+        [p for p in model.parameters() if p.requires_grad],
+        lr=cfg.lr,
+        weight_decay=cfg.weight_decay,
+    )
+    gen = torch.Generator().manual_seed(cfg.seed)
+    model.train()
+    bs = min(cfg.batch_size, n)
+    for _step in range(1, steps + 1):
+        idx = torch.randint(0, n, (bs,), generator=gen)
+        loss, _stats = model(_to_float(x_tr[idx], device))
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+        opt.step()
+        model.update_target(_ema_at(_step, cfg))
+    report_peak()
+    return {
+        "probe": True,
+        "region": cfg.region,
+        "steps": steps,
+        "batch_size": bs,
+        "parameters": sum(p.numel() for p in model.parameters()),
+    }
+
+
+def _load_visual_splits(
+    cfg: VLPretrainConfig, size: int, cache: Path
+) -> tuple[
+    torch.Tensor | PngTrain,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int] | None,
+]:
+    """Decode train/probe/transfer tensors (or a lazy PNG train set). No training."""
+    x_tr: torch.Tensor | PngTrain
+    if cfg.image_backend == "png_zip":
+        x_tr = PngTrain(cfg.train_shards, size, cfg.seed, cfg.train_limit)
+        px_tr, py_tr = _decode_png_stores(cfg.probe_train_shards, size, cfg.probe_limit, cfg.seed)
+        px_ev, py_ev = _decode_png_stores(cfg.probe_eval_shards, size, 0, cfg.seed)
+    else:
+        x_tr, _ = _decode_split(
+            cfg.train_shards, cfg.image_column, cfg.label_column, size, cfg.train_limit, cache
+        )
+        px_tr, py_tr = _decode_split(
+            cfg.probe_train_shards, cfg.image_column, cfg.label_column, size, cfg.probe_limit, cache
+        )
+        px_ev, py_ev = _decode_split(
+            cfg.probe_eval_shards, cfg.image_column, cfg.label_column, size, 0, cache
+        )
+    transfer = None
+    if cfg.transfer_shards:
+        if cfg.image_backend == "png_zip":
+            tx, ty = _decode_png_stores(cfg.transfer_shards, size, cfg.probe_limit, cfg.seed)
+        else:
+            tx, ty = _decode_split(
+                cfg.transfer_shards,
+                cfg.transfer_image_column,
+                cfg.transfer_label_column,
+                size,
+                cfg.probe_limit,
+                cache,
+            )
+        cut = int(tx.size(0) * 0.8)
+        transfer = (tx[:cut], ty[:cut], tx[cut:], ty[cut:], int(ty.max().item()) + 1)
+    return x_tr, px_tr, py_tr, px_ev, py_ev, transfer
+
+
 def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     """Train the visual region and return a receipt. Never gates on the loss.
 
@@ -399,35 +677,22 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     (sampled batch order, a second RNG stream feeding both mask sampling and the linear
     probe's head init) and why the EMA target encoder and the decoded-image cache need no
     special handling.
+
+    `GPU_PACK_PROBE`: short train loop only (`_probe_peak_vl`); no receipt, no checkpoint.
     """
+    from cogsyndelta.util.gpu_budget import apply_budget_from_env, probe_requested
+
+    apply_budget_from_env()
+    if probe_requested():
+        return _probe_peak_vl(cfg)
+
     torch.manual_seed(cfg.seed)
     device = _resolve_device(cfg.device)
     cache = Path(cfg.cache_dir)
     size = cfg.jepa.image_size
 
-    x_tr, _ = _decode_split(
-        cfg.train_shards, cfg.image_column, cfg.label_column, size, cfg.train_limit, cache
-    )
-    px_tr, py_tr = _decode_split(
-        cfg.probe_train_shards, cfg.image_column, cfg.label_column, size, cfg.probe_limit, cache
-    )
-    px_ev, py_ev = _decode_split(
-        cfg.probe_eval_shards, cfg.image_column, cfg.label_column, size, 0, cache
-    )
+    x_tr, px_tr, py_tr, px_ev, py_ev, transfer = _load_visual_splits(cfg, size, cache)
     n_classes = int(max(py_tr.max().item(), py_ev.max().item())) + 1
-
-    transfer = None
-    if cfg.transfer_shards:
-        tx, ty = _decode_split(
-            cfg.transfer_shards,
-            cfg.transfer_image_column,
-            cfg.transfer_label_column,
-            size,
-            cfg.probe_limit,
-            cache,
-        )
-        cut = int(tx.size(0) * 0.8)
-        transfer = (tx[:cut], ty[:cut], tx[cut:], ty[cut:], int(ty.max().item()) + 1)
 
     model = IJEPA(cfg.jepa).to(device)
     params = sum(p.numel() for p in model.parameters())
@@ -465,9 +730,8 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
             cfg.seed,
         )
         with torch.no_grad():
-            probe_batch = _to_float(x_tr[: cfg.batch_size], device)
-            baseline["rep_std"] = (
-                model.target_encoder(probe_batch).mean(dim=1).std(dim=0).mean().item()
+            baseline["rep_std"] = _rep_std_on_mixed_batch(
+                model, x_tr, cfg.batch_size, cfg.seed, device
             )
 
         baseline_transfer = None
@@ -486,6 +750,16 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
             )
         print(f"    {cfg.region}: no valid checkpoint in {ckpt_dir} -- starting fresh", flush=True)
     else:
+        # Defense in depth beside `load_resumable`'s fingerprint check above: that check
+        # already refuses a resume whose ENTIRE `jepa` config differs (see
+        # `_resume_fields`), which covers a grid change too, but a dedicated grid check
+        # names the mismatch by grid rather than as an opaque field-by-field diff, and
+        # protects `load_state_dict` below directly if this call site is ever reached a
+        # different way (`checkpoint["config"]` came from a place `load_resumable`
+        # itself never inspects). See `check_checkpoint_grid_compatible`'s docstring for
+        # why `load_state_dict` alone cannot detect this (`pos_embed` is a
+        # non-persistent buffer).
+        check_checkpoint_grid_compatible(resume["config"], cfg.jepa)
         model.load_state_dict(resume["model"])
         opt.load_state_dict(resume["opt"])
         gen.set_state(resume["gen_state"])
@@ -557,13 +831,7 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         cfg.seed,
     )
     with torch.no_grad():
-        final["rep_std"] = (
-            model.target_encoder(_to_float(x_tr[: cfg.batch_size], device))
-            .mean(dim=1)
-            .std(dim=0)
-            .mean()
-            .item()
-        )
+        final["rep_std"] = _rep_std_on_mixed_batch(model, x_tr, cfg.batch_size, cfg.seed, device)
 
     final_transfer = None
     if transfer:
@@ -581,7 +849,8 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
         )
 
     # Collapse is judged against this run's own untrained spread, not a magic constant --
-    # what counts as "low" depends on the architecture and the data.
+    # what counts as "low" depends on the architecture and the data. Baseline and
+    # final rep_std use the same mixed-batch indices (collapse_batch_indices).
     collapse_ratio = final["rep_std"] / max(1e-9, baseline["rep_std"])
     collapsed = collapse_ratio < 0.1
 
@@ -593,27 +862,80 @@ def pretrain_vl_region(cfg: VLPretrainConfig) -> dict:
     if final_transfer and baseline_transfer:
         beats["transfer_top1"] = final_transfer["top1"] > baseline_transfer["top1"]
 
+    # Same helper and scheme the text harnesses stamp (regions/pretrain.py
+    # `_corpus_content_fingerprint`) -- no new scheme for visual. Primary source is
+    # `train_shards`: the unlabelled I-JEPA pretrain images, which is "which rows this
+    # run trained on" for this objective (`probe_train_shards` reads the SAME images
+    # under labels for the probe; `probe_eval_shards`/`transfer_shards` are held out,
+    # not trained on, so they do not belong in a corpus-identity hash any more than a
+    # text region's holdout split does).
+    from cogsyndelta.vl.mix_corpus import receipt_shard_tail
+
+    corpus_fingerprint = fingerprint_corpus(
+        cfg.train_shards, columns=[cfg.image_column, cfg.label_column]
+    )
+
+    final_ckpt = ckpt_dir / f"step-{cfg.steps}.pt"
+    checkpoint_sha256 = sha256_file(final_ckpt)
+    held_out_id = _probe_identity(cfg, "primary")
+    transfer_id = _probe_identity(cfg, "transfer")
+
     receipt = {
         "region": cfg.region,
         "objective": "I-JEPA latent prediction; gated on linear probe, never on loss",
+        # sample_masks (vl_jepa.py) is torch.randperm over patch indices, NOT I-JEPA's
+        # spatial multi-block sampling -- stamping the truth here rather than letting a
+        # reader assume the paper's scheme (g8-visual/S02.md §9 "Pitfalls"; kickoff
+        # "receipts that still use randperm must print masking: random-permutation").
+        # Multi-block masking is NOT implemented in this increment.
+        "masking": "random-permutation",
+        # csd-corpus-fp/v2 hashes basename+size per shard (not the landing-qualified
+        # tail below). corpus_source names the admitted Mix B id when wired.
+        "corpus": {
+            "corpus_source": cfg.corpus_source,
+            "shards": [receipt_shard_tail(s) for s in cfg.train_shards],
+            "fingerprint": corpus_fingerprint,
+            "fingerprint_scheme": CORPUS_FINGERPRINT_SCHEME,
+            "image_column": cfg.image_column,
+            "label_column": cfg.label_column,
+            "probe_sets": list(cfg.probe_set_names),
+        },
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at)),
         # Cumulative TRAINING time across every session, not wall time since
         # `started_at` -- the latter would count a crash-to-resume gap as compute.
         "seconds": round(elapsed_total, 1),
         "device": str(device),
         "parameters": params,
+        "checkpoint": str(final_ckpt),
+        "checkpoint_sha256": checkpoint_sha256,
         "train_images": int(x_tr.size(0)),
         "probe_classes": n_classes,
         "config": {
             "jepa": asdict(cfg.jepa),
             "steps": cfg.steps,
             "batch_size": cfg.batch_size,
+            "seed": cfg.seed,
+            "probe_steps": cfg.probe_steps,
+            "probe_lr": cfg.probe_lr,
             "trainer_defaults": trainer_defaults(cfg),
         },
-        "untrained_baseline": baseline,
-        "held_out": final,
-        "untrained_transfer": baseline_transfer,
-        "transfer": final_transfer,
+        "untrained_baseline": _stamp_probe_identity(baseline, held_out_id),
+        "held_out": _stamp_probe_identity(final, held_out_id),
+        "untrained_transfer": _stamp_probe_identity(baseline_transfer, transfer_id),
+        "transfer": _stamp_probe_identity(final_transfer, transfer_id),
+        "probe_protocol": {
+            "jepa_train_shards": list(cfg.train_shards),
+            "linear_train_shards": list(cfg.probe_train_shards),
+            "linear_eval_shards": list(cfg.probe_eval_shards),
+            "transfer_shards": list(cfg.transfer_shards),
+            "image_backend": cfg.image_backend,
+            "image_column": cfg.image_column,
+            "label_column": cfg.label_column,
+            "transfer_image_column": cfg.transfer_image_column,
+            "transfer_label_column": cfg.transfer_label_column,
+            "sets": list(cfg.probe_sets),
+            "cache_dir": cfg.cache_dir,
+        },
         "collapse_ratio": round(collapse_ratio, 4),
         "collapsed": collapsed,
         "history": history,

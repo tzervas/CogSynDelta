@@ -511,6 +511,12 @@ at upstream):
 
 ## 1.4 `vl_latent`
 
+**Status 2026-09-06.** This section describes the pre-DEC-02 six-region model and calls
+`vl_latent` unreleasable as trained. `config/mind/csd-regions.json` now names this region
+`visual` (DEC-78, DEC-03) and its `pretrain` block records it as trained on a permissive
+corpus mix. See DEC-02 and DEC-78 in `docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` for
+the current region catalogue and rename; this section is not rewritten to match.
+
 **Declared purpose** — `config/mind/csd-regions.json`:
 
 > `"role": "Latent visual reasoning. Consumes visual latents, NOT tokens; predicts representations rather than reconstructing pixels. Enters the same shared stream as the text regions, which is why the [B, D] activate surface is modality-agnostic."`
@@ -619,6 +625,13 @@ That is the price of the licence-clean requirement, not a rounding error.
 
 ## 1.5 `classify` — planned
 
+**Status 2026-09-06.** This section describes the pre-DEC-02 six-region model, where
+`classify` has no role. `config/mind/csd-regions.json` now carries `classify_banking77` and
+`classify_go_emotions` entries, each with a role, an `objective`, and a WAIVER (B2/B5) noted
+in its `pretrain.notes`. See DEC-02 and DEC-78 in
+`docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` for the current region catalogue; this
+section is not rewritten to match.
+
 **Declared purpose: none exists.** `config/mind/csd-regions.json` contains six regions —
 `residual_mlp`, `stream_vae`, `code`, `retrieve`, `compress`, `vl_latent`. There is no
 `classify` entry, so there is **no `role` line and no `router_trigger`**. The region is
@@ -679,6 +692,12 @@ target asks for have no candidate list, and this document does not invent one.
 
 ## 1.6 `reason` — planned
 
+**Status 2026-09-06.** This section describes the pre-DEC-02 six-region model, where
+`reason` has no role. `config/mind/csd-regions.json` now carries a `reason` entry with a
+role, a `router_trigger`, and a WAIVER (B2) noted in its `pretrain.notes`. See DEC-02 and
+DEC-78 in `docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md` for the current region
+catalogue; this section is not rewritten to match.
+
 **Declared purpose: none exists**, exactly as for `classify`. No entry in
 `config/mind/csd-regions.json`, therefore no `role`, no `router_trigger`.
 
@@ -696,12 +715,27 @@ target asks for have no candidate list, and this document does not invent one.
 | source | rows | shape | balance | licence |
 |---|---|---|---|---|
 | `deepmind/aqua_rat` (`raw`) | 97,467 | algebraic MCQ with natural-language rationale | answer letters C 22,290 / B 21,446 / A 20,494 / D 19,441 / E 13,796 — max **22.87%**, max:min **1.62:1** | **PERMISSIVE_OK** (Apache-2.0) |
-| `openai/gsm8k` (`main`) | 7,473 | grade-school arithmetic word problems, step-by-step | — | **PERMISSIVE_OK** (MIT) |
+| `openai/gsm8k` (`main`, `train`) | 7,473 | grade-school arithmetic word problems, step-by-step | — | **PERMISSIVE_OK** (MIT) |
 
 *(`§3.reason_aqua_rat_answer_letter`; manifests under `/mnt/bulk/csd-corpus/reason/`.)*
 
 Source balance of the staged pool: **aqua_rat 92.88% / gsm8k 7.12% — max share 92.88%,
 N_eff 1.15.**
+
+**Amendment 2026-09-06 — the `gsm8k` `test` split is landed, as a holdout.** 1,319 rows,
+same MIT terms, re-verified at `github.com/openai/grade-school-math` rather than inherited
+from the card. It is **not training material for any region**: zero rows reach any
+training set, so the realised `reason` train split (gsm8k 7,473 / aqua_rat 4,982 — 60/40,
+N_eff 1.92) and the corpus fingerprint `ca364a92` are both unchanged, and the staged-pool
+figures above still describe the training material exactly. Counting the holdout, the
+staged pool moves to **aqua_rat 91.73% / gsm8k 8.28% — max share 91.73%, N_eff 1.18**:
+better on both checks, still failing both, and the gap this section describes (two
+reasoning shapes where four are needed) is untouched. Reserved against every region by
+item id (G41, `cogsyndelta.splits.assert_no_reserved_holdout_in_pairs`, manifest
+`config/mind/splits/reason-gsm8k-test-holdout.json`) and by shard path
+(`csd-train-all.py` `HELD_OUT_SHARDS`). It is `in-mixture` at the source level under B3,
+not `held-out-domain`. Full accounting:
+`docs/design/evidence/gsm8k-test-intake-2026-09-06/`.
 
 ### The gap, plainly
 
@@ -1213,8 +1247,30 @@ order, and `build_splits` shuffles *after* the cap. GooAQ's 400,000 is therefore
 non-representative prefix.
 
 **Check:** caps are applied by strided or reservoir sampling over the whole source, and the
-receipt records the sampling method and the seed. A cap whose method is unrecorded is not a
-cap.
+receipt records the sampling method and the seed (`corpus.cap_sampling.seed` is the
+**split seed**, not the training seed). A cap whose method is unrecorded is not a cap.
+
+## B3.1 — The held-out split is a hashed manifest, independent of the training seed
+
+**Prevents:** the reason-region diagnosis (2026-09-05): `cfg.seed` drove reservoir
+sampling, the holdout-defining shuffle, model init, *and* the untrained baseline, so a
+"seed" axis was three experiments at once and untrained r@1 differed per seed because
+the test set differed.
+
+A region's held-out membership is generated once from the corpus fingerprint plus a
+`split_seed` (default 0), written as
+`config/mind/splits/<region>-<corpus_fp8>-split<seed>.json` (sorted item ids, counts,
+generator params, sha256 of membership), and loaded by the trainer, the benchmark and
+the quantizer. The training seed does not touch membership. The receipt stamps
+`split.manifest`, `split.sha256`, `split.seed`. Batch order is the same shape: drawn
+once per `(corpus_fp, order_seed, steps, batch)`, hashed, reused across arms.
+
+Guard **G26** (fail closed): training refuses if the split sha does not match the
+corpus fingerprint it was generated from, or if a held-out item appears in a training
+batch; the benchmark refuses a receipt whose `split.sha256` differs from the manifest
+it is scoring. Seed-0 manifests are pinned to the historical seed-0 draw so existing
+seed-0 cells stay comparable; seed-1 cells drawn before this rule are retired from
+comparison.
 
 ## B5 — Within-source concentration
 

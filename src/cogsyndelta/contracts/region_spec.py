@@ -23,14 +23,25 @@ say which encoder feeds it. ``modality`` is that declaration.
 post-training pass can act on it, but nothing here quantizes anything. Training happens at
 full precision; PTQ is a separate, later step. A region trained into low precision cannot
 be compared against one that was not.
+
+LANE IC-11 (INTERCONNECT-MODULE-SPEC.md section 2.1, Table 10): the interconnect white
+matter has its own workspace width (``D_w``) that regions adapt into individually, not one
+global stream width every region must match. ``MindSpec.workspace_dim`` and
+``RegionSpec.token_dim`` (an alias for the pre-existing ``stream_dim``, under the
+interconnect module's name for it) carry that; ``MindSpec._validate_workspace_fit`` is the
+construction-time check this lane adds, run in place of the legacy ``stream_dim``
+uniformity warning for any mind that sets ``workspace_dim``.
 """
 
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+
+from cogsyndelta.regions.aliases import canonical_region
 
 Modality = Literal["text", "latent", "vision", "any"]
 
@@ -56,6 +67,11 @@ class PretrainSpec:
     corpora referenced in the docs exist only as empty stub directories, and treating
     'named' as 'present' is how a training plan turns out to be fiction."""
 
+    paths: tuple[str, ...] = ()
+    """Glob patterns, relative to the corpus root, naming the shards `available` claims
+    are on disk. Optional (older entries carry the claim only in `notes`) -- when
+    present, a reader (or a test) can check the claim instead of trusting the prose."""
+
     notes: str = ""
 
 
@@ -79,6 +95,9 @@ class RegionSpec:
     """Implementation selector, e.g. 'residual_mlp' or 'latent_vae'."""
 
     stream_dim: int
+    """This region's native per-token width. Exposed to the interconnect module as
+    ``token_dim`` below -- same field, the newer module's vocabulary (spec Table 1)."""
+
     hidden_dim: int
     latent_dim: int | None = None
 
@@ -105,6 +124,36 @@ class RegionSpec:
     but a merged region can never itself be `live`, since its objective is no longer
     trained on its own (see `__post_init__`)."""
 
+    specialisation: str | None = None
+    """Domain flavour of an otherwise domain-agnostic faculty -- e.g. `language`'s
+    `specialisation: "code"` records that its CURRENT corpus and battery are
+    code-flavoured, without the region itself being named after that domain (operator
+    naming rule, 2026-09-04: regions are named by cognitive faculty, never by knowledge
+    domain). A domain that is not the faculty's whole identity belongs here, or as a
+    memory-gate persona/variant branch -- never as the region `name`."""
+
+    region_alias_of: str | None = None
+    """Set by ``MindSpec.from_dict`` when this spec was loaded from a legacy region name
+    (``cogsyndelta.regions.aliases.REGION_ALIASES``) -- e.g. a spec built from a config
+    that still says ``name: "code"`` carries ``name="language"``,
+    ``region_alias_of="code"``. ``None`` for a spec that was already canonical, or one
+    built directly (not through the loader) -- this field records how THIS spec was
+    resolved, not a general fact about the region."""
+
+    @property
+    def token_dim(self) -> int:
+        """This region's native per-token width, under the interconnect module's name
+        for it (INTERCONNECT-MODULE-SPEC.md section 1, Table 1's ``token_dim`` column,
+        e.g. ``language`` 256, ``visual`` 384). Same quantity this dataclass has always
+        called ``stream_dim`` -- ``contracts/region_spec.py`` predates the interconnect
+        module and the two layers never converged on one name for it. A per-region
+        ``nn.Linear(token_dim, workspace_dim)`` adapter (lane IC-2) bridges this width
+        into the shared workspace; see ``MindSpec.workspace_dim`` and
+        ``MindSpec._validate_workspace_fit`` below for the construction-time check lane
+        IC-11 adds (INTERCONNECT-MODULE-SPEC.md section 2.1, Table 10 row IC-11).
+        """
+        return self.stream_dim
+
     def __post_init__(self) -> None:
         """Reject a spec that cannot build: empty name, non-positive dims, or a
         latent_vae with no latent_dim.
@@ -126,31 +175,97 @@ class RegionSpec:
 
 @dataclass(frozen=True)
 class MindSpec:
-    """A full mind: the shared stream width plus its regions."""
+    """A full mind: the shared stream width plus its regions.
+
+    ``workspace_dim`` (below) is a second, independent width, added by lane IC-11
+    (INTERCONNECT-MODULE-SPEC.md section 2.1, Table 10): the interconnect white
+    matter's own ``D_w``, not a replacement for ``stream_dim``. A mind that only ever
+    builds through the legacy ``build_mind_from_spec`` PoC path leaves it ``None`` and
+    is unaffected; a mind declared against the interconnect module sets it, which
+    swaps in the IC-11 check in place of ``stream_dim``'s old uniformity warning for
+    that mind (see ``__post_init__`` and ``_validate_workspace_fit``).
+    """
 
     stream_dim: int
     regions: list[RegionSpec] = field(default_factory=list)
     top_k: int = 1
     aux_coef: float = 1.0
     notes: str = ""
+    workspace_dim: int | None = None
+    """The interconnect module's workspace width (``D_w``, INTERCONNECT-MODULE-SPEC.md
+    section 1: 512 by default) this mind is declared against, or ``None`` for a mind
+    with no interconnect module involved. Independent of ``stream_dim``: regions do not
+    share one global width with either (DEC-14/DEC-15, REGION-TAXONOMY-AND-INTERCONNECT.md
+    section 2.2, 'Widths')."""
 
     def __post_init__(self) -> None:
-        """Reject duplicate region names, stream-width disagreement, and out-of-range
-        top_k -- all of which are shape errors that would otherwise surface much later.
+        """Reject duplicate region names and out-of-range top_k -- shape errors that
+        would otherwise surface much later.
+
+        Exactly one width check follows, and which one runs depends on
+        ``workspace_dim``. Leave it ``None`` (a mind with no interconnect module
+        involved) and the legacy check runs: native-width disagreement against
+        ``stream_dim`` is warned about, not rejected (DEC-14/DEC-15,
+        docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md section 2.2), because regions
+        keep their own native widths (e.g. text 256, visual 384) and adapt into the
+        shared workspace ``stream_dim`` via a per-region
+        ``nn.Linear(token_dim, stream_dim)`` adapter, rather than all sharing one global
+        width -- the old hard uniformity check "enforces a uniformity that has never
+        been true and would reject the real trained regions ... against the declared
+        catalogue" (taxonomy ~L1194), so a mismatch is expected, not a shape error. Set
+        ``workspace_dim`` (a mind declared against the interconnect module) and
+        ``_validate_workspace_fit`` runs INSTEAD (INTERCONNECT-MODULE-SPEC.md section
+        2.1, Table 10 row IC-11, "replace the single-stream_dim check with
+        workspace_dim plus per-region token_dim"): it drops the uniformity framing
+        entirely rather than merely warning, since taxonomy DEC-15 ('Widths') states no
+        relationship between ``workspace_dim`` and a region's own ``token_dim`` is
+        expected at all -- each just has to be independently a valid width so its
+        adapter can be built.
         """
         names = [r.name for r in self.regions]
         dupes = {n for n in names if names.count(n) > 1}
         if dupes:
             raise ValueError(f"duplicate region names: {sorted(dupes)}")
-        mismatched = [r.name for r in self.regions if r.stream_dim != self.stream_dim]
-        if mismatched:
-            # Every region reads and writes the same shared stream; a width mismatch is a
-            # shape error at the first activate() and is far cheaper to catch here.
-            raise ValueError(
-                f"regions {mismatched} disagree with mind stream_dim {self.stream_dim}"
-            )
+        if self.workspace_dim is None:
+            mismatched = [r.name for r in self.regions if r.stream_dim != self.stream_dim]
+            if mismatched:
+                warnings.warn(
+                    f"regions {mismatched} use a native stream_dim that differs from mind "
+                    f"stream_dim {self.stream_dim}; each adapts in via its own per-region "
+                    "adapter (DEC-14/DEC-15, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md "
+                    "section 2.2) rather than sharing one global width",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        else:
+            self._validate_workspace_fit()
         if self.top_k < 1 or self.top_k > max(len(self.regions), 1):
             raise ValueError(f"top_k {self.top_k} out of range for {len(self.regions)} regions")
+
+    def _validate_workspace_fit(self) -> None:
+        """Lane IC-11's construction-time check (INTERCONNECT-MODULE-SPEC.md section
+        2.1, Table 10 row IC-11): "replace the single-stream_dim check with
+        workspace_dim plus per-region token_dim". Gates a malformed
+        region/workspace config before the interconnect module's
+        ``nn.Linear(token_dim, workspace_dim)`` adapters (one per region, lane IC-2)
+        can be built from it -- not one of the module's numbered G27-G36 guards, which
+        gate a running request, not this mind's declared shape.
+
+        Unlike the ``stream_dim`` check above, this one never compares a region's
+        ``token_dim`` to ``workspace_dim`` -- taxonomy DEC-15 ('Widths') is explicit
+        that regions no longer share one stream width with the workspace at all, so
+        there is no uniformity left to warn about. Each side only has to be
+        independently a valid width: ``workspace_dim`` positive, and every region's own
+        ``token_dim`` positive. The latter is unreachable today (``RegionSpec.stream_dim
+        <= 0`` already raises in its own ``__post_init__``, run before this one),
+        checked again here so this method stands as the interconnect-facing contract on
+        its own rather than relying on a coincidence between two dataclasses.
+        """
+        if self.workspace_dim <= 0:
+            raise ValueError(f"workspace_dim must be positive, got {self.workspace_dim}")
+        bad = [r.name for r in self.regions if r.token_dim <= 0]
+        if bad:
+            raise ValueError(f"regions with non-positive token_dim: {bad}")
 
     @property
     def live_regions(self) -> list[RegionSpec]:
@@ -166,12 +281,34 @@ class MindSpec:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MindSpec:
-        """Rebuild a MindSpec from parsed JSON, restoring nested pretrain/quant specs."""
+        """Rebuild a MindSpec from parsed JSON, restoring nested pretrain/quant specs.
+
+        Resolves a legacy region name (``cogsyndelta.regions.aliases.REGION_ALIASES``,
+        e.g. a config that still says ``"code"`` or ``"vl_latent"``) to its canonical
+        spelling, warns once per entry, and records where it came from in
+        ``RegionSpec.region_alias_of`` -- so an old config keeps loading, but nothing
+        downstream ever sees the legacy name as this spec's ``name``.
+        """
         regions = []
         for raw in data.get("regions", []):
             raw = dict(raw)
             pre = raw.pop("pretrain", None)
+            if pre is not None and "paths" in pre:
+                # JSON has no tuple; PretrainSpec is frozen (and therefore hashable),
+                # so a list here would make every instance carrying one unhashable.
+                pre = {**pre, "paths": tuple(pre["paths"])}
             quant = raw.pop("quantization", None)
+            raw_name = raw["name"]
+            canonical = canonical_region(raw_name)
+            if canonical != raw_name:
+                warnings.warn(
+                    f"region name {raw_name!r} is deprecated; use {canonical!r} "
+                    "(cogsyndelta.regions.aliases.REGION_ALIASES)",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                raw["name"] = canonical
+                raw.setdefault("region_alias_of", raw_name)
             regions.append(
                 RegionSpec(
                     **raw,
@@ -185,6 +322,7 @@ class MindSpec:
             top_k=data.get("top_k", 1),
             aux_coef=data.get("aux_coef", 1.0),
             notes=data.get("notes", ""),
+            workspace_dim=data.get("workspace_dim"),
         )
 
     @classmethod

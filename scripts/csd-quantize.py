@@ -30,6 +30,8 @@ from pathlib import Path
 
 import torch
 
+from cogsyndelta.regions.aliases import canonical_region, legacy_names
+
 DEFAULT_STATE = Path("/akula-data/csd")
 
 
@@ -41,13 +43,55 @@ def _load_regions_spec() -> dict:
         raise RuntimeError(f"cannot load {path}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return {"REGIONS": mod.REGIONS, "_shards": mod._shards, "region_spec": mod.region_spec}
+    return {
+        "REGIONS": mod.REGIONS,
+        "VL_REGIONS": mod.VL_REGIONS,
+        "_shards": mod._shards,
+        "region_spec": mod.region_spec,
+    }
+
+
+def _is_visual_region(region: str) -> bool:
+    names = _load_regions_spec().get("VL_REGIONS") or {}
+    return region in names or canonical_region(region) in names
+
+
+def _benchmark_mod() -> object:
+    path = Path(__file__).parent / "csd-benchmark.py"
+    spec = importlib.util.spec_from_file_location("csd_benchmark_for_quant", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _latest_receipt(state: Path, region: str) -> tuple[Path, dict]:
-    found = sorted(state.glob(f"receipts/{region}-2*.json"))
+    """Newest training receipt for `region`, searching every spelling it could be filed
+    under.
+
+    ALIAS-AWARE GLOB (round-2 review, blocking, same defect and fix as
+    `scripts/csd-benchmark.py`'s `_find_train_receipt`). A receipt on disk carries
+    whichever spelling of a renamed region (`code`/`language`, `vl_latent`/`visual`)
+    was current when `csd-train-all.py` wrote it, and that writer deliberately never
+    rewrites its own spelling in place afterwards (see `cogsyndelta.regions.aliases`'s
+    module docstring). Resolving `region` to canonical and globbing every spelling that
+    maps back to it (`canonical_region(region)` plus `legacy_names(...)` of it) means
+    `--regions language` still finds a receipt filed as `code-*.json`. Without this,
+    quantizing the canonical name against real cells raised `FileNotFoundError` for a
+    region that had, in fact, been trained -- loud rather than a silent no-op, but the
+    same unresolved-alias gap `_find_train_receipt` had. A region that was never
+    renamed has no legacy spellings, so this is a no-op for it -- identical glob,
+    identical result, to before this fix.
+    """
+    canonical = canonical_region(region)
+    spellings = (canonical, *legacy_names(canonical))
+    found = sorted({path for name in spellings for path in state.glob(f"receipts/{name}-2*.json")})
     if not found:
-        raise FileNotFoundError(f"no training receipt for {region!r} under {state}/receipts")
+        raise FileNotFoundError(
+            f"no training receipt for {region!r} (spellings {spellings}) under {state}/receipts"
+        )
     return found[-1], json.loads(found[-1].read_text())
 
 
@@ -78,6 +122,7 @@ def quantize_text_region(
     from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
     from cogsyndelta.regions.pretrain import PretrainConfig, build_splits, evaluate
     from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig
+    from cogsyndelta.splits import verify_receipt_split
 
     started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     if train_receipt_path is not None:
@@ -131,6 +176,14 @@ def quantize_text_region(
     verify_corpus_fingerprint(receipt.get("corpus", {}), fingerprint, region)
 
     enc_d = cfg_d["encoder"]
+    split_block = receipt.get("split") if isinstance(receipt.get("split"), dict) else {}
+    order_block = receipt.get("batch_order") if isinstance(receipt.get("batch_order"), dict) else {}
+    split_manifest = split_block.get("manifest") or None
+    if split_manifest == "":
+        split_manifest = None
+    order_manifest = order_block.get("manifest") or None
+    if order_manifest == "":
+        order_manifest = None
     cfg = PretrainConfig(
         region=region,
         pair_columns=tuple(cfg_d["pair_columns"]),
@@ -141,10 +194,18 @@ def quantize_text_region(
         max_len=cfg_d["max_len"],
         holdout_pairs=cfg_d["holdout_pairs"],
         seed=cfg_d["seed"],
+        split_seed=int(cfg_d.get("split_seed", split_block.get("seed", 0))),
+        order_seed=int(cfg_d.get("order_seed", order_block.get("seed", 0))),
+        split_manifest=split_manifest,
+        order_manifest=order_manifest,
         tokenizer_path=cfg_d["tokenizer_path"],
         encoder=TextEncoderConfig(**enc_d),
     )
-    holdout, _train, _meta = build_splits(cfg)
+    holdout, _train, meta = build_splits(cfg)
+    verify_receipt_split(
+        receipt,
+        {"sha256": meta["split"]["sha256"], "seed": meta["split"]["seed"]},
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tok = Tokenizer.from_file(cfg.tokenizer_path)
@@ -197,8 +258,8 @@ def quantize_text_region(
         by_width[bits] = by_width.get(bits, 0) + 1
 
     print(
-        f"    quantized recall@1={plan.metric:.4f}  drop={fp32_metric - plan.metric:.4f} "
-        f"(budget {tolerance})",
+        f"    quantized recall@1={plan.metric:.4f}  "
+        f"drop(quant.drop_recall@1)={fp32_metric - plan.metric:.4f} (budget {tolerance})",
         flush=True,
     )
     print(
@@ -254,22 +315,180 @@ def quantize_text_region(
             "artifact_device": "cpu",
         },
         "corpus_fingerprint": fingerprint,
+        "split": meta.get("split"),
+        "batch_order": meta.get("batch_order"),
         "tolerance": tolerance,
         "aggressive_bits": aggressive,
         "max_bits": max_bits,
         "fp32_metric_recomputed": fp32_metric,
         "fp32_metric_receipt": recorded_metric,
-        "quantized_metric": plan.metric,
-        "drop": fp32_metric - plan.metric,
+        # g7-latent-eval-metrics.md §3.1 renames (envelope schema unchanged; see
+        # `metrics_schema` below): `quantized_metric` -> `quant.plan_recall@1`
+        # (measured on the IN-MEMORY plan, before `save_packed_artifact` ever writes a
+        # file -- MM §4); `compression_ratio` -> `quant.compression_ratio` (a
+        # payload/storage ratio, not latency); one named metric ("drop") on one named
+        # battery -> `quant.drop_recall@1`. `fp32_metric_recomputed` / `within_budget` /
+        # `tolerance` / `fp32_bytes` / `stored_bytes` / `width_histogram` are unrenamed --
+        # the spec names only these three.
+        "quant.plan_recall@1": plan.metric,
+        "quant.drop_recall@1": fp32_metric - plan.metric,
         "within_budget": (fp32_metric - plan.metric) <= tolerance,
         "fp32_bytes": plan.fp32_bytes,
         "stored_bytes": plan.stored_bytes,
-        "compression_ratio": plan.ratio,
+        "quant.compression_ratio": plan.ratio,
         "width_histogram": {str(k): v for k, v in sorted(by_width.items())},
         "bits": plan.bits,
         "fp32_tensors": plan.fp32,
         "promotions": plan.promotions,
+        # Per-metric-group provenance (g7 §3.1/§3.3): this receipt reports exactly one
+        # battery -- the quantize stage's in-memory sensitivity/plan pass, which reuses
+        # `regions.pretrain.evaluate()`'s closed held-out pool (the same "matched
+        # single-positive diagonal" pool §2.1/§3.1 of MM describe for `rank.*` /
+        # `held_out.*`) -- so `quant.plan_recall@1` and `quant.drop_recall@1` share one
+        # battery_id/pooling/seed rather than each needing its own. `seed` is the
+        # corpus/holdout-construction seed the training receipt recorded
+        # (`cfg.split_seed` / `split.seed`), NOT the training-init seed and NOT a
+        # re-randomised one -- `build_splits(cfg)` above rebuilds the identical split
+        # training used from the split manifest, which is the entire point of
+        # quantizing against the SAME holdout.
+        "battery_id": "quant_plan",
+        "pooling": "matched",
+        "seed": cfg.split_seed,
     }
+
+
+def quantize_visual_region(
+    region: str,
+    state: Path,
+    tolerance: float,
+    aggressive: int,
+    max_bits: int,
+    train_receipt_path: Path | None = None,
+) -> dict:
+    """PTQ the deployed visual module: the EMA target encoder.
+
+    ``IJEPA.encode`` reads ``target_encoder.embed`` (``vl_jepa.py:581-587``). The
+    online context encoder and the predictor are training-only: under the probe
+    they have zero sensitivity, so ``build_plan`` would drive them to the floor
+    for free, and ``fp32_reference_bytes`` on the full IJEPA describes an
+    artifact nobody deploys. Packed keys are ``target_encoder.*``; the artifact
+    is sha-bound to the full training checkpoint it was sliced from. ``eval_fn``
+    is held-out EuroSAT probe top-1, the same measurement training used.
+    """
+    from cogsyndelta.corpus import fingerprint_corpus, verify_corpus_fingerprint
+    from cogsyndelta.model.vl_jepa import IJEPA
+    from cogsyndelta.quant.ptq import build_plan, save_packed_artifact
+    from cogsyndelta.regions._checkpoint import load_checkpoint, sha256_file
+
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    bench = _benchmark_mod()
+    if train_receipt_path is not None:
+        receipt_path = train_receipt_path
+        receipt = json.loads(train_receipt_path.read_text())
+    else:
+        receipt_path, receipt = _latest_receipt(state, region)
+    expected = bench.require_bound_visual_train_receipt(receipt, receipt_path)
+    cfg = bench._vl_cfg_from_train_receipt(region, receipt)
+    fingerprint = fingerprint_corpus(cfg.train_shards, columns=[cfg.image_column, cfg.label_column])
+    verify_corpus_fingerprint(receipt.get("corpus", {}), fingerprint, region)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = IJEPA(cfg.jepa).to(device)
+    ckpt_sha_out: list[str] = []
+    ck = load_checkpoint(
+        receipt["checkpoint"],
+        expected_sha256=expected,
+        map_location=device,
+        sha256_out=ckpt_sha_out,
+    )
+    model.load_state_dict(ck["model"])
+    deployed = bench.wrap_deployed_visual_encoder(model).to(device).eval()
+    checkpoint_sha256 = ckpt_sha_out[0]
+    splits = bench.load_visual_splits(cfg)
+    eval_calls = 0
+
+    def eval_fn(m: torch.nn.Module) -> float:
+        nonlocal eval_calls
+        eval_calls += 1
+        t0 = time.time()
+        held, _xfer = bench._measure_visual_probes(m, cfg, device, splits)
+        print(
+            f"    eval_fn[{eval_calls}] probe.top1={float(held['top1']):.4f}  "
+            f"{time.time() - t0:.1f}s",
+            flush=True,
+        )
+        return float(held["top1"])
+
+    fp32_metric = eval_fn(deployed)
+    recorded_metric = float(receipt["held_out"]["top1"])
+    started = time.time()
+    plan = build_plan(
+        deployed,
+        eval_fn,
+        baseline=fp32_metric,
+        tolerance=tolerance,
+        aggressive_bits=aggressive,
+        max_bits=max_bits,
+    )
+    checkpoint_path = Path(receipt["checkpoint"])
+    quantized_path = checkpoint_path.with_name(f"{checkpoint_path.stem}.ptq.pt")
+    quantized_sha256 = save_packed_artifact(deployed, plan, quantized_path)
+    by_width: dict[int, int] = {}
+    for bits in plan.bits.values():
+        by_width[bits] = by_width.get(bits, 0) + 1
+    print(
+        f"    quantized probe.top1={plan.metric:.4f}  drop={fp32_metric - plan.metric:.4f} "
+        f"(budget {tolerance})  {time.time() - started:.0f}s",
+        flush=True,
+    )
+    return {
+        "kind": "quant",
+        "started_utc": started_utc,
+        "region": canonical_region(region),
+        "recorded_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "method": "sensitivity-greedy-mixed-width",
+        "checkpoint": receipt["checkpoint"],
+        "artifacts": {
+            "checkpoint": receipt["checkpoint"],
+            "checkpoint_sha256": checkpoint_sha256,
+            "source_training_receipt": {
+                "path": str(receipt_path),
+                "sha256": sha256_file(receipt_path),
+            },
+            "quantized_path": str(quantized_path),
+            "quantized_sha256": quantized_sha256,
+            "artifact_device": "cpu",
+            "quantized_module": "target_encoder",
+        },
+        "corpus_fingerprint": fingerprint,
+        "tolerance": tolerance,
+        "aggressive_bits": aggressive,
+        "max_bits": max_bits,
+        "fp32_metric_recomputed": fp32_metric,
+        "fp32_metric_receipt": recorded_metric,
+        "quant.plan_probe_top1": plan.metric,
+        "quant.drop_probe_top1": fp32_metric - plan.metric,
+        "within_budget": (fp32_metric - plan.metric) <= tolerance,
+        "fp32_bytes": plan.fp32_bytes,
+        "stored_bytes": plan.stored_bytes,
+        "quant.compression_ratio": plan.ratio,
+        "width_histogram": {str(k): v for k, v in sorted(by_width.items())},
+        "bits": plan.bits,
+        "fp32_tensors": plan.fp32,
+        "promotions": plan.promotions,
+        "battery_id": "quant_plan",
+        "pooling": "linear_probe",
+        "seed": cfg.seed,
+    }
+
+
+def _format_quant_summary(r: dict) -> str:
+    """One summary line. Visual receipts name probe top-1; text receipts name recall@1."""
+    plan = r["quant.plan_probe_top1"] if "quant.plan_probe_top1" in r else r["quant.plan_recall@1"]
+    return (
+        f"  {r['region']:<10} {r['quant.compression_ratio']:.2f}x  "
+        f"{r['fp32_metric_recomputed']:.4f} -> {float(plan):.4f}  "
+        f"{'OK' if r['within_budget'] else 'OVER BUDGET'}"
+    )
 
 
 def main() -> int:
@@ -318,7 +537,7 @@ def main() -> int:
     for region in [r.strip() for r in args.regions.split(",") if r.strip()]:
         print(f"\n=== {region}", flush=True)
         try:
-            rec = quantize_text_region(
+            rec = (quantize_visual_region if _is_visual_region(region) else quantize_text_region)(
                 region,
                 state,
                 args.tolerance,
@@ -344,12 +563,7 @@ def main() -> int:
         flush=True,
     )
     for r in results:
-        print(
-            f"  {r['region']:<10} {r['compression_ratio']:.2f}x  "
-            f"{r['fp32_metric_recomputed']:.4f} -> {r['quantized_metric']:.4f}  "
-            f"{'OK' if r['within_budget'] else 'OVER BUDGET'}",
-            flush=True,
-        )
+        print(_format_quant_summary(r), flush=True)
     report_peak()
     return 1 if failures else 0
 

@@ -84,6 +84,22 @@ def test_licence_tier_fails_refuses_rather_than_guesses_unknown_region() -> None
     assert "no declared tier" in result.detail
 
 
+def test_licence_tier_accepts_either_spelling_of_a_renamed_region() -> None:
+    """`--region code` and `--region language` (cogsyndelta.regions.aliases) must
+    resolve to the SAME REGION_TIER entry -- the table is keyed canonically."""
+    legacy = mod.check_licence_tier("PERMISSIVE_OK", "code", mod.REGION_TIER)
+    canonical = mod.check_licence_tier("PERMISSIVE_OK", "language", mod.REGION_TIER)
+    assert legacy.passed
+    assert canonical.passed
+
+
+def test_licence_tier_accepts_either_spelling_of_visual_too() -> None:
+    legacy = mod.check_licence_tier("PERMISSIVE_OK", "vl_latent", mod.REGION_TIER)
+    canonical = mod.check_licence_tier("PERMISSIVE_OK", "visual", mod.REGION_TIER)
+    assert legacy.passed
+    assert canonical.passed
+
+
 def test_licence_tier_matches_publish_checkpoint() -> None:
     """The transcribed REGION_TIER table must not silently drift from the source of
     truth in scripts/csd-publish-checkpoint.py. Loaded the same way that module's own
@@ -1046,6 +1062,270 @@ def test_resolve_existing_shares_from_corpus_root_empty_when_no_provenance_files
 
 
 # --------------------------------------------------------------------------------------
+# g25: role-aware concentration, active_train_set.train_files, no corpus-root
+# double-count of the dataset under check. Mutation proofs: drop the role filter,
+# drop the train_files preference, or drop the exclude= path and these fail.
+# --------------------------------------------------------------------------------------
+
+
+def test_landing_role_prefers_top_level_then_catalogue_entry() -> None:
+    assert mod.landing_role({"role": "probe", "catalogue_entry": {"role": "train"}}) == "probe"
+    assert mod.landing_role({"catalogue_entry": {"role": "held_seed"}}) == "held_seed"
+    assert mod.landing_role({"row_count": 1}) is None
+
+
+def test_missing_role_counts_as_train_for_legacy_records() -> None:
+    assert mod.contributes_to_train_concentration(None) is True
+    assert mod.contributes_to_train_concentration("train") is True
+    for role in ("probe", "aux", "refuse", "held_seed", "train extra"):
+        assert mod.contributes_to_train_concentration(role) is False
+
+
+def test_resolve_concentration_count_excludes_probe_role() -> None:
+    count, estimated, note = mod.resolve_concentration_count(
+        {"role": "probe", "total_bytes": 10**12, "provenance_group": "tinyquickdraw"}
+    )
+    assert count == 0
+    assert estimated is False
+    assert "probe" in note
+
+
+def test_resolve_concentration_count_prefers_active_train_set_over_bytes() -> None:
+    count, estimated, note = mod.resolve_concentration_count(
+        {
+            "role": "train",
+            "total_bytes": 10**12,
+            "row_count": 999_999,
+            "active_train_set": {"train_files": 1000, "train_bytes": 50},
+        }
+    )
+    assert (count, estimated) == (1000, False)
+    assert note == "active_train_set.train_files"
+
+
+def test_resolve_concentration_count_notes_when_active_train_set_absent() -> None:
+    count, estimated, note = mod.resolve_concentration_count(
+        {"row_count": 42, "total_bytes": 999999}
+    )
+    assert (count, estimated) == (42, False)
+    assert "active_train_set absent" in note
+
+
+def test_b1_share_prints_largest_source_share_and_cap() -> None:
+    result = mod.check_b1_share("narrativeqa", 1000, {"gooaq": 3000})
+    assert result.passed
+    assert "largest source='gooaq'" in result.detail
+    assert "share=0.7500" in result.detail
+    assert "cap=0.4" in result.detail
+
+
+def test_role_exclusion_probe_that_would_dominate_by_bytes_does_not_trip_cap() -> None:
+    """Mutation proof: a probe-only landing whose byte estimate would be ~100% of the
+    mix must PASS B1. If concentration ignored role, this would FAIL the 0.40 cap."""
+    probe = {
+        "repo_id": "google/tinyquickdraw",
+        "role": "probe",
+        "provenance_group": "tinyquickdraw",
+        "verdict": "PERMISSIVE_OK",
+        "verification_status": "VERIFIED",
+        "total_bytes": 28_171_583_550,
+    }
+    # Byte estimate of the probe (~7e9 tokens) vs 6000 existing train rows: share ~1.0.
+    results = mod.run_checklist(probe, "visual", {"pxhere": 3000, "pcam": 3000})
+    b1 = next(r for r in results if r.name == "b1_share")
+    assert b1.passed, b1.detail
+    assert "excluded from train concentration" in b1.detail
+    assert "largest source=" in b1.detail
+    assert "cap=0.4" in b1.detail
+    # Guard the mutation: the byte fallback really would have tripped the cap.
+    bytes_count, estimated = mod.resolve_added_count(probe)
+    assert estimated is True
+    over = mod.check_b1_share("tinyquickdraw", bytes_count, {"pxhere": 3000, "pcam": 3000})
+    assert not over.passed
+
+
+def test_role_exclusion_held_seed_and_aux_also_skipped(tmp_path: Path) -> None:
+    (tmp_path / "train").mkdir()
+    (tmp_path / "train" / "provenance.json").write_text(
+        json.dumps({"role": "train", "provenance_group": "pxhere", "row_count": 3000}),
+        encoding="utf-8",
+    )
+    (tmp_path / "probe").mkdir()
+    (tmp_path / "probe" / "provenance.json").write_text(
+        json.dumps({"role": "probe", "provenance_group": "tinyquickdraw", "total_bytes": 10**12}),
+        encoding="utf-8",
+    )
+    (tmp_path / "aux").mkdir()
+    (tmp_path / "aux" / "provenance.json").write_text(
+        json.dumps({"role": "aux", "provenance_group": "usgs-landsat", "row_count": 80}),
+        encoding="utf-8",
+    )
+    (tmp_path / "held").mkdir()
+    (tmp_path / "held" / "provenance.json").write_text(
+        json.dumps({"role": "held_seed", "provenance_group": "pd-stoic", "row_count": 9}),
+        encoding="utf-8",
+    )
+    (tmp_path / "refuse").mkdir()
+    (tmp_path / "refuse" / "provenance.json").write_text(
+        json.dumps({"role": "refuse", "provenance_group": "jigsaw", "row_count": 100_000}),
+        encoding="utf-8",
+    )
+    shares = mod.resolve_existing_shares_from_corpus_root(tmp_path)
+    assert shares == {"pxhere": 3000}
+
+
+def test_corpus_root_does_not_double_count_the_dataset_under_check(tmp_path: Path) -> None:
+    """Mutation proof: candidate lives inside --corpus-root. Without exclude-by-resolved-
+    path, the scan counts it once and check_b1_share adds it again, pushing 2000/6000
+    (PASS, 0.333) to 4000/8000 (FAIL, 0.50)."""
+    corpus = tmp_path / "corpus"
+    cand_dir = corpus / "visual" / "pcam"
+    other_dir = corpus / "visual" / "pxhere"
+    cand_dir.mkdir(parents=True)
+    other_dir.mkdir(parents=True)
+    candidate = {
+        "repo_id": "basveeling/pcam",
+        "role": "train",
+        "provenance_group": "pcam",
+        "verdict": "PERMISSIVE_OK",
+        "verification_status": "VERIFIED",
+        "row_count": 2000,
+    }
+    (cand_dir / "provenance.json").write_text(json.dumps(candidate), encoding="utf-8")
+    (other_dir / "provenance.json").write_text(
+        json.dumps({"role": "train", "provenance_group": "pxhere", "row_count": 4000}),
+        encoding="utf-8",
+    )
+    cand_path = cand_dir / "provenance.json"
+    shares = mod.resolve_existing_shares_from_corpus_root(corpus, exclude=cand_path)
+    assert shares == {"pxhere": 4000}
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--provenance",
+            str(cand_path),
+            "--region",
+            "visual",
+            "--corpus-root",
+            str(corpus),
+            "--no-catalogue-check",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "ADMIT" in proc.stdout
+    assert "2000/6000" in proc.stdout
+    assert "Largest source:" in proc.stdout
+    assert "cap=0.4" in proc.stdout
+    # Guard the mutation: counting the candidate twice would refuse.
+    doubled = mod.check_b1_share("pcam", 2000, {"pcam": 2000, "pxhere": 4000})
+    assert not doubled.passed
+
+
+def test_active_train_set_by_count_path_does_not_use_bytes() -> None:
+    """Mutation proof: g24 `train_files` is 1000; `total_bytes` would estimate a count
+    that alone exceeds the cap. Using bytes would FAIL; using train_files PASSes."""
+    provenance = {
+        "repo_id": "basveeling/pcam",
+        "role": "train",
+        "provenance_group": "pcam",
+        "verdict": "PERMISSIVE_OK",
+        "verification_status": "VERIFIED",
+        "total_bytes": 10**12,
+        "active_train_set": {
+            "stamp": "20260905T045655Z",
+            "train_tree_or_zip": "processed/20260905T045655Z/train.zip",
+            "train_files": 1000,
+            "train_bytes": 3723965223,
+            "probe_files": 0,
+            "probe_bytes": 0,
+            "superseded_stamps": ["20260905T035325Z"],
+        },
+    }
+    results = mod.run_checklist(provenance, "visual", {"pxhere": 3000})
+    b1 = next(r for r in results if r.name == "b1_share")
+    assert b1.passed, b1.detail
+    assert "1000/4000" in b1.detail
+    assert "active_train_set.train_files" in b1.detail
+    assert "ESTIMATED" not in b1.detail
+    bytes_count, estimated = mod.resolve_added_count(provenance)
+    assert estimated is True
+    over = mod.check_b1_share("pcam", bytes_count, {"pxhere": 3000})
+    assert not over.passed
+
+
+def test_cli_prints_largest_source_share_and_cap(tmp_path: Path) -> None:
+    prov = tmp_path / "provenance.json"
+    prov.write_text(
+        json.dumps(
+            {
+                **CLEAN_PROVENANCE,
+                "active_train_set": {"train_files": 1000},
+            }
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--provenance",
+            str(prov),
+            "--region",
+            "memory",
+            "--existing-shares",
+            json.dumps({"gooaq": 3000}),
+            "--no-catalogue-check",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "Largest source: gooaq share=0.7500 cap=0.4" in proc.stdout
+    assert "active_train_set.train_files" in proc.stdout
+
+
+def test_cli_notes_active_train_set_absent_on_byte_fallback(tmp_path: Path) -> None:
+    prov = tmp_path / "provenance.json"
+    prov.write_text(
+        json.dumps(
+            {
+                "repo_id": "example/bytes-only",
+                "provenance_group": "small",
+                "verdict": "PERMISSIVE_OK",
+                "verification_status": "VERIFIED",
+                "total_bytes": 4000,
+            }
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--provenance",
+            str(prov),
+            "--region",
+            "visual",
+            "--existing-shares",
+            json.dumps({"other": 10_000}),
+            "--no-catalogue-check",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "active_train_set absent" in proc.stdout
+    assert "ESTIMATED" in proc.stdout
+
+
+# --------------------------------------------------------------------------------------
 # check_policy_constants_drift (check 5): forward-compatible against provenance.json
 # without an `admission` block (every real one today), and refuses a real, present drift.
 # --------------------------------------------------------------------------------------
@@ -1250,7 +1530,7 @@ def test_check_5_passes_on_a_record_the_live_factory_writes() -> None:
             upstream_url="https://example.com/LICENSE",
             mirror_url="https://huggingface.co/datasets/BeIR/scidocs",
             resolved_revision="abc",
-            data_dir=data_dir,
+            dataset_dir=data_dir,
         )
 
     result = mod.check_policy_constants_drift(record)

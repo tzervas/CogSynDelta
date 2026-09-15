@@ -78,6 +78,22 @@ def token_weighted_perplexity(losses: Sequence[float], token_counts: Sequence[in
     Averaging per-batch losses lets a short trailing batch carry the same weight as a full
     one, which shifts the number for a reason that has nothing to do with the model.
 
+    KEPT, NOT DELETED (checked at v2 patch time): the ONLY call site that is not this
+    module's own test is `CausalLM.estimate_perplexity()`
+    (`src/cogsyndelta/model/causal_lm.py`), which computes the identical token-weighted
+    formula INLINE (`total_nll / total_tokens`, then `exp`) rather than calling this
+    function -- the same "shared helper exists, but the real call site duplicates its
+    formula instead of using it" pattern `held_out.emb_std` has relative to
+    `representation_std()` (`docs/design/METRICS-METHODOLOGY.md` §11.5). That file is
+    outside this lane's scope to edit, so the duplication was not wired closed here;
+    deleting this function anyway would sever the one place a future receipt `perplexity`
+    field is documented to derive its formula from
+    (`docs/design/METRICS-METHODOLOGY.md` §11.5's own words: "if a future card or receipt
+    does show a `perplexity` field, its formula is `token_weighted_perplexity()`'s"). Left
+    in place, tested, and exported; a follow-up in the lane owning
+    `src/cogsyndelta/model/causal_lm.py` should change `estimate_perplexity()` to call this
+    function instead of duplicating it.
+
     Args:
         losses: Mean cross-entropy per batch, in nats.
         token_counts: Target token count per batch.
@@ -542,8 +558,55 @@ def screen_pair_contamination(
     return kept, report
 
 
+def recall_at_k_per_query(scores: torch.Tensor, relevant: torch.Tensor, k: int) -> torch.Tensor:
+    """The per-query hit indicator behind :func:`recall_at_k`, one entry per query.
+
+    WHY THIS EXISTS
+    A paired test cannot be run on a mean. The pre-registered decision rule for the
+    memory region's negative-set round is a paired bootstrap of the change in Success@10
+    over the 500 shared FiQA dev queries, and pairing is exactly what needs each query's
+    own 0/1 outcome in both arms; averaging first throws away the between-query variance
+    that the pairing exists to remove. So the vector is the primary object here and the
+    scalar is derived from it -- never the reverse, and never a second implementation
+    that could drift from it.
+
+    Args:
+        scores: ``[B, N]``, higher is better.
+        relevant: ``[B]`` index of the relevant candidate per query.
+        k: Cutoff. Capped at the pool size, so a ``k`` past the end of the pool means
+            "the whole pool" rather than an error.
+
+    Returns:
+        ``[B]`` float32, 1.0 where that query's relevant candidate is in its top ``k``.
+        float32, not float64, because :func:`recall_at_k` averages exactly this tensor
+        and published receipts record that float32 mean (0.2 stored as
+        ``0.20000000298023224``); widening here would silently make the stored number
+        unreproducible.
+
+    Raises:
+        ValueError: If ``k`` is below 1, which has no meaning as a cutoff.
+    """
+    if k < 1:
+        raise ValueError("k must be >= 1")
+    k = min(k, scores.size(1))
+    top = scores.topk(k, dim=-1).indices
+    return (top == relevant.unsqueeze(-1)).any(dim=-1).float()
+
+
 def recall_at_k(scores: torch.Tensor, relevant: torch.Tensor, k: int) -> float:
     """Fraction of queries whose relevant item appears in the top ``k``.
+
+    Defined as the mean of :func:`recall_at_k_per_query`'s vector and nothing else, so
+    the aggregate a receipt stores and the per-query vector a paired test consumes
+    cannot disagree about what was measured.
+
+    The mean is taken in **float32**, over the float32 indicator vector. That is a
+    decision, not an accident: the negative-set pre-registration left the representation
+    open because a per-query path aggregating in float64 would not reproduce an existing
+    receipt bit-for-bit, and that bit-for-bit match is what the checkpoint-integrity
+    claim rests on. The quantum near 0.2 at n = 500 is about 1.5e-08, six orders below
+    the 0.02 decision bar, so keeping float32 costs the decision nothing and buys exact
+    reproduction.
 
     Args:
         scores: ``[B, N]``, higher is better.
@@ -553,15 +616,35 @@ def recall_at_k(scores: torch.Tensor, relevant: torch.Tensor, k: int) -> float:
     Returns:
         Recall in ``[0, 1]``.
     """
-    if k < 1:
-        raise ValueError("k must be >= 1")
-    k = min(k, scores.size(1))
-    top = scores.topk(k, dim=-1).indices
-    return (top == relevant.unsqueeze(-1)).any(dim=-1).float().mean().item()
+    return recall_at_k_per_query(scores, relevant, k).mean().item()
+
+
+def reciprocal_rank_per_query(scores: torch.Tensor, relevant: torch.Tensor) -> torch.Tensor:
+    """The per-query 1/rank behind :func:`mean_reciprocal_rank`, one entry per query.
+
+    Same argument as :func:`recall_at_k_per_query`: MRR is a secondary metric of the
+    negative-set round, and reporting it paired alongside the primary one is only
+    possible if the per-query terms survive the aggregation.
+
+    Args:
+        scores: ``[B, N]``, higher is better.
+        relevant: ``[B]`` index of the relevant candidate per query.
+
+    Returns:
+        ``[B]`` float32 of ``1/rank``, rank counted from 1. float32 for the same
+        receipt-reproduction reason as :func:`recall_at_k_per_query`.
+    """
+    order = scores.argsort(dim=-1, descending=True)
+    ranks = (order == relevant.unsqueeze(-1)).float().argmax(dim=-1) + 1
+    return 1.0 / ranks.float()
 
 
 def mean_reciprocal_rank(scores: torch.Tensor, relevant: torch.Tensor) -> float:
     """Mean of 1/rank of the relevant candidate.
+
+    The mean of :func:`reciprocal_rank_per_query` and nothing else, aggregated in
+    float32 -- see :func:`recall_at_k` for why that representation is pinned rather than
+    widened.
 
     Args:
         scores: ``[B, N]``, higher is better.
@@ -570,9 +653,7 @@ def mean_reciprocal_rank(scores: torch.Tensor, relevant: torch.Tensor) -> float:
     Returns:
         MRR in ``(0, 1]``.
     """
-    order = scores.argsort(dim=-1, descending=True)
-    ranks = (order == relevant.unsqueeze(-1)).float().argmax(dim=-1) + 1
-    return (1.0 / ranks.float()).mean().item()
+    return reciprocal_rank_per_query(scores, relevant).mean().item()
 
 
 def _average_ranks(values: Sequence[float]) -> list[float]:
@@ -672,35 +753,248 @@ def representation_std(embeddings: torch.Tensor) -> float:
     return embeddings.std(dim=0).mean().item()
 
 
-def compare(
-    baseline: dict[str, float], candidate: dict[str, float], *, lower_is_better: set[str]
-) -> dict[str, object]:
-    """Compare a candidate against a baseline, naming regressions explicitly.
+class MetricIdentity(NamedTuple):
+    """The identity keys `compare()` requires to match before treating two metric groups
+    as the same measurement -- csd-metrics/v2's refuse-predicate (unification-rules memo
+    §3.3, restating `docs/design/METRICS-METHODOLOGY.md` §10 as an enforced function
+    rather than a checklist a reader has to remember).
 
-    Exists so that "net gain without quality loss" is evaluated per metric rather than by
-    a blended score. A change that improves throughput while raising perplexity is not a
-    win, and averaging the two would report it as one.
+    Field ORDER here is the CHECK order `compare()` uses, and matters: a metric group with
+    several mismatching fields is refused on the FIRST one in this order, not an
+    alphabetically- or dict-iteration-ordered one, so "the first mismatching key" a
+    refusal names is reproducible rather than an artifact of dict internals.
+
+    `k` is `None` for a metric with no `@k` (e.g. `mrr`) -- `None == None` is `True` in
+    Python, so two groups that both lack a `k` (or share the same one) are never refused
+    on this field alone.
+    """
+
+    metrics_schema: str
+    corpus_fingerprint: str
+    fingerprint_scheme: str
+    battery_id: str
+    k: int | None
+    pooling: str
+    checkpoint_sha256: str
+    region: str
+    git_sha: str
+    seed: int
+
+
+class MetricGroup(TypedDict):
+    """One side of a `compare()` call: the identity it was measured under, plus its
+    metric-name-to-value map. Build one from a receipt's own fields -- `identity` is not
+    part of `metrics`, it is the provenance envelope around it (`metrics_schema` at the
+    receipt top level; `corpus.fingerprint`/`.fingerprint_scheme`; `battery_id`; the `k`
+    of whichever `@k` metric is being compared, or `None`; `pooling`;
+    `artifacts.checkpoint_sha256`; `region`/`producer.component`; `code_revision.git_sha`;
+    `seed`).
+    """
+
+    identity: MetricIdentity
+    values: dict[str, float]
+
+
+class ComparisonRefusal(TypedDict):
+    """What `compare()` returns instead of a comparison when the two `MetricGroup`s are
+    not the same measurement. `refused` is always `True` on this branch -- present, rather
+    than the caller inferring refusal from the absence of a `"metrics"` key, so a caller
+    that only checks `"regressions" in result` cannot silently treat a refusal as "no
+    regressions found".
+    """
+
+    refused: bool
+    mismatched_key: str
+    baseline_value: object
+    candidate_value: object
+    reason: str
+
+
+_IDENTITY_RECEIPT_NAMES: dict[str, str] = {
+    # MetricIdentity field name -> the dotted receipt path a human would recognise it as,
+    # in the SAME order compare() checks them. Used only to spell `mismatched_key` and the
+    # refusal message; never consulted for the comparison logic itself.
+    "metrics_schema": "metrics_schema",
+    "corpus_fingerprint": "corpus.fingerprint",
+    "fingerprint_scheme": "corpus.fingerprint_scheme",
+    "battery_id": "battery_id",
+    "k": "k",
+    "pooling": "pooling",
+    "checkpoint_sha256": "artifacts.checkpoint_sha256",
+    "region": "region / producer.component",
+    "git_sha": "code_revision.git_sha",
+    "seed": "seed",
+}
+
+
+def compare(
+    baseline: MetricGroup, candidate: MetricGroup, *, lower_is_better: set[str]
+) -> dict[str, object]:
+    """Compare a candidate against a baseline -- but REFUSE first, unless every identity
+    key in `MetricIdentity` matches.
+
+    THIS IS THE REFUSE-FUNCTION (csd-metrics/v2, unification-rules memo §3.3). The v1
+    version of this function diffed whatever keys the two dicts happened to share and
+    said nothing about whether the two dicts described the same measurement at all --
+    exactly the ambiguity that let a `quantized_metric` (an in-memory plan's `recall@1`)
+    get read next to an eval-quantized `rank.recall@1` (the packed-artifact's) as though
+    they were interchangeable. `compare()` now refuses unless `metrics_schema`,
+    `corpus.fingerprint` AND `.fingerprint_scheme`, `battery_id`, `k` (`None == None`),
+    `pooling`, `checkpoint_sha256`, `region`/`producer.component`, `code_revision.git_sha`,
+    and `seed` all match -- `docs/design/METRICS-METHODOLOGY.md` §10's seven-point
+    checklist, enforced rather than left to a reader to remember, plus the two fields
+    (`battery_id`, `pooling`) the v1 checklist did not yet name.
+
+    Once every identity key matches, this proceeds exactly as v1 did: "net gain without
+    quality loss" is evaluated per metric rather than by a blended score, because a change
+    that improves throughput while raising perplexity is not a win and averaging the two
+    would report it as one.
+
+    NOT a general cross-battery comparator even when you WANT to compare two things this
+    refuses -- MM §4 pre-registers a small set of pairs (e.g. `quant.plan_recall@1` vs
+    `quant.artifact_recall@1` on the same sha) that are legitimately comparable despite
+    crossing `battery_id`; those go through `assert_sameness()` instead, which this
+    function must never subsume (a refuse-predicate that also special-cased those pairs
+    would be re-implementing `assert_sameness()` inside `compare()` and the two could
+    drift apart).
 
     Args:
-        baseline: Metric name to value.
-        candidate: Same keys.
+        baseline: The reference measurement, with its identity.
+        candidate: The measurement being evaluated, with its identity.
         lower_is_better: Metrics where a decrease is an improvement, e.g. perplexity.
 
     Returns:
-        Per-metric deltas, a list of regressions, and an overall verdict.
+        A `ComparisonRefusal` (`refused: True`, `mismatched_key` the first identity field
+        in `MetricIdentity`'s field order that differed) if the two are not the same
+        measurement. Otherwise per-metric deltas, a list of regressions, and an overall
+        verdict, plus `refused: False`.
     """
-    shared = sorted(set(baseline) & set(candidate))
+    baseline_identity = baseline["identity"]
+    candidate_identity = candidate["identity"]
+    for field_name in MetricIdentity._fields:
+        before_val = getattr(baseline_identity, field_name)
+        after_val = getattr(candidate_identity, field_name)
+        if before_val != after_val:
+            receipt_name = _IDENTITY_RECEIPT_NAMES[field_name]
+            refusal: ComparisonRefusal = {
+                "refused": True,
+                "mismatched_key": receipt_name,
+                "baseline_value": before_val,
+                "candidate_value": after_val,
+                "reason": (
+                    f"refusing to compare: {receipt_name!r} differs "
+                    f"({before_val!r} vs {after_val!r}). These two metric groups are not "
+                    "the same measurement (docs/design/METRICS-METHODOLOGY.md §10); a "
+                    "delta between their values says nothing about the model."
+                ),
+            }
+            return dict(refusal)
+
+    baseline_values = baseline["values"]
+    candidate_values = candidate["values"]
+    shared = sorted(set(baseline_values) & set(candidate_values))
     deltas, regressions = {}, []
     for name in shared:
-        before, after = baseline[name], candidate[name]
+        before, after = baseline_values[name], candidate_values[name]
         improved = after < before if name in lower_is_better else after > before
         rel = ((after - before) / before) if before else float("nan")
         deltas[name] = {"before": before, "after": after, "rel_change": rel, "improved": improved}
         if not improved and before != after:
             regressions.append(name)
     return {
+        "refused": False,
         "metrics": deltas,
         "regressions": regressions,
-        "missing": sorted(set(baseline) ^ set(candidate)),
+        "missing": sorted(set(baseline_values) ^ set(candidate_values)),
         "verdict": "no regression" if not regressions else f"regressed: {', '.join(regressions)}",
     }
+
+
+def assert_sameness(
+    label: str,
+    baseline_value: float,
+    candidate_value: float,
+    *,
+    baseline_checkpoint_sha256: str | None = None,
+    candidate_checkpoint_sha256: str | None = None,
+    tolerance: float = 1e-6,
+) -> None:
+    """Assert a pre-registered, deliberately cross-battery pair is numerically the same.
+
+    NOT `compare()`. `compare()` REFUSES a cross-`battery_id` comparison on purpose (MM
+    §10); this function exists for the small, pre-registered set of pairs MM §4/§3.2
+    explicitly bless as legitimate despite crossing `battery_id` or metric name:
+    `held_out.recall@1` vs `rank.recall@1` on the same checkpoint sha, `quant.plan_recall@1`
+    vs `quant.artifact_recall@1` on the same sha/holdout, and the two closed-pool
+    single-relevant-item identities `map == mrr` and `precision@10 == recall@10 / 10`
+    (`average_precision()`/`precision_at_k()` in `cogsyndelta.eval.benchmark`). The
+    refuse-predicate in `compare()` must NOT reject those pairs -- and does not, because
+    this function is the one a caller uses for them, never `compare()`.
+
+    This function carries NO general identity check (no schema, pooling, or battery_id
+    comparison at all) -- it is asserting a mathematical identity between two named
+    quantities that a caller has already decided are the same measurement by construction,
+    not measuring a delta between two independent runs. The one identity check it DOES
+    make, when both checkpoint shas are supplied, is that they match: two of MM §4's four
+    pairs are pre-registered "on the same sha" and a sha mismatch there means the pairing
+    itself is invalid, not merely that the numbers happened to differ.
+
+    Args:
+        label: Human-readable name for the pair, used only in the failure message.
+        baseline_value: First value (e.g. `held_out.recall@1`).
+        candidate_value: Second value (e.g. `rank.recall@1`).
+        baseline_checkpoint_sha256: Checkpoint sha the first value was measured against,
+            when the pairing is sha-scoped (omit for pairs like `map`/`mrr` that come from
+            a single receipt and have no separate sha to compare).
+        candidate_checkpoint_sha256: Checkpoint sha the second value was measured against.
+        tolerance: Maximum allowed absolute difference.
+
+    Raises:
+        ValueError: If both shas are supplied and differ, or if the values differ by more
+            than `tolerance`.
+    """
+    if (
+        baseline_checkpoint_sha256 is not None
+        and candidate_checkpoint_sha256 is not None
+        and baseline_checkpoint_sha256 != candidate_checkpoint_sha256
+    ):
+        raise ValueError(
+            f"sameness guard for {label!r} refuses: checkpoint sha differs "
+            f"({baseline_checkpoint_sha256!r} vs {candidate_checkpoint_sha256!r}). MM §4's "
+            "sameness pairs are legitimate only on the identical checkpoint; a sha "
+            "mismatch here means these two numbers were never the same measurement to "
+            "begin with, not that the sameness claim failed."
+        )
+    diff = abs(baseline_value - candidate_value)
+    if diff > tolerance:
+        raise ValueError(
+            f"sameness guard failed for {label!r}: {baseline_value!r} != "
+            f"{candidate_value!r} (diff {diff!r} > tolerance {tolerance!r}). These two are "
+            "supposed to be the identical measurement under MM §3.2/§4 -- a difference "
+            "here means the identity this pairing relies on no longer holds, and every "
+            "receipt or card built on that assumption should be treated as suspect until "
+            "this is understood."
+        )
+
+
+METRIC_ALIASES_V1: dict[str, str] = {
+    # v1 (bare/unscoped) receipt field name -> v2 canonical dotted name
+    # (csd-metrics/v2, docs/design/METRICS-METHODOLOGY.md + unification-rules memo §3.1).
+    #
+    # FOR READERS ONLY -- resolving a v1 name through this map to decide whether a GATE
+    # passes recreates exactly the ambiguity v2 exists to close (a gate reads the v2 name
+    # directly; this map exists so a script rendering an OLD receipt can still print a
+    # readable v2-style label next to it). Never consulted by `compare()`'s refuse
+    # predicate or by any `gates.*` computation.
+    #
+    # Not exhaustive across every receipt kind this project writes -- covers the names
+    # this module and `cogsyndelta.eval.benchmark` produced under v1, plus the ones the
+    # unification-rules memo names explicitly by name (§3.1/§3.2/§4). A lane that owns a
+    # train/quant/region receipt's v1 field names extends this table for those rather than
+    # duplicating it.
+    "effective_rank": "repr.effective_rank_entropy",
+    "emb_std": "repr.emb_std_anchor",
+    "quantized_metric": "quant.plan_recall@1",
+    "drop": "quant.drop_recall@1",
+    "compression_ratio": "quant.compression_ratio",
+}

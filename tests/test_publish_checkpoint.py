@@ -19,7 +19,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,6 +32,24 @@ from cogsyndelta.quant.ptq import (
     packed_stored_bytes,
     packed_width_histogram,
     save_packed_artifact,
+)
+from cogsyndelta.regions.pretrain import PretrainConfig, pretrain_region
+from cogsyndelta.regions.text_encoder import TextEncoderConfig
+
+# Reused, not reimplemented: the same tokenizer/parquet fixture builders and
+# hyphenated-module loaders tests/test_benchmark_metrics_v2_receipt.py already built to
+# drive REAL v2 eval / eval-quantized receipts through production code (`bench` =
+# csd-benchmark.py, `quant` = csd-quantize.py, both loaded there via the same importlib
+# indirection this file uses for `mod` above).
+from tests.test_benchmark_metrics_v2_receipt import (
+    _build_pairs_parquet,
+    _build_tokenizer,
+)
+from tests.test_benchmark_metrics_v2_receipt import (
+    bench as _v2_bench,
+)
+from tests.test_benchmark_metrics_v2_receipt import (
+    quant as _v2_quant,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -271,7 +289,8 @@ def git_blob_sha1(data: bytes) -> str:
 
 
 def test_default_repo_matches_csd_hf_repos_convention() -> None:
-    assert mod.default_repo("code") == "tzervas/cogsyndelta-region-code"
+    # `code` canonicalizes to `language`: the Hub repo was renamed 2026-09-05.
+    assert mod.default_repo("code") == "tzervas/cogsyndelta-region-language"
     assert mod.default_repo("compress") == "tzervas/cogsyndelta-region-compress"
     assert mod.default_repo("retrieve") == "tzervas/cogsyndelta-region-retrieve"
     assert mod.default_repo("residual_mlp") == "tzervas/cogsyndelta-region-residual"
@@ -340,6 +359,164 @@ def test_vl_latent_blocks_full_plan_before_any_file_read(tmp_path: Path) -> None
     receipt = make_training_receipt(tmp_path, checkpoint, region="vl_latent")
     with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
         mod.build_plan("vl_latent", "tzervas/cogsyndelta-vl-jepa", receipt, None, None)
+
+
+# ------------------------------------------------- region rename (naming rule 2026-09-04)
+
+
+def test_default_repo_of_language_and_code_agree_post_rename() -> None:
+    """The Hub repo was renamed 2026-09-05 (`move_repo`, old id redirects); `default_repo`
+    canonicalizes, so both spellings resolve to the one live repo."""
+    assert (
+        mod.default_repo("language")
+        == mod.default_repo("code")
+        == "tzervas/cogsyndelta-region-language"
+    )
+
+
+def test_default_repo_of_visual_matches_vl_latent() -> None:
+    """Unlike `code`/`language`, the vl-jepa repo suffix was never derived from the
+    region's own spelling, so both spellings resolve to the identical Hub repo."""
+    assert (
+        mod.default_repo("visual") == mod.default_repo("vl_latent") == "tzervas/cogsyndelta-vl-jepa"
+    )
+
+
+def test_licence_tier_accepts_the_canonical_names_too() -> None:
+    """LICENCE_TIER is keyed canonically; licence_tier() must still resolve `language`
+    and `visual` (not just their legacy spellings, already covered above)."""
+    assert mod.licence_tier("language") == mod.licence_tier("code") == "mit"
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier("visual")
+
+
+def _mix_b_receipt(fingerprint: str | None = None, source: str | None = None) -> dict[str, Any]:
+    admitted_source, admitted_fp = mod.admitted_visual_identity()
+    return {
+        "corpus": {
+            "corpus_source": admitted_source if source is None else source,
+            "fingerprint": admitted_fp if fingerprint is None else fingerprint,
+        }
+    }
+
+
+def test_visual_tiny_imagenet_receipt_still_blocks() -> None:
+    """Mutation: naming tiny-imagenet must not ride Mix B's fingerprint into a publish."""
+    _, fp = mod.admitted_visual_identity()
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier("visual", receipt=_mix_b_receipt(fingerprint=fp, source="tiny-imagenet"))
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier(
+            "vl_latent",
+            receipt=_mix_b_receipt(fingerprint=fp, source="zh-plus/tiny-imagenet"),
+        )
+
+
+def test_visual_unset_corpus_still_blocks() -> None:
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier("visual")
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier("visual", receipt={"corpus": {}})
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier(
+            "visual", receipt={"corpus": {"fingerprint": "ab5761b65714e4ba4d7c36df095f3599"}}
+        )
+
+
+def test_visual_clean_v1_matching_fingerprint_is_mit() -> None:
+    """Mix B pin: ATTRIBUTION (CLEVR) is MIT-usable with a notice (:98-102)."""
+    assert mod.licence_tier("visual", receipt=_mix_b_receipt()) == "mit"
+    assert mod.licence_tier("vl_latent", receipt=_mix_b_receipt()) == "mit"
+
+
+def test_visual_clean_v1_mismatched_fingerprint_blocks() -> None:
+    """Mutation: same corpus_source, wrong fingerprint, must stay BLOCKING."""
+    bad = "0" * 32
+    assert bad != mod.admitted_visual_identity()[1]
+    with pytest.raises(mod.PublishAbortError, match="BLOCKING"):
+        mod.licence_tier("visual", receipt=_mix_b_receipt(fingerprint=bad))
+
+
+def test_visual_card_carries_clevr_tasl() -> None:
+    card = mod.build_card(
+        region="visual",
+        region_cfg={"role": "visual cortex", "router_trigger": "image"},
+        tier="mit",
+        checkpoint=Path("final.pt"),
+        checkpoint_sha256="abc",
+        rev="deadbeef",
+        train_receipt=_mix_b_receipt(),
+        eval_receipt=None,
+        quant_receipt=None,
+    )
+    assert "CLEVR" in card
+    assert "creativecommons.org/licenses/by/4.0" in card
+    assert "modified" in card.lower()
+    assert "license: mit" in card
+    assert ":98-102" in card
+
+
+def test_visual_card_refuses_without_clevr_tasl(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mutation: drop the TASL block and Mix B must not publish as silent MIT."""
+    monkeypatch.setattr(mod, "CLEVR_TASL", "attribution omitted")
+    with pytest.raises(mod.PublishAbortError, match="TASL"):
+        mod.build_card(
+            region="visual",
+            region_cfg={"role": "visual cortex", "router_trigger": "image"},
+            tier="mit",
+            checkpoint=Path("final.pt"),
+            checkpoint_sha256="abc",
+            rev="deadbeef",
+            train_receipt=_mix_b_receipt(),
+            eval_receipt=None,
+            quant_receipt=None,
+        )
+
+
+def test_load_region_config_accepts_both_spellings(tmp_path: Path) -> None:
+    """`config/mind/csd-regions.json` stores the language centre under `language`
+    (specialisation: code); load_region_config must find that ONE entry whether asked
+    for `code` or `language`."""
+    by_legacy = mod.load_region_config("code")
+    by_canonical = mod.load_region_config("language")
+    assert by_legacy == by_canonical
+    assert by_legacy["name"] == "language"
+    assert by_legacy["specialisation"] == "code"
+
+
+def test_load_region_config_visual_by_either_name() -> None:
+    by_legacy = mod.load_region_config("vl_latent")
+    by_canonical = mod.load_region_config("visual")
+    assert by_legacy == by_canonical
+    assert by_legacy["name"] == "visual"
+
+
+def test_assert_region_matches_across_the_rename(tmp_path: Path) -> None:
+    """A receipt written before the rename (`region: "code"`) must still match
+    `--region language`, and the reverse -- the rename must not turn every existing
+    receipt into a forced mismatch."""
+    checkpoint = make_checkpoint(tmp_path)
+    legacy_receipt = json.loads(
+        make_training_receipt(tmp_path, checkpoint, region="code").read_text()
+    )
+    mod.assert_region_matches(legacy_receipt, "language", "training")  # must not raise
+
+    canonical_receipt = json.loads(
+        make_training_receipt(
+            tmp_path,
+            checkpoint,
+            region="language",
+            name="language-20260902T211539Z.json",
+        ).read_text()
+    )
+    mod.assert_region_matches(canonical_receipt, "code", "training")  # must not raise too
+
+
+def test_assert_region_matches_still_rejects_a_genuine_mismatch(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    receipt = json.loads(make_training_receipt(tmp_path, checkpoint, region="code").read_text())
+    with pytest.raises(mod.PublishAbortError, match="does not match"):
+        mod.assert_region_matches(receipt, "retrieve", "training")
 
 
 def test_unknown_tier_aborts_full_plan_before_any_file_read(tmp_path: Path) -> None:
@@ -699,6 +876,114 @@ def test_dry_run_against_real_compress_receipts_aborts_sha_absent() -> None:
     assert rc == 2
 
 
+# --------------------------- review fix: --dry-run must not abort on this branch's OWN
+# --------------------------- v2 receipts (blocking item 1, feat/metrics-v2)
+
+
+def test_dry_run_publishes_real_v2_eval_and_eval_quantized_receipts_end_to_end(
+    tmp_path: Path,
+) -> None:
+    """The review's exact failure: `--dry-run` ABORTED with `card would print metric
+    key(s) ['effective_rank_entropy', 'emb_std_anchor'] with no entry in
+    METRIC_METHODOLOGY` on a receipt `scripts/csd-benchmark.py` (this branch's own lane
+    A) produces natively -- `METRIC_METHODOLOGY` here (lane B) had renamed
+    `effective_rank_ratio` -> `effective_rank_entropy_ratio` but never added
+    `effective_rank_entropy` or `emb_std_anchor`. A hand-built receipt would not have
+    caught this: the hole is specifically that lane A's real output and lane B's table
+    disagreed, so this drives a REAL tiny CPU pretrain + benchmark + quantize run
+    (region "code" -- a real MIT-tiered region name, so `--dry-run` reaches the
+    METRIC_METHODOLOGY check this fix targets rather than aborting earlier on an
+    unknown licence tier; same tokenizer/parquet fixture builders as
+    tests/test_benchmark_metrics_v2_receipt.py) through the publish script's own
+    `--dry-run`, for both `kind=eval` and `kind=eval-quantized` receipts, exactly as
+    the review's repro did.
+    """
+    region = "code"
+    tok_path = tmp_path / "tokenizer.json"
+    shard_path = tmp_path / "pairs.parquet"
+    _build_tokenizer(tok_path, 40)
+    _build_pairs_parquet(shard_path, 40)
+    receipts_dir = tmp_path / "receipts"
+
+    cfg = PretrainConfig(
+        region=region,
+        pair_columns=("anchor", "positive"),
+        shards=[str(shard_path)],
+        steps=2,
+        batch_size=4,
+        holdout_pairs=4,
+        eval_every=2,
+        checkpoint_every=2,
+        max_len=16,
+        seed=3,
+        device="cpu",
+        encoder=TextEncoderConfig(dim=8, depth=1, n_heads=2, max_len=16),
+        tokenizer_path=str(tok_path),
+        out_dir=str(receipts_dir),
+    )
+    pretrain_region(cfg)
+    train_path = next(receipts_dir.glob(f"{region}-*.json"))
+
+    def fake_regions_spec() -> dict:
+        class _Entry:
+            sources: ClassVar = [("pairs.parquet", ("anchor", "positive"), 0)]
+            root = tmp_path
+
+        return {
+            "REGIONS": {},
+            "_shards": lambda *a, **k: [str(shard_path)],
+            "region_spec": lambda name: _Entry(),
+        }
+
+    orig_bench_spec, orig_quant_spec = _v2_bench._regions_spec, _v2_quant._load_regions_spec
+    _v2_bench._regions_spec = fake_regions_spec
+    _v2_quant._load_regions_spec = fake_regions_spec
+    try:
+        eval_rec = _v2_bench.benchmark_region(region, tmp_path)
+        assert eval_rec is not None
+        eval_path = eval_rec.write(receipts_dir)
+
+        quant_rec = _v2_quant.quantize_text_region(
+            region, tmp_path, tolerance=1.0, aggressive=3, max_bits=8
+        )
+        eval_quant_rec = _v2_bench.benchmark_region_quantized(
+            region, tmp_path, Path(quant_rec["artifacts"]["quantized_path"])
+        )
+        eval_quant_path = eval_quant_rec.write(receipts_dir)
+    finally:
+        _v2_bench._regions_spec = orig_bench_spec
+        _v2_quant._load_regions_spec = orig_quant_spec
+
+    with patch("huggingface_hub.HfApi", side_effect=AssertionError("no network in --dry-run")):
+        rc_eval = mod.main(
+            [
+                "--region",
+                region,
+                "--receipt",
+                str(train_path),
+                "--eval-receipt",
+                str(eval_path),
+                "--dry-run",
+            ]
+        )
+        rc_eval_quantized = mod.main(
+            [
+                "--region",
+                region,
+                "--receipt",
+                str(train_path),
+                "--eval-receipt",
+                str(eval_quant_path),
+                "--dry-run",
+            ]
+        )
+
+    assert rc_eval == 0, "kind=eval dry-run must not abort on this branch's own v2 receipt"
+    assert rc_eval_quantized == 0, (
+        "kind=eval-quantized dry-run must not abort on this branch's own v2 receipt"
+    )
+
+
 # -------------------------------------------------- receipt must be a JSON object (review fix)
 #
 # json.loads('null') returns None, and json.loads('[1,2,3]') returns a list -- both
@@ -963,7 +1248,8 @@ def test_dry_run_default_repo_used_when_omitted(tmp_path: Path, capsys: Any) -> 
     rc = mod.main(["--region", "code", "--receipt", str(receipt_path), "--dry-run"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "tzervas/cogsyndelta-region-code" in out
+    # `--region code` canonicalizes to the renamed Hub repo, not the legacy name.
+    assert "tzervas/cogsyndelta-region-language" in out
 
 
 # ------------------------------------------------------------------- idempotency
@@ -1531,3 +1817,327 @@ def test_quant_artifact_repo_name_comes_from_the_checkpoint_stem(tmp_path: Path)
     assert "step-8000.ptq.pt" in plan.files
     assert plan.files["step-8000.pt"] == checkpoint
     assert plan.files["step-8000.ptq.pt"] == plan.quantized_path
+
+
+# ================================================================== metrics-v2 (g7 §3.1/§3.3)
+#
+# `normalize_quant_receipt_v1`: a v1-shaped quant receipt on disk (make_quant_receipt's
+# own fixture shape -- `quantized_metric`/`compression_ratio`/`drop`, what
+# scripts/csd-quantize.py wrote before the rename) must resolve every v2 key
+# `METRIC_METHODOLOGY` and `build_card`'s quantization table now look up, without the
+# fixture itself changing -- proving `build_plan`'s normalisation step, not a rewritten
+# fixture, is what makes an old receipt on disk still publishable.
+
+
+def test_normalize_quant_receipt_v1_adds_v2_keys_without_removing_v1_ones() -> None:
+    v1 = {
+        "region": "compress",
+        "quantized_metric": 0.955,
+        "compression_ratio": 9.79,
+        "drop": 0.004,
+        "stored_bytes": 1000,
+    }
+    out = mod.normalize_quant_receipt_v1(v1)
+
+    assert out["quant.plan_recall@1"] == 0.955
+    assert out["quant.compression_ratio"] == 9.79
+    assert out["quant.drop_recall@1"] == 0.004
+    # Original v1 keys untouched -- other readers of this same dict (
+    # verify_quantized_measurements, assert_receipt_bound_to_checkpoint) still work.
+    assert out["quantized_metric"] == 0.955
+    assert out["compression_ratio"] == 9.79
+    assert out["drop"] == 0.004
+    assert v1 == {
+        "region": "compress",
+        "quantized_metric": 0.955,
+        "compression_ratio": 9.79,
+        "drop": 0.004,
+        "stored_bytes": 1000,
+    }, "normalize_quant_receipt_v1 must not mutate its argument"
+
+
+def test_normalize_quant_receipt_v1_never_overwrites_a_real_v2_value() -> None:
+    """A quant receipt that already carries the v2 name (post-rename producer) must
+    keep ITS value even if a legacy key happens to also be present with a different
+    number -- never silently overwritten by the alias."""
+    already_v2 = {
+        "quantized_metric": 0.111,  # a stale/unrelated legacy key, if one existed
+        "quant.plan_recall@1": 0.955,
+    }
+    out = mod.normalize_quant_receipt_v1(already_v2)
+    assert out["quant.plan_recall@1"] == 0.955
+
+
+def test_build_plan_normalises_a_v1_shaped_quant_receipt_on_disk(tmp_path: Path) -> None:
+    """End to end: `make_quant_receipt`'s fixture writes v1 field names (the realistic
+    shape for a receipt already on disk from before this change) and the full
+    `build_plan` -> `build_card` -> `_methodology_section` pipeline must not refuse it."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    raw_on_disk = json.loads(quant_path.read_text())
+    assert "quant.plan_recall@1" not in raw_on_disk, (
+        "fixture must stay v1-shaped on disk, or this test proves nothing"
+    )
+
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+    )
+
+    assert "quant.plan_recall@1" in plan.card
+    assert "quant.compression_ratio" in plan.card
+    section = plan.card.split("## How these numbers were produced", 1)[1]
+    assert "| `quant.plan_recall@1` |" in section
+    assert "`quant_plan`" in section  # battery_id column
+    assert "`matched`" in section  # pooling column
+
+
+def test_stubbed_methodology_map_missing_a_v2_key_fails_the_card_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same mutation proof `tests/test_metrics_methodology.py` runs for
+    `recall@1`, narrowed to a key this lane's rename introduced: dropping
+    `quant.plan_recall@1` from `METRIC_METHODOLOGY` must abort the build and name it,
+    proving the refusal covers renamed keys too, not only the pre-existing ones."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    trimmed = {k: v for k, v in mod.METRIC_METHODOLOGY.items() if k != "quant.plan_recall@1"}
+    monkeypatch.setattr(mod, "METRIC_METHODOLOGY", trimmed)
+
+    with pytest.raises(mod.PublishAbortError, match=re.escape("quant.plan_recall@1")):
+        mod.build_plan(
+            "compress", "tzervas/cogsyndelta-region-compress", train_path, None, quant_path
+        )
+
+
+# ============================================== card metrics_schema stamp (round 3 review)
+#
+# `_methodology_section` used to derive the card's ONE `- **Metrics schema:**` line from
+# the TRAINING receipt alone, then merge train + eval + quant metrics into the same
+# table -- so a v1 training receipt re-benchmarked/re-quantized with v2 code (the
+# near-term real case for every already-trained matrix cell) printed a false
+# `csd-metrics/v1 (not recorded)` stamp directly above a table of v2 field names.
+# `metrics_schema` is identity key #1 of MM §14's refuse predicate; a published card
+# naming the wrong one is the provenance-falsehood class this branch exists to close.
+
+
+def _set_metrics_schema(path: Path, schema: str) -> None:
+    receipt = json.loads(path.read_text())
+    receipt["metrics_schema"] = schema
+    path.write_text(json.dumps(receipt))
+
+
+def test_card_metrics_schema_stamp_is_a_single_value_when_all_receipts_agree(
+    tmp_path: Path,
+) -> None:
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    for path in (train_path, eval_path, quant_path):
+        _set_metrics_schema(path, "csd-metrics/v2")
+
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, quant_path
+    )
+
+    assert "- **Metrics schema:** `csd-metrics/v2`" in plan.card
+    assert "disagree" not in plan.card
+
+
+def test_card_metrics_schema_stamp_shows_disagreement_rather_than_claiming_v1(
+    tmp_path: Path,
+) -> None:
+    """The near-term real case: a v1 training receipt (no `metrics_schema` field --
+    predates this migration, reads back as the `csd-metrics/v1 (not recorded)`
+    fallback) paired with an eval and a quant receipt this branch's v2 code produced
+    (both stamp `csd-metrics/v2`). The card must not print a single
+    `csd-metrics/v1 (not recorded)` stamp above a table full of v2 field names."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    for path in (eval_path, quant_path):
+        _set_metrics_schema(path, "csd-metrics/v2")
+    assert "metrics_schema" not in json.loads(train_path.read_text()), (
+        "fixture must stay v1-shaped (no metrics_schema field) on disk, or this test proves nothing"
+    )
+
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, quant_path
+    )
+
+    schema_line = next(
+        line for line in plan.card.splitlines() if line.startswith("- **Metrics schema:**")
+    )
+    assert schema_line != "- **Metrics schema:** `csd-metrics/v1 (not recorded)`"
+    assert "train=`csd-metrics/v1 (not recorded)`" in schema_line
+    assert "eval=`csd-metrics/v2`" in schema_line
+    assert "quant=`csd-metrics/v2`" in schema_line
+
+
+def test_pre_fix_train_receipt_only_lookup_would_have_claimed_v1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MUTATION PROOF: stub `_metrics_schema_line` back to the exact pre-fix formula
+    (`train_receipt.get('metrics_schema', 'csd-metrics/v1 (not recorded)')`, train
+    receipt only) and confirm the card THEN claims `csd-metrics/v1 (not recorded)` on
+    the same v1-train/v2-eval/v2-quant trio the test above uses -- driven through the
+    real `build_plan` -> `build_card` -> `_methodology_section` pipeline, proving the
+    test above is not vacuous and that this fix, not something else about the trio, is
+    what changed the printed stamp."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    eval_path = make_eval_receipt(tmp_path, checkpoint, region="compress")
+    quant_path = make_quant_receipt(tmp_path, checkpoint, region="compress")
+    for path in (eval_path, quant_path):
+        _set_metrics_schema(path, "csd-metrics/v2")
+
+    def pre_fix_line(
+        train_receipt: dict[str, Any],
+        eval_receipt: dict[str, Any] | None,
+        quant_receipt: dict[str, Any] | None,
+    ) -> str:
+        del eval_receipt, quant_receipt  # the pre-fix formula never looked at these
+        schema = train_receipt.get("metrics_schema", "csd-metrics/v1 (not recorded)")
+        return f"- **Metrics schema:** `{schema}`"
+
+    monkeypatch.setattr(mod, "_metrics_schema_line", pre_fix_line)
+
+    plan = mod.build_plan(
+        "compress", "tzervas/cogsyndelta-region-compress", train_path, eval_path, quant_path
+    )
+
+    assert "- **Metrics schema:** `csd-metrics/v1 (not recorded)`" in plan.card, (
+        "reproducing the pre-fix train-receipt-only lookup must claim v1 -- this is "
+        "the exact defect this branch's fix closes"
+    )
+
+
+# ===================================================================== --safetensors
+#
+# Opt-in, off by default (every test above builds its plan with the flag's default,
+# `want_safetensors=False`, and none of them gained a `.safetensors` entry -- proving
+# the default is really off, not merely undocumented). `make_checkpoint`'s fixture
+# writes an arbitrary byte blob, not a real torch state dict (that is deliberate --
+# see its own docstring reasoning elsewhere in this file: most of this suite is about
+# path containment and receipt binding, not about the checkpoint's pickled contents),
+# so these tests need their OWN fixture that actually torch.save()s a state dict.
+
+
+def make_real_torch_checkpoint(tmp_path: Path, name: str = "final.pt") -> Path:
+    """A checkpoint `--safetensors` can actually export: a real `torch.save`d state
+    dict of a tiny model, not `make_checkpoint`'s arbitrary byte blob."""
+    torch.manual_seed(0)
+    model = nn.Linear(8, 4)
+    path = tmp_path / name
+    torch.save(model.state_dict(), path)
+    return path
+
+
+def test_safetensors_flag_off_by_default(tmp_path: Path) -> None:
+    checkpoint = make_checkpoint(tmp_path)  # the ordinary fake-bytes fixture
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan("compress", "tzervas/cogsyndelta-region-compress", train_path, None, None)
+    assert plan.safetensors_path is None
+    assert plan.safetensors_sha256 is None
+    assert not any(name.endswith(".safetensors") for name in plan.files)
+
+
+def test_safetensors_flag_exports_and_adds_to_plan(tmp_path: Path) -> None:
+    checkpoint = make_real_torch_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+
+    plan = mod.build_plan(
+        "compress",
+        "tzervas/cogsyndelta-region-compress",
+        train_path,
+        None,
+        None,
+        want_safetensors=True,
+    )
+
+    assert plan.safetensors_path == checkpoint.with_suffix(".safetensors")
+    assert plan.safetensors_path.is_file()
+    assert plan.safetensors_sha256 == mod.sha256_of(plan.safetensors_path)
+    assert "final.safetensors" in plan.files
+    assert plan.files["final.safetensors"] == plan.safetensors_path
+    # never promoted over the primary artifact
+    assert plan.files["final.pt"] == checkpoint
+
+
+def test_safetensors_round_trips_the_real_weights(tmp_path: Path) -> None:
+    """Not just "a file got written" -- the exported tensors are the checkpoint's own,
+    read back through the actual safetensors loader (the same guarantee
+    tests/test_cards_export.py proves at the unit level, exercised here through the
+    full build_plan() pipeline)."""
+    from safetensors.torch import load_file
+
+    checkpoint = make_real_torch_checkpoint(tmp_path)
+    original = torch.load(checkpoint, map_location="cpu", weights_only=True)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+
+    plan = mod.build_plan(
+        "compress",
+        "tzervas/cogsyndelta-region-compress",
+        train_path,
+        None,
+        None,
+        want_safetensors=True,
+    )
+
+    restored = load_file(str(plan.safetensors_path))
+    assert set(restored) == set(original)
+    for name, tensor in original.items():
+        assert torch.equal(tensor.to(dtype=torch.float32), restored[name])
+
+
+def test_safetensors_uploaded_alongside_checkpoint_end_to_end(tmp_path: Path) -> None:
+    """`--safetensors` all the way through `publish()`: both `final.pt` and
+    `final.safetensors` get uploaded, and `sync_repo` never re-hashes the safetensors
+    file from scratch (it uses the sha `build_plan` already computed) -- verified by a
+    fake `get_paths_info` that returns nothing remote, so both must be freshly uploaded."""
+    checkpoint = make_real_torch_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+    plan = mod.build_plan(
+        "compress",
+        "tzervas/cogsyndelta-region-compress",
+        train_path,
+        None,
+        None,
+        want_safetensors=True,
+    )
+
+    fake_api = MagicMock()
+    fake_api.get_paths_info.return_value = []
+    fake_api.repo_info.return_value = SimpleNamespace(private=True)
+
+    with (
+        patch.object(mod, "get_token", return_value="fake-token"),
+        patch("huggingface_hub.HfApi", return_value=fake_api),
+    ):
+        result = mod.publish(plan)
+
+    assert set(result["uploaded"]) == set(plan.files.keys())
+    assert "final.safetensors" in result["uploaded"]
+
+
+def test_safetensors_flag_aborts_on_unloadable_checkpoint(tmp_path: Path) -> None:
+    """A checkpoint that passes every containment/binding check but is not a real
+    torch state dict (the ordinary `make_checkpoint` fixture: an arbitrary byte blob)
+    must abort the WHOLE plan when `--safetensors` is explicitly requested, rather
+    than silently publishing without the file it was asked to include."""
+    checkpoint = make_checkpoint(tmp_path)
+    train_path = make_training_receipt(tmp_path, checkpoint, region="compress")
+
+    with pytest.raises(mod.PublishAbortError, match="safetensors"):
+        mod.build_plan(
+            "compress",
+            "tzervas/cogsyndelta-region-compress",
+            train_path,
+            None,
+            None,
+            want_safetensors=True,
+        )
+    assert not checkpoint.with_suffix(".safetensors").exists()

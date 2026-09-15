@@ -70,7 +70,27 @@ from cogsyndelta.regions._token_objective import (
     _token_decorrelation_loss,
 )
 from cogsyndelta.regions._tokencache import corpus_token_cache
-from cogsyndelta.regions.text_encoder import TextEncoder, TextEncoderConfig, info_nce
+from cogsyndelta.regions.text_encoder import (
+    NegativeBank,
+    TextEncoder,
+    TextEncoderConfig,
+    info_nce,
+)
+from cogsyndelta.splits import (
+    SplitGuardError,
+    assert_no_held_out_in_pairs,
+    assert_no_reserved_holdout_in_pairs,
+    build_order_manifest,
+    build_split_manifest,
+    item_id,
+    load_json_manifest,
+    permute_train_pairs,
+    resolve_order_manifest_path,
+    resolve_split_manifest_path,
+    verify_order_manifest,
+    verify_split_manifest,
+    write_json_manifest,
+)
 
 
 @dataclass
@@ -106,6 +126,24 @@ class PretrainConfig:
     2h of GPU time that could have been the next experiment."""
     max_len: int = 128
     seed: int = 0
+    split_seed: int = 0
+    """Seed that ALONE drives held-out membership: reservoir caps and the shuffle
+    `build_splits` takes the holdout prefix from. Independent of `seed` (model init and
+    the untrained baseline). Default 0 pins membership to the historical seed-0 draw so
+    existing seed-0 cells stay comparable. E0 / G26."""
+    order_seed: int = 0
+    """Extra permutation of remaining training pairs after the split. 0 is identity
+    over the leftover of the split-seed draw -- the historical seed-0 batch order.
+    Drawn once per (corpus_fp, order_seed, steps, batch) and reused across arms."""
+    split_manifest: str | None = None
+    """Explicit split-manifest path. None resolves
+    `config/mind/splits/<region>-<fp8>-split<split_seed>.json`."""
+    order_manifest: str | None = None
+    """Explicit batch-order manifest path. None resolves the committed default."""
+    require_split_manifest: bool = False
+    """When True, `build_splits` refuses unless a split manifest is present and
+    matches the draw (production trainer / benchmark / quantizer). Tests leave this
+    False and still get seed-independent membership via `split_seed`."""
     bf16: bool = True
     """Run the forward and backward under `torch.autocast(dtype=torch.bfloat16)`.
 
@@ -226,6 +264,109 @@ class PretrainConfig:
     produced when the run first started -- reapplying it would silently discard however
     many steps of training have moved the table since. The receipt's own
     `shared_embedding_table` block says whether it applied, on which run."""
+
+    negative_bank_size: int = 0
+    """`K` -- a FIFO bank of the last `K` encoded positives, detached, appended as extra
+    columns to the InfoNCE denominator (`regions/text_encoder.NegativeBank`). Zero (the
+    default) is OFF, and with it off the loss is bit-identical to the in-batch-only
+    objective this file has always computed -- which is what makes the control arm of
+    PREREG-RETRIEVAL-NEGATIVES-2026-09-06 (rev 3) a special case of the treatment rather
+    than a second implementation of it. That round pins `K = 16384`: at batch 1,280 it
+    buys 17,663 negatives per query against 1,279, for a 16.0 MiB buffer."""
+
+    mined_negatives_manifest: str | None = None
+    """Path to a `csd-mined-negatives/v1` manifest (`regions/_mining.py`). None (the
+    default) is OFF. When set, the run rebuilds the per-source mining pools from its own
+    pinned training union, refuses on any provenance mismatch (G39) or on any mined
+    negative that is its own pair's positive (G38), and appends `m` mined negatives per
+    anchor -- encoded no-grad, shared across the batch -- to the denominator. Mutually
+    exclusive with `negative_bank_size`: the round's arms differ in exactly one variable,
+    and a config that turns on two negative sets at once is refused rather than run."""
+
+    mined_negatives_per_anchor: int = 0
+    """`m`, negatives mined per anchor. Read only when `mined_negatives_manifest` is set,
+    and it must equal the manifest's own value or G39 refuses. Pinned at 8 by the
+    pre-registration's Table 2, which also declares it untunable after a result."""
+
+
+def negative_set_name(cfg: PretrainConfig) -> str:
+    """Name this config's negative set, refusing a config that turns on two.
+
+    The name is DERIVED rather than configured, so a receipt cannot claim one arm while
+    the loss computes another -- the failure mode that made the memory-region diagnosis's
+    checkpoint comparison "not clean" in the first place.
+
+    Args:
+        cfg: The run config.
+
+    Returns:
+        ``in_batch``, ``bank`` or ``mined``.
+
+    Raises:
+        ValueError: If both extra negative sets are on, if a mined manifest is named
+            without `m`, or if `m` is set without a manifest to read.
+    """
+    if cfg.negative_bank_size and cfg.mined_negatives_manifest:
+        raise ValueError(
+            "negative_bank_size and mined_negatives_manifest are mutually exclusive: an "
+            "arm that changes two things at once measures neither"
+        )
+    if cfg.negative_bank_size < 0:
+        raise ValueError(f"negative_bank_size must be >= 0, got {cfg.negative_bank_size}")
+    if cfg.mined_negatives_manifest:
+        if cfg.mined_negatives_per_anchor < 1:
+            raise ValueError(
+                "mined_negatives_manifest needs mined_negatives_per_anchor >= 1 (m); "
+                "the manifest's own value must match it"
+            )
+        return "mined"
+    if cfg.mined_negatives_per_anchor:
+        raise ValueError(
+            "mined_negatives_per_anchor is set without a mined_negatives_manifest to "
+            "read the negatives from"
+        )
+    return "bank" if cfg.negative_bank_size else "in_batch"
+
+
+def load_sources(
+    cfg: PretrainConfig, membership_seed: int
+) -> list[tuple[str, list[tuple[str, str]]]]:
+    """Load every declared source separately, keeping which pairs came from where.
+
+    `_draw_split` concatenates these into one list and keeps only per-source COUNTS, so
+    provenance is gone by the time training starts. Hard-negative mining needs it back:
+    a pair's mining pool is ITS OWN source's positives, never the union's and never the
+    evaluation corpus. Factored out of `_draw_split` rather than reimplemented beside it,
+    so the pairs mining sees are the same rows, loaded by the same call, in the same
+    order, as the pairs training sees.
+
+    Args:
+        cfg: The run config.
+        membership_seed: `split_seed`, the seed that alone decides which rows a cap keeps.
+
+    Returns:
+        `(name, pairs)` per source, in declaration order. The primary source is
+        ``"primary"``; an extra source is named ``"left->right"`` after its columns,
+        matching the receipt's own `corpus.sources` keys.
+    """
+    budget = cfg.steps * cfg.batch_size + cfg.holdout_pairs
+    out: list[tuple[str, list[tuple[str, str]]]] = [
+        ("primary", load_pairs(cfg.shards, cfg.pair_columns, limit=budget, seed=membership_seed))
+    ]
+    for source in cfg.extra_sources:
+        cap = source.get("limit") or 0
+        out.append(
+            (
+                f"{source['columns'][0]}->{source['columns'][1]}",
+                load_pairs(
+                    source["shards"],
+                    tuple(source["columns"]),
+                    limit=cap if cap else budget,
+                    seed=membership_seed,
+                ),
+            )
+        )
+    return out
 
 
 def _lr_at(step: int, cfg: PretrainConfig) -> float:
@@ -869,32 +1010,30 @@ def _beats_untrained_gate(
     return chance, beats
 
 
-def build_splits(
+def _draw_split(
     cfg: PretrainConfig,
+    membership_seed: int,
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str]], dict[str, Any]]:
-    """Load, interleave, deduplicate and split a region's corpus.
+    """Load, shuffle, dedup and prefix-split using ``membership_seed`` only.
 
-    This is the ONE definition of a region's held-out set. Post-training quantization has
-    to score against exactly the pairs training was judged on, and a second implementation
-    of "load, shuffle, dedup, take the first 512" would drift from this one the moment
-    either changed -- silently, since both would still produce 512 plausible pairs and a
-    plausible recall figure. The comparison would simply stop meaning anything.
+    This is the historical `build_splits` draw with the seed parameter made explicit.
+    `cfg.seed` (training / init) must not be read here -- that coupling is the E0
+    defect. `membership_seed=cfg.split_seed` (default 0) reproduces the seed-0 cells.
+
+    Args:
+        cfg: Region pretrain config (shards, caps, holdout size).
+        membership_seed: Reservoir and shuffle seed. Not the training seed.
 
     Returns:
-        ``(holdout, train_pairs, meta)``.
+        ``(holdout, train_pairs, meta)`` after contamination screening.
     """
-    budget = cfg.steps * cfg.batch_size + cfg.holdout_pairs
-    all_pairs = load_pairs(cfg.shards, cfg.pair_columns, limit=budget, seed=cfg.seed)
-    source_counts = {"primary": len(all_pairs)}
-    for source in cfg.extra_sources:
-        cap = source.get("limit") or 0
-        got = load_pairs(
-            source["shards"],
-            tuple(source["columns"]),
-            limit=cap if cap else budget,
-            seed=cfg.seed,
-        )
-        source_counts[f"{source['columns'][0]}->{source['columns'][1]}"] = len(got)
+    # One loader (`load_sources`) for the split and for hard-negative mining: mining's
+    # pools must be built from exactly the rows training saw, and a second loading path
+    # would be free to drift from this one while still producing plausible pairs.
+    sources = load_sources(cfg, membership_seed)
+    all_pairs: list[tuple[str, str]] = list(sources[0][1])
+    source_counts = {name: len(pairs) for name, pairs in sources}
+    for _, got in sources[1:]:
         all_pairs.extend(got)
     # Shuffle unconditionally -- not just when there is more than one source. This used
     # to be gated on `len(cfg.extra_sources) > 1 or cfg.extra_sources`, which only ever
@@ -925,7 +1064,8 @@ def build_splits(
     # S311: a seeded shuffle of training data, not a cryptographic context.
     # secrets.SystemRandom would destroy the reproducibility the receipt promises, and
     # two checkpoints are not comparable if their data order is not.
-    _random.Random(cfg.seed).shuffle(all_pairs)  # noqa: S311
+    # E0: membership_seed (split_seed), never cfg.seed.
+    _random.Random(membership_seed).shuffle(all_pairs)  # noqa: S311
     if len(all_pairs) < cfg.holdout_pairs * 2:
         raise ValueError(f"only {len(all_pairs)} pairs; need at least {cfg.holdout_pairs * 2}")
 
@@ -999,10 +1139,237 @@ def build_splits(
             # a sample from a prefix, and those are different corpora.
             "cap_sampling": {
                 "method": "reservoir (Algorithm R), one pass over every row of each source",
-                "seed": cfg.seed,
+                "seed": membership_seed,
             },
+            "membership_seed": membership_seed,
         },
     )
+
+
+def build_splits(
+    cfg: PretrainConfig,
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]], dict[str, Any]]:
+    """Load, interleave, deduplicate and split a region's corpus.
+
+    This is the ONE definition of a region's held-out set. Post-training quantization has
+    to score against exactly the pairs training was judged on, and a second implementation
+    of "load, shuffle, dedup, take the first 512" would drift from this one the moment
+    either changed -- silently, since both would still produce 512 plausible pairs and a
+    plausible recall figure. The comparison would simply stop meaning anything.
+
+    E0 / G26: membership is drawn with ``cfg.split_seed`` (default 0), never
+    ``cfg.seed``. When a split manifest is present it is loaded and the draw must match
+    it; ``require_split_manifest`` refuses if the file is missing. Training seed does
+    not touch membership. Held-out items in a training batch refuse.
+
+    Returns:
+        ``(holdout, train_pairs, meta)``. ``meta`` includes ``split`` and
+        ``batch_order`` receipt fragments.
+
+    Raises:
+        SplitGuardError: G26 -- missing required manifest, fingerprint/sha mismatch,
+            doctored membership, or a held-out item in training.
+    """
+    holdout, train_pairs, meta = _draw_split(cfg, membership_seed=cfg.split_seed)
+    corpus_fp = fingerprint_corpus(
+        cfg.shards, columns=list(cfg.pair_columns), extra_sources=cfg.extra_sources
+    )
+    split_path = resolve_split_manifest_path(
+        cfg.region, corpus_fp, cfg.split_seed, cfg.split_manifest
+    )
+    generator = {
+        "algorithm": "csd-split-draw/v1",
+        "split_seed": cfg.split_seed,
+        "holdout_pairs": cfg.holdout_pairs,
+        "budget": cfg.steps * cfg.batch_size + cfg.holdout_pairs,
+        "pair_columns": list(cfg.pair_columns),
+    }
+    counts = {
+        "source_counts": meta["source_counts"],
+        "duplicates_removed": meta["duplicates_removed"],
+        "train_pairs_removed": meta["contamination"].get("train_pairs_removed", 0),
+    }
+    drawn_manifest = build_split_manifest(
+        region=cfg.region,
+        corpus_fingerprint=corpus_fp,
+        split_seed=cfg.split_seed,
+        holdout=holdout,
+        train_pairs=train_pairs,
+        generator=generator,
+        counts=counts,
+    )
+    if split_path.is_file():
+        loaded = load_json_manifest(split_path)
+        recorded_holdout = int(
+            (loaded.get("generator") or {}).get("holdout_pairs")
+            or (loaded.get("counts") or {}).get("holdout_pairs")
+            or 0
+        )
+        if recorded_holdout and recorded_holdout != cfg.holdout_pairs:
+            # Filename is (region, fp8, split_seed) only. A short test run on the
+            # real corpus (holdout_pairs=16) must not bind the committed 512-pair
+            # production file. Production (`require_split_manifest`) refuses instead
+            # of silently scoring a different-sized eval set.
+            if cfg.require_split_manifest or cfg.split_manifest:
+                raise SplitGuardError(
+                    f"G26: split manifest holdout_pairs={recorded_holdout} != "
+                    f"cfg.holdout_pairs={cfg.holdout_pairs} ({split_path})"
+                )
+            split_stamp = {
+                "manifest": "",
+                "sha256": drawn_manifest["sha256"],
+                "seed": cfg.split_seed,
+            }
+        else:
+            verify_split_manifest(loaded, corpus_fingerprint=corpus_fp, holdout=holdout)
+            split_stamp = {
+                "manifest": str(split_path),
+                "sha256": loaded["sha256"],
+                "seed": int(loaded["seed"]),
+            }
+    elif cfg.require_split_manifest or cfg.split_manifest:
+        raise SplitGuardError(
+            f"G26: split manifest required but missing at {split_path} "
+            f"(region={cfg.region!r} fp={corpus_fp[:8]} split_seed={cfg.split_seed})"
+        )
+    else:
+        split_stamp = {
+            "manifest": "",
+            "sha256": drawn_manifest["sha256"],
+            "seed": cfg.split_seed,
+        }
+
+    assert_no_held_out_in_pairs(holdout, train_pairs, where="training pairs")
+    # G41: this region's own holdout is not the only thing that must stay out of its
+    # training set. `openai/gsm8k`'s `test` split is reserved fleet-wide as the
+    # pre-registered reasoning battery's population, so it has to be excluded from EVERY
+    # region and every composite phase -- by item id, here, where the realised training
+    # pairs exist. A config that simply does not name test.parquet is an intention; this
+    # is the enforcement.
+    assert_no_reserved_holdout_in_pairs(train_pairs, where=f"{cfg.region} training pairs")
+    train_pairs = permute_train_pairs(train_pairs, cfg.order_seed)
+
+    order_path = resolve_order_manifest_path(
+        cfg.region,
+        corpus_fp,
+        cfg.order_seed,
+        cfg.steps,
+        cfg.batch_size,
+        cfg.order_manifest,
+    )
+    order_payload = build_order_manifest(
+        region=cfg.region,
+        corpus_fingerprint=corpus_fp,
+        order_seed=cfg.order_seed,
+        steps=cfg.steps,
+        batch_size=cfg.batch_size,
+        n_train=len(train_pairs),
+    )
+    if order_path.is_file():
+        loaded_order = load_json_manifest(order_path)
+        verify_order_manifest(
+            loaded_order,
+            corpus_fingerprint=corpus_fp,
+            order_seed=cfg.order_seed,
+            steps=cfg.steps,
+            batch_size=cfg.batch_size,
+            n_train=len(train_pairs),
+        )
+        order_stamp = {
+            "manifest": str(order_path),
+            "sha256": loaded_order["sha256"],
+            "seed": int(loaded_order["seed"]),
+        }
+    else:
+        order_stamp = {
+            "manifest": str(order_path) if cfg.order_manifest else "",
+            "sha256": order_payload["sha256"],
+            "seed": cfg.order_seed,
+        }
+
+    meta["split"] = split_stamp
+    meta["batch_order"] = order_stamp
+    meta["corpus_fingerprint"] = corpus_fp
+    return holdout, train_pairs, meta
+
+
+def write_split_and_order_manifests(
+    cfg: PretrainConfig,
+    *,
+    splits_dir: Path | None = None,
+) -> tuple[Path, Path, dict[str, Any]]:
+    """Generate committed seed manifests from the current draw (split_seed, order_seed).
+
+    Used to pin production seed-0 membership so it EQUALS the historical seed-0 draw
+    (`split_seed=0` is that draw). Writes both the split file and the batch-order file.
+
+    Args:
+        cfg: Region config pointed at the corpus on disk.
+        splits_dir: Destination directory; default `config/mind/splits`.
+
+    Returns:
+        ``(split_path, order_path, meta)`` from :func:`build_splits`.
+    """
+    from cogsyndelta.splits import order_manifest_path, split_manifest_path
+
+    holdout, train_pairs, meta = _draw_split(cfg, membership_seed=cfg.split_seed)
+    corpus_fp = fingerprint_corpus(
+        cfg.shards, columns=list(cfg.pair_columns), extra_sources=cfg.extra_sources
+    )
+    train_pairs = permute_train_pairs(train_pairs, cfg.order_seed)
+    generator = {
+        "algorithm": "csd-split-draw/v1",
+        "split_seed": cfg.split_seed,
+        "holdout_pairs": cfg.holdout_pairs,
+        "budget": cfg.steps * cfg.batch_size + cfg.holdout_pairs,
+        "pair_columns": list(cfg.pair_columns),
+    }
+    counts = {
+        "source_counts": meta["source_counts"],
+        "duplicates_removed": meta["duplicates_removed"],
+        "train_pairs_removed": meta["contamination"].get("train_pairs_removed", 0),
+    }
+    split_payload = build_split_manifest(
+        region=cfg.region,
+        corpus_fingerprint=corpus_fp,
+        split_seed=cfg.split_seed,
+        holdout=holdout,
+        train_pairs=train_pairs,
+        generator=generator,
+        counts=counts,
+    )
+    order_payload = build_order_manifest(
+        region=cfg.region,
+        corpus_fingerprint=corpus_fp,
+        order_seed=cfg.order_seed,
+        steps=cfg.steps,
+        batch_size=cfg.batch_size,
+        n_train=len(train_pairs),
+    )
+    split_path = split_manifest_path(cfg.region, corpus_fp, cfg.split_seed, splits_dir=splits_dir)
+    order_path = order_manifest_path(
+        cfg.region,
+        corpus_fp,
+        cfg.order_seed,
+        cfg.steps,
+        cfg.batch_size,
+        splits_dir=splits_dir,
+    )
+    write_json_manifest(split_path, split_payload)
+    write_json_manifest(order_path, order_payload)
+    meta["split"] = {
+        "manifest": str(split_path),
+        "sha256": split_payload["sha256"],
+        "seed": cfg.split_seed,
+    }
+    meta["batch_order"] = {
+        "manifest": str(order_path),
+        "sha256": order_payload["sha256"],
+        "seed": cfg.order_seed,
+    }
+    meta["corpus_fingerprint"] = corpus_fp
+    meta["seed0_equal"] = True
+    return split_path, order_path, meta
 
 
 # ---------------------------------------------------------------------------------------
@@ -1115,10 +1482,11 @@ def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
     mathematically identical for any value -- see that field's own docstring -- so a
     checkpoint trained under one chunk size is a valid continuation under another). Every
     field kept here -- steps, batch_size, lr,
-    warmup, grad_clip, max_len, seed, holdout_pairs, the encoder shape, the pair columns,
-    the shard list, the tokenizer, the graded set, the corpus content fingerprint, and the
-    split-building code fingerprint -- changes the run itself, so a checkpoint trained
-    under a different value of any of them is not a continuation of what `cfg` describes.
+    warmup, grad_clip, max_len, seed, split_seed, order_seed, holdout_pairs, the encoder
+    shape, the pair columns, the shard list, the tokenizer, the graded set, the corpus
+    content fingerprint, and the split-building code fingerprint -- changes the run
+    itself, so a checkpoint trained under a different value of any of them is not a
+    continuation of what `cfg` describes.
 
     The last two of those were the R9 gap: this dict used to describe only
     `PretrainConfig`'s OWN fields, so neither a corpus rewrite under the same paths nor a
@@ -1126,7 +1494,7 @@ def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
     moved the fingerprint at all -- the config looked identical because it was, and the
     part that had actually changed was never asked.
     """
-    return {
+    fields: dict[str, Any] = {
         "region": cfg.region,
         "pair_columns": list(cfg.pair_columns),
         "shards": sorted(cfg.shards),
@@ -1138,6 +1506,8 @@ def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
         "grad_clip": cfg.grad_clip,
         "max_len": cfg.max_len,
         "seed": cfg.seed,
+        "split_seed": cfg.split_seed,
+        "order_seed": cfg.order_seed,
         # Precision is a resume-relevant field, not an administrative one: continuing an
         # fp32-trained checkpoint under bf16 (or the reverse) is a different run from
         # either, and the whole point of this dict is to refuse exactly that rather than
@@ -1159,6 +1529,76 @@ def _resume_fields(cfg: PretrainConfig) -> dict[str, Any]:
         "init_embedding_from": cfg.init_embedding_from,
         "corpus_fingerprint": _corpus_content_fingerprint(cfg),
         "split_code_fingerprint": _split_code_fingerprint(),
+    }
+    # ADDED ONLY WHEN ON. The negative set changes what is being trained, so a resume
+    # across a change of it must be refused -- but a config with no bank and no mined
+    # manifest is the objective this file computed before these fields existed, and its
+    # fingerprint has to stay byte-identical or every checkpoint written to date becomes
+    # un-resumable for a feature none of them used. `tests/test_negatives.py` asserts
+    # both halves: unchanged when off, moved when on.
+    if cfg.negative_bank_size:
+        fields["negative_bank_size"] = cfg.negative_bank_size
+    if cfg.mined_negatives_manifest:
+        fields["mined_negatives"] = {
+            # The manifest's CONTENT, not its path: two different mined negative sets
+            # written to the same filename are two different runs.
+            "sha256": sha256_file(Path(cfg.mined_negatives_manifest)),
+            "m": cfg.mined_negatives_per_anchor,
+        }
+    return fields
+
+
+def _prepare_mined_negatives(
+    cfg: PretrainConfig,
+    train_pairs: list[tuple[str, str]],
+    split_meta: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Load, verify (G39), re-check (G38) and resolve a mined-negative manifest.
+
+    The pools are REBUILT here from this run's own pinned training union rather than read
+    out of the manifest. That is the whole force of G39: a manifest can only be checked
+    against something computed independently of it, and a manifest that carried its own
+    pools would be checking itself.
+
+    Args:
+        cfg: The run config.
+        train_pairs: The pinned training union, in training order.
+        split_meta: `build_splits`'s metadata, for the corpus fingerprint it recorded.
+
+    Returns:
+        None when no manifest is configured (the control and bank arms), else the
+        resolved negative texts (flattened, `m` per training pair), the manifest sha256,
+        and the manifest's audit block for the receipt.
+
+    Raises:
+        MiningGuardError: G38 or G39 -- any provenance mismatch, or any mined negative
+            that is its own pair's positive.
+    """
+    if not cfg.mined_negatives_manifest:
+        return None
+    from cogsyndelta.regions import _mining
+
+    manifest = _mining.load_manifest(cfg.mined_negatives_manifest)
+    sources = _mining.restrict_to_union(load_sources(cfg, cfg.split_seed), train_pairs)
+    pools = _mining.build_pools(sources)
+    source_of_pair = _mining.label_sources(train_pairs, sources)
+    qrels_path = (manifest.get("qrels") or {}).get("path")
+    if not qrels_path:
+        raise _mining.MiningGuardError("G39: mining manifest records no qrels artefact")
+    _mining.verify_manifest(
+        manifest,
+        corpus_fingerprint=split_meta.get("corpus_fingerprint") or _corpus_content_fingerprint(cfg),
+        pools=pools,
+        qrels_sha256=_mining.file_sha256(qrels_path),
+        train_pairs=train_pairs,
+        m=cfg.mined_negatives_per_anchor,
+    )
+    _mining.assert_self_positive_disjoint(train_pairs, manifest["negatives"], source_of_pair, pools)
+    return {
+        "texts": _mining.negative_texts(manifest, pools, m=cfg.mined_negatives_per_anchor),
+        "manifest_sha256": manifest["sha256"],
+        "manifest_path": str(cfg.mined_negatives_manifest),
+        "audits": manifest.get("audits", []),
     }
 
 
@@ -1269,11 +1709,17 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
     if probe_requested():
         cfg.steps = min(cfg.steps, PROBE_STEPS)
 
+    negative_set = negative_set_name(cfg)
     holdout, train_pairs, split_meta = build_splits(cfg)
     source_counts = split_meta["source_counts"]
     duplicates_removed = split_meta["duplicates_removed"]
     contamination = split_meta["contamination"]
     graded, graded_report = _prepare_graded(cfg, train_pairs)
+    # G38/G39 run HERE -- before a single step, before the model is even built -- because
+    # both refuse the RUN. A provenance mismatch discovered at step 3,000 has already
+    # produced 3,000 steps of an experiment whose negative set is not the one its receipt
+    # will claim.
+    mined_negatives = _prepare_mined_negatives(cfg, train_pairs, split_meta)
 
     encoder_cfg = TextEncoderConfig(**{**asdict(cfg.encoder), "vocab_size": tok.get_vocab_size()})
     model = TextEncoder(encoder_cfg, name=cfg.region).to(device)
@@ -1385,6 +1831,26 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         key_parts={"region": cfg.region, "side": "positive"},
         label=f"{cfg.region}-train-positive",
     )
+    # OFF unless a mined manifest is configured, and then tokenised through the same
+    # cache for the same reason: `m` negatives per anchor is 8x the anchor corpus, and
+    # tokenising those inside the step would put the single-threaded tokenizer stall
+    # back that this cache exists to remove. Row `i*m .. (i+1)*m` belongs to training
+    # pair `i`, so a batch's mined block is one CONTIGUOUS slice.
+    mined_tokens = None
+    if mined_negatives is not None:
+        mined_tokens = corpus_token_cache(
+            tok,
+            mined_negatives["texts"],
+            max_len=cfg.max_len,
+            cache_dir=cache_dir,
+            tokenizer_path=cfg.tokenizer_path,
+            key_parts={
+                "region": cfg.region,
+                "side": "mined-negative",
+                "manifest": mined_negatives["manifest_sha256"],
+            },
+            label=f"{cfg.region}-train-mined-negative",
+        )
     tokenise_s = time.time() - tokenise_start
 
     # bf16 for the forward and backward; fp32 for everything that is kept or judged.
@@ -1401,6 +1867,21 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
 
     session_start = time.time()
     model.train()
+    # `None` for the control arm, so `info_nce` takes the identical code path it took
+    # before this feature existed. The bank is NOT restored on resume: its contents are
+    # encoder outputs from steps that are not being replayed, and a checkpoint carrying
+    # 16 MiB of stale vectors would make a resumed run differ from an uninterrupted one
+    # in something other than the negative set. A resumed run refills it over the next
+    # `K/batch` steps instead, which is visible in `negatives_per_query`.
+    bank = NegativeBank(cfg.negative_bank_size, device=device) if cfg.negative_bank_size else None
+    # The auxiliary weights AS THE LOSS SAW THEM, collected at the site that multiplies
+    # by them rather than from `cfg` at receipt-writing time. A receipt that reports the
+    # parsed arguments cannot tell an arm that ran with the terms off from one where some
+    # later code path put them back; this set can, and `cogsyndelta.eval.prereg` (G40)
+    # refuses to grade a run whose measured weights are not the pre-registered ones.
+    observed_objective_weights: set[tuple[float, float]] = set()
+    steps_measured = 0
+    holdout_id_set = {item_id(a, b) for a, b in holdout}
     for step in range(start_step, cfg.steps):
         for group in opt.param_groups:
             group["lr"] = _lr_at(step, cfg)
@@ -1413,6 +1894,14 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         # in tests/test_token_cache.py. The tokenizer is out of the loop entirely.
         a_ids, a_mask = anchor_tokens.batch(lo, hi, device)
         p_ids, p_mask = positive_tokens.batch(lo, hi, device)
+        # G26: a held-out item in a training batch is a leak, not a metric. Fail closed
+        # here as well as in `build_splits`, so a caller that bypasses the split helper
+        # still cannot train on eval rows.
+        leaked = [item_id(a, b) for a, b in train_pairs[lo:hi] if item_id(a, b) in holdout_id_set]
+        if leaked:
+            raise SplitGuardError(
+                f"G26: {len(leaked)} held-out item(s) in training batch at step {step}"
+            )
         # `info_nce` casts back to fp32 for `normalize` and the logits matmul; autocast
         # covers the two encoder towers, which is where the FLOPs are. `backward` is
         # deliberately OUTSIDE the context -- autocast is a forward-only decision, and
@@ -1427,8 +1916,40 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
             # second forward pass through the trunk.
             a_h, a_tmask = model.tokens(a_ids, a_mask)
             p_h, p_tmask = model.tokens(p_ids, p_mask)
-            loss, stats = info_nce(model.pool(a_h, a_tmask), model.pool(p_h, p_tmask))
-            if cfg.token_loss_weight > 0.0:
+            a_pooled = model.pool(a_h, a_tmask)
+            p_pooled = model.pool(p_h, p_tmask)
+            # `None` in the control arm: `info_nce` then computes exactly what it
+            # computed before the argument existed, which is the identity the arms of
+            # PREREG-RETRIEVAL-NEGATIVES-2026-09-06 rest on.
+            extra_negatives = None
+            if bank is not None:
+                # The bank holds PREVIOUS steps' positives -- this step's are pushed
+                # after the loss, so an anchor's own positive can never appear twice in
+                # its denominator. Empty on step 0, and an empty bank is the control.
+                extra_negatives = bank.negatives()
+            elif mined_tokens is not None:
+                m = cfg.mined_negatives_per_anchor
+                n_ids, n_mask = mined_tokens.batch(lo * m, hi * m, device)
+                with torch.no_grad():
+                    n_h, n_tmask = model.tokens(n_ids, n_mask)
+                    extra_negatives = model.pool(n_h, n_tmask)
+            # The control arm makes the IDENTICAL two-argument call it always made --
+            # not a three-argument call with a `None` -- so nothing about this line
+            # changes for a run that uses no extra negatives, down to the signature seen
+            # by anything that wraps `info_nce`.
+            loss, stats = (
+                info_nce(a_pooled, p_pooled)
+                if extra_negatives is None
+                else info_nce(a_pooled, p_pooled, extra_negatives=extra_negatives)
+            )
+            # Read ONCE, here, into the values the loss is about to use -- and recorded
+            # below from these same locals, so the receipt reports the multiplier that
+            # was applied and not a field somebody could have read differently.
+            token_weight = cfg.token_loss_weight
+            decorr_weight = cfg.decorr_weight
+            observed_objective_weights.add((token_weight, decorr_weight))
+            steps_measured += 1
+            if token_weight > 0.0:
                 assert mlm_head is not None and mask_embedding is not None
                 token_loss_a, n_masked_a = _mlm_token_loss(
                     model,
@@ -1449,16 +1970,21 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
                     chunk=cfg.token_loss_chunk,
                 )
                 token_loss = 0.5 * (token_loss_a + token_loss_p)
-                loss = loss + cfg.token_loss_weight * token_loss
+                loss = loss + token_weight * token_loss
                 stats["token_loss"] = token_loss.item()
                 stats["token_loss_n_masked"] = n_masked_a + n_masked_p
-            if cfg.decorr_weight > 0.0:
+            if decorr_weight > 0.0:
                 decorr_loss = 0.5 * (
                     _token_decorrelation_loss(a_h, a_tmask)
                     + _token_decorrelation_loss(p_h, p_tmask)
                 )
-                loss = loss + cfg.decorr_weight * decorr_loss
+                loss = loss + decorr_weight * decorr_loss
                 stats["decorr_loss"] = decorr_loss.item()
+        if bank is not None:
+            # After the loss, so this step's positives are negatives for LATER anchors
+            # only. Detached and fp32 inside `push`.
+            bank.push(p_pooled)
+            stats["bank_size"] = float(len(bank))
         opt.zero_grad()
         loss.backward()
         if cfg.grad_clip > 0:
@@ -1553,7 +2079,53 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         "started_utc": started_utc,
         "region": cfg.region,
         "recorded": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "method": "symmetric InfoNCE over in-batch negatives",
+        "method": (
+            "symmetric InfoNCE over in-batch negatives"
+            if negative_set == "in_batch"
+            else f"symmetric InfoNCE over in-batch negatives plus {negative_set} negatives"
+        ),
+        # Table 4 of PREREG-RETRIEVAL-NEGATIVES-2026-09-06: an arm's denominator is part
+        # of what its numbers mean, so every receipt names its negative set even when
+        # that set is "the batch, as always". The per-step `negatives_per_query` lives in
+        # `history` (`info_nce`'s own stats); this block is the run-level identity.
+        # What the objective ACTUALLY weighted, measured at the loss site (see
+        # `observed_objective_weights`). `declared` is what the config asked for; a
+        # disagreement between the two is the bug this field exists to make visible, and
+        # `measured` is None -- refused by the grader, never defaulted -- when no step
+        # ran or the weights changed mid-run.
+        "objective_weights": {
+            "declared": {
+                "token_loss_weight": cfg.token_loss_weight,
+                "decorr_weight": cfg.decorr_weight,
+            },
+            "measured": (
+                {
+                    "token_loss_weight": next(iter(observed_objective_weights))[0],
+                    "decorr_weight": next(iter(observed_objective_weights))[1],
+                }
+                if len(observed_objective_weights) == 1
+                else None
+            ),
+            "values_seen": sorted(list(pair) for pair in observed_objective_weights),
+            "steps_measured": steps_measured,
+            "read": "at the loss site, per step",
+        },
+        "negatives": {
+            "set": negative_set,
+            "bank_size": cfg.negative_bank_size,
+            **(
+                {
+                    "mined": {
+                        "manifest": mined_negatives["manifest_path"],
+                        "manifest_sha256": mined_negatives["manifest_sha256"],
+                        "per_anchor": cfg.mined_negatives_per_anchor,
+                        "audits": mined_negatives["audits"],
+                    }
+                }
+                if mined_negatives is not None
+                else {}
+            ),
+        },
         # Mirrors `corpus.fingerprint` below at the top level, so every receipt kind
         # (train/eval/quant/eval-quantized) names the corpus fingerprint at the SAME
         # path -- `scripts/csd-quantize.py`'s quant receipt already does this (see its
@@ -1561,6 +2133,18 @@ def pretrain_region(cfg: PretrainConfig) -> dict[str, Any]:
         # (region + code sha + corpus fingerprint) then reads one path regardless of
         # which stage's receipt it is holding.
         "corpus_fingerprint": corpus_fingerprint,
+        "split": split_meta.get("split")
+        or {
+            "manifest": "",
+            "sha256": "",
+            "seed": cfg.split_seed,
+        },
+        "batch_order": split_meta.get("batch_order")
+        or {
+            "manifest": "",
+            "sha256": "",
+            "seed": cfg.order_seed,
+        },
         "corpus": {
             "shards": [Path(s).name for s in cfg.shards],
             # EVERY source, not just the primary. The old value covered `cfg.shards`

@@ -1,0 +1,72 @@
+{
+  "axis_values": {
+    "batch": 128,
+    "seed": 0
+  },
+  "cell_id": "visual-b128-s0-3ce18db-20260905",
+  "code": {
+    "dirty": true,
+    "sha_expected": "3ce18dbc4e0bd669e2391fc43e267b5cd3c1c0d0",
+    "sha_observed": "6964c0a98ee30a44239affc170d028dc61f61b49"
+  },
+  "config_hash": "c47799e5ce3f",
+  "corpus": {
+    "fingerprint": null,
+    "preflight_fingerprint": null
+  },
+  "created_ts_ns": 1788645533724133279,
+  "host": "akula-prime",
+  "region": "visual",
+  "selection": {
+    "cells": [],
+    "regions": [
+      "visual"
+    ],
+    "resolved_regions": [
+      "visual"
+    ]
+  },
+  "stages": {
+    "quantize": {
+      "finished_ts_ns": 1788646627576782302,
+      "gpu_index": null,
+      "peak_vram_mib": null,
+      "receipt": "/akula-data/csd/matrix/visual-b128-s0-3ce18db-20260905/receipts/visual-quant-20260905T221707Z.json",
+      "snapshot": {},
+      "started_ts_ns": 1788646208754224081,
+      "state": "done",
+      "vram_samples": []
+    },
+    "test": {
+      "finished_ts_ns": 1788646208665991088,
+      "gpu_index": null,
+      "peak_vram_mib": null,
+      "receipt": "/akula-data/csd/matrix/visual-b128-s0-3ce18db-20260905/receipts/cogsyndelta-visual-eval-20260905T221008Z.json",
+      "snapshot": {},
+      "started_ts_ns": 1788646170602326416,
+      "state": "done",
+      "vram_samples": []
+    },
+    "test-quant": {
+      "finished_ts_ns": 1788646662093291953,
+      "gpu_index": null,
+      "peak_vram_mib": null,
+      "receipt": "/akula-data/csd/matrix/visual-b128-s0-3ce18db-20260905/receipts/cogsyndelta-visual-eval-quantized-20260905T221741Z.json",
+      "snapshot": {},
+      "started_ts_ns": 1788646627580379679,
+      "state": "done",
+      "vram_samples": []
+    },
+    "train": {
+      "finished_ts_ns": 1788646170514632167,
+      "gpu_index": null,
+      "peak_vram_mib": null,
+      "receipt": "/akula-data/csd/matrix/visual-b128-s0-3ce18db-20260905/receipts/visual-20260905T220929Z.json",
+      "snapshot": {},
+      "started_ts_ns": 1788645533731521820,
+      "state": "done",
+      "vram_samples": []
+    }
+  },
+  "variant_id": null
+}

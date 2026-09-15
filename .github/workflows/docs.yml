@@ -66,15 +66,28 @@ concurrency:
 jobs:
   wiki:
     name: Publish docs to the Forgejo wiki
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    # This repo mirrors to github.com as a read-only backup; that copy has no
+    # wiki target, so exclude the GitHub mirror.
+    if: >-
+      github.server_url != 'https://github.com' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main'
     runs-on: [self-hosted, linux, x64, podman]
     timeout-minutes: 20
+    # Fixed once at the job level rather than exported via `$GITHUB_ENV` from a step --
+    # a prior version set WIKI_DIR that way and the value did not reliably carry over to
+    # later steps, which let the sync step run with an empty --out and silently write
+    # nothing while the job still reported success. A sibling of the checkout, not
+    # inside it, so `git add -A` in the wiki checkout never touches the source tree.
+    env:
+      WIKI_DIR: ${{ github.workspace }}/../wiki-checkout
 
     steps:
       - uses: actions/checkout@v7
 
       - name: Verify uv (baked into job image)
         run: |
+          set -euo pipefail
           command -v uv >/dev/null 2>&1 || {
             echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
           uv --version
@@ -85,22 +98,38 @@ jobs:
           WIKI_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          runner_tmp="${RUNNER_TEMP:-/tmp}"
-          wiki_dir="$runner_tmp/wiki"
           wiki_url="${{ github.server_url }}/${{ github.repository }}.wiki.git"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$WIKI_TOKEN" | base64 -w0)"
-          if ! git -c http.extraheader="$auth" clone --depth 1 "$wiki_url" "$wiki_dir"; then
+          if ! git -c http.extraheader="$auth" clone --depth 1 "$wiki_url" "$WIKI_DIR"; then
             echo "wiki repository not initialized yet -- starting it fresh"
-            rm -rf "${wiki_dir:?}"
-            git init -q "$wiki_dir"
-            git -C "$wiki_dir" remote add origin "$wiki_url"
+            rm -rf "${WIKI_DIR:?}"
+            git init -q "$WIKI_DIR"
+            git -C "$WIKI_DIR" remote add origin "$wiki_url"
           fi
-          echo "WIKI_DIR=$wiki_dir" >>"$GITHUB_ENV"
 
       - name: Sync docs/ into the wiki checkout
         # 12-char short sha, matching the commit-message convention below and the
         # sibling wiki-push pattern (Mycelium's publish-docs.yml: "${GITHUB_SHA::12}").
-        run: python3 scripts/docs_to_wiki.py --docs-dir docs --out "$WIKI_DIR" --sha "${GITHUB_SHA:0:12}"
+        run: |
+          set -euo pipefail
+          python3 scripts/docs_to_wiki.py --docs-dir docs --out "$WIKI_DIR" --sha "${GITHUB_SHA:0:12}"
+
+      - name: Assert the wiki sync produced pages
+        # Fails the job closed if the sync step silently wrote nothing (or wrote to the
+        # wrong place) instead of letting an empty "nothing to commit" pass as success --
+        # the exact failure mode this workflow shipped with once already (fb7a1bb: the
+        # job reported success but the wiki checkout was never populated).
+        run: |
+          set -euo pipefail
+          test -d "$WIKI_DIR"
+          page_count=$(ls "$WIKI_DIR"/*.md 2>/dev/null | wc -l) || page_count=0
+          echo "generated page count: $page_count"
+          status_lines="$(git -C "$WIKI_DIR" status --short)"
+          printf '%s\n' "$status_lines" | head -n 10
+          if [ "$page_count" -lt 20 ]; then
+            echo "wiki sync produced too few pages ($page_count < 20) -- failing closed" >&2
+            exit 1
+          fi
 
       - name: Commit and push wiki changes
         env:
@@ -110,7 +139,9 @@ jobs:
           cd "$WIKI_DIR"
           git add -A
           if git diff --cached --quiet; then
-            echo "wiki already up to date -- nothing to commit"
+            page_count=$(ls "$WIKI_DIR"/*.md 2>/dev/null | wc -l) || page_count=0
+            head_sha=$(git rev-parse HEAD 2>/dev/null || echo "(no commits yet)")
+            echo "wiki already up to date -- nothing to commit (page count: $page_count, head: $head_sha)"
             exit 0
           fi
           short_sha="${GITHUB_SHA:0:12}"

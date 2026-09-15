@@ -242,9 +242,23 @@ CATALOGUE: list[Dataset] = [
         region="reason",
         config="main",
         license="mit (verified via HF dataset_info tags)",
+        upstream="github.com/openai/grade-school-math LICENSE is the MIT License, "
+        "'Copyright (c) 2021 OpenAI' — read at the primary source 2026-09-06, not "
+        "inherited from the card. The HF repo is under OpenAI's own namespace (it is the "
+        "publisher, not a re-host) and its card repeats 'The GSM8K dataset is licensed "
+        "under the MIT License'. Mirror and source AGREE; the same MIT terms cover the "
+        "`test` split as the `train` split",
         verdict=TRAIN_OK,
         why="human-authored step-by-step arithmetic; no third-party competition provenance",
+        splits=("train", "test"),
         columns=("question", "answer"),
+        caveat=(
+            "`test` (1,319 rows) is a HOLDOUT and is not training material for any region. "
+            "It is landed for the pre-registered reasoning battery only, reserved by shard "
+            "path in csd-train-all.py's HELD_OUT_SHARDS and by item id in "
+            "config/mind/splits/reason-gsm8k-test-holdout.json. Only `train` (7,473) is "
+            "declared as a shard in REGIONS['reason']"
+        ),
     ),
     Dataset(
         repo_id="deepmind/aqua_rat",
@@ -319,7 +333,15 @@ def _manifest_path(ds: Dataset) -> Path:
 
 
 def is_present(ds: Dataset) -> bool:
-    """True when this exact dataset+config is already on disk with a manifest."""
+    """True when this exact dataset+config+splits is already on disk with a manifest.
+
+    The splits clause is load-bearing, not defensive. Until 2026-09-06 this compared
+    `repo_id` and `config` only, so WIDENING an already-fetched entry's `splits` -- the
+    exact shape of landing `openai/gsm8k`'s `test` holdout beside the `train` split it
+    already had -- read as "present" and the new split was never fetched. The run printed
+    `= reason openai/gsm8k:main present` and exited 0, indistinguishable from success. A
+    declared split with no parquet on disk is not present.
+    """
     man = _manifest_path(ds)
     if not man.is_file():
         return False
@@ -327,7 +349,9 @@ def is_present(ds: Dataset) -> bool:
         rec = json.loads(man.read_text())
     except (OSError, json.JSONDecodeError):
         return False
-    return rec.get("repo_id") == ds.repo_id and rec.get("config", "") == ds.config
+    if rec.get("repo_id") != ds.repo_id or rec.get("config", "") != ds.config:
+        return False
+    return all((ds.local / f"{split}.parquet").is_file() for split in ds.splits)
 
 
 def fetch(ds: Dataset, token: str | None, apply: bool, max_used_fraction: float) -> dict:
@@ -363,6 +387,7 @@ def fetch(ds: Dataset, token: str | None, apply: bool, max_used_fraction: float)
     ds.local.mkdir(parents=True, exist_ok=True)
     started = time.time()
     rows = 0
+    rows_by_split: dict[str, int] = {}
     try:
         for split in ds.splits:
             if ds.data_files:
@@ -389,6 +414,7 @@ def fetch(ds: Dataset, token: str | None, apply: bool, max_used_fraction: float)
             out = ds.local / f"{split}.parquet"
             data.to_parquet(str(out))
             rows += data.num_rows
+            rows_by_split[split] = int(data.num_rows)
     except Exception as exc:
         # A dataset already on disk with no MANIFEST.json still reads as "not present"
         # (see is_present()), so a retry after this is fixed re-fetches cleanly -- this
@@ -401,6 +427,12 @@ def fetch(ds: Dataset, token: str | None, apply: bool, max_used_fraction: float)
         **asdict(ds),
         "fetched_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "rows": rows,
+        # Per split, not only the total: a multi-split entry's `rows` is a sum, and a sum
+        # cannot say how many rows are training material and how many are holdout. The
+        # balance accounting in CORPUS-CONTRACT.md Part 3 is per provenance group over the
+        # REALISED training set, so it needs the split breakdown to be recorded, not
+        # re-derived by opening parquet files later.
+        "rows_by_split": rows_by_split,
         "seconds": round(time.time() - started, 1),
         "bytes": sum(f.stat().st_size for f in ds.local.glob("*.parquet")),
     }

@@ -1,0 +1,38 @@
+{
+  "started": "2026-09-05T22:17:42Z",
+  "steps": 4000,
+  "batch": 128,
+  "seed": 1,
+  "regions": {
+    "visual": {
+      "receipt": "/akula-data/csd/matrix/visual-b128-s1-3ce18db-20260905/receipts/visual-20260905T222732Z.json",
+      "untrained": {
+        "top1": 0.6337037086486816,
+        "top5": 0.9548147916793823,
+        "n_eval": 5400.0,
+        "rep_std": 0.44906291365623474,
+        "source": "phelber/eurosat-rgb-128",
+        "name": "eurosat-test"
+      },
+      "held_out": {
+        "top1": 0.7237036824226379,
+        "top5": 0.979629635810852,
+        "n_eval": 5400.0,
+        "rep_std": 0.3909284472465515,
+        "source": "phelber/eurosat-rgb-128",
+        "name": "eurosat-test"
+      },
+      "beats_untrained": {
+        "probe_top1": true,
+        "probe_top5": true,
+        "not_collapsed": true,
+        "transfer_top1": true
+      },
+      "gate": "pass",
+      "resumed": false,
+      "resumed_from_step": 0
+    }
+  },
+  "finished": "2026-09-05T22:27:32Z",
+  "gate_failures": []
+}

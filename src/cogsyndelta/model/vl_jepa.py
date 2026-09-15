@@ -44,13 +44,35 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from cogsyndelta.vl.composite import FRAME_SIZE, N_PATCHES, PATCH_SIZE
+
+# W7v (docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W7v, ~:2533; g8 sector
+# `S02.md`): the encoder's geometry is no longer invented here -- it is IMPORTED from
+# `composite.py`, the single source of truth W3r fixed. The default `JEPAConfig` below
+# therefore renders a 16x16 grid (256 patches) at 128px, matching every composite frame
+# this project renders, rather than the 64px/64-patch geometry a composite cannot fit
+# through. An explicit `image_size=64, patch_size=8` config still works (see
+# `sincos2d_pos_embed`: it is RECOMPUTED for whatever grid a config asks for, never
+# resampled from a table built at a different grid), which is what lets an old
+# checkpoint's tests keep exercising the native 64px path deliberately.
+
 
 @dataclass
 class JEPAConfig:
-    """Shape of the I-JEPA stack."""
+    """Shape of the I-JEPA stack.
 
-    image_size: int = 64
-    patch_size: int = 8
+    `image_size`/`patch_size` default to W3r's composite geometry (`composite.py`
+    `FRAME_SIZE`/`PATCH_SIZE`) rather than a value invented in this module, so the
+    default encoder can ingest a rendered composite frame without a shape error. Positions
+    are always a 2-D sinusoid recomputed for `self.grid` at construction time (see
+    `pos_kind`) -- never an interpolation of a table built for a different grid, which is
+    the category error the W7v row's sector study (`g8-visual/S02.md`) rules out. Passing
+    an explicit smaller `image_size`/`patch_size` (e.g. the historical 64/8) still works;
+    only the DEFAULT changed.
+    """
+
+    image_size: int = FRAME_SIZE
+    patch_size: int = PATCH_SIZE
     in_channels: int = 3
     dim: int = 384
     depth: int = 6
@@ -62,15 +84,45 @@ class JEPAConfig:
     context_keep: float = 0.4
     n_target_blocks: int = 4
     target_scale: tuple[float, float] = (0.15, 0.2)
+    pos_kind: str = "sincos2d"
+    """Positional-embedding family. Only `"sincos2d"` is implemented: a closed-form 2-D
+    sinusoid recomputed from `self.grid` at construction (`sincos2d_pos_embed`). Named as
+    a field, not hardcoded, because the W7v sector study (`g8-visual/S02.md` §5.3) names
+    2-D RoPE (`pos_kind="rope2d_axial"`) as the right NEXT scheme for extrapolating past
+    128px -- reserved, not built, in this increment."""
 
     def __post_init__(self) -> None:
-        """Reject shapes that cannot tile or divide evenly."""
+        """Reject shapes that cannot tile, divide evenly, or support 2-D sincos."""
         if self.image_size % self.patch_size != 0:
             raise ValueError(
                 f"image_size {self.image_size} must be divisible by patch_size {self.patch_size}"
             )
         if self.dim % self.n_heads != 0:
             raise ValueError(f"dim {self.dim} must be divisible by n_heads {self.n_heads}")
+        if self.pos_kind != "sincos2d":
+            raise ValueError(
+                f"unsupported pos_kind {self.pos_kind!r}; only 'sincos2d' is implemented "
+                f"(see the class docstring)"
+            )
+        if self.dim % 4 != 0:
+            raise ValueError(f"2-D sincos needs dim % 4 == 0, got dim={self.dim}")
+        if self.predictor_dim % 4 != 0:
+            raise ValueError(
+                f"2-D sincos needs predictor_dim % 4 == 0, got predictor_dim={self.predictor_dim}"
+            )
+        if (
+            self.image_size == FRAME_SIZE
+            and self.patch_size == PATCH_SIZE
+            and self.n_patches != N_PATCHES
+        ):
+            # Defends the import above: if composite.py's own FRAME_SIZE/PATCH_SIZE/
+            # N_PATCHES ever drifted out of arithmetic agreement with each other, this
+            # config would silently render the wrong grid at its own stated default.
+            raise ValueError(
+                f"composite.py invariant broken: FRAME_SIZE={FRAME_SIZE} / "
+                f"PATCH_SIZE={PATCH_SIZE} implies {self.n_patches} patches, but "
+                f"N_PATCHES={N_PATCHES}"
+            )
 
     @property
     def grid(self) -> int:
@@ -166,6 +218,54 @@ def sincos_pos_embed(n_patches: int, dim: int) -> torch.Tensor:
     return torch.cat([angles.sin(), angles.cos()], dim=1).unsqueeze(0)
 
 
+def sincos2d_pos_embed(grid: int, dim: int) -> torch.Tensor:
+    """Fixed 2-D sin/cos positional embedding for a ``grid x grid`` patch layout.
+
+    ``[1, grid*grid, dim]``, RECOMPUTED from ``grid`` every time this is called --
+    never resampled or interpolated from a table built at a different grid. That
+    distinction is the whole point of this function's existence next to
+    :func:`sincos_pos_embed`: an image's positions have two axes and a 1-D raster over
+    patch index wraps a row's last column into the next row's first (patch 7 and patch 8
+    on an 8x8 grid are adjacent in a 1-D table and on opposite sides of the image), so
+    interpolating that table when the grid changes is a category error, not a resize
+    (`g8-visual/S02.md` §2 item 1, §5.2; taxonomy row W7v). :func:`sincos_pos_embed`
+    itself is correct AS IS for `TextEncoder` (a genuinely 1-D sequence) and is untouched
+    by this function's existence.
+
+    Steals `facebookresearch/ijepa`'s ``get_2d_sincos_pos_embed`` closed form (half the
+    channels encode the row, half encode the column) and drops its class-token `-1`
+    offset, which CSD's CLS-free encoder has no use for (`S02.md` §3.3, survive #27).
+
+    Args:
+        grid: Patches per side (`JEPAConfig.grid`).
+        dim: Embedding width. Must be divisible by 4: each of the two axes gets `dim/2`
+            channels, and each axis's 1-D sinusoid itself needs an even split for
+            sin/cos, matching `JEPAConfig.__post_init__`'s `dim % 4 == 0` guard.
+
+    Returns:
+        ``[1, grid*grid, dim]``, patch order matching :class:`PatchEmbed`'s
+        ``flatten(2)`` raster order: patch ``i`` is row ``i // grid``, column ``i % grid``.
+    """
+    half = dim // 2
+    row = torch.arange(grid).float()
+    col = torch.arange(grid).float()
+    grid_row, grid_col = torch.meshgrid(row, col, indexing="ij")
+    # PatchEmbed's Conv2d output [B, D, H, W] is flatten(2)'d to [B, D, H*W] then
+    # transposed to [B, H*W, D] -- row-major, so patch i is (row=i//grid, col=i%grid).
+    # Matching that order here is what keeps a position's meaning aligned with the
+    # patch actually sitting there.
+    pos_row = grid_row.reshape(-1)
+    pos_col = grid_col.reshape(-1)
+
+    idx = torch.arange(half // 2).float()
+    freq = torch.exp(-math.log(10_000.0) * idx / (half // 2))
+    row_angles = pos_row.unsqueeze(1) * freq.unsqueeze(0)
+    col_angles = pos_col.unsqueeze(1) * freq.unsqueeze(0)
+    emb_row = torch.cat([row_angles.sin(), row_angles.cos()], dim=1)
+    emb_col = torch.cat([col_angles.sin(), col_angles.cos()], dim=1)
+    return torch.cat([emb_row, emb_col], dim=1).unsqueeze(0)
+
+
 class ViTEncoder(nn.Module):
     """Vision transformer over patch embeddings."""
 
@@ -178,9 +278,9 @@ class ViTEncoder(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.patch_embed = PatchEmbed(cfg)
-        self.register_buffer(
-            "pos_embed", sincos_pos_embed(cfg.n_patches, cfg.dim), persistent=False
-        )
+        # 2-D sincos, recomputed for cfg.grid -- see sincos2d_pos_embed's docstring for
+        # why this is never an interpolation of a table built at a different grid.
+        self.register_buffer("pos_embed", sincos2d_pos_embed(cfg.grid, cfg.dim), persistent=False)
         self.blocks = nn.ModuleList(ViTBlock(cfg.dim, cfg.n_heads) for _ in range(cfg.depth))
         self.norm = nn.LayerNorm(cfg.dim)
 
@@ -269,7 +369,7 @@ class JEPAPredictor(nn.Module):
         nn.init.trunc_normal_(self.mask_token, std=0.02)
         self.register_buffer(
             "pos_embed",
-            sincos_pos_embed(cfg.n_patches, cfg.predictor_dim),
+            sincos2d_pos_embed(cfg.grid, cfg.predictor_dim),
             persistent=False,
         )
         self.blocks = nn.ModuleList(
@@ -345,6 +445,63 @@ def sample_masks(
         ctx_list.append(ctx)
         tgt_list.append(tgt)
     return torch.stack(ctx_list), torch.stack(tgt_list)
+
+
+def check_checkpoint_grid_compatible(checkpoint_config: dict[str, object], cfg: JEPAConfig) -> None:
+    """Refuse to attach a checkpoint's weights to a differently-gridded config.
+
+    THE SILENT FAILURE THIS CLOSES: `ViTEncoder.pos_embed` is a non-persistent buffer
+    (`register_buffer(..., persistent=False)`), so it is never part of `state_dict()` --
+    and `PatchEmbed`'s `Conv2d` and every `ViTBlock`'s parameters do not depend on
+    `image_size` at all, only on `dim`/`n_heads`/`patch_size`. That means a bare
+    `model.load_state_dict(checkpoint["model"])` SUCCEEDS SILENTLY even when the
+    checkpoint was trained at a different resolution: every persisted tensor lines up
+    shape-for-shape while the freshly-constructed `pos_embed` means something entirely
+    different from the one the checkpoint's weights were trained against (2-D sincos
+    recomputed for the NEW grid, not the checkpoint's). This is the "silent resize
+    masquerade" the W7v sector study (`g8-visual/S02.md` §9, "Pitfalls") names -- the
+    fix here is an explicit pre-check, not a `_decode_split` pixel resize, which would
+    paper over the mismatch rather than refuse it.
+
+    Call this before `load_state_dict`, not instead of it.
+
+    Args:
+        checkpoint_config: The `JEPAConfig` fields recorded on the checkpoint (e.g. a
+            `csd-vl-pretrain-checkpoint/v1` payload's ``"config"`` key --
+            `dataclasses.asdict(jepa_cfg)`).
+        cfg: The config the encoder is about to be (or already was) constructed with.
+
+    Raises:
+        ValueError: `checkpoint_config` is missing `image_size`/`patch_size`, or its
+            implied grid does not match `cfg.grid` -- naming both grids, both patch
+            counts, and both `(image_size, patch_size)` pairs.
+    """
+    ckpt_image_size = checkpoint_config.get("image_size")
+    ckpt_patch_size = checkpoint_config.get("patch_size")
+    if not isinstance(ckpt_image_size, int) or not isinstance(ckpt_patch_size, int):
+        raise ValueError(
+            "checkpoint config is missing an integer image_size/patch_size -- cannot "
+            f"verify its patch grid matches the current config's {cfg.grid}x{cfg.grid} "
+            f"grid ({cfg.n_patches} patches, image_size={cfg.image_size}, "
+            f"patch_size={cfg.patch_size}). checkpoint_config: {checkpoint_config!r}"
+        )
+    if ckpt_patch_size == 0 or ckpt_image_size % ckpt_patch_size != 0:
+        raise ValueError(
+            f"checkpoint config's image_size={ckpt_image_size} is not divisible by its "
+            f"patch_size={ckpt_patch_size} -- cannot compute its grid."
+        )
+    ckpt_grid = ckpt_image_size // ckpt_patch_size
+    if ckpt_grid != cfg.grid:
+        ckpt_n_patches = ckpt_grid * ckpt_grid
+        raise ValueError(
+            f"checkpoint grid {ckpt_grid}x{ckpt_grid} ({ckpt_n_patches} patches, from "
+            f"image_size={ckpt_image_size}, patch_size={ckpt_patch_size}) does not "
+            f"match config grid {cfg.grid}x{cfg.grid} ({cfg.n_patches} patches, from "
+            f"image_size={cfg.image_size}, patch_size={cfg.patch_size}). pos_embed is a "
+            f"non-persistent buffer, so load_state_dict alone would NOT have caught "
+            f"this and would silently attach mismatched-resolution weights under a "
+            f"freshly (and wrongly) positioned pos_embed. Refusing to load."
+        )
 
 
 class IJEPA(nn.Module):
@@ -441,8 +598,11 @@ class IJEPA(nn.Module):
         different models.
 
         Returns:
-            ``(h [B, 64, 384], mask [B, 64])`` at this module's default config, mask
-            all-ones (images carry no padding).
+            ``(h [B, N, D], mask [B, N])`` -- ``[B, 256, 384]`` at this module's default
+            (128px) config, mask all-ones (images carry no padding). ``N`` tracks
+            ``cfg.n_patches``, not a fixed 64: this docstring hard-coded the pre-W7v
+            64-patch shape until the encoder's default grid changed
+            (`g8-visual/S02.md` §3 survive #12).
         """
         return self.target_encoder.tokens(images)
 

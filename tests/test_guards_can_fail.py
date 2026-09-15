@@ -56,6 +56,7 @@ import importlib.util
 import sys
 from dataclasses import replace
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -65,6 +66,7 @@ from cogsyndelta.eval import (
     pair_contamination_report,
     screen_pair_contamination,
 )
+from cogsyndelta.eval.metrics import MetricGroup, MetricIdentity, compare
 
 pytestmark = pytest.mark.cpu
 
@@ -1619,3 +1621,762 @@ def test_pretrain_region_receipt_carries_code_revision_and_trainer_defaults(
         "bf16": cfg.bf16,
         "max_len": cfg.max_len,
     }
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 7 -- feat/metrics-v2's own review found two guards this project shipped with NO
+# proof in this file, this file's own charter ("a guard with no failing-case test is a
+# comment with a function signature"): the csd-metrics/v2 refuse-predicate (`compare()`,
+# g7-latent-eval-metrics.md §3.3) and the `beats_untrained` -> `beats_untrained_eval`
+# rename in `scripts/csd-benchmark.py` (g7 §3.2). Real, non-vacuous proofs already
+# existed -- `tests/test_eval_metrics.py::test_compare_refuses_on_each_identity_key_independently`
+# and `tests/test_benchmark_metrics_v2_receipt.py::test_fp32_receipt_gates_are_renamed_and_not_anisotropic_is_gone`
+# -- but neither lived here. The review named two of that first test's OWN mutation
+# proofs as tautological (they rename keys in a local dict and assert the local dict was
+# renamed, proving nothing about production code): `test_pre_rename_gate_shape_would_fail_this_files_own_assertions`
+# and `test_receipt_missing_the_renamed_fields_would_fail_the_positive_assertions`, both
+# in tests/test_benchmark_metrics_v2_receipt.py. The tests below are the SAME assertions
+# as the real ones, mirrored here rather than rewritten, driven against production code
+# (`compare()` itself; a real tiny CPU pretrain + `csd-benchmark.py`'s own
+# `benchmark_region`), not against a local stand-in dict.
+# ---------------------------------------------------------------------------------------
+
+
+def _defect7_identity(**overrides: object) -> MetricIdentity:
+    """A baseline `MetricIdentity` every field of which matches its own defaults --
+    each test below overrides exactly ONE field so a refusal can be pinned to it.
+    Mirrors `tests/test_eval_metrics.py::_identity`."""
+    base: dict[str, object] = {
+        "metrics_schema": "csd-metrics/v2",
+        "corpus_fingerprint": "fp-code-holdout-abc123",
+        "fingerprint_scheme": "csd-corpus-fp/v2",
+        "battery_id": "eval_holdout",
+        "k": None,
+        "pooling": "pooled_both",
+        "checkpoint_sha256": "127adeba58e39a1a0211e185adad74586d08b9fd0bdda8e2da4f5614f49ad8e1",
+        "region": "code",
+        "git_sha": "a7694090903664bc256b4b96d998b37cacd316cf",
+        "seed": 0,
+    }
+    base.update(overrides)
+    return MetricIdentity(**base)  # type: ignore[arg-type]
+
+
+def _defect7_group(values: dict[str, float], **identity_overrides: object) -> MetricGroup:
+    return MetricGroup(identity=_defect7_identity(**identity_overrides), values=values)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("field", "candidate_override", "expected_receipt_name"),
+    [
+        ("metrics_schema", {"metrics_schema": "csd-metrics/v1"}, "metrics_schema"),
+        ("corpus_fingerprint", {"corpus_fingerprint": "fp-different"}, "corpus.fingerprint"),
+        (
+            "fingerprint_scheme",
+            {"fingerprint_scheme": "csd-corpus-fp/v1"},
+            "corpus.fingerprint_scheme",
+        ),
+        ("battery_id", {"battery_id": "eval_quantized_holdout"}, "battery_id"),
+        ("k", {"k": 10}, "k"),
+        ("pooling", {"pooling": "anchor"}, "pooling"),
+        (
+            "checkpoint_sha256",
+            {"checkpoint_sha256": "deadbeef" * 8},
+            "artifacts.checkpoint_sha256",
+        ),
+        ("region", {"region": "retrieve"}, "region / producer.component"),
+        ("git_sha", {"git_sha": "0" * 40}, "code_revision.git_sha"),
+        ("seed", {"seed": 1}, "seed"),
+    ],
+)
+def test_compare_refuse_predicate_catches_every_identity_key(
+    field: str, candidate_override: dict[str, object], expected_receipt_name: str
+) -> None:
+    """MUTATION PROOF: `compare()` (`src/cogsyndelta/eval/metrics.py`) is csd-metrics/v2's
+    refuse-predicate -- the v1 version diffed whatever keys two dicts happened to share
+    and said nothing about whether they described the same measurement at all, which is
+    exactly what let an in-memory plan's `quantized_metric` get read next to a
+    packed-artifact eval-quantized `rank.recall@1` as though interchangeable. Stubbing
+    the identity loop (`for field_name in MetricIdentity._fields:` -> `for field_name in
+    ():`) makes every one of these 10 parametrisations fail: VERIFIED against a scratch
+    mutant copy of this tree, not asserted from reading the code alone."""
+    result = compare(
+        _defect7_group({"recall@1": 0.99}),
+        _defect7_group({"recall@1": 0.99}, **candidate_override),
+        lower_is_better=set(),
+    )
+    assert result["refused"] is True, f"expected a refusal when {field!r} differs"
+    assert result["mismatched_key"] == expected_receipt_name
+    assert result["reason"]  # non-empty, human-readable
+
+
+@pytest.mark.cpu
+def test_compare_refuse_predicate_does_not_diff_shared_keys_across_batteries() -> None:
+    """MUTATION PROOF, the specific historical defect this predicate exists to close: a
+    `battery_id` mismatch ALONE must refuse even though both sides share the metric name
+    `recall@1` with a plausible-looking value -- diffing shared keys across two
+    different batteries is exactly what let a `quantized_metric` (an in-memory plan's
+    recall@1) get read next to an eval-quantized `rank.recall@1` (the packed artifact's)
+    as though they were interchangeable (MM §4)."""
+    result = compare(
+        _defect7_group({"recall@1": 0.9902}, battery_id="train_holdout"),
+        _defect7_group({"recall@1": 0.9902}, battery_id="eval_holdout"),
+        lower_is_better=set(),
+    )
+    assert result["refused"] is True
+    assert result["mismatched_key"] == "battery_id"
+    assert "metrics" not in result
+
+
+@pytest.mark.cpu
+def test_beats_untrained_eval_gate_name_survives_a_real_pretrain_and_benchmark_run(
+    tmp_path: Path,
+) -> None:
+    """MUTATION PROOF: the g7 §3.2 rename in `scripts/csd-benchmark.py`
+    (`"beats_untrained_eval":` -> `"beats_untrained":`) is proved by a REAL tiny CPU
+    pretrain + benchmark run, not a hand-built receipt -- the rename is a literal string
+    in a dict LITERAL inside the production script, so a stand-in receipt built by hand
+    would just assert its own hard-coded key back at itself (the review named exactly
+    this vacuity in two tests this branch shipped, elsewhere). Reverting the rename
+    makes `rec.gates` carry the OLD `beats_untrained` key again, which collides with a
+    TRAINING receipt's separate `beats_untrained_train` predicate under the same
+    English name: VERIFIED against a scratch mutant copy of this tree with both
+    occurrences of `"beats_untrained_eval":` reverted to `"beats_untrained":`, which
+    fails this assertion."""
+    pytest.importorskip("torch", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    pytest.importorskip("pyarrow", reason="train group not installed")
+
+    from cogsyndelta.regions.pretrain import PretrainConfig, pretrain_region
+    from cogsyndelta.regions.text_encoder import TextEncoderConfig
+    from tests.test_benchmark_metrics_v2_receipt import (
+        _build_pairs_parquet,
+        _build_tokenizer,
+    )
+    from tests.test_benchmark_metrics_v2_receipt import (
+        bench as v2_bench,
+    )
+
+    region = "guards7-test"
+    tok_path = tmp_path / "tokenizer.json"
+    shard_path = tmp_path / "pairs.parquet"
+    _build_tokenizer(tok_path, 40)
+    _build_pairs_parquet(shard_path, 40)
+    receipts_dir = tmp_path / "receipts"
+
+    cfg = PretrainConfig(
+        region=region,
+        pair_columns=("anchor", "positive"),
+        shards=[str(shard_path)],
+        steps=2,
+        batch_size=4,
+        holdout_pairs=4,
+        eval_every=2,
+        checkpoint_every=2,
+        max_len=16,
+        seed=3,
+        device="cpu",
+        encoder=TextEncoderConfig(dim=8, depth=1, n_heads=2, max_len=16),
+        tokenizer_path=str(tok_path),
+        out_dir=str(receipts_dir),
+    )
+    pretrain_region(cfg)
+
+    class _Entry:
+        sources: ClassVar = [("pairs.parquet", ("anchor", "positive"), 0)]
+        root = tmp_path
+
+    def fake_regions_spec() -> dict:
+        return {
+            "REGIONS": {},
+            "_shards": lambda *a, **k: [str(shard_path)],
+            "region_spec": lambda name: _Entry(),
+        }
+
+    orig_spec = v2_bench._regions_spec
+    v2_bench._regions_spec = fake_regions_spec
+    try:
+        rec = v2_bench.benchmark_region(region, tmp_path)
+    finally:
+        v2_bench._regions_spec = orig_spec
+
+    assert rec is not None
+    assert "beats_untrained_eval" in rec.gates
+    assert "beats_untrained" not in rec.gates
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 8 / G26 -- the held-out split was a function of the training seed, so seed-0
+# and seed-1 cells were different test sets (reason-region diagnosis 2026-09-05 E0).
+# Membership is now a hashed manifest; training refuses a fingerprint/sha mismatch or a
+# held-out item in a training batch; the benchmark refuses a receipt whose split.sha256
+# is not the manifest it is scoring. The full suite lives in tests/test_splits.py (stdlib)
+# and tests/test_split_manifests.py (parquet). The tests below are the failing-case
+# proofs this file's charter requires.
+# ---------------------------------------------------------------------------------------
+
+
+def test_g26_doctored_split_manifest_is_refused(tmp_path: Path) -> None:
+    """A split file with one holdout id swapped must refuse, not train on a silent
+    different eval set. Mirrors tests/test_split_manifests.py; kept here so a review
+    that only reads this file still sees G26 fire."""
+    pytest.importorskip("pyarrow", reason="train group not installed")
+    pytest.importorskip("tokenizers", reason="train group not installed")
+    from tests.test_split_manifests import test_doctored_manifest_refuses
+
+    test_doctored_manifest_refuses(tmp_path)
+
+
+def test_g26_held_out_leak_is_refused() -> None:
+    from cogsyndelta.splits import SplitGuardError, assert_no_held_out_in_pairs
+
+    holdout = [("the held out question", "the held out answer")]
+    train = [("unrelated q", "unrelated a"), ("the held out question", "the held out answer")]
+    with pytest.raises(SplitGuardError, match="held-out item"):
+        assert_no_held_out_in_pairs(holdout, train)
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 9 / G37 -- a representation-geometry comparison (fp32 latents vs quantized
+# latents, per docs/design/evidence/visual-ptq-sensitivity-2026-09-06/README.md) is only
+# a measurement of quantization if BOTH sides were computed over the same items, in the
+# same order, from the same fp32 checkpoint AND the same quantized artifact.
+# `cogsyndelta.eval.geometry.verify_geometry_reference` is the guard that refuses a
+# comparison across two different item sets, fp32 draws or packed artifacts (a stale
+# cached fp32 pass, a split rebuilt under a different seed, a truncated batch on one
+# side, a re-trained checkpoint compared against an artifact quantized from a different
+# draw, two artifacts quantized from the same checkpoint at different bit widths) before
+# `compute_geometry` ever runs -- the same shape G26 already fixed for the text held-out
+# split, applied here to a pairwise latent comparison instead of a train/eval partition.
+#
+# Guard number: G37, not G27. `docs/design/INTERCONNECT-MODULE-SPEC.md` Table 8 (merged
+# to main, PR #67) reserves G27 through G36 for the interconnect module's own guards --
+# this guard's number was picked from the same registry (`src/cogsyndelta/splits.py`'s
+# G26, then the next free number) before that PR landed and had to move. The next new
+# guard after this one is G42: G38/G39 are regions/_mining.py's, G40 is
+# eval/prereg.py's, and G41 is the reserved-holdout guard
+# (`cogsyndelta.splits.assert_no_reserved_holdout_in_pairs`, claimed 2026-09-06,
+# proved in tests/test_gsm8k_test_holdout.py).
+# ---------------------------------------------------------------------------------------
+
+#: Shared valid checkpoint/artifact shas for the tests below that are NOT exercising the
+#: checkpoint_sha256 / quantized_sha256 fields themselves -- every `GeometryReference`
+#: constructor call needs a value for all four fields now, and reusing one pair of
+#: constants keeps the split/n_items-focused tests' intent legible (the pair is
+#: irrelevant to what those tests assert, so it stays fixed and out of the way).
+_SAME_CHECKPOINT_SHA = "checkpoint" * 4
+_SAME_QUANTIZED_SHA = "artifact" * 4
+
+
+def test_g37_mismatched_split_reference_is_refused() -> None:
+    """The fp32 side was scored on one split; the quantized side on another (a stale
+    cached fp32 pass reused against a re-built holdout is exactly this shape). Same
+    item COUNT, checkpoint and artifact sha on both sides, so a guard keyed on any of
+    those alone would miss it."""
+    from cogsyndelta.eval.geometry import (
+        GeometryReference,
+        GeometryReferenceError,
+        verify_geometry_reference,
+    )
+
+    fp32_reference = GeometryReference(
+        split_sha256="split-a" * 4,
+        n_items=5400,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="split-b" * 4,
+        n_items=5400,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+
+    with pytest.raises(GeometryReferenceError, match="G37") as exc_info:
+        verify_geometry_reference(fp32_reference, quantized_reference)
+    assert "split_sha256" in str(exc_info.value)
+
+
+def test_g37_mismatched_item_count_is_refused() -> None:
+    """Same split identity string, different row counts -- a truncated or padded batch
+    on one side. A guard keyed on `split_sha256` alone would miss it."""
+    from cogsyndelta.eval.geometry import (
+        GeometryReference,
+        GeometryReferenceError,
+        verify_geometry_reference,
+    )
+
+    fp32_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5399,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+
+    with pytest.raises(GeometryReferenceError, match="G37") as exc_info:
+        verify_geometry_reference(fp32_reference, quantized_reference)
+    assert "n_items" in str(exc_info.value)
+
+
+def test_g37_mismatched_checkpoint_sha_is_refused() -> None:
+    """The fp32 side was loaded from one fp32 checkpoint; the quantized side's
+    artifact claims lineage from a different one -- a re-trained fp32 checkpoint
+    compared against a stale packed artifact (or vice versa) is exactly this shape.
+    Same split, item count and quantized-artifact sha on both sides, so a guard that
+    does not check `checkpoint_sha256` would miss it (the hole a second review found:
+    previously `GeometryReference` carried only `split_sha256`/`n_items`, and
+    `checkpoint_sha256` was threaded into the receipt's `provenance` but never
+    compared between the two sides)."""
+    from cogsyndelta.eval.geometry import (
+        GeometryReference,
+        GeometryReferenceError,
+        verify_geometry_reference,
+    )
+
+    fp32_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256="checkpoint-a" * 4,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256="checkpoint-b" * 4,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+
+    with pytest.raises(GeometryReferenceError, match="G37") as exc_info:
+        verify_geometry_reference(fp32_reference, quantized_reference)
+    assert "checkpoint_sha256" in str(exc_info.value)
+
+
+def test_g37_matching_checkpoint_sha_is_not_refused() -> None:
+    """Positive control for `checkpoint_sha256` specifically: when every field,
+    including the new one, genuinely agrees, the guard must not fire. Without this,
+    the refusal test above could pass for the wrong reason (e.g. a guard that always
+    raises regardless of which field it inspects)."""
+    from cogsyndelta.eval.geometry import GeometryReference, verify_geometry_reference
+
+    fp32_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256="checkpoint-a" * 4,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256="checkpoint-a" * 4,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    verify_geometry_reference(fp32_reference, quantized_reference)
+
+
+def test_g37_mismatched_quantized_artifact_sha_is_refused() -> None:
+    """Two artifacts quantized from the SAME fp32 checkpoint at different bit widths
+    (the concrete shape this guards against): same split, item count and checkpoint
+    sha on both sides, but the quantized side's latents were actually scored from a
+    different packed file than the one this comparison names."""
+    from cogsyndelta.eval.geometry import (
+        GeometryReference,
+        GeometryReferenceError,
+        verify_geometry_reference,
+    )
+
+    fp32_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256="artifact-3bit" * 4,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="same-split",
+        n_items=5400,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256="artifact-8bit" * 4,
+    )
+
+    with pytest.raises(GeometryReferenceError, match="G37") as exc_info:
+        verify_geometry_reference(fp32_reference, quantized_reference)
+    assert "quantized_sha256" in str(exc_info.value)
+
+
+def test_g37_a_genuinely_matching_reference_pair_is_not_refused() -> None:
+    """Negative control: without this, "the guard fires" could just mean "always"."""
+    from cogsyndelta.eval.geometry import GeometryReference, verify_geometry_reference
+
+    reference = GeometryReference(
+        split_sha256="the-real-split",
+        n_items=5400,
+        checkpoint_sha256="the-real-checkpoint",
+        quantized_sha256="the-real-artifact",
+    )
+    verify_geometry_reference(
+        reference,
+        GeometryReference(
+            split_sha256="the-real-split",
+            n_items=5400,
+            checkpoint_sha256="the-real-checkpoint",
+            quantized_sha256="the-real-artifact",
+        ),
+    )
+
+
+def test_g37_end_to_end_through_compute_geometry_would_compare_the_wrong_items() -> None:
+    """The regression this guard exists to stop, made concrete: without the guard,
+    nothing would have stopped `compute_geometry` from running on two latent matrices
+    that only coincidentally share a shape. This test proves the guard is what a caller
+    is expected to run FIRST -- `verify_geometry_reference` raising before
+    `compute_geometry` is ever reached -- by reproducing exactly the call order
+    `scripts/csd-benchmark.py`'s wiring uses."""
+    import torch
+
+    from cogsyndelta.eval.geometry import (
+        GeometryReference,
+        GeometryReferenceError,
+        compute_geometry,
+        verify_geometry_reference,
+    )
+
+    fp32_latents = torch.randn(20, 4)
+    quantized_latents = torch.randn(20, 4)  # same SHAPE, not the same split
+    fp32_reference = GeometryReference(
+        split_sha256="split-a" * 4,
+        n_items=20,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+    quantized_reference = GeometryReference(
+        split_sha256="split-b" * 4,
+        n_items=20,
+        checkpoint_sha256=_SAME_CHECKPOINT_SHA,
+        quantized_sha256=_SAME_QUANTIZED_SHA,
+    )
+
+    with pytest.raises(GeometryReferenceError, match="G37"):
+        verify_geometry_reference(fp32_reference, quantized_reference)
+        compute_geometry(fp32_latents, quantized_latents)  # never reached
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 10 / G38+G39 -- mined hard negatives could be their own pair's positive, and a run could
+# train on negatives mined against a DIFFERENT corpus, with nothing on disk saying so.
+#
+# G38 (self-positive disjointness) and G39 (mining provenance) are the two guards
+# PREREG-RETRIEVAL-NEGATIVES-2026-09-06 rev 3 section 4.2 pre-registers for the mined
+# arm. Both refuse the RUN, not the batch, and both are proven here by construction:
+# each test builds a mined negative set that is wrong in exactly one way and asserts the
+# refusal, including through `pretrain_region` itself so the guard is shown to be WIRED
+# rather than merely present.
+# ---------------------------------------------------------------------------------------
+
+
+def _mining_fixture() -> tuple[list[tuple[str, str]], list[tuple[str, list[tuple[str, str]]]]]:
+    """A miniature single-source union: distinct anchors, distinct positives."""
+    pairs = [
+        (f"question number {i} about topic {i}", f"answer body {i} explains topic {i}")
+        for i in range(8)
+    ]
+    return pairs, [("primary", pairs)]
+
+
+def _faithful_manifest(tmp_path: Path, m: int = 2) -> tuple[dict, dict, list, list]:
+    """Mine the fixture honestly and stamp a manifest for it.
+
+    Returns:
+        `(manifest, pools, pairs, sources)` -- everything a verify call needs.
+    """
+    from cogsyndelta.regions import _mining
+
+    pairs, sources = _mining_fixture()
+    qrels_path = tmp_path / "train.parquet"
+    qrels_path.write_bytes(b"the qrels artefact G39 hashes")
+    empty_qrels: dict[str, list] = {"query_id": [], "doc_id": [], "query": [], "passage": []}
+    result = _mining.mine_and_audit(
+        train_pairs=pairs, sources=sources, qrels=empty_qrels, fiqa_source="primary", m=m
+    )
+    manifest = _mining.build_manifest(
+        region="memory",
+        corpus_fingerprint="6fc0cf23ff8591ff2241278f82c001d2",
+        result=result,
+        train_pairs=pairs,
+        qrels_path=qrels_path,
+        m=m,
+    )
+    return manifest, _mining.build_pools(sources), pairs, sources
+
+
+def test_g38_fires_when_a_mined_negative_is_its_own_pairs_positive(tmp_path: Path) -> None:
+    """The construction G38 exists to refuse: a "hard negative" that IS the gold.
+
+    Mining excludes only the pair's own positive, so a bug in that exclusion -- an index
+    off by one, a normalisation that stops matching, a hand-edited manifest -- produces a
+    negative set in which some anchors are trained to rank their own answer DOWN. The
+    loss curve looks fine.
+    """
+    from cogsyndelta.regions import _mining
+
+    manifest, pools, pairs, _ = _faithful_manifest(tmp_path)
+    negatives = [list(row) for row in manifest["negatives"]]
+
+    # The honest mining result passes.
+    source_of_pair = ["primary"] * len(pairs)
+    _mining.assert_self_positive_disjoint(pairs, negatives, source_of_pair, pools)
+
+    # Now point pair 3's first negative at its own positive, which IS in the pool.
+    own = pools["primary"].texts.index(pairs[3][1])
+    negatives[3][0] = own
+    with pytest.raises(_mining.MiningGuardError, match="G38"):
+        _mining.assert_self_positive_disjoint(pairs, negatives, source_of_pair, pools)
+
+
+def test_g38_catches_a_reformatted_copy_of_the_positive(tmp_path: Path) -> None:
+    """Exact string equality would pass on the copy a corpus is most likely to hold.
+
+    G38 keys on the `pair_exact` normalisation (whitespace and case), so a positive that
+    reappears in the pool with different spacing is still refused.
+    """
+    from cogsyndelta.regions import _mining
+
+    pairs = [("anchor one", "The Answer Body"), ("anchor two", "another answer")]
+    pool_texts = ("the   answer   body", "another answer")
+    pools = {
+        "primary": _mining.MiningPool(
+            source="primary", texts=pool_texts, sha256=_mining.pool_sha256(pool_texts)
+        )
+    }
+    with pytest.raises(_mining.MiningGuardError, match="G38"):
+        _mining.assert_self_positive_disjoint(pairs, [[0], [1]], ["primary", "primary"], pools)
+
+
+@pytest.mark.parametrize(
+    ("field", "break_it"),
+    [
+        ("corpus fingerprint", lambda m: m["corpus"].__setitem__("fingerprint", "0" * 32)),
+        ("pool sha256", lambda m: m["pools"]["primary"].__setitem__("sha256", "0" * 64)),
+        ("qrels sha256", lambda m: m["qrels"].__setitem__("sha256", "0" * 64)),
+        ("bm25 k1", lambda m: m["bm25"].__setitem__("k1", 1.2)),
+        ("m", lambda m: m.__setitem__("negatives_per_anchor", 7)),
+        ("train pair sequence", lambda m: m["train_pairs"].__setitem__("sha256", "0" * 64)),
+        ("missing corpus block", lambda m: m.pop("corpus")),
+        ("missing schema", lambda m: m.pop("schema")),
+    ],
+)
+def test_g39_refuses_a_manifest_that_disagrees_with_the_run(
+    tmp_path: Path, field: str, break_it
+) -> None:
+    """Every field section 4.2 pins, broken one at a time.
+
+    Each is checked against a value computed from the RUN's own corpus, never against
+    another field of the same manifest -- a self-consistent manifest for a different
+    corpus is precisely what this refuses. The parametrisation includes two ABSENT
+    fields, because a guard that treats a missing field as "nothing to check" fails open.
+    """
+    from cogsyndelta.regions import _mining
+
+    manifest, pools, pairs, _ = _faithful_manifest(tmp_path)
+    qrels_sha = _mining.file_sha256(tmp_path / "train.parquet")
+
+    # The faithful manifest verifies.
+    _mining.verify_manifest(
+        manifest,
+        corpus_fingerprint="6fc0cf23ff8591ff2241278f82c001d2",
+        pools=pools,
+        qrels_sha256=qrels_sha,
+        train_pairs=pairs,
+        m=2,
+    )
+
+    break_it(manifest)
+    # Re-stamp the payload hash, so this test proves the FIELD check fires rather than
+    # only the tamper-detection hash.
+    if "sha256" in manifest:
+        manifest["sha256"] = _mining.manifest_payload_sha256(manifest)
+    with pytest.raises(_mining.MiningGuardError, match="G39"):
+        _mining.verify_manifest(
+            manifest,
+            corpus_fingerprint="6fc0cf23ff8591ff2241278f82c001d2",
+            pools=pools,
+            qrels_sha256=qrels_sha,
+            train_pairs=pairs,
+            m=2,
+        )
+
+
+def test_g39_refuses_a_manifest_whose_payload_was_edited(tmp_path: Path) -> None:
+    """Swapping negatives in an otherwise-correct manifest, without re-stamping its hash."""
+    from cogsyndelta.regions import _mining
+
+    manifest, pools, pairs, _ = _faithful_manifest(tmp_path)
+    manifest["negatives"][0] = list(reversed(manifest["negatives"][0]))
+    with pytest.raises(_mining.MiningGuardError, match="payload sha256"):
+        _mining.verify_manifest(
+            manifest,
+            corpus_fingerprint="6fc0cf23ff8591ff2241278f82c001d2",
+            pools=pools,
+            qrels_sha256=_mining.file_sha256(tmp_path / "train.parquet"),
+            train_pairs=pairs,
+            m=2,
+        )
+
+
+def test_g39_refuses_a_missing_manifest(tmp_path: Path) -> None:
+    """No manifest at all is a refusal, not an unmined run."""
+    from cogsyndelta.regions import _mining
+
+    with pytest.raises(_mining.MiningGuardError, match="G39"):
+        _mining.load_manifest(tmp_path / "not-here.json")
+
+
+# ---------------------------------------------------------------------------------------
+# DEFECT 11 / G40 -- a round could be launched with the WRONG OBJECTIVE and complete
+# normally. PREREG-RETRIEVAL-NEGATIVES-2026-09-06 rev 3 section 2.1 requires both
+# auxiliary weights at 0.0 in every arm, and `scripts/csd-train-all.py` hard-coded
+# `memory`'s 0.1/0.1 with no override: an arm started there would have trained the
+# production objective, finished, and written a plausible receipt. Nothing failed.
+#
+# The launcher is fixed, but a launch-time check only protects the launcher somebody
+# remembered to fix. G40 sits where the number is READ: `cogsyndelta.eval.prereg` refuses
+# to grade a receipt whose MEASURED weights -- recorded at the loss site, not parsed from
+# arguments -- are not the pre-registration's declared ones.
+# ---------------------------------------------------------------------------------------
+
+
+def _graded_receipt(token_weight: float, decorr_weight: float, negative_set: str = "in_batch"):
+    """A receipt shaped like `pretrain_region`'s, with the measured weights dialled."""
+    return {
+        "region": "memory",
+        "objective_weights": {
+            "declared": {"token_loss_weight": 0.0, "decorr_weight": 0.0},
+            "measured": {
+                "token_loss_weight": token_weight,
+                "decorr_weight": decorr_weight,
+            },
+            "values_seen": [[token_weight, decorr_weight]],
+            "steps_measured": 4000,
+            "read": "at the loss site, per step",
+        },
+        "negatives": {"set": negative_set, "bank_size": 0},
+    }
+
+
+def test_g40_refuses_to_grade_a_receipt_trained_at_the_production_weights() -> None:
+    """The failing arm: 0.1/0.1 measured against a pre-registration declaring 0.0/0.0.
+
+    This is the run the old launcher would have produced. Its loss curve, its receipt and
+    its metrics are all well-formed; the only thing wrong with it is that it answers a
+    different question, which is exactly why a human reading the number would not catch
+    it.
+    """
+    from cogsyndelta.eval.prereg import E_N_ARMS, PreregGuardError, assert_receipt_matches_arm
+
+    # The honest arm grades.
+    assert_receipt_matches_arm(_graded_receipt(0.0, 0.0), E_N_ARMS["C"])
+
+    with pytest.raises(PreregGuardError, match="G40"):
+        assert_receipt_matches_arm(_graded_receipt(0.1, 0.1), E_N_ARMS["C"])
+    # One weight is enough: the terms are separate, and 0.1 * L_decorr alone carries the
+    # 98.8% of the rank change the control-armed experiment measured.
+    with pytest.raises(PreregGuardError, match="G40"):
+        assert_receipt_matches_arm(_graded_receipt(0.0, 0.1), E_N_ARMS["C"])
+
+
+def test_g40_reads_the_measured_weights_not_the_declared_ones() -> None:
+    """A receipt whose config says 0.0 while its loss used 0.1 is refused.
+
+    This is the case a check on the parsed arguments cannot see, and it is the reason the
+    weights are collected at the multiplication site: `declared` here is 0.0/0.0 -- the
+    config was correct -- and the run still trained the wrong objective.
+    """
+    from cogsyndelta.eval.prereg import E_N_ARMS, PreregGuardError, assert_receipt_matches_arm
+
+    receipt = _graded_receipt(0.1, 0.1)
+    assert receipt["objective_weights"]["declared"] == {
+        "token_loss_weight": 0.0,
+        "decorr_weight": 0.0,
+    }
+    with pytest.raises(PreregGuardError, match="MEASURED"):
+        assert_receipt_matches_arm(receipt, E_N_ARMS["C"])
+
+
+@pytest.mark.parametrize(
+    ("case", "damage"),
+    [
+        ("no block at all", lambda r: r.pop("objective_weights")),
+        ("measured is null", lambda r: r["objective_weights"].__setitem__("measured", None)),
+        (
+            "weights changed mid-run",
+            lambda r: r["objective_weights"].update(
+                {"measured": None, "values_seen": [[0.0, 0.0], [0.1, 0.1]]}
+            ),
+        ),
+        (
+            "measured is unreadable",
+            lambda r: r["objective_weights"].__setitem__("measured", {"token_loss_weight": 0.0}),
+        ),
+    ],
+)
+def test_g40_fails_closed_on_a_receipt_that_cannot_say_what_it_trained(case, damage) -> None:
+    """Absence is a refusal, not a pass.
+
+    A receipt written before this field existed, one where no step ran, and one whose
+    weights moved mid-run all describe runs whose objective is unknown. Grading them
+    "because there is nothing to check" is how an unmeasured run passes as a measured one.
+    """
+    from cogsyndelta.eval.prereg import E_N_ARMS, PreregGuardError, assert_receipt_matches_arm
+
+    receipt = _graded_receipt(0.0, 0.0)
+    damage(receipt)
+    with pytest.raises(PreregGuardError, match="G40"):
+        assert_receipt_matches_arm(receipt, E_N_ARMS["C"])
+
+
+def test_g40_refuses_an_arm_whose_negative_set_is_not_its_own() -> None:
+    """The round changes ONE variable, so a T1 receipt with an in-batch denominator is
+    not T1 -- it is the control wearing T1's name."""
+    from cogsyndelta.eval.prereg import E_N_ARMS, PreregGuardError, assert_receipt_matches_arm
+
+    assert_receipt_matches_arm(_graded_receipt(0.0, 0.0, negative_set="bank"), E_N_ARMS["T1"])
+    with pytest.raises(PreregGuardError, match="G40"):
+        assert_receipt_matches_arm(
+            _graded_receipt(0.0, 0.0, negative_set="in_batch"), E_N_ARMS["T1"]
+        )
+
+
+def test_g40_stops_the_grader_before_it_produces_a_number() -> None:
+    """The refusal has to happen where the RESULT is read, not only where a run starts.
+
+    `grade_contrast` is the whole path from two receipts to a PASS-A verdict; this asserts
+    a wrong-objective treatment arm cannot get a bound out of it, however it was launched.
+    """
+    from cogsyndelta.eval.prereg import E_N_ARMS, PreregGuardError, grade_contrast
+
+    def with_per_query(receipt, values):
+        receipt["retrieval"] = {
+            "full_pool": {
+                "query_ids": [f"q{i}" for i in range(len(values))],
+                "per_query": {"trained": {"recall@10": values}},
+            }
+        }
+        return receipt
+
+    control = with_per_query(_graded_receipt(0.0, 0.0), [0.0, 1.0, 0.0, 1.0])
+    honest = with_per_query(_graded_receipt(0.0, 0.0, negative_set="bank"), [1.0, 1.0, 1.0, 1.0])
+    graded = grade_contrast(control=control, treatment=honest, treatment_arm=E_N_ARMS["T1"], seed=0)
+    assert graded["bootstrap"]["point_estimate"] == pytest.approx(0.5)
+
+    wrong_objective = with_per_query(
+        _graded_receipt(0.1, 0.1, negative_set="bank"), [1.0, 1.0, 1.0, 1.0]
+    )
+    with pytest.raises(PreregGuardError, match="G40"):
+        grade_contrast(
+            control=control, treatment=wrong_objective, treatment_arm=E_N_ARMS["T1"], seed=0
+        )

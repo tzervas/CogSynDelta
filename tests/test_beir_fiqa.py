@@ -10,6 +10,10 @@ c) gets special attention because it is the one the module docstring names by na
 
 from __future__ import annotations
 
+import json
+import math
+from pathlib import Path
+
 import pytest
 import torch
 
@@ -18,6 +22,8 @@ pytest.importorskip("pyarrow", reason="train group not installed")
 from cogsyndelta.eval import beir_fiqa
 
 pytestmark = pytest.mark.cpu
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 # ---------------------------------------------------------------------------------------
@@ -337,3 +343,303 @@ def test_w4_gates_requires_token_aware_final_block_rank() -> None:
             full_pool_bm25={"recall@10": 0.22, "mrr": 0.09},
             full_pool_untrained={"recall@10": 0.01, "mrr": 0.02},
         )
+
+
+def test_gate_e_stamps_the_canonical_token_pr_rank_ratio_name() -> None:
+    """§3.1's canonical name, additive beside the existing `ratio` key -- same value,
+    plus the formula string, never a silent rename that could break an existing reader
+    of `pr_rank_clause["ratio"]`."""
+    result = beir_fiqa.gate_e_retrain_gate(
+        token_global_pr_rank=40.0,
+        pooled_pr_rank=15.0,
+        memory_held_out_recall_at_1=beir_fiqa.COMPRESS_PARENT_RECALL_AT_1,
+        memory_graded_spearman=beir_fiqa.COMPRESS_PARENT_GRADED_SPEARMAN,
+    )
+    clause = result["pr_rank_clause"]
+    assert clause["token.pr_rank_ratio"] == pytest.approx(clause["ratio"])
+    assert clause["token.pr_rank_ratio"] == pytest.approx(40.0 / 15.0)
+    assert clause["token.pr_rank_ratio_formula"] == "token_global_pr_rank / pooled_pr_rank"
+
+
+# ---------------------------------------------------------------------------------------
+# `to_beir_metrics` -- explicit `beir.*` names, pooling/battery_id provenance.
+# ---------------------------------------------------------------------------------------
+
+
+def test_to_beir_metrics_prefixes_recall_and_mrr_for_the_corpus_pool() -> None:
+    out = beir_fiqa.to_beir_metrics("corpus", {"recall@1": 0.4, "recall@10": 0.6, "mrr": 0.5})
+    assert out["beir.recall@1"] == pytest.approx(0.4)
+    assert out["beir.recall@10"] == pytest.approx(0.6)
+    assert out["beir.mrr"] == pytest.approx(0.5)
+    assert out["pooling"] == "fiqa_corpus"
+    assert out["battery_id"] == "beir_fiqa_corpus"
+
+
+def test_to_beir_metrics_tags_the_split_pool_distinctly() -> None:
+    out = beir_fiqa.to_beir_metrics("split", {"recall@10": 0.6, "mrr": 0.5})
+    assert out["pooling"] == "fiqa_split"
+    assert out["battery_id"] == "beir_fiqa_split"
+    # Distinct from the corpus pool's tags -- a schema-v2 reader must never equate them.
+    corpus_out = beir_fiqa.to_beir_metrics("corpus", {"recall@10": 0.6, "mrr": 0.5})
+    assert out["pooling"] != corpus_out["pooling"]
+    assert out["battery_id"] != corpus_out["battery_id"]
+
+
+def test_to_beir_metrics_drops_non_metric_keys_like_bm25_index_s() -> None:
+    out = beir_fiqa.to_beir_metrics("corpus", {"recall@10": 0.3, "mrr": 0.2, "index_s": 1.7})
+    assert "beir.index_s" not in out
+    assert "index_s" not in out
+
+
+def test_to_beir_metrics_never_writes_a_fake_ndcg() -> None:
+    """§4's placeholder rule: `beir.ndcg@10` is NOT implemented here -- never fabricated."""
+    out = beir_fiqa.to_beir_metrics("corpus", {"recall@1": 0.4, "recall@10": 0.6, "mrr": 0.5})
+    assert "beir.ndcg@10" not in out
+
+
+def test_to_beir_metrics_rejects_an_unknown_pool() -> None:
+    with pytest.raises(ValueError, match="pool must be"):
+        beir_fiqa.to_beir_metrics("everything", {"recall@10": 0.3, "mrr": 0.1})
+
+
+# ---------------------------------------------------------------------------------------
+# `refuse_cross_family_rank_ratio` / `token_rank_surfaces` -- explicit `token.*` names,
+# and the PR-vs-entropy conflation guard.
+# ---------------------------------------------------------------------------------------
+
+# Frozen W1 fixture (docs/design/evidence/w1-token-rank-2026-09-02/results.json,
+# regions.code.regions.trained -- read 2026-09-04, never regenerated): the two rank
+# families disagree in SIGN on this project's own production `code` region. PR ratio
+# 28.091115489593022 / 42.633552623237634 ~= 0.659 (< 1); entropy ratio
+# 138.874267578125 / 114.9809799194336 ~= 1.208 (> 1).
+_W1_CODE_TRAINED_POOLED_PR_RANK = 42.633552623237634
+_W1_CODE_TRAINED_GLOBAL_PR_RANK = 28.091115489593022
+_W1_CODE_TRAINED_POOLED_ENTROPY_RANK = 114.9809799194336
+_W1_CODE_TRAINED_GLOBAL_ENTROPY_RANK = 138.874267578125
+
+_W1_FIXTURE = _REPO_ROOT / "docs/design/evidence/w1-token-rank-2026-09-02/results.json"
+
+
+def test_w1_pin_matches_the_frozen_fixture_it_was_transcribed_from() -> None:
+    """The four `_W1_CODE_TRAINED_*` constants above are transcribed, not read, from
+    `_W1_FIXTURE` -- transcribed so the sign-disagreement regression below has no
+    filesystem dependency of its own. That transcription could silently drift from the
+    frozen file (a typo, someone regenerating the fixture without updating the pin);
+    this test is the one place that would catch it."""
+    if not _W1_FIXTURE.is_file():
+        pytest.skip(f"frozen W1 fixture not present in this checkout: {_W1_FIXTURE}")
+    trained = json.loads(_W1_FIXTURE.read_text())["regions"]["code"]["regions"]["trained"]
+    assert trained["pooled_pr_rank"] == _W1_CODE_TRAINED_POOLED_PR_RANK
+    assert trained["token_global_pr_rank"] == _W1_CODE_TRAINED_GLOBAL_PR_RANK
+    assert trained["pooled_entropy_rank"] == _W1_CODE_TRAINED_POOLED_ENTROPY_RANK
+    assert trained["token_global_entropy_rank"] == _W1_CODE_TRAINED_GLOBAL_ENTROPY_RANK
+
+
+def test_w1_sign_disagreement_regression_pr_and_entropy_ratios_stay_separate() -> None:
+    """Regression pin: on the frozen W1 `code` fixture, PR ratio < 1 while entropy ratio
+    > 1 -- METRICS-METHODOLOGY.md §9's sign-disagreement, reproduced from
+    `token_rank_surfaces`'s own output so a future change that quietly merges or
+    reorders the two families is caught here, not only in the design doc's prose."""
+    surfaces = beir_fiqa.token_rank_surfaces(
+        {
+            "pooled_pr_rank": _W1_CODE_TRAINED_POOLED_PR_RANK,
+            "token_global_pr_rank": _W1_CODE_TRAINED_GLOBAL_PR_RANK,
+            "pooled_entropy_rank": _W1_CODE_TRAINED_POOLED_ENTROPY_RANK,
+            "token_global_entropy_rank": _W1_CODE_TRAINED_GLOBAL_ENTROPY_RANK,
+            "n_tokens": 26757.0,
+        }
+    )
+    pr_ratio = surfaces["token.pr_rank_ratio"]
+    entropy_ratio = (
+        surfaces["global"]["token.global_entropy_rank"]
+        / surfaces["pooled"]["token.pooled_entropy_rank"]
+    )
+    assert pr_ratio < 1.0
+    assert entropy_ratio > 1.0
+    # The two families never collapsed into one field: `token.pr_rank_ratio` exists,
+    # there is no `token.entropy_rank_ratio` counterpart written by this function (an
+    # entropy ratio, if one is ever needed, is the caller's own computation on the two
+    # `*_entropy_rank` fields -- never this function's `token.pr_rank_ratio`).
+    assert "token.entropy_rank_ratio" not in surfaces
+
+
+def test_token_rank_surfaces_uses_the_explicit_canonical_names() -> None:
+    surfaces = beir_fiqa.token_rank_surfaces(
+        {
+            "pooled_pr_rank": 15.0,
+            "token_global_pr_rank": 40.0,
+            "pooled_entropy_rank": 100.0,
+            "token_global_entropy_rank": 130.0,
+            "n_tokens": 5000.0,
+        }
+    )
+    assert surfaces["pooled"]["token.pooled_pr_rank"] == pytest.approx(15.0)
+    assert surfaces["pooled"]["token.pooled_entropy_rank"] == pytest.approx(100.0)
+    assert surfaces["pooled"]["pooling"] == "anchor_pooled"
+    assert surfaces["pooled"]["battery_id"] == "train_token_rank"
+    assert surfaces["global"]["token.global_pr_rank"] == pytest.approx(40.0)
+    assert surfaces["global"]["token.global_entropy_rank"] == pytest.approx(130.0)
+    assert surfaces["global"]["pooling"] == "anchor_token_global"
+    assert surfaces["global"]["battery_id"] == "train_token_rank"
+    assert surfaces["token.pr_rank_ratio"] == pytest.approx(40.0 / 15.0)
+    assert surfaces["n_tokens"] == pytest.approx(5000.0)
+    # Distinct pooling tags between the pooled and token-global groups -- never merged.
+    assert surfaces["pooled"]["pooling"] != surfaces["global"]["pooling"]
+
+
+def test_token_rank_surfaces_pooled_zero_gives_nan_ratio_not_a_false_zero() -> None:
+    surfaces = beir_fiqa.token_rank_surfaces(
+        {
+            "pooled_pr_rank": 0.0,
+            "token_global_pr_rank": 12.0,
+            "pooled_entropy_rank": 0.0,
+            "token_global_entropy_rank": 12.0,
+            "n_tokens": 0.0,
+        }
+    )
+    assert math.isnan(surfaces["token.pr_rank_ratio"])
+
+
+def test_refuse_cross_family_rank_ratio_accepts_matching_pr_family() -> None:
+    ratio = beir_fiqa.refuse_cross_family_rank_ratio(
+        "token.global_pr_rank", 40.0, "token.pooled_pr_rank", 15.0
+    )
+    assert ratio == pytest.approx(40.0 / 15.0)
+
+
+def test_refuse_cross_family_rank_ratio_accepts_matching_entropy_family() -> None:
+    ratio = beir_fiqa.refuse_cross_family_rank_ratio(
+        "token.global_entropy_rank", 130.0, "token.pooled_entropy_rank", 100.0
+    )
+    assert ratio == pytest.approx(1.3)
+
+
+def test_refuse_cross_family_rank_ratio_mutation_proof_a_reader_mixing_families_is_refused() -> (
+    None
+):
+    """Mutation proof: construct the exact defect the guard exists to catch -- a "reader"
+    that takes a `_pr_rank` numerator over an `_entropy_rank` denominator (or vice versa)
+    -- and assert it is refused rather than silently returning a number. Both directions
+    of the mistake are checked; a guard that only caught one direction would still let
+    half of this conflation through."""
+    with pytest.raises(ValueError, match="PR-rank and entropy-rank"):
+        beir_fiqa.refuse_cross_family_rank_ratio(
+            "token.global_pr_rank",
+            _W1_CODE_TRAINED_GLOBAL_PR_RANK,
+            "token.pooled_entropy_rank",
+            _W1_CODE_TRAINED_POOLED_ENTROPY_RANK,
+        )
+    with pytest.raises(ValueError, match="PR-rank and entropy-rank"):
+        beir_fiqa.refuse_cross_family_rank_ratio(
+            "token.global_entropy_rank",
+            _W1_CODE_TRAINED_GLOBAL_ENTROPY_RANK,
+            "token.pooled_pr_rank",
+            _W1_CODE_TRAINED_POOLED_PR_RANK,
+        )
+
+
+def test_refuse_cross_family_rank_ratio_rejects_an_unrecognised_field_name() -> None:
+    with pytest.raises(ValueError, match="not a recognised token-rank field"):
+        beir_fiqa.refuse_cross_family_rank_ratio(
+            "token.pooled_pr_rank", 15.0, "repr.effective_rank", 100.0
+        )
+
+
+# ---------------------------------------------------------------------------------------
+# rank_metrics_per_query -- the paired-test surface. The pre-registered rule for the
+# memory region negative-set round is a paired bootstrap over the 500 shared FiQA dev
+# queries, so the per-query terms must survive AND must be the same numbers the receipt
+# already stores. These pin both halves of that.
+# ---------------------------------------------------------------------------------------
+
+
+def _multi_relevant_ranking(
+    queries: int = 48, pool: int = 60
+) -> tuple[torch.Tensor, list[list[int]]]:
+    """A non-trivial multi-relevant case: 1-4 golds per query, at FiQA-ish density."""
+    generator = torch.Generator().manual_seed(20260906)
+    scores = torch.randn(queries, pool, generator=generator)
+    gold: list[list[int]] = []
+    for row in range(queries):
+        count = 1 + (row % 4)
+        picks = torch.randperm(pool, generator=generator)[:count]
+        gold.append(sorted(int(p) for p in picks))
+    return scores, gold
+
+
+def test_rank_metrics_per_query_aggregates_are_exactly_rank_metrics() -> None:
+    """EXACT equality with the aggregate-only path, on a non-trivial multi-relevant case.
+
+    This is the property that makes the refactor safe to land under an already-published
+    receipt: `rank_metrics` now delegates here, so if the two ever disagreed the receipt
+    and the paired test would be describing different measurements. `==` rather than
+    `approx` because any difference at all is the bug.
+    """
+    scores, gold = _multi_relevant_ranking()
+    aggregates, per_query = beir_fiqa.rank_metrics_per_query(scores, gold)
+    assert aggregates == beir_fiqa.rank_metrics(scores, gold)
+    assert list(aggregates) == list(per_query)
+
+
+def test_rank_metrics_per_query_vectors_average_to_the_aggregate() -> None:
+    """Each vector re-averaged in float32 reproduces its own aggregate, bit for bit.
+
+    Aggregation stays float32 deliberately (see `metrics.recall_at_k`): the published
+    memory-region receipt stores Success@10 = 0.2 as 0.20000000298023224, and a float64
+    re-aggregation would return 0.2 and stop matching it.
+    """
+    scores, gold = _multi_relevant_ranking()
+    aggregates, per_query = beir_fiqa.rank_metrics_per_query(scores, gold)
+    for key, values in per_query.items():
+        assert len(values) == scores.size(0)
+        assert torch.tensor(values, dtype=torch.float32).mean().item() == aggregates[key]
+
+
+def test_rank_metrics_per_query_hand_checked_tiny_case() -> None:
+    """The `_toy_scores` case, read off per query rather than averaged.
+
+    Query 0 has two golds; its best one sits at rank 2 behind an irrelevant document, so
+    it misses @1 and scores 1/2. Query 1's only gold is first. Those are exactly the 0.5
+    recall@1 and 0.75 MRR the aggregate test above asserts -- shown here as the two
+    numbers they are averaged from, which is what a paired test consumes.
+    """
+    scores, gold = _toy_scores()
+    aggregates, per_query = beir_fiqa.rank_metrics_per_query(scores, gold)
+    assert per_query["recall@1"] == [0.0, 1.0]
+    assert per_query["recall@10"] == [1.0, 1.0]
+    assert per_query["mrr"] == [0.5, 1.0]
+    assert aggregates["recall@1"] == pytest.approx(0.5)
+    assert "recall@100" not in per_query  # capped at the pool size, same as the aggregate
+
+
+def test_bm25_metrics_per_query_carries_both_halves_unchanged() -> None:
+    """The BM25 reference emits per-query terms without changing what it reports.
+
+    `bm25_metrics` keeps stamping `index_s`, which stays an aggregate: it is wall-clock
+    for the whole pass and has no per-query meaning. The metric keys, and only those,
+    appear on both sides.
+    """
+    docs = [
+        "the capital gains tax on a long term stock sale",
+        "how to bake sourdough bread at home",
+        "mortgage interest deduction and property tax",
+        "index funds and expense ratios explained",
+    ]
+    task = beir_fiqa.RankingTask(
+        queries=["capital gains tax on stock", "sourdough bread"],
+        query_ids=["q0", "q1"],
+        pool_ids=[f"d{i}" for i in range(len(docs))],
+        pool_texts=docs,
+        gold=[[0], [1]],
+    )
+    aggregates, per_query = beir_fiqa.bm25_metrics_per_query(task)
+    assert "index_s" in aggregates
+    assert "index_s" not in per_query
+    for key, values in per_query.items():
+        assert len(values) == len(task.queries)
+        assert torch.tensor(values, dtype=torch.float32).mean().item() == aggregates[key]
+
+    aggregate_only = beir_fiqa.bm25_metrics(task)
+    assert {k: v for k, v in aggregate_only.items() if k != "index_s"} == {
+        k: v for k, v in aggregates.items() if k != "index_s"
+    }

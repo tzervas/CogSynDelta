@@ -2,10 +2,16 @@
 
 THREE FAMILIES, DELIBERATELY SEPARATE
 
-1. RANKING QUALITY -- the numbers other people can compare against. nDCG@10, MAP,
-   precision@k alongside the recall@k and MRR already in eval/metrics.py. These are the
-   MTEB-family metrics; reporting them means a CSD region can be put next to a published
-   baseline without translation.
+1. RANKING QUALITY -- the numbers other people can compare against. nDCG@10 alongside the
+   recall@k and MRR already in eval/metrics.py. These are the MTEB-family metrics;
+   reporting them means a CSD region can be put next to a published baseline without
+   translation. `map` and `precision@10` are computed here too (`average_precision()`,
+   `precision_at_k()`) but, per the v2 metrics schema (schema doc §3.2), are NOT written
+   into a receipt any more -- on this project's single-relevant-item closed pool `map`
+   is always numerically identical to `mrr` and `precision@10` is always `recall@10 / 10`,
+   so printing them as separate receipt columns was printing the same information twice
+   under two names. They stay importable, exercised only by the sameness-guard tests that
+   assert those two identities still hold (`tests/test_eval_metrics.py`).
 
 2. EFFICIENCY -- what it costs to get that quality. Parameters and stored bytes, but also
    latency percentiles and throughput, because a p50 alone hides the tail that decides
@@ -89,6 +95,16 @@ def anisotropy(embeddings: torch.Tensor, sample: int = 2048, seed: int = 0) -> f
 
     Computed in float64: at float32 a cosine of genuinely-identical vectors returns
     1.0000001, and a threshold test against that silently inverts.
+
+    WRITTEN AS `repr.anisotropy` -- CSD-SPECIFIC, NOT ETHAYARAJH-COMPARABLE.
+    The name and the mean-off-diagonal-cosine-after-L2 definition are the ones Ethayarajh
+    (EMNLP 2019, arXiv:1909.00512, §3.4/§4.1) and Godey et al. (2024, arXiv:2401.12143,
+    §3.1) publish "anisotropy" under, and LoopFormer §4.3 reuses the same name -- but this
+    function's SURFACE is not theirs. Those papers measure anisotropy over TOKEN
+    representations drawn from a running corpus; this function is called here over a
+    pooled 512-pair HELD-OUT split (`pooled_both`, see `benchmark_embeddings` below). Do
+    not print a `repr.anisotropy` value next to a number from either paper as though they
+    measured the same population -- same formula, different surface, not comparable.
     """
     x = embeddings.detach().double()
     if x.size(0) < 2:
@@ -106,9 +122,11 @@ def anisotropy(embeddings: torch.Tensor, sample: int = 2048, seed: int = 0) -> f
 def alignment(anchors: torch.Tensor, positives: torch.Tensor, alpha: float = 2.0) -> float:
     """Expected distance between matched pairs. Lower is better.
 
-    Half of the Wang & Isola decomposition of what a contrastive objective optimises.
-    Reported with `uniformity` because either alone is gameable: a collapsed encoder has
-    perfect alignment, and a random one has excellent uniformity.
+    Half of the Wang & Isola decomposition of what a contrastive objective optimises
+    (ICML 2020, arXiv:2005.10242, alpha=2 is the paper's default). Reported with
+    `uniformity` because either alone is gameable: a collapsed encoder has perfect
+    alignment, and a random one has excellent uniformity. Written as `repr.alignment`,
+    over MATCHED pairs (row i vs row i) -- contrast `repr.uniformity`'s pooled pool.
     """
     a = F.normalize(anchors.detach().float(), dim=-1)
     p = F.normalize(positives.detach().float(), dim=-1)
@@ -120,8 +138,11 @@ def uniformity(
 ) -> float:
     """Log of the mean Gaussian potential over pairs. Lower means better spread.
 
-    The other half of the decomposition. Together with `alignment` it says whether a good
-    retrieval score came from a well-formed space or from a lucky arrangement.
+    The other half of the Wang & Isola decomposition (ICML 2020, arXiv:2005.10242, t=2 is
+    the paper's default). Together with `alignment` it says whether a good retrieval score
+    came from a well-formed space or from a lucky arrangement. Written as
+    `repr.uniformity`, over the POOLED anchors+positives pool (`pooled_both`) -- contrast
+    `repr.alignment`'s matched-pairs-only pool.
     """
     x = F.normalize(embeddings.detach().float(), dim=-1)
     if x.size(0) < 2:
@@ -136,11 +157,21 @@ def uniformity(
 
 
 def effective_rank(embeddings: torch.Tensor, sample: int = 2048, seed: int = 0) -> float:
-    """Shannon entropy of the normalised singular-value spectrum, exponentiated.
+    """Shannon entropy of the normalised singular-value spectrum, exponentiated:
+    `exp(H(p))`, `p_i = sigma_i / sum(sigma)` -- the LINEAR (l1) spectrum, `0 log 0 := 0`
+    (Roy & Vetterli, EUSIPCO 2007, Def. 1 + Property 1).
 
     How many dimensions the representation genuinely uses. A 256-dimensional encoder with
     an effective rank of 12 is a 12-dimensional encoder that is paying to store 256, and
     the ranking metrics will not mention it.
+
+    `benchmark_embeddings()` below writes this function's result to `repr.effective_rank_entropy`
+    -- the ONLY effective-rank field this eval battery writes to a receipt. Do not add a
+    `repr.effective_rank_pr` field: the participation-ratio quantity
+    (:func:`participation_ratio`) is a DIFFERENT formula that disagrees in SIGN with this
+    one on this project's own production regions (see that function's docstring and
+    `docs/design/METRICS-METHODOLOGY.md` §9) and stays test-only, with no production
+    writer.
     """
     x = embeddings.detach().float()
     if x.size(0) < 2:
@@ -158,6 +189,14 @@ def effective_rank(embeddings: torch.Tensor, sample: int = 2048, seed: int = 0) 
 def participation_ratio(embeddings: torch.Tensor, sample: int = 2048, seed: int = 0) -> float:
     """Participation-ratio effective rank: ``(sum s_i^2)^2 / sum s_i^4`` over the singular
     values of the column-centered matrix.
+
+    TESTS-ONLY: no production writer calls this function. `benchmark_embeddings()` writes
+    only the entropy definition, to `repr.effective_rank_entropy` -- there is no
+    `repr.effective_rank_pr` receipt field and none should be added (see
+    :func:`effective_rank`'s docstring). This function exists so
+    ``tests/test_eval_metrics.py``/``tests/test_pr_effective_rank_w1_alignment.py`` can
+    exercise the participation-ratio formula's own edge cases directly, independent of
+    :func:`pr_effective_rank`'s stricter, non-subsampling W1 lineage below.
 
     A DIFFERENT quantity from :func:`effective_rank` (Shannon entropy of the LINEAR
     spectrum) -- the two disagree in sign on this project's own text regions (W1:
@@ -296,6 +335,7 @@ def profile_latency(
     times.sort()
 
     def pct(q: float) -> float:
+        """Nearest-rank percentile `q` in `[0, 1]` of sorted `times` (`0.0` if empty)."""
         if not times:
             return 0.0
         idx = min(len(times) - 1, int(q * len(times)))
@@ -355,16 +395,23 @@ def benchmark_embeddings(
     scores = a @ p.T
     relevant = torch.arange(a.size(0), device=a.device)
 
-    from cogsyndelta.eval.metrics import mean_reciprocal_rank, recall_at_k
+    from cogsyndelta.eval.metrics import (
+        mean_reciprocal_rank,
+        recall_at_k,
+        representation_std,
+    )
 
+    # `map` and `precision@10` are deliberately NOT written here (v2 metrics schema §3.2):
+    # on this single-relevant-item closed pool `map` is always == `mrr` and
+    # `precision@10` is always `recall@10 / 10` -- see `average_precision()` and
+    # `precision_at_k()` below, kept importable for the sameness-guard tests that assert
+    # those two identities still hold, never for a receipt.
     ranking = {
         "recall@1": recall_at_k(scores, relevant, 1),
         "recall@5": recall_at_k(scores, relevant, 5),
         "recall@10": recall_at_k(scores, relevant, 10),
         "mrr": mean_reciprocal_rank(scores, relevant),
         "ndcg@10": ndcg_at_k(scores, relevant, 10),
-        "map": average_precision(scores, relevant),
-        "precision@10": precision_at_k(scores, relevant, 10),
         "candidates": float(a.size(0)),
     }
 
@@ -394,8 +441,18 @@ def benchmark_embeddings(
         "anisotropy": anisotropy(both),
         "alignment": alignment(a, p),
         "uniformity": uniformity(both),
-        "effective_rank": effective_rank(both),
+        # The ONLY effective-rank field this battery writes -- see effective_rank()'s own
+        # docstring. Do not add a sibling "effective_rank_pr" key here.
+        "effective_rank_entropy": effective_rank(both),
         "dimensions": float(a.size(1)),
         "effective_rank_ratio": effective_rank(both) / max(1.0, float(a.size(1))),
+        # `repr.emb_std_anchor`: the anchor-only collapse signal, ANCHORS ONLY (`a`, not
+        # `both`) -- matches the training battery's anchor-only `held_out.emb_std` pool
+        # (METRICS-METHODOLOGY.md §2.3(d)), unlike every other `repr.*` field above which
+        # pools anchors+positives. Calls representation_std() rather than duplicating its
+        # `embeddings.std(dim=0).mean().item()` formula inline, the way
+        # `held_out.emb_std`/`graded_held_out.emb_std` do (METRICS-METHODOLOGY.md §11.5) --
+        # one formula, one place, so the two cannot silently drift apart.
+        "emb_std_anchor": representation_std(a),
     }
     return BenchmarkResult(ranking=ranking, efficiency=efficiency, representation=representation)

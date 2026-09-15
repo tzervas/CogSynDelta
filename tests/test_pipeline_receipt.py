@@ -10,7 +10,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from cogsyndelta.pipeline.receipt import SCHEMA, Producer, Receipt, adapt, load_all
+from cogsyndelta.pipeline.receipt import (
+    METRICS_SCHEMA,
+    METRICS_SCHEMA_V1_LEGACY,
+    SCHEMA,
+    Producer,
+    Receipt,
+    adapt,
+    load_all,
+)
 
 
 def test_no_gates_is_not_a_pass() -> None:
@@ -99,6 +107,93 @@ def test_adapts_legacy_quant_receipt() -> None:
     assert rec.stage == "quantize"
     assert rec.metrics["compression_ratio"] == 9.79
     assert rec.passed
+    # No metrics_schema key on this raw receipt at all -- predates the g7 stamp, so
+    # this must read as the legacy table, never silently default to the current one.
+    assert rec.metrics_schema == METRICS_SCHEMA_V1_LEGACY
+
+
+def test_adapts_v2_quant_receipt_under_its_new_field_names() -> None:
+    """`scripts/csd-quantize.py` writes these three names now (g7 §3.1); `adapt()`
+    must land the same values in the envelope's own generic `metrics` keys as the v1
+    branch above does -- an architecture-agnostic reader's own naming stays stable
+    across a CSD-internal rename."""
+    raw = {
+        "region": "code",
+        "metrics_schema": "csd-metrics/v2",
+        "quant.compression_ratio": 9.79,
+        "quant.plan_recall@1": 0.955,
+        "fp32_metric_recomputed": 0.959,
+        "stored_bytes": 6_500_000,
+        "quant.drop_recall@1": 0.004,
+        "within_budget": True,
+    }
+    rec = adapt(raw, Path("code-quant.json"))
+    assert rec is not None
+    assert rec.stage == "quantize"
+    assert rec.metrics["compression_ratio"] == 9.79
+    assert rec.metrics["metric"] == 0.955
+    assert rec.metrics["drop"] == 0.004
+    assert rec.passed
+    assert rec.metrics_schema == METRICS_SCHEMA == "csd-metrics/v2"
+
+
+def test_adapts_visual_quant_receipt_under_probe_names() -> None:
+    """Visual quant receipts name probe top-1; adapt() still fills the envelope's
+    generic metric/drop keys. Mutation: drop plan_probe_top1 from is_v2_quant and
+    this returns None."""
+    raw = {
+        "region": "visual",
+        "kind": "quant",
+        "metrics_schema": "csd-metrics/v2",
+        "quant.compression_ratio": 4.0,
+        "quant.plan_probe_top1": 0.72,
+        "fp32_metric_recomputed": 0.73,
+        "stored_bytes": 1_000_000,
+        "quant.drop_probe_top1": 0.01,
+        "within_budget": True,
+    }
+    rec = adapt(raw, Path("visual-quant.json"))
+    assert rec is not None
+    assert rec.stage == "quantize"
+    assert rec.metrics["metric"] == 0.72
+    assert rec.metrics["drop"] == 0.01
+    assert rec.metrics["compression_ratio"] == 4.0
+    assert rec.passed
+    assert rec.metrics_schema == METRICS_SCHEMA
+
+
+def test_a_fresh_receipt_defaults_to_the_current_metrics_schema() -> None:
+    assert Receipt(Producer("p", "c"), "eval").metrics_schema == METRICS_SCHEMA
+
+
+def test_adapts_envelope_receipt_carries_its_own_metrics_schema_through() -> None:
+    raw = {
+        "schema": SCHEMA,
+        "producer": {"project": "cogsyndelta", "component": "code"},
+        "stage": "eval",
+        "metrics": {"rank.recall@1": 0.9},
+        "metrics_schema": "csd-metrics/v2",
+    }
+    rec = adapt(raw, Path("x.json"))
+    assert rec is not None
+    assert rec.metrics_schema == "csd-metrics/v2"
+
+
+def test_adapts_envelope_receipt_with_no_metrics_schema_reads_as_legacy() -> None:
+    """An eval/eval-quantized receipt written before the g7 stamp existed has no
+    `metrics_schema` key at all -- must not be mistaken for a v2 receipt just because
+    its envelope `schema` is still `model-pipeline-receipt/v1` (that field is
+    unrelated; see the `Receipt.metrics_schema` docstring)."""
+    raw = {
+        "schema": SCHEMA,
+        "producer": {"project": "cogsyndelta", "component": "code"},
+        "stage": "eval",
+        "metrics": {"rank.recall@1": 0.9},
+    }
+    rec = adapt(raw, Path("x.json"))
+    assert rec is not None
+    assert rec.metrics_schema == METRICS_SCHEMA_V1_LEGACY
+    assert rec.metrics_schema != METRICS_SCHEMA
 
 
 def test_non_numeric_metrics_are_dropped_not_crashed() -> None:

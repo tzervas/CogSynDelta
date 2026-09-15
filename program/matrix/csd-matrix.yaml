@@ -28,15 +28,25 @@
 #     `null` (H4's convention): the harness's wave 0 probes those before launching any
 #     full cell. This is deliberately a LARGER probe set than a naive first draft would
 #     carry -- see DESIGN.v2 §11.1/§11.2 for the reasoning and the resulting wave plan.
+#   - PIN (g40): `run.code.sha` below is the visual-wiring merge on main
+#     (`198074a00615ef2cf8f1c40719607aea12e3649f`, CogSynDelta #46). The 16 text cells
+#     (`*-7bc2699-20260904`) go stale in harness terms (`sha_expected` ≠ new pin). Cell
+#     ids, on-disk artifacts, and Hub variants are untouched. No text retrain (g21).
+#     The visual row is the first cell family under the new pin.
 
 schema: model-matrix/v2
+
+# `project.repo` (model-matrix #8): the checkout `publish.card_command` runs FROM, so the
+# relative `scripts/csd-card.py` resolves the same way from any invoking directory.
+project:
+  repo: /home/kang/code/personal/tzervas/CogSynDelta
 
 run:
   id: csd-m1-20260904
   project: cogsyndelta
   code:
     repo: /home/kang/code/personal/tzervas/CogSynDelta
-    sha: b7e8ff58d3b50b7068d3577e9dcedafe24f6ee0d # main, 2026-09-03 -- PR #13 merged: csd-benchmark.py --quantized/--quant-receipt/--train-receipt land; NOT feat/vl-jepa
+    sha: "2fdc8b2b6ca3ac4836fd61fbcd9ac32e25372fc6" # main after #62 lexical baselines + #65 gitleaks scope
   state_root: /akula-data/csd/matrix
   finals_root: /akula-data/csd/finals # must be inside retention.prune_roots (loader-enforced)
   events_dir: /akula-data/csd/events
@@ -83,6 +93,7 @@ stages:
     receipt: "receipts/{region}-2*.json"
     gate: "$.beats_untrained.*"
     complete_on_gate_fail: true
+    gate_exit_codes: [1] # csd-train-all.py / csd-benchmark.py / csd-quantize.py exit 1 on a failed gate after writing the receipt; the harness classifies that as gated, not failed
   # DECLARED BUT UNREFERENCED, deliberately (C1/M3). No `pipeline:` below names this
   # stage and no region declares a `finetune:` command template, because the CSD-side
   # adapter it needs does not exist yet: DESIGN.v2 §6.4's A4
@@ -98,6 +109,7 @@ stages:
     receipt: "receipts/{region}-2*.json"
     gate: "$.finetune.beats_parent"
     complete_on_gate_fail: true
+    gate_exit_codes: [1] # csd-train-all.py / csd-benchmark.py / csd-quantize.py exit 1 on a failed gate after writing the receipt; the harness classifies that as gated, not failed
   test:
     kind: eval
     gpu: true
@@ -113,6 +125,7 @@ stages:
     bound_to: train
     complete_on_gate_fail: true
     requires: [train]
+    gate_exit_codes: [1] # csd-train-all.py / csd-benchmark.py / csd-quantize.py exit 1 on a failed gate after writing the receipt; the harness classifies that as gated, not failed
   quantize:
     kind: quantize
     gpu: true
@@ -122,6 +135,7 @@ stages:
     bound_to: train
     complete_on_gate_fail: true
     requires: [test]
+    gate_exit_codes: [1] # csd-train-all.py / csd-benchmark.py / csd-quantize.py exit 1 on a failed gate after writing the receipt; the harness classifies that as gated, not failed
   test-quant:
     kind: eval
     gpu: true
@@ -138,6 +152,7 @@ stages:
     complete_on_gate_fail: true
     requires: [quantize]
     enabled: true # A6 landed on this branch: the packed artifact is re-scored, not assumed
+    gate_exit_codes: [1] # csd-train-all.py / csd-benchmark.py / csd-quantize.py exit 1 on a failed gate after writing the receipt; the harness classifies that as gated, not failed
   collect:
     kind: collect
     gpu: false
@@ -180,7 +195,25 @@ regions:
   defaults:
     steps: 4000
     max_len: 96
-    shard_limit: 2 # script default; today's receipts show 1 shard for compress/retrieve/reason, 4 for code -- open question, see MATRIX-PIPELINE.md
+    # RESOLVED (was "open question, see MATRIX-PIPELINE.md"): 2 is the script default
+    # (csd-train-all.py's `--shard-limit`) and is the correct FALLBACK for four of these
+    # five regions -- compress, retrieve and reason each resolve every shard-limit-
+    # sensitive source (an uncapped SourceSpec; a `cap`-ed source like gooaq or
+    # aqua_rat-raw is exempt from shard_limit entirely, see csd-train-all.py's
+    # `run_region`) to exactly ONE file today, so shard_limit=2 already includes it
+    # whole and reproduces each region's cited baseline. `language` (the language
+    # centre -- specialisation: code; region id `code` before the 2026-09-04 naming
+    # rule, still the spelling every cell dir/receipt/corpus path below carries) is the
+    # one region that needed an explicit override (see its own `shard_limit:` below):
+    # its primary source, codesearchnet-python, is FOUR shard files, so the default of
+    # 2 silently trains on a different (and smaller) corpus than the cited baseline --
+    # measured, not theoretical: the matrix's first real cell (code, batch=512)
+    # inherited this default and trained on 214,813 pairs at corpus.fingerprint
+    # 6745b766a9e9d5ab798d87116e526416
+    # (/akula-data/csd/matrix/code-b512-s0-6614ec2-20260904/receipts/code-20260904T090702Z.json),
+    # not the cited baseline's 430,931 pairs at e493273b003f5cf9c239db0ac461b993. Every
+    # region's baseline fingerprint/pair-count/receipt is recorded at that region below.
+    shard_limit: 2 # script default; the correct fallback -- see the block comment above
     tolerance: 0.01
     aggressive_bits: 3
     max_bits: 8
@@ -238,46 +271,133 @@ regions:
     budget_axes: [batch]
     # REQUIRED whenever budget_axes is narrower than the region's full axis set (C2):
     # `model_matrix.config.validate_region_budgets` refuses the region outright without
-    # this claim, and every region inheriting these defaults (code, compress, retrieve,
-    # reason) declares axes {batch, seed} while budgeting on batch alone. Stating it once
+    # this claim, and every region inheriting these defaults (language, compress,
+    # retrieve, reason) declares axes {batch, seed} while budgeting on batch alone. Stating it once
     # here rather than four times is the point of `defaults`; `memory` narrows a different
     # way and carries its own copy of this sentence, because the shallow merge means an
     # overriding region must restate both keys together.
     budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
 
-  code:
+  language:
+    # Operator naming rule (2026-09-04): the language centre, id `language`,
+    # `specialisation: code` -- its current corpus and battery are code-flavoured, but
+    # the faculty is not domain-scoped. `aliases` names the pre-rename spelling this
+    # row (and everything it produced before today) was known by --
+    # cogsyndelta.regions.aliases.REGION_ALIASES is the ONE place that mapping lives;
+    # this field is a legible restatement for a reader of this config, not a second
+    # copy of the logic. EVERYTHING already on disk -- cell dirs (`code-b512-...`),
+    # receipt filenames, the `region/code/...` corpus path below -- still uses `code`;
+    # only a NEW cell planned against this row uses `language`.
+    aliases: [code]
+    specialisation: code
+    # Hub repo renamed 2026-09-05 (HfApi.move_repo, cogsyndelta-region-code ->
+    # cogsyndelta-region-language; old id redirects; evidence under
+    # /akula-data/session-backup-staging/phase-d/hub-rename/). `publish.repo_pattern`
+    # templated with this row's own key now computes the live name, so no override.
     axes: {batch: [512, 1280], seed: [0, 1]}
-    # batch=1280/seed=0 is today's production baseline (held_out.recall@1=0.9863, sha
-    # 9df6526, corpus.fingerprint e493273b...); batch=512 and seed=1 are unrun. Neither
-    # fp32 VRAM budget below is report_peak-sourced (H4) -- both probe.
+    # batch=1280/seed=0 is today's production baseline: held_out.recall@1=0.9863, sha
+    # 9df6526, corpus.fingerprint e493273b003f5cf9c239db0ac461b993, 430,931 train pairs
+    # over ALL 4 codesearchnet-python shard files (receipts/code-20260903T115858Z.json,
+    # cited by docs/design/evidence/w4-production-runs-2026-09-03/README.md and
+    # program/REMAINING.md). batch=512 and seed=1 are unrun. Neither fp32 VRAM budget
+    # below is report_peak-sourced (H4) -- both probe.
+    #
+    # shard_limit: 4 overrides regions.defaults' 2 (see that comment) -- REQUIRED here,
+    # not optional: codesearchnet-python is 4 shard files, so shard_limit=2 trains on
+    # HALF the corpus. 4 is written explicitly rather than 0 ("all") so a shard added to
+    # the dataset later cannot silently change what this matrix measures without a
+    # deliberate edit here -- the goal is comparability with the cited baseline, not
+    # "whatever the corpus happens to contain now".
+    shard_limit: 4
     budgets:
       "batch=512": {mib: null, source: probe}
       "batch=1280": {mib: null, source: probe}
+    # Model-card metadata for `scripts/csd-card.py` (via `publish.card_command` above)
+    # -- NOT re-derived from the training config, because `licence_tier` in particular
+    # must trace to the SAME audited table `scripts/csd-publish-checkpoint.py`'s
+    # `LICENCE_TIER`/`LICENCE_WHY` already enforce (that script's own `licence_tier()`
+    # is what actually gates a publish; this is a legible restatement for anyone
+    # reading this config, and `tests/test_matrix_config.py` pins the two agreeing).
+    # `datasets`: the HF repo id `csd-train-all.py` actually loads shards from
+    # (`region/code/codesearchnet-python/`), matched to its real upstream --
+    # `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` §"code", "upstream" row.
+    card:
+      language: en
+      tags: [cogsyndelta, "region:language"]
+      licence_tier: mit
+      datasets: ["code-search-net/code_search_net"]
 
   compress:
     axes: {batch: [512, 1280], seed: [0, 1]}
-    # batch=1280/seed=0 baseline: held_out.recall@1=0.7754, sha 9df6526.
+    # batch=1280/seed=0 baseline: held_out.recall@1=0.7754 (+ graded spearman 0.7588 on
+    # 1,498 STS-B pairs), sha 9df6526, corpus.fingerprint
+    # 65a9938192b5040beda5e92eb4078dbc, 277,268 train pairs
+    # (receipts/compress-20260903T120818Z.json). all-nli/pair ships exactly ONE shard
+    # file, so `regions.defaults.shard_limit: 2` (or any value >= 1) already includes it
+    # whole -- no override needed to stay comparable to this baseline.
     budgets:
       "batch=512": {mib: null, source: probe}
       "batch=1280": {mib: null, source: probe}
+    # datasets: sentence-transformers/all-nli (pair config) -- DEC-02/LICENCE-FOR-OPEN-
+    # WEIGHTS.md §"compress" (§"3. compress" in the repair-cost survey).
+    card:
+      language: en
+      tags: [cogsyndelta, "region:compress"]
+      licence_tier: cc-by-sa-4.0
+      datasets: ["sentence-transformers/all-nli"]
 
   retrieve:
     axes: {batch: [512, 1280], seed: [0, 1]}
-    # batch=1280/seed=0 baseline: held_out.recall@1=0.7559, sha 9df6526.
+    # batch=1280/seed=0 baseline: held_out.recall@1=0.7559, sha 9df6526,
+    # corpus.fingerprint af4bb36f6f5dcacd0bf7f211df6ef63a, 505,166 train pairs
+    # (receipts/retrieve-20260903T121603Z.json). NOTE: `_fingerprint_corpus` omits
+    # extra_sources (P0.10b) and fiqa-pairs (the only source it covers) is ~3% of this
+    # corpus by row count, so a fingerprint match alone is a weak comparability check
+    # here -- the pair count is the stronger signal. shard_limit is a no-op for all
+    # three sources at today's file counts: fiqa-pairs (primary) and natural-questions
+    # are each exactly one shard file, and gooaq carries its own 400,000-row cap
+    # (cap-ed sources are exempt from shard_limit entirely -- csd-train-all.py's
+    # `run_region`). So `regions.defaults.shard_limit: 2` already reproduces this
+    # baseline; no override.
     budgets:
       "batch=512": {mib: null, source: probe}
       "batch=1280": {mib: null, source: probe}
+    # datasets: the three sources csd-train-all.py actually streams -- fiqa-pairs
+    # (BeIR/fiqa), natural-questions (sentence-transformers' repackage of
+    # google-research-datasets/natural_questions) and gooaq (sentence-transformers'
+    # repackage of allenai/gooaq, the NC-accepted one -- LICENCE-FOR-OPEN-WEIGHTS.md
+    # "Decision 2026-09-02"). Listed as the repo actually TRAINED on, not the
+    # (differently-licensed) original upstream each repackages.
+    card:
+      language: en
+      tags: [cogsyndelta, "region:retrieve"]
+      licence_tier: cc-by-nc-sa-4.0
+      datasets:
+        ["BeIR/fiqa", "sentence-transformers/natural-questions", "sentence-transformers/gooaq"]
 
   reason:
     max_len: 256
     axes: {batch: [256, 512], seed: [0, 1]}
-    # batch=512/seed=0 baseline: held_out.recall@1=0.1152, sha 0026a3d (reason OOM'd at
-    # batch 1280/max_len 256 on the 3090 Ti -- 640 MiB short of 22 GiB [V]; batch=256 is
-    # the unrun axis value, not a re-test of the 1280 cell that never completed).
+    # batch=512/seed=0 baseline: held_out.recall@1=0.1152, sha 0026a3d,
+    # corpus.fingerprint ca364a92d2c6c5fd259404e0ab6f52a1, 11,811 train pairs
+    # (receipts/reason-20260903T123431Z.json; reason OOM'd at batch 1280/max_len 256 on
+    # the 3090 Ti -- 640 MiB short of 22 GiB [V]; batch=256 is the unrun axis value, not
+    # a re-test of the 1280 cell that never completed). gsm8k-main -- the one uncapped,
+    # shard-limit-sensitive source -- is a single shard file; aqua_rat-raw carries its
+    # own 4,982-row cap and is exempt from shard_limit. So
+    # `regions.defaults.shard_limit: 2` already reproduces this baseline; no override.
     budgets:
       "batch=256": {mib: null, source: probe}
       "batch=512": {mib: null, source: probe}
     hosts: [akula-prime, gpu5080]
+    # datasets: gsm8k-main (openai/gsm8k, `main` config) + aqua_rat-raw
+    # (deepmind/aqua_rat, `raw` config) -- LICENCE-FOR-OPEN-WEIGHTS.md's per-source
+    # audit table, both PERMISSIVE_OK.
+    card:
+      language: en
+      tags: [cogsyndelta, "region:reason"]
+      licence_tier: mit
+      datasets: ["openai/gsm8k", "deepmind/aqua_rat"]
 
   memory:
     # THE FULL COMMAND MAP IS REPEATED HERE ON PURPOSE (C4). `regions.defaults` is merged
@@ -294,10 +414,15 @@ regions:
     # Only `train` genuinely differs: memory trains through its own module entry point
     # (`cogsyndelta.regions.memory`), not `scripts/csd-train-all.py`.
     commands:
+      # `--warmup-steps 266` pins the CLI's default (200, memory.py L548) to the value the
+      # W4 production receipt actually used at steps=4000
+      # (docs/design/evidence/w4-production-runs-2026-09-03/memory-20260903T184441Z.json,
+      # `config.warmup_steps`) -- left at the default, the harness under-trains relative to
+      # that receipt and the cell fails gates b/c/e that were only ever measured at 266.
       train: >-
         {python} -m cogsyndelta.regions.memory --steps {steps} --batch-size {batch} --lr {lr}
         --max-len {max_len} --seed {seed} --token-loss-weight {token_w} --decorr-weight {decorr_w}
-        --token-loss-chunk {chunk} --eval-split dev --out-dir {state}/receipts
+        --token-loss-chunk {chunk} --warmup-steps 266 --eval-split dev --out-dir {state}/receipts
       test: "{python} scripts/csd-benchmark.py --regions {region} --state {state} --train-receipt {train_receipt}"
       quantize: >-
         {python} scripts/csd-quantize.py --regions {region} --state {state} --train-receipt {train_receipt}
@@ -331,8 +456,20 @@ regions:
     budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
     budgets:
       # b1280/tokon/c512 is TODAY's V2 production cell (369351bf): held_out.recall@1=0.8535,
+      # corpus.fingerprint 6fc0cf23ff8591ff2241278f82c001d2, 782,959 train pairs (the
+      # union of retrieve's and compress's sources -- DEC-02),
       # ptq_recall@1(plan)=0.8516 at 9.79x (memory-20260903T184441Z.json,
-      # memory-quant-20260903T203342Z.json). b512/tokon/c512 is V1 (d96be64b):
+      # memory-quant-20260903T203342Z.json; also copied at
+      # docs/design/evidence/w4-production-runs-2026-09-03/memory-20260903T184441Z.json,
+      # cited by that dir's README.md). shard_limit does NOT apply to memory: it trains
+      # through `cogsyndelta.regions.memory`, whose corpus assembly (`_shards()` in that
+      # module) globs and takes every matching file, with no `--shard-limit` flag and no
+      # analogous cap on the uncapped sources -- confirmed by grep, not inferred from the
+      # command template's silence. Every source it unions (fiqa-pairs, natural-
+      # questions, all-nli, gooaq) is single-shard or row-capped at today's file counts
+      # (same facts as `compress`/`retrieve` above), so this cell's reproducibility
+      # depends only on those files matching, not on any shard_limit value -- there is
+      # nothing to set here. b512/tokon/c512 is V1 (d96be64b):
       # held_out.recall@1=0.8145 -> PTQ 0.8086 at 9.60x. Both already published on
       # tzervas/cogsyndelta-region-memory as ad hoc pilot branches (H1's repair, tracked
       # separately -- see MATRIX-PIPELINE.md), so a matrix run of these two EXACT cells
@@ -358,15 +495,101 @@ regions:
       full_pool_r10: "train:$.retrieval.full_pool.trained.recall@10"
       full_pool_mrr: "train:$.retrieval.full_pool.trained.mrr"
       graded_spearman: "train:$.graded_held_out.spearman"
+    # datasets: the union of compress's and retrieve's own sources (DEC-02, "memory" is
+    # a region MERGE of compress+retrieve -- see docs/design/LICENCE-FOR-OPEN-
+    # WEIGHTS.md, Rider 1: a merge inherits its most restrictive parent licence, hence
+    # cc-by-nc-sa-4.0 here even though all-nli alone is cc-by-sa-4.0).
+    card:
+      language: en
+      tags: [cogsyndelta, "region:memory"]
+      licence_tier: cc-by-nc-sa-4.0
+      datasets:
+        [
+          "sentence-transformers/all-nli",
+          "BeIR/fiqa",
+          "sentence-transformers/natural-questions",
+          "sentence-transformers/gooaq",
+        ]
+
+  visual:
+    # First real visual experiment (DEC-82 / OD-4). Mix B train is 581280 after
+    # official CLEVR 70k + Fashion 60k splits -- config/mind/visual-clean-v1.json,
+    # fingerprint ab5761b65714e4ba4d7c36df095f3599. H1 is operator-side on the
+    # receipt (docs/design/evidence visual PREREG), not a harness gate.
+    # corpus_source=visual-clean-v1 is VL_REGIONS in csd-train-all.py, not a
+    # harness key (DESIGN.v2 unknown live keys refuse).
+    aliases: [vl_latent]
+    # publish.repo_pattern would mint tzervas/cogsyndelta-region-visual; the live
+    # Hub slug is tzervas/cogsyndelta-vl-jepa (REGION_REPO_SUFFIX visual/vl_latent).
+    hub_repo_name: tzervas/cogsyndelta-vl-jepa
+    steps: 4000
+    hosts: [akula-prime]  # PREREG exclusive-seq; 5080 idle for visual; 1080 Ti excluded
+    axes: {batch: [128], seed: [0, 1]}
+    budget_axes: [batch]
+    budget_axes_why: "seed changes init and sampling order only, not activation shapes or batch composition"
+    budgets:
+      "batch=128": {mib: null, source: probe}  # wave 0 probe_peak; no visual peak on disk
+    primary_metric: "train:$.held_out.top1"
+    references: [untrained]
+    eval_key:
+      [
+        "train:$.corpus.fingerprint",
+        "train:$.config.steps",
+        "train:$.config.batch_size",
+        "train:$.config.jepa.image_size",
+      ]
+    gates_read:
+      beats_untrained: "train:$.beats_untrained.probe_top1"
+      not_collapsed: "train:$.beats_untrained.not_collapsed"
+      eval_pass: "test:$.gates.*"
+      quant_budget: "quantize:$.within_budget"
+    card:
+      language: en
+      tags: [cogsyndelta, "region:visual"]
+      # Mix B standalone weights are mit (g34). CLEVR is CC BY 4.0 ATTRIBUTION --
+      # the card MUST carry the CLEVR TASL notice at publish (visual_attribution_block);
+      # that notice is not a live yaml key (DESIGN.v2 unknown keys refuse).
+      licence_tier: mit
+      datasets:
+        [
+          "nyuuzyou/pxhere",
+          "biglam/british-library-book-images",
+          "basveeling/pcam",
+          "google-deepmind/3d-shapes",
+          "facebookresearch/clevr",
+          "zalando/fashion-mnist",
+          "phelber/EuroSAT",
+        ]
 
 publish:
   repo_pattern: "tzervas/cogsyndelta-region-{region}"
   base_ref: "variants/base"
   branch: "{variant_id}"
+  # `branch_prefix` NAMES the convention `branch` above already follows in practice
+  # (DESIGN.v2 §4.2: cut every cell's branch from `variants/base`, never from the
+  # repo's default revision) -- it is not yet substituted into `branch` itself (that
+  # stays exactly `"{variant_id}"`, unprefixed, until harness round 4 also injects
+  # `variant_id` -- see PENDING_HUB_KEYS in tests/test_matrix_config.py). Recorded here
+  # so the publish step this config describes and `scripts/csd-card.py`'s own
+  # `--cell`-driven card render (via `card_command` below, run against the SAME cell
+  # after publish, never before) agree on where a variant's branch lives without
+  # either side re-deriving the convention independently.
+  branch_prefix: "variants/"
   tags: {fp32: "{variant_id}--fp32", ptq: "{variant_id}--ptq"}
   private: true
   promote_main: manual # runner prints the promotion it would make; `model-matrix promote` executes it
   main_rule: best_primary_metric_all_gates_pass
+  # `cogsyndelta.cards.render_card` (the template-driven library), NOT the `publish:`
+  # command template's own `csd-publish-checkpoint.py` invocation above (regions.
+  # defaults.commands.publish) -- see scripts/csd-card.py's own module docstring for
+  # why the two are deliberately separate tools with separate card formats. Run AFTER
+  # `publish` (requires the cell's own receipts to already exist on disk, same as
+  # `card` reads); `{hub_repo}`/`{out}` are PENDING the same harness-round-4 injection
+  # `publish` itself is waiting on (PENDING_HUB_KEYS) -- `{cell_dir}` and `{region}`
+  # are cell vars the harness already provides today.
+  card_command: >-
+    {python} scripts/csd-card.py --cell {cell_dir} --kind region_variant --region {region}
+    --repo {hub_repo} --out {out}
 
 retention:
   working_set: [unfinished, keep, current_final]

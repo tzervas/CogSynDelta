@@ -1,0 +1,67 @@
+{
+ "code": {
+  "fingerprint": "e493273b003f5cf9c239db0ac461b993",
+  "matches_receipt": true,
+  "holdout": 512,
+  "train_pairs": 430931,
+  "model_r1_receipt_b512s0": 0.98046875,
+  "tfidf": {
+   "recall@1": 0.982421875,
+   "recall@10": 1.0,
+   "mrr": 0.9895833333333333
+  },
+  "bm25": {
+   "recall@1": 0.99609375,
+   "recall@10": 1.0,
+   "mrr": 0.9977213541666666
+  },
+  "seconds": 26.1
+ },
+ "compress": {
+  "fingerprint": "65a9938192b5040beda5e92eb4078dbc",
+  "matches_receipt": true,
+  "holdout": 512,
+  "train_pairs": 277268,
+  "model_r1_receipt_b512s0": 0.712890625,
+  "tfidf": {
+   "recall@1": 0.712890625,
+   "recall@10": 0.892578125,
+   "mrr": 0.7799068341577691
+  },
+  "bm25": {
+   "recall@1": 0.701171875,
+   "recall@10": 0.87890625,
+   "mrr": 0.760950641846232
+  },
+  "seconds": 4.1
+ },
+ "retrieve": {
+  "fingerprint": "af4bb36f6f5dcacd0bf7f211df6ef63a",
+  "matches_receipt": true,
+  "holdout": 512,
+  "train_pairs": 505166,
+  "model_r1_receipt_b512s0": 0.720703125,
+  "tfidf": {
+   "recall@1": 0.76953125,
+   "recall@10": 0.923828125,
+   "mrr": 0.8249764562782695
+  },
+  "bm25": {
+   "recall@1": 0.75390625,
+   "recall@10": 0.91015625,
+   "mrr": 0.8094719933288488
+  },
+  "seconds": 19.1
+ },
+ "reason_corruption_feasibility": {
+  "gsm8k_holdout_items": 320,
+  "with_ge1_calc_annotation": 319,
+  "with_ge2_calc_annotations": 299,
+  "with_ge4_calc_annotations": 107,
+  "mean_calc_annotations": 3.18125,
+  "mean_lines_incl_final": 4.49375,
+  "with_ge3_lines": 320,
+  "train_gsm8k_with_ge2_calc": 6675,
+  "train_gsm8k_items": 7153
+ }
+}

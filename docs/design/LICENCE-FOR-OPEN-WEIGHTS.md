@@ -5,6 +5,11 @@
 `/bulk/csd-corpus`.
 **Nothing here changes a catalogue verdict.** `scripts/csd-corpus-expand.py` is untouched.
 
+> **Naming (revision 3.6, DEC-78).** Faculty ids are `language` (was `code`) and `visual`
+> (was `vl_latent`). Section titles and per-corpus verdict tables below use the canonical
+> ids. **Historical measurement rows** that name `code` / `vl_latent` keep those spellings
+> — the 2026-09-02 receipts on disk still carry them.
+
 > **Neither the author of this document nor its reader is a lawyer.** Everything below
 > reports what a licence *says* and what the *risk* is. Where a question is legally
 > unsettled it is marked unsettled and left for a human. No sentence here is a legal
@@ -20,23 +25,23 @@ in actual use supports redistributing derived weights under a permissive licence
 
 | region | corpus | why it blocks | repairable? |
 |---|---|---|---|
-| `vl_latent` | tiny-imagenet | ImageNet-derived; **no licence anywhere in the chain**; ImageNet's own terms say non-commercial | **No.** 100% of the corpus. Needs a different pretraining set |
+| `visual` | tiny-imagenet | ImageNet-derived; **no licence anywhere in the chain**; ImageNet's own terms say non-commercial | **No.** 100% of the corpus. Needs a different pretraining set |
 | `compress` | all-nli | 41.8% MultiNLI-derived; 3 of its 5 training genres have named commercial copyright holders; genre column destroyed so it cannot be filtered | Partly — re-derive from `nyu-mll/multi_nli`, which still has `genre`. Gets to SHARE_ALIKE, not clean |
-| `code` | `Nan-Do/code-search-net-python` | mirror asserts `apache-2.0` over an upstream tagged `other`, with no LICENSE file; ~15% of rows are GPL/AGPL | **Yes, cheaply.** The `repo` column survives; ~71% of rows are in permissive repos |
+| `language` | `Nan-Do/code-search-net-python` | mirror asserts `apache-2.0` over an upstream tagged `other`, with no LICENSE file; ~15% of rows are GPL/AGPL | **Yes, cheaply.** The `repo` column survives; ~71% of rows are in permissive repos |
 | `retrieve` | gooaq + NQ + fiqa | GooAQ's upstream README says *"should not be used for any commercial purposes"* while its LICENSE file is Apache-2.0; the other 22.2% is share-alike | **Unknown.** Depends on which GooAQ term governs — one email to AI2 |
 
 Two of these were not visible before this audit and are the reason it was worth doing:
 
 1. **GooAQ's upstream contradicts itself**, and the permissive half is the only half that
    reached this project. It is 77.8% of `retrieve`.
-2. **~15% of the `code` corpus is GPL/AGPL** source code. That is a larger copyleft exposure
+2. **~15% of the `language` corpus is GPL/AGPL** source code. That is a larger copyleft exposure
    than all the CC BY-SA data combined, and nothing in the pipeline surfaced it.
 
-Also flagged: **`nlphuji/flickr30k`, which P3.2 plans to add to `vl_latent`, is BLOCKING
+Also flagged: **`nlphuji/flickr30k`, which P3.2 plans to add to `visual`, is BLOCKING
 too.** Adding it would give the region a second licence problem rather than fixing its
 first.
 
-**The single most expensive fact:** `vl_latent` is 100% dependent on an unlicensed corpus,
+**The single most expensive fact:** `visual` is 100% dependent on an unlicensed corpus,
 and P3.1 plans to scale it. Every GPU-hour spent scaling that region before the corpus is
 replaced is spent on weights that cannot be released.
 
@@ -114,7 +119,7 @@ is the honest state of an unlicensed corpus.
 Licence strings below were observed live against the HF API on 2026-09-02, not copied from
 the catalogue. Every "upstream" row was checked at the source.
 
-### `code` — `Nan-Do/code-search-net-python`
+### `language` (was `code`) — `Nan-Do/code-search-net-python`
 
 | field | observed |
 |---|---|
@@ -164,7 +169,7 @@ Two findings, and the second is the one that matters:
 
 - **~71% of the corpus sits in permissively licensed repositories.** Filtering to those
   leaves ~324,000 pairs — still well above the 214,813 that first produced recall@1 0.94.
-  A permissive-only `code` corpus is constructible from data already on disk.
+  A permissive-only `language` corpus is constructible from data already on disk.
 - **~15% is GPL or AGPL.** That is roughly 72,000 functions of strong-copyleft source code
   in the training set of a model intended for MIT release. Whether that matters depends
   entirely on the unsettled question in the next section, but it is a materially larger
@@ -361,7 +366,7 @@ non-commercial reading is accepted, kept, and priced as a licence change rather 
 away. The email to AI2 is no longer blocking (it may still be sent for certainty). Full
 reasoning: [Decision 2026-09-02](#decision-2026-09-02) in *Release licence scenarios*, below.
 
-### `vl_latent` — `zh-plus/tiny-imagenet`
+### `visual` (was `vl_latent`) — `zh-plus/tiny-imagenet`
 
 **This is the most serious finding in the audit, and it is the one the task predicted.**
 
@@ -399,21 +404,21 @@ ImageNet (non-commercial research/educational; images individually copyrighted b
   -> Tiny ImageNet (200-class 64x64 subset; no licence grant of its own found)
     -> Maysee/tiny-imagenet (no licence; carries ImageNet's ToA text)
       -> zh-plus/tiny-imagenet (no licence; carries ImageNet's ToA text)
-        -> vl_latent's ENTIRE pretraining corpus
+        -> visual's ENTIRE pretraining corpus
 ```
 
 The gate being switched off on HF is a Hub configuration detail. It is not a licence grant,
 and nothing in the chain replaces the missing one. **There is no licence under which
-`vl_latent`'s weights could be redistributed** — not because a licence forbids it, but
+`visual`'s weights could be redistributed** — not because a licence forbids it, but
 because no licence was ever granted, and the only terms text anywhere in the chain says
 non-commercial.
 
-`vl_latent` is 100% dependent on this corpus. There is no clean fraction to keep.
+`visual` is 100% dependent on this corpus. There is no clean fraction to keep.
 
 ### `nlphuji/flickr30k` — fetched, not yet trained, and planned as P3.2
 
 Not in use today, which is the only reason it is not on the BLOCKING list above. **P3.2
-plans to add it as extra `vl_latent` pretraining data, and it should not be.**
+plans to add it as extra `visual` pretraining data, and it should not be.**
 
 | field | observed |
 |---|---|
@@ -430,7 +435,7 @@ The Illinois distribution page states, verbatim, on four separate pages:
 
 **NEW verdict: BLOCKING**, on the same grounds as tiny-imagenet and for the same reason —
 the distributor disclaims ownership of the images and scopes their provision to
-non-commercial research. Adding it to `vl_latent` would not fix the region's licence
+non-commercial research. Adding it to `visual` would not fix the region's licence
 problem; it would give it a second one.
 
 Two further notes:
@@ -528,7 +533,7 @@ changes what the region learns rather than substituting for it.
 FiQA as **eval-only** is the natural way to preserve the out-of-domain signal in either
 branch — see the eval-only section for why that is weaker than it sounds.
 
-### 2. `code` — `Nan-Do/code-search-net-python` — cost: low, one script
+### 2. `language` (was `code`) — `Nan-Do/code-search-net-python` — cost: low, one script
 
 **What is blocked:** the whole corpus, on the mirror-tag grounds above. But ~71% of it is
 recoverable in place.
@@ -597,7 +602,7 @@ changing it, **and it is synthetic** — which is a different kind of unknown, n
 of one. Everything else on that list changes what the region learns, and should be described
 that way rather than as a substitution.
 
-### 4. `vl_latent` — `zh-plus/tiny-imagenet` — cost: total. The region is unreleasable as trained.
+### 4. `visual` (was `vl_latent`) — `zh-plus/tiny-imagenet` — cost: total. The region is unreleasable as trained.
 
 **What is blocked:** everything. 100,000 of 100,000 pretraining images, with no licence
 anywhere in the chain and ImageNet's non-commercial terms as the only terms text present.
@@ -605,7 +610,7 @@ anywhere in the chain and ImageNet's non-commercial terms as the only terms text
 **There is no partial fix.** No subset is clean, because the whole thing is one ImageNet
 subset.
 
-**Replacement requires a different pretraining corpus and a full re-run** of `vl_latent`
+**Replacement requires a different pretraining corpus and a full re-run** of `visual`
 (497 s of GPU — trivial) plus whatever it costs to build the corpus (the real cost). It also
 **invalidates the in-domain probe**: the probe currently trains and evaluates on
 tiny-imagenet's own train/valid splits, so replacing pretraining data replaces the gate
@@ -642,14 +647,14 @@ matches tiny-imagenet's density of natural object photography.** The clean optio
 composite — general stock photography (`nyuuzyou/pxhere`, CC0), histopathology
 (`1aurent/PatchCamelyon`, CC0), synthetic 3D renders (Shapes3D and CLEVR), satellite
 (`timm/eurosat-rgb`, MIT, natively 64×64), garments (`fashion_mnist`, MIT) — with Quick Draw
-(CC BY 4.0) and Caltech-256 (CC BY 4.0) held out as clean probes. **`vl_latent` cannot be
+(CC BY 4.0) and Caltech-256 (CC BY 4.0) held out as clean probes. **`visual` cannot be
 repaired by swapping a path in `VL_REGIONS`; it needs a corpus-construction project.** That
 is the finding, and it should be weighed against P3.1's plan to scale the region on
 tiny-imagenet first.
 
 **This region is also the one the program says matters most.** P12's note argues vision may
 be the primary interface rather than a side quest, and P3 plans to scale it. **Every hour
-spent scaling `vl_latent` on tiny-imagenet is spent on weights that cannot be released.**
+spent scaling `visual` on tiny-imagenet is spent on weights that cannot be released.**
 That is the finding this audit exists to surface, and it argues for fixing the corpus
 *before* P3.1, not after.
 
@@ -659,7 +664,7 @@ That is the finding this audit exists to surface, and it argues for fixing the c
 
 Four corpora in the current or planned mix are CC BY-SA: SNLI (58.23% of `compress`), Natural
 Questions (19.5% of `retrieve`), FiQA (2.7% of `retrieve`), and — once P2.3 runs — SQuAD,
-HotpotQA and oxford-iiit-pet. Plus ~15% GPL/AGPL source code in `code`.
+HotpotQA and oxford-iiit-pet. Plus ~15% GPL/AGPL source code in `language`.
 
 **The unsettled question is whether trained model weights are a derivative work — in CC's
 vocabulary, "Adapted Material" — of the data they were trained on.**
@@ -731,7 +736,7 @@ What can be said without deciding it:
 - **If weights are adapted material**, then a cautious reading requires the weights to be
   released under **CC BY-SA 4.0 or a compatible licence, not MIT** — and CC BY-SA 3.0
   (Natural Questions) and CC BY-SA 4.0 are not bidirectionally compatible, which would be a
-  second problem. The GPL/AGPL fraction in `code` would raise the same question in a
+  second problem. The GPL/AGPL fraction in `language` would raise the same question in a
   stronger form.
 - **Nobody in this project is positioned to decide which it is.** It is genuinely open, it is
   being litigated in adjacent forms, and the answer may differ by jurisdiction.
@@ -741,7 +746,7 @@ What can be said without deciding it:
 1. Release weights under CC BY-SA 4.0 rather than MIT, and accept that this is a copyleft
    release — downstream fine-tunes would inherit the obligation.
 2. Or: remove every share-alike corpus and every GPL/AGPL row before training, and release
-   MIT. For `retrieve` that is cheap (item 1 above). For `code` it is the licence filter
+   MIT. For `retrieve` that is cheap (item 1 above). For `language` it is the licence filter
    (item 2). For `compress` it costs 42% of the corpus and still leaves the MultiNLI problem.
 3. Or: dual-licence — code MIT, weights under a licence that reflects the corpus.
 
@@ -759,7 +764,7 @@ found MIT and Apache-2.0 as the top two categories and copyleft-type terms on ro
 obligation — but it is the norm this project would be departing from if it went the other
 way, and it is worth knowing that the departure would be close to unprecedented.
 
-**The exception is directly on point for `vl_latent`, and it cuts the other way.** `timm` —
+**The exception is directly on point for `visual`, and it cuts the other way.** `timm` —
 the most-used distributor of ImageNet-pretrained weights in the ecosystem — says in its own
 README:
 
@@ -777,15 +782,15 @@ So the "everyone releases ImageNet-trained weights permissively and nobody worri
 is **wrong**, and it would have been the convenient thing to believe. The two maintainers
 closest to the problem both tell users to assume the dataset licence reaches the weights.
 That is the single most relevant piece of observed practice in this audit, and it points
-away from releasing `vl_latent` at all.
+away from releasing `visual` at all.
 
-**And there is a worked precedent for the `code` fix.** BigCode did not resolve the copyleft
+**And there is a worked precedent for the `language` fix.** BigCode did not resolve the copyleft
 question for The Stack — it removed the question by filtering: *"The three copyleft licenses
 (MPL/EPL/LGPL) were excluded and the list of permissive licenses extended to 193 licenses in
 total."* StarCoder's card then still warns that *"The code's license might require
 attribution and/or other specific requirements that must be respected"* and ships a search
 index so users can trace generated code back to its source. That is precisely the shape of
-the `code` recommendation in this document, executed at scale by a project that took the
+the `language` recommendation in this document, executed at scale by a project that took the
 question seriously.
 
 **A note on the standards bodies**, which matter less than they appear to. OSI's Open Source
@@ -842,7 +847,7 @@ an unlicensed one but not nothing. Swapping the probe costs one config line and 
 497 seconds. See [Replacement vision corpora](#replacement-vision-corpora) for the verified
 chains.
 
-**Where it is strong, and it is strong here for CIFAR-100.** `vl_latent`'s transfer probe was
+**Where it is strong, and it is strong here for CIFAR-100.** `visual`'s transfer probe was
 read rather than assumed. `regions/vl_pretrain.py::_linear_probe` constructs a local
 `nn.Linear` head, trains only that head on standardised features, and returns
 `{top1, top5, n_eval}` — the head is a local variable and is discarded when the function
@@ -862,7 +867,7 @@ as this argument gets.
 1. **Model selection leaks.** If a corpus's metric is used to choose a checkpoint, a
    hyperparameter, or an early-stopping point, information from it *has* influenced the
    released weights, even though no gradient flowed. CSD gates on `beats_untrained`, and
-   `vl_latent`'s gate list includes `transfer_top1` — so **CIFAR-100 is already part of a
+   `visual`'s gate list includes `transfer_top1` — so **CIFAR-100 is already part of a
    gate decision**, not purely an observation. The leak is small and indirect, but it is not
    zero, and "we only evaluated on it" is doing more work in that sentence than it can bear.
 2. **No licence examined draws the distinction at all.** This was checked rather than
@@ -911,7 +916,7 @@ rely on for **CIFAR-100 specifically in this codebase**, because it was verified
 that no CIFAR-100-derived parameter is published — with the caveat that it sits in a gate and
 should be described in the model card as an evaluation set rather than quietly omitted. It is
 **not** sound enough to rely on as a general principle, and it would be wrong to use it to
-rescue tiny-imagenet: tiny-imagenet is pretraining data, every published `vl_latent`
+rescue tiny-imagenet: tiny-imagenet is pretraining data, every published `visual`
 parameter is derived from it, and no framing changes that.
 
 ---
@@ -1068,10 +1073,10 @@ redistribution grant, and MIT asserts one.
 Three defensible paths, in order of preference:
 
 **A. Fix the corpora, then release MIT — the option the project should want.**
-Ordered by what is actually within reach: `code` is one filtering script against a column
+Ordered by what is actually within reach: `language` is one filtering script against a column
 already on disk; `retrieve` is a config change *if* AI2 confirms the Apache reading, and a
 new corpus if not; `compress` can be re-derived from `nyu-mll/multi_nli` to reach
-share-alike but needs a synthetic or permissive substitute to get further; `vl_latent` needs
+share-alike but needs a synthetic or permissive substitute to get further; `visual` needs
 a wholly new pretraining set. GPU cost across all four is 43 minutes — the effort is corpus
 construction, not training. This is the only path that makes the MIT claim true rather than
 asserted.
@@ -1080,7 +1085,7 @@ asserted.
 nothing false, and keeps the repo's move off its current proprietary LICENSE unblocked. This
 is the right move *today* if a release is wanted before the corpus work lands.
 
-**C. Release a partial set of weights.** `code` post-filter is the closest any region gets
+**C. Release a partial set of weights.** `language` post-filter is the closest any region gets
 to clean, and it is the only one whose fix is fully within this project's control — the
 `repo` column is on disk and the filter is one script. (`retrieve` would have been the
 easiest of all, and may still be, but that now depends on an answer from AI2 rather than on
@@ -1118,7 +1123,7 @@ Listed rather than guessed. Each is a real gap.
    **Do not resolve it by picking the convenient reading.**
 1. **Whether trained weights are derivative works of training data.** Unsettled, and central
    to every SHARE_ALIKE verdict here. Needs a human decision, and arguably a lawyer.
-2. **Whether the GPL/AGPL fraction of `code` matters more than the CC BY-SA fraction.**
+2. **Whether the GPL/AGPL fraction of `language` matters more than the CC BY-SA fraction.**
    Same unsettled question, stronger copyleft, ~15% of the corpus. Not analysed further here.
 3. **Where `Nan-Do/code-search-net-python`'s `apache-2.0` tag came from.** The card offers no
    justification and there is no LICENSE file. It may be an error; it may reflect something
@@ -1419,7 +1424,7 @@ also happens to be the exact experiment CSD would eventually want anyway if the 
 "recognise that one frame contains several different kinds of thing" — the domain-identity
 probe is a primitive version of that.
 
-Cost: each configuration is one `vl_latent` run. The one currently on record took 497 seconds;
+Cost: each configuration is one `visual` run. The one currently on record took 497 seconds;
 three to four configurations at comparable budgets is on the order of 30–60 minutes total —
 trivial against the 43-minute full-fleet baseline already established elsewhere in this
 document, and not run here.
@@ -1443,7 +1448,7 @@ addition to `_decode_split` or the training loop, which is out of scope for this
 
 ### What capability is lost, next to tiny-imagenet — stated plainly
 
-tiny-imagenet gave `vl_latent` 100,000 images natively at 64×64, 200 real-world object/animal
+tiny-imagenet gave `visual` 100,000 images natively at 64×64, 200 real-world object/animal
 classes at 500 images/class, drawn from a single coherent photographic domain with real
 lighting, pose, and texture variation. That is precisely the thing this search could not find
 a clean replacement for.
@@ -1470,7 +1475,7 @@ ImageNet lineage under a clean licence. The composite above buys breadth **acros
 distinct domains (a model that has seen satellite imagery, tissue imagery, sketches, product
 photography, and general photography) at the cost of depth **within** the one domain
 (everyday-object photography) that ImageNet-family benchmarks were built to measure and that
-most vision transfer-learning literature actually cares about. A `vl_latent` pretrained on
+most vision transfer-learning literature actually cares about. A `visual` pretrained on
 this composite should be expected to be **measurably weaker at fine-grained natural-object
 recognition and generalisation** than the current unreleasable model — that is the real price
 of the licence-clean requirement, not a rounding error, and it should be reported as such
@@ -1550,18 +1555,18 @@ are not derivative works of their training data.
 one that exists says non-commercial or research-only. What CogSynDelta licenses *its own*
 release under cannot manufacture a grant a third party never made. tiny-imagenet, flickr30k,
 GooAQ (if its README governs rather than its LICENSE file), MS MARCO, STL-10, SVHN,
-Places365, CIFAR-10/100, EMNIST, GTSRB, and the GPL/AGPL ~15.9% of `code` are all in this
+Places365, CIFAR-10/100, EMNIST, GTSRB, and the GPL/AGPL ~15.9% of `language` are all in this
 category, and **every one of them is blocked identically under every scenario in this
 section, A through D.** This is the distinction the task that produced this section was
 explicit about protecting, so it is stated once, plainly, and held to throughout: **relicensing
 the release moves SHARE_ALIKE corpora. It moves nothing else.**
 
-One further wrinkle specific to `code`: the ~15.9% GPL/AGPL fraction is copyleft, but it is
+One further wrinkle specific to `language`: the ~15.9% GPL/AGPL fraction is copyleft, but it is
 *software* copyleft, not a Creative Commons licence, and GPL/AGPL is not on any CC licence's
 compatibility list. Releasing weights under CC BY-SA would not satisfy a GPL obligation even
 if trained weights were found to be a "work based on" GPL source code in the FSF sense.
 Nothing in scenarios A–D touches that fraction; the only fix is the same one the main audit
-already recommended regardless of release licence — filter `code` to the ~71.3% of rows in
+already recommended regardless of release licence — filter `language` to the ~71.3% of rows in
 permissively licensed repositories.
 
 ### Comparison table — usable corpus per scenario, per region
@@ -1577,13 +1582,13 @@ buys, so it is not credited to any column here; it is discussed on its own below
 
 | region | currently trained (baseline) | A: MIT/Apache-2.0 weights | B: CC BY-SA weights | C: CC BY (attribution-only) weights |
 |---|---|---|---|---|
-| `code` | 430,931 pairs (BLOCKING as trained) | ~324,000 filtered pairs (71.3% of `code-search-net-python`, GitHub-licence-verified) + 10,000 (`apps`, MIT) + 13,328 (`code_contests`, CC BY, attributed) ≈ **347,328** | **same, 347,328.** No SHARE_ALIKE code corpus exists to unlock | **same, 347,328** |
+| `language` | 430,931 pairs (BLOCKING as trained) | ~324,000 filtered pairs (71.3% of `code-search-net-python`, GitHub-licence-verified) + 10,000 (`apps`, MIT) + 13,328 (`code_contests`, CC BY, attributed) ≈ **347,328** | **same, 347,328.** No SHARE_ALIKE code corpus exists to unlock | **same, 347,328** |
 | `compress` | 277,269 pairs (BLOCKING as trained) | ≤51,567 corpus-supported (MNLI `government` 25,783, asserted-PD-unverified, + part of `fiction` 25,784, licence not sub-split — see caveat) + 275,579 (`SynCSE-scratch-NLI`, MIT, full replacement) if pursued ≈ **up to 327,146**, but **without** SNLI | **234,983** (SNLI 183,416 + `government` 25,783 + `fiction` 25,784) clean by construction — the audit's own "repaired" figure. Can still add SynCSE on top for more volume | **same as A.** CC BY does not satisfy CC BY-SA's ShareAlike condition, so SNLI stays exactly as contingent as under MIT |
 | `retrieve` | 505,216 pairs (mostly BLOCKING/contested) | `esci` 2,027,874 + `mr-tydi` ~167,000 + `miracl` ~40,000 (all Apache-2.0, both ends) ≈ **2,234,874**, already available today with no licence decision needed. `T2Ranking` 258,000 unverified (LICENSE file 404s) | **A's 2,234,874, plus** NQ 100,231 + FiQA 14,131 + SQuAD 87,599 = **201,961 immediately clean** query/context pairs, **plus** HotpotQA (5,233,329 passages + 97,852 queries, pending a qrels join — see caveat), **plus** SWIM-IR-en 501,538 pairs (mirror tag only, see caveat) → **≈2.94M clean pairs today, ≈8.27M rows of raw material once HotpotQA is joined** | **same as A, ≈2,234,874.** NQ/FiQA/SQuAD/HotpotQA/SWIM-IR all stay exactly as contingent as under MIT |
 | `classify` | 56,493 (banking77 13,083 CC BY + go_emotions 43,410 Apache) | 56,493 | **56,493 — no change.** No SHARE_ALIKE corpus in this region | 56,493 |
 | `reason` | 104,940 (gsm8k 7,473 MIT + aqua_rat 97,467 Apache) | 104,940 | **104,940 — no change.** No SHARE_ALIKE corpus; `hendrycks/competition_math` stays REJECTED on active-dispute grounds unrelated to licence family | 104,940 |
 
-**`vl_latent` (images, reported separately — different unit):**
+**`visual` (was `vl_latent`; images, reported separately — different unit):**
 
 | | currently trained | A: MIT/Apache-2.0 | B: CC BY-SA | C: CC BY |
 |---|---|---|---|---|
@@ -1592,17 +1597,17 @@ buys, so it is not credited to any column here; it is discussed on its own below
 | Composite replacement (fashion_mnist, eurosat-rgb, PatchCamelyon, Shapes3D, dSprites, pxhere, british-library, beans, Quick Draw, CLEVR, Caltech-101/256 — PERMISSIVE_OK + ATTRIBUTION only) | 0 | **available today, ≈497k recommended composite (up to several million if uncapped).** Already MIT-compatible; not affected by this section's choice at all | same as A | same as A |
 | oxford-iiit-pet + `ylecun/mnist` + K-MNIST | 0 (oxford-iiit-pet fetched, not trained) | contingent (SHARE_ALIKE) | **+147,349** (7,349 + 70,000 + 70,000) clean by construction | contingent, same as A |
 
-**Read the `vl_latent` row for what it actually says: the region's core problem is not
+**Read the `visual` row for what it actually says: the region's core problem is not
 priced anywhere in this table.** tiny-imagenet is 100,000 of the region's 100,000 trained
 images and is unaffected by every column. The composite replacement that actually fixes the
 region is *already fully available under scenario A* — it needs a corpus-construction
-project, not a licence decision. Scenario B's entire contribution to `vl_latent` is 147,349
+project, not a licence decision. Scenario B's entire contribution to `visual` is 147,349
 images (oxford-iiit-pet + two mismatched-mirror MNIST variants), a rounding error next to the
 composite's hundreds of thousands.
 
 ### Per-region detail
 
-**`code` — zero delta, and the reason is structural, not incidental.** Every corpus found
+**`language` — zero delta, and the reason is structural, not incidental.** Every corpus found
 that yields (docstring, code) *pairs* — `Nan-Do/code-search-net-python`,
 `code_x_glue_ct_code_to_text`, `semeru/code-text-python` — is a CodeSearchNet derivative with
 no per-row licence column, and the three mirrors disagree with each other (`c-uda` / `mit` /
@@ -1682,17 +1687,17 @@ Three things are true simultaneously and none of them is in tension with the oth
    — that a self-hosted, permissively licensed model would not carry. Worth weighing when that
    plan gets built, independent of what happens with the corpora already on hand.
 
-**`vl_latent` — the release-licence question is close to irrelevant here, and that itself is
+**`visual` — the release-licence question is close to irrelevant here, and that itself is
 the finding.** tiny-imagenet is not SHARE_ALIKE; it is BLOCKING with no licence anywhere in
 the chain, so no scenario in this section touches its 100,000 images or the region's entire
-current training basis. The corpus that actually fixes `vl_latent` — the composite in
+current training basis. The corpus that actually fixes `visual` — the composite in
 [Replacement vision corpora](#replacement-vision-corpora) — is composed almost entirely of
 PERMISSIVE_OK and ATTRIBUTION sources and is **already available under scenario A, at MIT,
 today.** The only material scenario B adds is the three SHARE_ALIKE-verdict, small-scale
 extras (oxford-iiit-pet 7,349, `ylecun/mnist` 70,000, K-MNIST 70,000 — the last two recorded
 in this audit as *mirror mismatches*, tagged permissively but CC BY-SA upstream), 147,349
 images total against a composite already numbering in the hundreds of thousands. **If the
-operator is deciding whether to accept a copyleft weights licence anywhere, `vl_latent` is
+operator is deciding whether to accept a copyleft weights licence anywhere, `visual` is
 the weakest case for it** — the region's actual blocker is a missing grant, not a share-alike
 condition, and the fix is corpus construction that scenario B does not accelerate.
 
@@ -1709,10 +1714,10 @@ The composed model (P2.5's "compose" step) draws non-overlapping held-out materi
 six regions, so its availability is the union of the rows above, not an independent question.
 Concretely:
 
-- **Four of six regions (`code`, `classify`, `reason`, and `vl_latent`'s actual fix) are
+- **Four of six regions (`language`, `classify`, `reason`, and `visual`'s actual fix) are
   entirely unaffected by which release licence CogSynDelta chooses.** Their corpus ceiling is
-  set by provenance gaps (`code`), the absence of any SHARE_ALIKE candidate (`classify`,
-  `reason`), or a corpus with no licence at all rather than a copyleft one (`vl_latent`'s
+  set by provenance gaps (`language`), the absence of any SHARE_ALIKE candidate (`classify`,
+  `reason`), or a corpus with no licence at all rather than a copyleft one (`visual`'s
   tiny-imagenet dependency).
 - **The entire benefit of choosing CC BY-SA over MIT/CC BY is concentrated in two regions:**
   `compress` (+183,416 pairs, SNLI) and `retrieve` (+703,499 immediately-clean pairs, plus a
@@ -1722,7 +1727,7 @@ Concretely:
   order of 886,915 pairs/images today** (183,416 + 703,499), **potentially several million
   more once HotpotQA is joined and SWIM-IR's upstream is verified**, against a permanently
   blocked floor — tiny-imagenet (100,000), flickr30k (31,783 planned), GooAQ if its README
-  governs (up to 3,112,679), the `code` GPL/AGPL fraction (~72,000), and `compress`'s three
+  governs (up to 3,112,679), the `language` GPL/AGPL fraction (~72,000), and `compress`'s three
   commercial-copyright genres (79,332) — that **no scenario in this document moves.**
 
 That permanently-blocked floor is the number worth sitting with: it is comparable in size to
@@ -1781,8 +1786,8 @@ into — and does not reach a mere *Collection* (CC's term for separate works di
 together without being merged). CogSynDelta's regions are already architecturally
 independent, each with its own checkpoint. **If per-region checkpoints are kept as separate
 distributable files rather than merged into one weights blob, a CC BY-SA obligation on
-`compress` or `retrieve`'s checkpoint plausibly does not reach `code`, `classify`, `reason`,
-or `vl_latent`'s checkpoints, on a "Collection, not Adapted Material" reading** — the same
+`compress` or `retrieve`'s checkpoint plausibly does not reach `language`, `classify`, `reason`,
+or `visual`'s checkpoints, on a "Collection, not Adapted Material" reading** — the same
 kind of aggregation carve-out already found in the OANC EULA quoted earlier in this document.
 This is exactly the shape of scenario D below.
 
@@ -1839,8 +1844,8 @@ a burden that gets heavier with more rows.
 three already in the main recommendation above.** The numbers in this section support a
 sharper version of "dual licensing" than a single MIT-code/CC-BY-SA-weights split:
 
-- `code`, `classify`, `reason`, and (once its corpus is replaced) `vl_latent` have **zero**
-  SHARE_ALIKE dependency once `code` is GitHub-licence-filtered — there is nothing in any of
+- `language`, `classify`, `reason`, and (once its corpus is replaced) `visual` have **zero**
+  SHARE_ALIKE dependency once `language` is GitHub-licence-filtered — there is nothing in any of
   these regions that a copyleft weights licence would unlock. **Ship these four regions'
   weights MIT, unconditionally.** Nothing is bought by encumbering them.
 - `compress` and `retrieve` are where the actual trade lives: 183,416 and up to several
@@ -1861,10 +1866,10 @@ sharper version of "dual licensing" than a single MIT-code/CC-BY-SA-weights spli
 
 | region | standalone release licence | why |
 |---|---|---|
-| `code` | MIT | no NC or share-alike input, once GitHub-licence-filtered to the permissive ~71.3% |
+| `language` | MIT | no NC or share-alike input, once GitHub-licence-filtered to the permissive ~71.3% |
 | `classify` | MIT | no NC or share-alike input in the catalogue |
 | `reason` | MIT | no NC or share-alike input in the catalogue |
-| `vl_latent` | MIT, once its corpus is replaced | the composite replacement is PERMISSIVE_OK/ATTRIBUTION; tiny-imagenet itself stays BLOCKING (no grant exists at all) regardless of this decision — a different problem than NC, and no licence choice touches it |
+| `visual` | MIT, once its corpus is replaced | the composite replacement is PERMISSIVE_OK/ATTRIBUTION; tiny-imagenet itself stays BLOCKING (no grant exists at all) regardless of this decision — a different problem than NC, and no licence choice touches it |
 | `compress` | CC BY-SA 4.0 | SNLI (+ `government` + `fiction`) repaired corpus is share-alike; no NC-tagged input identified |
 | `retrieve` | **CC BY-NC-SA 4.0** | GooAQ (**NC, accepted 2026-09-02**) *and* Natural Questions / FiQA (CC BY-SA) are both present in the corpus as trained — the region inherits both restrictions |
 | `memory` | **CC BY-NC-SA 4.0** *(added 2026-09-03)* | region MERGE of `compress` (CC BY-SA 4.0) and `retrieve` (CC BY-NC-SA 4.0) per **Rider 1**, below — a merge inherits the most restrictive parent licence — and `memory`'s own training corpus independently confirms it: it trains directly on `retrieve`'s GooAQ + Natural Questions + FiQA pairs, plus `compress`'s AllNLI |
@@ -1881,7 +1886,7 @@ share-alike condition (see above — API-only serving does not trigger it, but s
 distributed fine-tune does). That is a real, ongoing constraint on downstream users of
 exactly two of six regions, accepted in exchange for real corpus — not a hypothetical trade.
 
-**What this does not fix:** `vl_latent` still needs its corpus replaced before it can ship
+**What this does not fix:** `visual` still needs its corpus replaced before it can ship
 under anything, and that work is identical under every scenario in this section. GooAQ's
 fate — the single largest number in this whole document — still depends on an answer from
 AI2, not on any licence this project chooses for itself.
@@ -1932,9 +1937,9 @@ section above, independently re-confirmed live 2026-09-02):
    non-commercial licence** — CC BY-NC 4.0, or **CC BY-NC-SA 4.0 where a ShareAlike input is
    also present in that same region's corpus** — **instead of MIT.** This extends Option D's
    per-region split, above, with an NC tier; it does not replace it.
-2. **A region with no such input stays MIT.** Nothing here moves `code`, `classify`,
-   `reason`, or `vl_latent`'s eventual composite replacement — none has an NC-tagged input.
-   `vl_latent`'s actual blocker, tiny-imagenet, remains a *missing-grant* problem (BLOCKING),
+2. **A region with no such input stays MIT.** Nothing here moves `language`, `classify`,
+   `reason`, or `visual`'s eventual composite replacement — none has an NC-tagged input.
+   `visual`'s actual blocker, tiny-imagenet, remains a *missing-grant* problem (BLOCKING),
    not a *restrictive-term* problem (NC), and this decision — like every scenario in this
    section — does nothing for it. See "The one distinction the whole section rests on,"
    above: relicensing the release moves SHARE_ALIKE corpora, and now NC ones too. **It still
@@ -1984,8 +1989,8 @@ gets to pick the most permissive entry from.
 may still be sent for certainty — a definitive reply could move `retrieve`, and therefore the
 composed model, back toward CC BY-SA or MIT — but nothing here waits on it.
 
-**Updated per-region table:** see the table added to Option D, above (`code`/`classify`/
-`reason`/`vl_latent` → MIT; `compress` → CC BY-SA 4.0; `retrieve` → CC BY-NC-SA 4.0;
+**Updated per-region table:** see the table added to Option D, above (`language`/`classify`/
+`reason`/`visual` → MIT; `compress` → CC BY-SA 4.0; `retrieve` → CC BY-NC-SA 4.0;
 composed model → CC BY-NC-SA 4.0).
 
 **INFERRED, not independently verified this session:** that CC BY-NC-SA 4.0 is the correct

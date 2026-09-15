@@ -98,12 +98,18 @@ prefix.
 packer; the model-matrix harness owns the variant driver; the dataset-factory ingest owns corpus
 sourcing; `csd-autodev` owns the dev loop. CSD stays the model.
 
+**One standalone reference lives here outside the thirteen-chapter index.**
+[`model-card-pipeline.md`](model-card-pipeline.md) documents `scripts/csd-card.py` and
+`cogsyndelta.cards` (what renders from what, every refusal) — a piece of tooling, not a
+design-derived chapter, so it carries no row above and no `DEC`/`OD` content of its own.
+
 ## Four facts to hold before writing or reviewing anything here
 
 1. **The taxonomy is not applied.** `config/mind/csd-regions.json` still carries `residual_mlp`,
-   `stream_vae`, `code`, `retrieve` in the old `role`/`live`/`pretrain.available` shape; §1.4's JSON
-   diff is headed *REVIEW ONLY, DO NOT APPLY*. `contracts/region.py` still exposes the
-   `activate(stream) → [B,D]` protocol that `DEC-14` retires.
+   `stream_vae`, `language`, `retrieve` in the old `role`/`live`/`pretrain.available` shape (the
+   region-name rename landed ahead of the taxonomy rework — DEC-01/DEC-78 — but the shape itself
+   is untouched); §1.4's JSON diff is headed *REVIEW ONLY, DO NOT APPLY*. `contracts/region.py`
+   still exposes the `activate(stream) → [B,D]` protocol that `DEC-14` retires.
 2. **The interconnect does not exist.** Everything in §2 — workspace, adapters, `a_r`, `b_r`,
    write-back, the `Schedule` — is design only, as are the `episodic_store` and overlays.
 3. **The programme is blocked on OD-17.** W4 ran at its pre-registered configuration on 2026-09-03:

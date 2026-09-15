@@ -2,6 +2,13 @@
   "stream_dim": 512,
   "top_k": 1,
   "aux_coef": 1.0,
+  "trained_dims": {
+    "_read_by": "nothing -- documentation only, not consumed by any loader",
+    "_status_2026-09-06": "config declares stream_dim 512 / hidden_dim 1024 above and per-region below, but scripts/csd-train-all.py:1007,1478 hardcode TextEncoderConfig(dim=256, depth=4, n_heads=4) and every text-region receipt agrees with the runner, not the config. This field records the measured truth; it does not change stream_dim or hidden_dim, and which side moves (widen the runner to match the config, or shrink the config to match every receipt) is an open operator decision -- see docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md taxonomy section 2.2/2.3 for the workspace-dim design intent this bears on.",
+    "measured_dim": 256,
+    "measured_depth": 4,
+    "measured_n_heads": 4
+  },
   "notes": "Region catalogue from docs/program/CSD-BRAIN-REGIONS.md. `live` reflects what is IMPLEMENTED, not what is intended; `pretrain.available` reflects what is ON DISK, not what is named. Both default to false so that intent can be recorded without it reading as capability. Curriculum order is mandatory: per-region pretrain -> router -> assembled mind -> foundation. Foundation corpora (FineWeb/C4/Pile) are step 4, not step 1.",
   "regions": [
     {
@@ -12,7 +19,7 @@
       "latent_dim": null,
       "modality": "any",
       "role": "Residual update on the shared [B, D] stream; keeps the residual path competent.",
-      "router_trigger": "Tokens not tagged code/retrieve/compress.",
+      "router_trigger": "Tokens not tagged language/retrieve/compress.",
       "pretrain": {
         "corpus": "synthetic",
         "objective": "reconstruction",
@@ -41,19 +48,20 @@
       "live": true
     },
     {
-      "name": "code",
+      "name": "language",
+      "specialisation": "code",
       "kind": "contrastive_encoder",
       "stream_dim": 512,
       "hidden_dim": 1024,
       "latent_dim": null,
       "modality": "text",
-      "role": "Docstring <-> function, search and generation. Explicitly NOT next-token over all of GitHub.",
+      "role": "Language centre. Docstring <-> function, search and generation (specialisation: code -- its current corpus and battery are code-flavoured; the faculty is not domain-scoped). Explicitly NOT next-token over all of GitHub.",
       "router_trigger": "language=python and a docstring is present.",
       "pretrain": {
         "corpus": "codesearchnet-python",
         "objective": "contrastive-pair",
         "available": false,
-        "notes": "NOT on disk. /pretrain/code/codesearchnet holds only metadata.json; download-status.json shows 2 of 6 sets completed. MBPP and HumanEval are eval, not pretrain."
+        "notes": "NOT on disk. /pretrain/code/codesearchnet holds only metadata.json; download-status.json shows 2 of 6 sets completed. MBPP and HumanEval are eval, not pretrain. Legacy region id `code` (see cogsyndelta.regions.aliases) -- on-disk corpus paths, matrix cell dirs, and the Hub repo still use that spelling until their own follow-ups land."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
       "live": false
@@ -71,7 +79,7 @@
         "corpus": "fiqa",
         "objective": "rank",
         "available": false,
-        "notes": "NOT on disk. SciFact and NFCorpus are eval-only per license (NC / ToS) and must not be trained on. MERGED (DEC-02, W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W4) into `memory`'s retrieval head -- see this entry's own `merged_into`. Kept readable for old receipts (e.g. the 2026-09-02 FiQA BEIR-pool receipt W4's own gates compare against); not retrained standalone after W4 lands."
+        "notes": "NOT on disk. SciFact and NFCorpus are eval-only per license (NC / ToS) and must not be trained on. MERGED (DEC-02, W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W4) into `memory`'s retrieval head -- see this entry's own `merged_into`. Kept readable for old receipts (e.g. the 2026-09-02 FiQA BEIR-pool receipt W4's own gates compare against); not retrained standalone after W4 lands. Status 2026-09-06: a standalone `retrieve` matrix cell with a full receipt (retrieve-b512-s1-7bc2699-20260904) also exists; this and any other standalone cells predate or run beside the merge, not superseded by it."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
       "live": false,
@@ -90,7 +98,7 @@
         "corpus": "stsb+allnli-10k",
         "objective": "contrastive-pair",
         "available": false,
-        "notes": "NOT on disk. WikiText-2 is later-assembly reconstruction, not first pretrain. MERGED (DEC-02, W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W4) into `memory`'s consolidation head -- see this entry's own `merged_into`. Kept readable for old receipts (e.g. the 2026-09-02 STS-B/AllNLI receipt W4's own gates compare against); not retrained standalone after W4 lands."
+        "notes": "NOT on disk. WikiText-2 is later-assembly reconstruction, not first pretrain. MERGED (DEC-02, W4, docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md row W4) into `memory`'s consolidation head -- see this entry's own `merged_into`. Kept readable for old receipts (e.g. the 2026-09-02 STS-B/AllNLI receipt W4's own gates compare against); not retrained standalone after W4 lands. Status 2026-09-06: standalone `compress` matrix cells with full receipts (compress-b512/b1280-s0/s1-7bc2699-20260904) also exist; these and any other standalone cells predate or run beside the merge, not superseded by it."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
       "live": false,
@@ -108,26 +116,32 @@
       "pretrain": {
         "corpus": "union of compress's all-nli/pair training corpus and retrieve's fiqa+natural-questions+gooaq (region_spec('memory'), scripts/csd-train-all.py), graded on stsb-validation (consolidation) and the BEIR FiQA full-pool eval (retrieval, cogsyndelta.eval.beir_fiqa)",
         "objective": "contrastive-pair",
-        "available": false,
-        "notes": "NOT on disk. DEC-02: one hippocampal faculty, one shared trunk (TextEncoder), two evaluation heads -- consolidation (compress's graded STS-B gate) and retrieval (retrieve's BEIR full-pool gate) read off the SAME pooled embedding space, not two separate projection layers. Row W4 (docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md): DESIGNED AS THE FIRST TOKEN-AWARE RETRAIN -- trains with L_token/L_decorr (regions/pretrain.py PretrainConfig.token_loss_weight/decorr_weight) ON. DEC-24: inherits `retrieve`'s token embedding table (the parent whose gate -- the FiQA BEIR pool -- survives as memory's gate); the divergence from `compress`'s table is measured and recorded in the receipt. Merges and retires `compress`+`retrieve`'s standalone training (see their own entries' `merged_into`)."
+        "available": true,
+        "paths": [
+          "region/retrieve/fiqa-pairs/train.parquet",
+          "region/compress/all-nli/pair/train*.parquet",
+          "region/retrieve/natural-questions/**/train*.parquet",
+          "region/retrieve/gooaq/**/train*.parquet"
+        ],
+        "notes": "CONFIRMED on disk under $CSD_MEMORY_ROOT (/mnt/fleet-datasets/csd), verified 2026-09-06: `available: false`/\"NOT on disk\" here was stale -- this field is documentation only (contracts/region_spec.py's PretrainSpec.available), never read by any training/eval/publish code path, so the flag had simply never been flipped after the corpus landed. The four `paths` globs above are copied verbatim from `REGIONS[\"memory\"]` in scripts/csd-train-all.py, which is what memory.py's `_shards()` actually reads; there is no separate physical merge on disk -- the union is a CODE-LEVEL concatenation through the same `extra_sources` mechanism every multi-source region already uses (see regions/memory.py's module docstring), not a new artifact. `cogsyndelta.corpus.fingerprint_corpus` hashes these same four sources at run time; the value it produces today is `6fc0cf23ff8591ff2241278f82c001d2`, matching the committed split manifest (config/mind/splits/memory-6fc0cf23-split0.json, 782,959 train pairs) and the W4 production receipts (docs/design/evidence/w4-production-runs-2026-09-03/). DEC-02: one hippocampal faculty, one shared trunk (TextEncoder), two evaluation heads -- consolidation (compress's graded STS-B gate) and retrieval (retrieve's BEIR full-pool gate) read off the SAME pooled embedding space, not two separate projection layers. Row W4 (docs/design/REGION-TAXONOMY-AND-INTERCONNECT.md): DESIGNED AS THE FIRST TOKEN-AWARE RETRAIN -- trains with L_token/L_decorr (regions/pretrain.py PretrainConfig.token_loss_weight/decorr_weight) ON. DEC-24: inherits `retrieve`'s token embedding table (the parent whose gate -- the FiQA BEIR pool -- survives as memory's gate); the divergence from `compress`'s table is measured and recorded in the receipt. Merges and retires `compress`+`retrieve`'s standalone training (see their own entries' `merged_into`)."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": false},
       "live": false
     },
     {
-      "name": "vl_latent",
-      "kind": "jepa_predictor",
+      "name": "visual",
+      "kind": "i-jepa",
       "stream_dim": 512,
       "hidden_dim": 1024,
       "latent_dim": 64,
-      "modality": "latent",
-      "role": "Latent visual reasoning. Consumes visual latents, NOT tokens; predicts representations rather than reconstructing pixels. Enters the same shared stream as the text regions, which is why the [B, D] activate surface is modality-agnostic.",
-      "router_trigger": "Stream carrying visual latents.",
+      "modality": "vision",
+      "role": "I-JEPA EMA target encoder over RGB images; maps an image to a [B, D] stream vector. Does not reconstruct pixels and is not a generative decoder.",
+      "router_trigger": "RGB image input",
       "pretrain": {
-        "corpus": "unbound",
-        "objective": "jepa-predictive",
-        "available": false,
-        "notes": "NOT on disk: /vision is empty (0 bytes). core/vl_jepa_extension.py has modules but no EMA target encoder, no masking, and no predictor loss, so there is currently no JEPA training path at all."
+        "corpus": "visual-clean-v1",
+        "objective": "i-jepa",
+        "available": true,
+        "notes": "Deployed module is the EMA target encoder (IJEPA.encode / target_encoder.embed). Encoder geometry (image_size, patch_size, dim, depth, n_heads, pos_kind) is on the training receipt's config.jepa, not this row. Mix B pin in config/mind/visual-clean-v1.json. Legacy id `vl_latent`."
       },
       "quantization": {"bits": 8, "method": "calibrated-uniform", "skip": true},
       "live": false
@@ -139,7 +153,7 @@
       "hidden_dim": 1024,
       "latent_dim": null,
       "modality": "text",
-      "role": "Question <-> worked derivation retrieval: match a question to its own step-by-step solution among candidates. Does NOT generate reasoning steps -- same bi-encoder shape as code/compress/retrieve, trained the same way.",
+      "role": "Question <-> worked derivation retrieval: match a question to its own step-by-step solution among candidates. Does NOT generate reasoning steps -- same bi-encoder shape as language/compress/retrieve, trained the same way.",
       "router_trigger": "A question paired with a pool of candidate worked solutions to rank (arithmetic or algebraic word problems). Not a trigger for open-ended step generation, which this region cannot do.",
       "pretrain": {
         "corpus": "gsm8k-main(7473) + aqua_rat-raw sampled to 4982 (seed 0, docs/design/CORPUS-CONTRACT.md B4)",

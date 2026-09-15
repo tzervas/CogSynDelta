@@ -31,10 +31,15 @@ input turns out to need one). `vl_latent` is BLOCKING, not merely a tier: sectio
 states it is unreleasable as trained, so `licence_tier()` refuses it outright before
 ever consulting `LICENCE_TIER`'s "mit" entry for it (that entry is for the region's
 eventual composite replacement, per Decision 2026-09-02, not today's checkpoint).
-`--region` is also cross-checked against every receipt's own declared region before
-anything else is read from them -- the licence tier is derived from `--region`, and an
-unchecked mismatch would let a receipt's real licence tier be laundered under whatever
-`--region` claims.
+`visual` (nee `vl_latent`) is BLOCKING while its receipt names tiny-imagenet, an
+unset corpus, or a fingerprint that is not the admitted Mix B pin in
+`config/mind/visual-clean-v1.json`. A receipt whose `corpus.corpus_source` and
+`corpus.fingerprint` both match that manifest is publishable under **MIT**, with a
+mandatory attribution notice: Mix B includes CLEVR (CC BY 4.0, ATTRIBUTION), and
+LICENCE-FOR-OPEN-WEIGHTS.md §"Verdict categories" (`:98-102`) says ATTRIBUTION is
+usable for an MIT weights release if the specific notice is carried. The card
+prints the CLEVR TASL block; the region tag stays `mit`. `--region` is still
+cross-checked against every receipt's own declared region.
 
 CHECKPOINT PATH IS CONTAINED, NOT TRUSTED
 A receipt's 'checkpoint' value is attacker-reachable -- anyone who can write a receipt
@@ -131,6 +136,25 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+_SRC = str(REPO_ROOT / "src")
+if _SRC not in sys.path:
+    # cogsyndelta.cards.methodology has no heavy dependency (no torch, no
+    # tokenizers/pyarrow -- see that module's own docstring), so importing it here
+    # costs this script nothing on the --help / licence-refusal / fp32-only paths that
+    # motivate every OTHER lazy import in this file. Appended (not prepended), same as
+    # `_ptq()` below: an installed `cogsyndelta` still wins over a checkout's `src/`.
+    sys.path.append(_SRC)
+
+from cogsyndelta.cards.methodology import (  # noqa: E402 -- needs sys.path set above
+    METHODOLOGY_DOC,
+    METRIC_METHODOLOGY,
+    CardError,
+    methodology_key,
+    normalize_quant_receipt_v1,
+    require_documented,
+)
+from cogsyndelta.regions.aliases import canonical_region  # noqa: E402
+
 DEFAULT_OWNER = "tzervas"
 DEFAULT_BASE = "cogsyndelta"
 DEFAULT_REGIONS_CONFIG = REPO_ROOT / "config" / "mind" / "csd-regions.json"
@@ -141,10 +165,18 @@ DEFAULT_REGIONS_CONFIG = REPO_ROOT / "config" / "mind" / "csd-regions.json"
 # pattern -- those repos are not in csd-hf-repos.py's REPOS list yet, so this is an
 # extension of its convention, not a transcription of it; create_repo(exist_ok=True)
 # provisions them the first time this script runs against one.
+#
+# Keyed CANONICALLY -- `default_repo()` resolves its input through `canonical_region()`
+# before this lookup, so a legacy spelling (`code`, `vl_latent`) needs no entry of its
+# own: it resolves to its canonical id first. `visual`'s suffix (`-vl-jepa`) was never
+# derived from the region id at all, so it stays a table entry; `language`'s Hub repo
+# was renamed 2026-09-05 (tzervas/cogsyndelta-region-code ->
+# tzervas/cogsyndelta-region-language, via `move_repo`, old id redirects), so the plain
+# "-region-<name>" pattern now resolves it correctly and it needs no entry either.
 REGION_REPO_SUFFIX = {
     "residual_mlp": "-region-residual",
     "stream_vae": "-region-stream-vae",
-    "vl_latent": "-vl-jepa",
+    "visual": "-vl-jepa",
 }
 
 # Source: docs/design/LICENCE-FOR-OPEN-WEIGHTS.md, "Decision 2026-09-02" and the
@@ -155,12 +187,19 @@ REGION_REPO_SUFFIX = {
 #
 # residual_mlp and stream_vae are deliberately absent: no licence audit exists for
 # either, so `licence_tier()` raises for them rather than defaulting to MIT.
+#
+# Keyed CANONICALLY (`language`, not `code`; `visual`, not `vl_latent`) -- unlike
+# REGION_REPO_SUFFIX above, this table is an internal lookup with no Hub-visible name
+# baked into its keys, so there is nothing gained by keeping it legacy-spelled. Every
+# reader (`licence_tier()`, `LICENCE_WHY.get()` in build_card) resolves its input
+# through `canonical_region()` first, so a caller still spelling either region the old
+# way keeps working.
 LICENCE_TIER: dict[str, str] = {
-    "code": "mit",
+    "language": "mit",
     "classify_banking77": "mit",
     "classify_go_emotions": "mit",
     "reason": "mit",
-    "vl_latent": "mit",
+    "visual": "mit",
     "compress": "cc-by-sa-4.0",
     "retrieve": "cc-by-nc-sa-4.0",
     "memory": "cc-by-nc-sa-4.0",
@@ -179,20 +218,31 @@ ALLOWED_CHECKPOINT_SUFFIXES: frozenset[str] = frozenset({".pt", ".safetensors"})
 
 # Regions whose training data has no licence grant anywhere in the provenance chain at
 # all -- BLOCKING per docs/design/LICENCE-FOR-OPEN-WEIGHTS.md section 4, strictly worse
-# than "unknown". Checked inside licence_tier() before the tier lookup below, so a
-# BLOCKING region refuses regardless of what LICENCE_TIER says for it (vl_latent's entry
-# there is for its eventual composite replacement -- Decision 2026-09-02 -- not for the
-# tiny-imagenet checkpoint that exists today, which is why the tier value alone is not
-# a safe gate).
-BLOCKING_REGIONS: frozenset[str] = frozenset({"vl_latent"})
+# than "unknown". `visual` stays in this set as the DEFAULT: licence_tier() only takes
+# it out when the training receipt names the admitted Mix B corpus (see
+# `admitted_visual_identity` / `_visual_receipt_is_admitted`). A tiny-imagenet,
+# unset, or fingerprint-mismatched receipt is still BLOCKING. Canonical key;
+# licence_tier() canonicalizes its input before this check.
+BLOCKING_REGIONS: frozenset[str] = frozenset({"visual"})
+
+ADMITTED_VISUAL_MANIFEST = REPO_ROOT / "config" / "mind" / "visual-clean-v1.json"
+TINY_IMAGENET_MARKERS = ("tiny-imagenet", "zh-plus/tiny-imagenet")
+
+CLEVR_TASL = (
+    "- **CLEVR** — Johnson et al. / Facebook, Inc. (c) 2017. "
+    "Source: https://cs.stanford.edu/people/jcjohns/clevr/ "
+    "Licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). "
+    "Images were resized to 128×128 PNG for this corpus (modified)."
+)
 
 LICENCE_WHY: dict[str, str] = {
-    "code": "no NC or share-alike input in the catalogue, once GitHub-licence-filtered",
+    "language": "no NC or share-alike input in the catalogue, once GitHub-licence-filtered",
     "classify_banking77": "no NC or share-alike input in the catalogue",
     "classify_go_emotions": "no NC or share-alike input in the catalogue",
     "reason": "no NC or share-alike input in the catalogue",
-    "vl_latent": "no NC or share-alike input in the catalogue (corpus's own BLOCKING "
-    "grant problem is separate from licence family and is not resolved by this tag)",
+    "visual": "Mix B includes CLEVR (CC BY 4.0, ATTRIBUTION); MIT-usable with the "
+    "mandatory TASL notice (LICENCE-FOR-OPEN-WEIGHTS.md :98-102). tiny-imagenet "
+    "remains BLOCKING and is not this corpus",
     "compress": "SNLI (+ government + fiction) repaired corpus is share-alike; "
     "no NC-tagged input identified",
     "retrieve": "GooAQ (NC, accepted 2026-09-02) and Natural Questions / FiQA "
@@ -256,17 +306,104 @@ def _content_matches(
 
 
 def default_repo(region: str, owner: str = DEFAULT_OWNER, base: str = DEFAULT_BASE) -> str:
+    """The repo a region's checkpoints publish to. Canonicalizes `region` first (the
+    same `canonical_region` alias layer `licence_tier` uses), so a legacy spelling and
+    its canonical replacement always agree: `default_repo("code") == default_repo(
+    "language") == "tzervas/cogsyndelta-region-language"` (Hub repo renamed 2026-09-05
+    via `move_repo`; the old id redirects). Likewise `vl_latent`/`visual` both resolve
+    to `tzervas/cogsyndelta-vl-jepa`.
+    """
+    region = canonical_region(region)
     suffix = REGION_REPO_SUFFIX.get(region, f"-region-{region.replace('_', '-')}")
     return f"{owner}/{base}{suffix}"
 
 
-def licence_tier(region: str) -> str:
+def admitted_visual_identity(manifest_path: Path | None = None) -> tuple[str, str]:
+    """`(corpus_source, fingerprint)` pinned in `config/mind/visual-clean-v1.json`."""
+    path = manifest_path if manifest_path is not None else ADMITTED_VISUAL_MANIFEST
+    data = json.loads(path.read_text(encoding="utf-8"))
+    source = data.get("id")
+    fingerprint = data.get("fingerprint")
+    if not source or not fingerprint:
+        raise PublishAbortError(
+            f"{path}: admitted visual manifest missing id or fingerprint -- refusing "
+            "rather than treating an incomplete pin as Mix B"
+        )
+    return str(source), str(fingerprint)
+
+
+def _visual_receipt_source_and_fingerprint(
+    receipt: dict[str, Any] | None,
+) -> tuple[str | None, str | None]:
+    if not isinstance(receipt, dict):
+        return None, None
+    corpus = receipt.get("corpus")
+    corpus_d = corpus if isinstance(corpus, dict) else {}
+    raw_source = (
+        corpus_d.get("corpus_source") or corpus_d.get("source") or receipt.get("corpus_source")
+    )
+    raw_fp = corpus_d.get("fingerprint")
+    source = str(raw_source) if raw_source else None
+    fingerprint = str(raw_fp) if raw_fp else None
+    return source, fingerprint
+
+
+def _visual_receipt_is_admitted(receipt: dict[str, Any] | None) -> bool:
+    """True only when the receipt names Mix B id AND the pinned fingerprint."""
+    source, fingerprint = _visual_receipt_source_and_fingerprint(receipt)
+    if source is None or fingerprint is None:
+        return False
+    if any(marker in source for marker in TINY_IMAGENET_MARKERS):
+        return False
+    admitted_source, admitted_fp = admitted_visual_identity()
+    return source == admitted_source and fingerprint == admitted_fp
+
+
+def visual_attribution_block(receipt: dict[str, Any] | None) -> list[str]:
+    """CLEVR TASL + the ATTRIBUTION notice LICENCE-FOR-OPEN-WEIGHTS.md :98-102 requires.
+
+    Raises:
+        PublishAbortError: Mix B is admitted but `CLEVR_TASL` no longer names CLEVR
+            and CC BY 4.0 -- the card would then be MIT without the mandatory notice.
+    """
+    if not _visual_receipt_is_admitted(receipt):
+        return []
+    if "CLEVR" not in CLEVR_TASL or "creativecommons.org/licenses/by/4.0" not in CLEVR_TASL:
+        raise PublishAbortError(
+            "Mix B visual card requires the CLEVR CC BY 4.0 TASL block "
+            "(LICENCE-FOR-OPEN-WEIGHTS.md :98-102 ATTRIBUTION notice)"
+        )
+    return [
+        "## Training data attribution",
+        "",
+        "This model was trained on Mix B (`visual-clean-v1`). ATTRIBUTION corpora "
+        "are MIT-usable if the specific notice is carried "
+        "(`docs/design/LICENCE-FOR-OPEN-WEIGHTS.md` :98-102). CLEVR is CC BY 4.0; "
+        "TASL (Title, Author, Source, Licence) follows.",
+        "",
+        "### CC BY 4.0",
+        CLEVR_TASL,
+        "",
+    ]
+
+
+def licence_tier(region: str, receipt: dict[str, Any] | None = None) -> str:
+    """Return the region's standalone licence tag, or abort if BLOCKING/unknown.
+
+    Mix B visual is MIT (LICENCE-FOR-OPEN-WEIGHTS.md :98-102, :1592, :1685-1691,
+    :1867): ATTRIBUTION training data is MIT-usable when the card carries the
+    specific notice. The TASL block is `visual_attribution_block`, not this tag.
+    """
+    region = canonical_region(region)
     if region in BLOCKING_REGIONS:
+        if region == "visual" and _visual_receipt_is_admitted(receipt):
+            return LICENCE_TIER["visual"]
         raise PublishAbortError(
             f"region {region!r} is BLOCKING per docs/design/LICENCE-FOR-OPEN-WEIGHTS.md "
             "section 4 -- unreleasable as trained (no licence grant anywhere in the "
-            "provenance chain). Refusing regardless of any licence tier value on record "
-            "for it; BLOCKING is strictly worse than unknown."
+            "provenance chain, or visual receipt is not the admitted Mix B pin). "
+            "Refusing regardless of any licence tier value on record for it; BLOCKING "
+            "is strictly worse than unknown."
         )
     tier = LICENCE_TIER.get(region)
     if tier is None:
@@ -306,10 +443,23 @@ def load_json(path: Path) -> dict[str, Any]:
     return data
 
 
+# The v1 -> v2 quant-receipt alias table and `normalize_quant_receipt_v1` (imported
+# above) now live in `cogsyndelta.cards.methodology` -- see that module's docstring for
+# why this script does not instead import `cogsyndelta.pipeline.receipt`'s copy of the
+# same table, and why the reasoning that used to keep this table local to this script
+# (avoiding `cogsyndelta.regions`'s import cost) does not apply to a plain, dependency-
+# free module like `cogsyndelta.cards.methodology`.
+
+
 def load_region_config(region: str, regions_path: Path = DEFAULT_REGIONS_CONFIG) -> dict[str, Any]:
+    """Find `region`'s entry in the catalogue, matching on canonical name so a caller
+    still spelling it the legacy way (`code`, `vl_latent`) finds the same entry the
+    catalogue now stores under its canonical name (`language`, `visual`)."""
+    target = canonical_region(region)
     data = load_json(regions_path)
     for r in data.get("regions", []):
-        if r.get("name") == region:
+        name = r.get("name")
+        if isinstance(name, str) and canonical_region(name) == target:
             return r
     raise PublishAbortError(f"region {region!r} not found in {regions_path}")
 
@@ -501,9 +651,14 @@ def assert_region_matches(receipt: dict[str, Any], region: str, label: str) -> N
     """--region is what licence_tier() and the repo name are derived from. Nothing else
     ties it to the receipt actually being published, so a mismatch -- a CLI typo, or a
     misdirected agent -- would launder that receipt's real licence tier under whatever
-    --region claims. One comparison per receipt closes the class."""
+    --region claims. One comparison per receipt closes the class.
+
+    Compared CANONICALLY: an old receipt naming the legacy spelling (`region: "code"`)
+    still matches `--region language`, and vice versa -- the rename does not turn every
+    receipt written before it into a forced mismatch.
+    """
     claimed = receipt_region(receipt, label)
-    if claimed != region:
+    if canonical_region(claimed) != canonical_region(region):
         raise PublishAbortError(
             f"{label} receipt's region {claimed!r} does not match --region {region!r} -- "
             "refusing: the licence tier and repo name are derived from --region, and a "
@@ -626,6 +781,18 @@ def _ptq() -> Any:
     from cogsyndelta.quant import ptq
 
     return ptq
+
+
+def _export_safetensors() -> Any:
+    """`cogsyndelta.cards.export.export_safetensors`, imported lazily -- same reasoning
+    as `_ptq()` above: it pulls in torch, and only the `--safetensors` path (and a
+    future publish once this becomes non-opt-in) should pay that cost."""
+    src = str(REPO_ROOT / "src")
+    if src not in sys.path:
+        sys.path.append(src)
+    from cogsyndelta.cards.export import export_safetensors
+
+    return export_safetensors
 
 
 def verify_quantized_measurements(
@@ -791,6 +958,218 @@ def _dict_table(d: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+#  ------------------------------------------------------------- metrics methodology
+#
+# `METHODOLOGY_DOC`, `MetricMethodology` and `METRIC_METHODOLOGY` now live in
+# `cogsyndelta.cards.methodology` (imported above) -- see that module's docstring
+# for why. `_methodology_section` below is refused-closed exactly as before: a
+# metric key the card prints with no entry in `METRIC_METHODOLOGY` aborts the
+# publish.
+
+
+def _card_metric_keys(
+    train_receipt: dict[str, Any],
+    eval_receipt: dict[str, Any] | None,
+    quant_receipt: dict[str, Any] | None,
+) -> list[str]:
+    """Every metric-table row key `build_card` actually prints, de-duplicated, in
+    encounter order -- the exact set `_methodology_section` must cover. Mirrors
+    `build_card`'s own `_dict_table` calls one-for-one; keep the two in sync if either
+    changes which sections print a table (a test pins this -- see
+    `tests/test_metrics_methodology.py`).
+
+    ASSUMES `quant_receipt` (when not `None`) has already been passed through
+    `normalize_quant_receipt_v1` -- every production caller (`build_plan`, which loads
+    it via `load_json` and normalises it before ever calling `build_card` /
+    `_methodology_section` / this function) does. A caller that hands this a raw,
+    un-normalised v1-shaped quant receipt directly will find only its unrenamed keys
+    (`fp32_metric_recomputed`, `tolerance`, `within_budget`, `fp32_bytes`,
+    `stored_bytes`) here, not `quant.plan_recall@1` / `quant.drop_recall@1` /
+    `quant.compression_ratio` -- those three exist in `quant_receipt` only once
+    normalisation has added them.
+    """
+    keys: dict[str, None] = {}
+    for section in (
+        train_receipt.get("held_out", {}),
+        train_receipt.get("untrained_baseline", {}),
+        # `beats_untrained_train` is the g7 §3.2 rename of this same gate/context dict
+        # (see `beats_untrained_eval`'s own docstring above); read defensively, new
+        # name first, without importing the module that writes it.
+        train_receipt.get("beats_untrained_train") or train_receipt.get("beats_untrained", {}),
+    ):
+        for k in section:
+            keys[k] = None
+    if eval_receipt is not None:
+        for k in eval_receipt.get("gates", {}):
+            keys[k] = None
+        for k in eval_receipt.get("metrics", {}):
+            # `methodology_key` (cogsyndelta.cards.methodology) is the SAME repr./rank./
+            # eff. prefix-strip `cogsyndelta.cards.tables` uses to key into
+            # METRIC_METHODOLOGY -- this table only ever prints the repr.* family (never
+            # rank./eff.*, which the newer cogsyndelta.cards library prints instead), so
+            # only that prefix is selected here; `quant.artifact_recall@1` is passed
+            # through unstripped (methodology_key leaves quant.* alone -- it is already
+            # the canonical g7 §3.1 name, not a family-prefixed shorthand).
+            if k.startswith("repr.") or k.startswith("quant."):
+                keys[methodology_key(k)] = None
+    for k in train_receipt.get("contamination", {}):
+        if k != "examples":
+            keys[k] = None
+    if quant_receipt is not None:
+        for k in (
+            "fp32_metric_recomputed",
+            "quant.plan_recall@1",
+            "quant.drop_recall@1",
+            "quant.plan_probe_top1",
+            "quant.drop_probe_top1",
+            "tolerance",
+            "within_budget",
+            "quant.compression_ratio",
+            "fp32_bytes",
+            "stored_bytes",
+        ):
+            if k in quant_receipt:
+                keys[k] = None
+    return list(keys)
+
+
+def _metrics_schema_line(
+    train_receipt: dict[str, Any],
+    eval_receipt: dict[str, Any] | None,
+    quant_receipt: dict[str, Any] | None,
+) -> str:
+    """The card's single `- **Metrics schema:**` line -- across every receipt
+    `build_card` was given, not only the training one.
+
+    `metrics_schema` is identity key #1 of MM §14's refuse predicate: a card that
+    stamps `csd-metrics/v1` while rendering a table of `csd-metrics/v2` field names
+    (`effective_rank_entropy`, `quant.plan_recall@1`, ...) right below it is the same
+    class of provenance falsehood the refuse predicate exists to catch -- and the
+    near-term real case for every already-trained matrix cell is exactly that: a
+    training receipt from before this migration (no `metrics_schema` field at all,
+    reads back as the `csd-metrics/v1 (not recorded)` fallback) re-benchmarked and
+    re-quantized with this branch's v2 code (both stamp `csd-metrics/v2`). Refusing to
+    publish that combination outright would block re-publishing every already-trained
+    checkpoint until it is retrained from scratch, which is worse than the falsehood
+    this fixes -- so when the receipts disagree, this renders each one's own stamp
+    instead of picking one and hiding the disagreement.
+
+    Args:
+        train_receipt: The training receipt `build_card` was given.
+        eval_receipt: The eval receipt, or `None`.
+        quant_receipt: The quant receipt, or `None`.
+
+    Returns:
+        A single markdown bullet line: one stamp when every supplied receipt agrees,
+        or a `train=... eval=... quant=...` breakdown (only the receipts actually
+        supplied) when they do not.
+    """
+    labeled = [
+        (name, receipt.get("metrics_schema", "csd-metrics/v1 (not recorded)"))
+        for name, receipt in (
+            ("train", train_receipt),
+            ("eval", eval_receipt),
+            ("quant", quant_receipt),
+        )
+        if receipt is not None
+    ]
+    schemas = {schema for _, schema in labeled}
+    if len(schemas) == 1:
+        return f"- **Metrics schema:** `{next(iter(schemas))}`"
+    per_receipt = ", ".join(f"{name}=`{schema}`" for name, schema in labeled)
+    return (
+        "- **Metrics schema:** receipts disagree -- "
+        f"{per_receipt}. The tables above merge metrics from more than one schema; "
+        "read each metric's own row provenance above, not this line alone, before "
+        "comparing numbers across them."
+    )
+
+
+def _methodology_section(
+    train_receipt: dict[str, Any],
+    eval_receipt: dict[str, Any] | None,
+    quant_receipt: dict[str, Any] | None,
+    rev: str,
+    train_receipt_filename: str,
+    eval_receipt_filename: str | None,
+    quant_receipt_filename: str | None,
+) -> str:
+    """'How these numbers were produced': one line per metric key this card prints,
+    naming its definition, battery and source file, plus the receipt-level provenance
+    (corpus fingerprint, seed, code revision, receipt filenames) every number above was
+    read from.
+
+    Args:
+        train_receipt: The training receipt `build_card` was given.
+        eval_receipt: The eval receipt, or `None`.
+        quant_receipt: The quant receipt, or `None`.
+        rev: This checkpoint's code revision, exactly as `build_card`'s own Provenance
+            section prints it.
+        train_receipt_filename: Basename of the training receipt file, as uploaded.
+        eval_receipt_filename: Basename of the eval receipt file, or `None`.
+        quant_receipt_filename: Basename of the quant receipt file, or `None`.
+
+    Returns:
+        The section as markdown.
+
+    Raises:
+        PublishAbortError: A metric key this card prints has no entry in
+            `METRIC_METHODOLOGY` -- refusing to publish a number with no stated formula
+            rather than silently shipping one undocumented. This is the enforcement
+            `tests/test_metrics_methodology.py` proves is load-bearing by stubbing
+            `METRIC_METHODOLOGY` empty and asserting the card build then fails.
+    """
+    keys = _card_metric_keys(train_receipt, eval_receipt, quant_receipt)
+    # Delegates the "is every key documented" check itself to
+    # `cogsyndelta.cards.methodology.require_documented` -- the SAME missing-key
+    # computation `cogsyndelta.cards.tables`'s build_* functions call, rather than a
+    # second, hand-rolled `[k for k in keys if k not in METRIC_METHODOLOGY]` that could
+    # silently drift from it. `methodology=METRIC_METHODOLOGY` passes THIS MODULE's own
+    # bound name (imported above, not re-imported here), so a test's
+    # `monkeypatch.setattr(mod, "METRIC_METHODOLOGY", {...})` -- which reassigns that
+    # name in this module's namespace -- is exactly what this lookup sees; passing
+    # `methodology=None` instead would read `cogsyndelta.cards.methodology`'s own
+    # (unpatched) global, defeating that test's monkeypatch entirely (see
+    # `cogsyndelta.cards.methodology`'s own module docstring for why this distinction
+    # matters). `CardError` is translated to this script's own `PublishAbortError`
+    # rather than propagated, so every caller of `build_card`/`build_plan` keeps seeing
+    # one exception type for every refusal this script makes.
+    try:
+        require_documented(keys, methodology=METRIC_METHODOLOGY)
+    except CardError as e:
+        raise PublishAbortError(f"{e} (publishing, not rendering)") from e
+    lines = [
+        "## How these numbers were produced",
+        "",
+        f"Full definitions, formulas, `file:line` anchors and comparison rules for every "
+        f"metric below: `{METHODOLOGY_DOC}` in this repository.",
+        "",
+        "| metric | definition | battery | battery_id | pooling | source |",
+        "|---|---|---|---|---|---|",
+    ]
+    for key in sorted(keys):
+        m = METRIC_METHODOLOGY[key]
+        bid = f"`{m.battery_id}`" if m.battery_id else "_(n/a)_"
+        pooling = f"`{m.pooling}`" if m.pooling else "_(n/a)_"
+        lines.append(
+            f"| `{key}` | {m.definition} | {m.battery} | {bid} | {pooling} | `{m.source}` |"
+        )
+    lines += [
+        "",
+        _metrics_schema_line(train_receipt, eval_receipt, quant_receipt),
+        f"- **Corpus fingerprint:** `{train_receipt.get('corpus', {}).get('fingerprint', '(none recorded)')}`",
+        f"- **Seed:** `{train_receipt.get('config', {}).get('seed', '(none recorded)')}`",
+        f"- **Code revision:** `{rev}`",
+        f"- **Training receipt:** `{train_receipt_filename}`",
+    ]
+    if eval_receipt_filename is not None:
+        lines.append(f"- **Eval receipt:** `{eval_receipt_filename}`")
+    if quant_receipt_filename is not None:
+        lines.append(f"- **Quant receipt:** `{quant_receipt_filename}`")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def build_card(
     region: str,
     region_cfg: dict[str, Any],
@@ -806,6 +1185,9 @@ def build_card(
     quantized_file_bytes: int | None = None,
     quantized_stored_bytes: int | None = None,
     quantized_width_histogram: dict[str, int] | None = None,
+    train_receipt_filename: str = "",
+    eval_receipt_filename: str | None = None,
+    quant_receipt_filename: str | None = None,
 ) -> str:
     corpus = train_receipt.get("corpus", {})
     contamination = train_receipt.get("contamination", {})
@@ -823,17 +1205,23 @@ def build_card(
         "",
         f"**Router trigger.** {region_cfg.get('router_trigger', '(none recorded)')}",
         "",
-        f"**Licence tier.** `{tier}` -- {LICENCE_WHY.get(region, '(reason not recorded)')}. "
+        f"**Licence tier.** `{tier}` -- "
+        f"{LICENCE_WHY.get(canonical_region(region), '(reason not recorded)')}. "
         'See `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md`, "Decision 2026-09-02".',
         "",
+    ]
+    parts += visual_attribution_block(train_receipt)
+    parts += [
         "## Metrics",
         "",
         "### held_out",
         _dict_table(train_receipt.get("held_out", {})),
         "### untrained_baseline",
         _dict_table(train_receipt.get("untrained_baseline", {})),
-        "### gates (training receipt: beats_untrained)",
-        _dict_table(train_receipt.get("beats_untrained", {})),
+        "### gates (training receipt: beats_untrained_train)",
+        _dict_table(
+            train_receipt.get("beats_untrained_train") or train_receipt.get("beats_untrained", {})
+        ),
     ]
     if eval_receipt is not None:
         parts += [
@@ -864,11 +1252,13 @@ def build_card(
                     if k
                     in (
                         "fp32_metric_recomputed",
-                        "quantized_metric",
-                        "drop",
+                        "quant.plan_recall@1",
+                        "quant.drop_recall@1",
+                        "quant.plan_probe_top1",
+                        "quant.drop_probe_top1",
                         "tolerance",
                         "within_budget",
-                        "compression_ratio",
+                        "quant.compression_ratio",
                         "fp32_bytes",
                         "stored_bytes",
                     )
@@ -877,6 +1267,17 @@ def build_card(
         ]
     else:
         parts.append("_No quant receipt supplied -- this checkpoint is fp32._\n")
+    parts += [
+        _methodology_section(
+            train_receipt,
+            eval_receipt,
+            quant_receipt,
+            rev,
+            train_receipt_filename,
+            eval_receipt_filename,
+            quant_receipt_filename,
+        ),
+    ]
     if quant_receipt is not None and quantized_filename is not None:
         # Facts about the FILE only. The measured-vs-budget story (compression ratio,
         # metric drop, tolerance, within_budget, stored_bytes) lives in the
@@ -986,6 +1387,14 @@ class Plan:
     re-measured from the file and found to agree with the receipt, and the file added
     to `files` -- never the primary artifact; `checkpoint_path` above stays the one
     required weights file."""
+    safetensors_path: Path | None = None
+    safetensors_sha256: str | None = None
+    """Set only when `--safetensors` was passed: `cogsyndelta.cards.export.
+    export_safetensors(checkpoint_path)`'s own output, hashed the same way
+    `checkpoint_path` is, and added to `files` under the checkpoint's basename with a
+    `.safetensors` suffix -- never the primary artifact; `checkpoint_path` (fp32 `.pt`)
+    stays the one required weights file, exactly as `quantized_path` above is never
+    promoted over it."""
 
 
 def build_plan(
@@ -995,12 +1404,18 @@ def build_plan(
     eval_receipt_path: Path | None,
     quant_receipt_path: Path | None,
     regions_config: Path = DEFAULT_REGIONS_CONFIG,
+    want_safetensors: bool = False,
 ) -> Plan:
-    tier = licence_tier(region)  # fail fast, before touching any file we don't need to
-    region_cfg = load_region_config(region, regions_config)
+    # Visual's BLOCKING status depends on the training receipt's corpus pin, so the
+    # receipt is loaded before licence_tier(). Other regions still fail closed on
+    # region name alone; a visual receipt that is not Mix B stays BLOCKING.
     train_receipt = load_json(train_receipt_path)
+    tier = licence_tier(region, receipt=train_receipt)
+    region_cfg = load_region_config(region, regions_config)
     eval_receipt = load_json(eval_receipt_path) if eval_receipt_path else None
     quant_receipt = load_json(quant_receipt_path) if quant_receipt_path else None
+    if quant_receipt is not None:
+        quant_receipt = normalize_quant_receipt_v1(quant_receipt)
 
     # --region drives the licence tier and repo name; verify every receipt actually says
     # it's for this region before reading anything else out of them.
@@ -1077,6 +1492,9 @@ def build_plan(
         quantized_file_bytes=quantized_path.stat().st_size if quantized_path else None,
         quantized_stored_bytes=quantized_stored_bytes,
         quantized_width_histogram=quantized_width_histogram,
+        train_receipt_filename=train_receipt_path.name,
+        eval_receipt_filename=eval_receipt_path.name if eval_receipt is not None else None,
+        quant_receipt_filename=quant_receipt_path.name if quant_receipt is not None else None,
     )
 
     files: dict[str, Path | bytes] = {
@@ -1111,6 +1529,35 @@ def build_plan(
             )
         files[name_in_repo] = quantized_path
 
+    # OPT-IN (--safetensors), not part of the default plan: `export_safetensors`
+    # requires the checkpoint to actually torch.load() as a state dict, which every
+    # REAL checkpoint this project trains is -- but is not guaranteed of an arbitrary
+    # `--receipt`-named `.pt` file (see checkpoint_path_from_receipt's own containment
+    # docstring: the *path* is verified, never the pickled contents). A caller that
+    # asked for this explicitly gets a fail-closed abort naming why, rather than a
+    # publish that silently omits the file it was told to include.
+    safetensors_path: Path | None = None
+    safetensors_sha256: str | None = None
+    if want_safetensors:
+        export_safetensors_fn = _export_safetensors()
+        try:
+            safetensors_path = export_safetensors_fn(checkpoint)
+        except Exception as e:
+            raise PublishAbortError(
+                f"--safetensors requested but {checkpoint} could not be exported to "
+                f"safetensors ({type(e).__name__}: {e}) -- refusing to publish a plan "
+                "that silently omits the file it was asked to include"
+            ) from e
+        safetensors_sha256 = sha256_of(safetensors_path)
+        name_in_repo = f"{checkpoint.stem}.safetensors"
+        if name_in_repo in files:
+            raise PublishAbortError(
+                f"safetensors export would be uploaded as {name_in_repo!r}, which the "
+                f"plan already maps to {files[name_in_repo]!r} -- refusing to overwrite "
+                "another file's slot in the upload plan"
+            )
+        files[name_in_repo] = safetensors_path
+
     return Plan(
         region=region,
         repo=repo,
@@ -1126,6 +1573,8 @@ def build_plan(
         quantized_sha256=quantized_sha256,
         quantized_stored_bytes=quantized_stored_bytes,
         quantized_width_histogram=quantized_width_histogram,
+        safetensors_path=safetensors_path,
+        safetensors_sha256=safetensors_sha256,
     )
 
 
@@ -1145,6 +1594,11 @@ def print_plan(plan: Plan, dry_run: bool) -> None:
             f"               measured stored_bytes={plan.quantized_stored_bytes} "
             f"widths={plan.quantized_width_histogram}"
         )
+    if plan.safetensors_path is not None:
+        print(
+            f"  safetensors: {plan.safetensors_path} (not primary; {plan.checkpoint_path.name} is)"
+        )
+        print(f"               sha256={plan.safetensors_sha256}")
     print(f"  code_rev:    {plan.code_rev}")
     print("  files:")
     for path_in_repo, item in sorted(plan.files.items()):
@@ -1219,11 +1673,11 @@ def publish(plan: Plan) -> dict[str, list[str]]:
 
     api = HfApi(token=token)
     ensure_private(api, plan.repo, plan.repo_type)
-    extra_shas = (
-        {plan.quantized_path.name: plan.quantized_sha256}
-        if plan.quantized_path is not None and plan.quantized_sha256 is not None
-        else None
-    )
+    extra_shas: dict[str, str] = {}
+    if plan.quantized_path is not None and plan.quantized_sha256 is not None:
+        extra_shas[plan.quantized_path.name] = plan.quantized_sha256
+    if plan.safetensors_path is not None and plan.safetensors_sha256 is not None:
+        extra_shas[plan.safetensors_path.name] = plan.safetensors_sha256
     result = sync_repo(
         api,
         plan.repo,
@@ -1252,6 +1706,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="owner/name; default follows scripts/csd-hf-repos.py's naming convention",
     )
+    ap.add_argument(
+        "--safetensors",
+        action="store_true",
+        help="also export and upload final.safetensors (cogsyndelta.cards.export) "
+        "beside the primary final.pt, so the Hub shows the safetensors badge/model-size "
+        "sidebar. Opt-in: refuses (rather than silently skipping) if the checkpoint "
+        "does not torch.load() as a plain state dict.",
+    )
     ap.add_argument("--dry-run", action="store_true")
     return ap.parse_args(argv)
 
@@ -1260,7 +1722,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     repo = args.repo or default_repo(args.region)
     try:
-        plan = build_plan(args.region, repo, args.receipt, args.eval_receipt, args.quant_receipt)
+        plan = build_plan(
+            args.region,
+            repo,
+            args.receipt,
+            args.eval_receipt,
+            args.quant_receipt,
+            want_safetensors=args.safetensors,
+        )
     except PublishAbortError as e:
         print(f"ABORT: {e}", file=sys.stderr)
         return 2

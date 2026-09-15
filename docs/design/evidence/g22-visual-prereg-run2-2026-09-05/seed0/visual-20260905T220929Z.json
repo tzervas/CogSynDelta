@@ -1,0 +1,217 @@
+{
+  "region": "visual",
+  "objective": "I-JEPA latent prediction; gated on linear probe, never on loss",
+  "masking": "random-permutation",
+  "corpus": {
+    "corpus_source": "visual-clean-v1",
+    "shards": [
+      "nyuuzyou__pxhere/processed/20260905T035325Z/train.zip",
+      "biglam__british-library-book-images/processed/20260905T035325Z/train.zip",
+      "basveeling__pcam/processed/20260905T045655Z/train.zip",
+      "google-deepmind__3d-shapes/processed/20260905T062637Z/train.zip",
+      "facebookresearch__clevr/processed/20260905T063733Z/train.zip",
+      "zalando__fashion-mnist/processed/20260905T062523Z/train.zip",
+      "phelber__eurosat-rgb-128/processed/20260905T031650Z/train.zip"
+    ],
+    "fingerprint": "ab5761b65714e4ba4d7c36df095f3599",
+    "fingerprint_scheme": "csd-corpus-fp/v2",
+    "image_column": "image",
+    "label_column": "label",
+    "probe_sets": [
+      "eurosat-test",
+      "fashion-t10k",
+      "shapes3d-probe",
+      "clevr-val-probe"
+    ]
+  },
+  "started_utc": "2026-09-05T21:59:14Z",
+  "seconds": 585.5,
+  "device": "cuda",
+  "parameters": 22905216,
+  "checkpoint": "/akula-data/csd/matrix/visual-b128-s0-3ce18db-20260905/receipts/visual-checkpoints/step-4000.pt",
+  "checkpoint_sha256": "1f909b6d7e9ff5b2b88721ff0fe9686ac69e61f2fe3e89cd4034e58c78843d9f",
+  "train_images": 581280,
+  "probe_classes": 10,
+  "config": {
+    "jepa": {
+      "image_size": 128,
+      "patch_size": 8,
+      "in_channels": 3,
+      "dim": 384,
+      "depth": 6,
+      "n_heads": 6,
+      "predictor_dim": 192,
+      "predictor_depth": 3,
+      "ema_base": 0.996,
+      "ema_final": 1.0,
+      "context_keep": 0.4,
+      "n_target_blocks": 4,
+      "target_scale": [
+        0.15,
+        0.2
+      ],
+      "pos_kind": "sincos2d"
+    },
+    "steps": 4000,
+    "batch_size": 128,
+    "seed": 0,
+    "probe_steps": 600,
+    "probe_lr": 0.001,
+    "trainer_defaults": {
+      "steps": 4000,
+      "batch_size": 128,
+      "lr": 0.00015,
+      "bf16": null,
+      "max_len": null
+    }
+  },
+  "untrained_baseline": {
+    "top1": 0.6251851916313171,
+    "top5": 0.9546296000480652,
+    "n_eval": 5400.0,
+    "rep_std": 0.4215286374092102,
+    "source": "phelber/eurosat-rgb-128",
+    "name": "eurosat-test"
+  },
+  "held_out": {
+    "top1": 0.7224074006080627,
+    "top5": 0.9809259176254272,
+    "n_eval": 5400.0,
+    "rep_std": 0.3534567058086395,
+    "source": "phelber/eurosat-rgb-128",
+    "name": "eurosat-test"
+  },
+  "untrained_transfer": {
+    "top1": 0.7100000381469727,
+    "top5": 0.9810000658035278,
+    "n_eval": 2000.0,
+    "source": "zalando/fashion-mnist",
+    "name": "fashion-t10k"
+  },
+  "transfer": {
+    "top1": 0.8005000352859497,
+    "top5": 0.9925000667572021,
+    "n_eval": 2000.0,
+    "source": "zalando/fashion-mnist",
+    "name": "fashion-t10k"
+  },
+  "probe_protocol": {
+    "jepa_train_shards": [
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/nyuuzyou__pxhere/processed/20260905T035325Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/biglam__british-library-book-images/processed/20260905T035325Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/basveeling__pcam/processed/20260905T045655Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/google-deepmind__3d-shapes/processed/20260905T062637Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/facebookresearch__clevr/processed/20260905T063733Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/zalando__fashion-mnist/processed/20260905T062523Z/train.zip",
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/phelber__eurosat-rgb-128/processed/20260905T031650Z/train.zip"
+    ],
+    "linear_train_shards": [
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/phelber__eurosat-rgb-128/processed/20260905T031650Z/train.zip"
+    ],
+    "linear_eval_shards": [
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/phelber__eurosat-rgb-128/processed/20260905T031650Z/probe.zip"
+    ],
+    "transfer_shards": [
+      "/mnt/bulk/csd-corpus/factory-2026-09-05/visual/zalando__fashion-mnist/processed/20260905T062523Z/probe.zip"
+    ],
+    "image_backend": "png_zip",
+    "image_column": "image",
+    "label_column": "label",
+    "transfer_image_column": "image",
+    "transfer_label_column": "label",
+    "sets": [
+      {
+        "name": "eurosat-test",
+        "source": "phelber/eurosat-rgb-128",
+        "n": 5400,
+        "role": "primary"
+      },
+      {
+        "name": "fashion-t10k",
+        "source": "zalando/fashion-mnist",
+        "n": 10000,
+        "role": "transfer"
+      },
+      {
+        "name": "shapes3d-probe",
+        "source": "google-deepmind/3d-shapes",
+        "n": 5000,
+        "role": "held_out"
+      },
+      {
+        "name": "clevr-val-probe",
+        "source": "facebookresearch/clevr",
+        "n": 5000,
+        "role": "held_out"
+      }
+    ],
+    "cache_dir": "/akula-data/csd/matrix/visual-b128-s0-3ce18db-20260905/vl-cache"
+  },
+  "collapse_ratio": 0.8385,
+  "collapsed": false,
+  "history": [
+    {
+      "step": 500,
+      "loss": 0.055442385375499725,
+      "rep_std": 0.4383312463760376,
+      "lr": 0.0001485511918539119
+    },
+    {
+      "step": 1000,
+      "loss": 0.03880351036787033,
+      "rep_std": 0.3496341109275818,
+      "lr": 0.00013614749746690164
+    },
+    {
+      "step": 1500,
+      "loss": 0.03737974539399147,
+      "rep_std": 0.3601017892360687,
+      "lr": 0.00011308138492007198
+    },
+    {
+      "step": 2000,
+      "loss": 0.037580426782369614,
+      "rep_std": 0.3689839541912079,
+      "lr": 8.337494092970883e-05
+    },
+    {
+      "step": 2500,
+      "loss": 0.03724667802453041,
+      "rep_std": 0.3680742681026459,
+      "lr": 5.2208140817581654e-05
+    },
+    {
+      "step": 3000,
+      "loss": 0.038389548659324646,
+      "rep_std": 0.36310291290283203,
+      "lr": 2.5015605283889674e-05
+    },
+    {
+      "step": 3500,
+      "loss": 0.04031636565923691,
+      "rep_std": 0.37585076689720154,
+      "lr": 6.538954128247959e-06
+    },
+    {
+      "step": 4000,
+      "loss": 0.03890930116176605,
+      "rep_std": 0.37238943576812744,
+      "lr": 0.0
+    }
+  ],
+  "resumed": false,
+  "resumed_from_step": 0,
+  "beats_untrained": {
+    "probe_top1": true,
+    "probe_top5": true,
+    "not_collapsed": true,
+    "transfer_top1": true
+  },
+  "code_revision": {
+    "git_sha": "6964c0a98ee30a44239affc170d028dc61f61b49",
+    "dirty": true,
+    "branch": "main",
+    "describe": "v0.2.0-164-g6964c0a"
+  },
+  "metrics_schema": "csd-metrics/v2"
+}

@@ -58,6 +58,17 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
+_SRC = str(Path(__file__).resolve().parents[1] / "src")
+if _SRC not in sys.path:
+    # cogsyndelta.regions.aliases has no heavy dependency (no torch, no
+    # tokenizers/pyarrow), so importing it here costs the --help / --dry-run paths
+    # nothing -- same reasoning as scripts/csd-publish-checkpoint.py's own sys.path
+    # shim, needed because this script is often invoked directly rather than with
+    # PYTHONPATH already set.
+    sys.path.append(_SRC)
+
+from cogsyndelta.regions.aliases import REGION_ALIASES  # noqa: E402
+
 # Durable, never a temp dir. /tmp filled at 0 bytes free when checkpoints landed there.
 DEFAULT_STATE = Path("/akula-data/csd")
 CORPUS = Path("/mnt/fleet-datasets/csd")
@@ -205,16 +216,66 @@ class CorpusSourceMissingError(RuntimeError):
     """
 
 
+class VisualCorpusUnsetError(RuntimeError):
+    """Raised when `run_vl_region` is asked to train a region whose `VL_REGIONS` entry
+    has no admitted `corpus_source` (OD-4 pending).
+
+    tiny-imagenet was the hardcoded `train`/`probe_eval` glob here until W7v-cfg (g8
+    sector `g8-visual/S02.md`, `g8-visual-faculty-design.md` "OD-4 mix"): `license: []`
+    plus an ImageNet Terms of Access `extra_gated_prompt` (non-commercial; indemnify
+    copies of copyrighted images), 100% of `vl_latent`'s corpus, no clean fraction --
+    `docs/design/LICENCE-FOR-OPEN-WEIGHTS.md:364-411`. Deleting the hardcoded glob and
+    requiring an explicit `corpus_source` is what makes "trained on it by accident"
+    structurally impossible: there is no default left to fall back to.
+    """
+
+
+HELD_OUT_SHARDS: dict[str, str] = {
+    "reason/gsm8k-main/test.parquet": (
+        "openai/gsm8k:main test (1,319 rows, MIT, verified at "
+        "github.com/openai/grade-school-math 2026-09-06)"
+    ),
+}
+"""Individual shards reserved as holdouts, keyed by the trailing `<region>/<dir>/<file>`.
+
+RESERVED_FOR_COMPOSE cannot express this. It is keyed by DIRECTORY, and
+`reason/gsm8k-main/` holds both the `train` split every reason cell is trained on and the
+`test` split that must never be trained on. Reserving the directory would refuse the
+region's own corpus; reserving nothing would let a future config widen a glob from
+`train.parquet` to `*.parquet` and silently absorb the battery's population.
+
+This is the SHARD half of the holdout guarantee and it is deliberately not the whole of
+it: a shard check cannot see rows that reached a config some other way. The item-id half
+is G41 (`cogsyndelta.splits.assert_no_reserved_holdout_in_pairs`), enforced inside
+`build_splits` on the realised training pairs.
+"""
+
+
 def _refuse_reserved_shards(region: str, glob_pat: str, shards: list[str]) -> None:
-    """Raise :class:`ReservedSourceError` if any resolved shard is under a reserved corpus."""
+    """Raise :class:`ReservedSourceError` if any resolved shard is reserved.
+
+    Two reservations, one check: whole directories allocated to the composed model
+    (:data:`RESERVED_FOR_COMPOSE`) and individual holdout shards
+    (:data:`HELD_OUT_SHARDS`).
+    """
     for shard in shards:
+        parts = Path(shard).parts
         for name, note in RESERVED_FOR_COMPOSE.items():
-            if name in Path(shard).parts:
+            if name in parts:
                 raise ReservedSourceError(
                     f"region {region!r} source {glob_pat!r} resolved a shard under the "
                     f"reserved directory {name!r} ({note}, allocated `compose` -- see "
                     f"docs/design/CORPUS-CONTRACT.md §2.4). Reserved sources may only be "
                     f"consumed by the composed model. Refusing to start. shard: {shard}"
+                )
+        for suffix, note in HELD_OUT_SHARDS.items():
+            if parts[-len(Path(suffix).parts) :] == Path(suffix).parts:
+                raise ReservedSourceError(
+                    f"region {region!r} source {glob_pat!r} resolved the held-out shard "
+                    f"{suffix!r} ({note}). It is reserved as the population of a "
+                    f"pre-registered battery and is not training material for any region "
+                    f"-- see docs/design/CORPUS-CONTRACT.md §2.2 item-level disjointness. "
+                    f"Refusing to start. shard: {shard}"
                 )
 
 
@@ -499,6 +560,30 @@ REGIONS: dict[str, tuple[list[SourceSpec], str, int, GradedSpec | None]] = {
 }
 
 
+def _add_region_name_aliases(regions: dict[str, object]) -> dict[str, object]:
+    """Make every entry already present under a legacy OR canonical region name
+    (`cogsyndelta.regions.aliases.REGION_ALIASES`) reachable under the OTHER spelling
+    too, pointing at the exact same value -- so `REGIONS["language"] is
+    REGIONS["code"]`, and a monkeypatch.setitem into either key mutates what the other
+    spelling sees. Does not invent an entry for a region that has neither spelling
+    present. Mutates and returns `regions` so it can wrap a dict literal in place.
+    """
+    for legacy, canonical in REGION_ALIASES.items():
+        if legacy in regions and canonical not in regions:
+            regions[canonical] = regions[legacy]
+        elif canonical in regions and legacy not in regions:
+            regions[legacy] = regions[canonical]
+    return regions
+
+
+# `REGIONS`'s own key stays the legacy `code` -- it matches the on-disk corpus
+# directory (`region/code/...`, above), the matrix cell names, and every comment in
+# this module about that corpus, none of which rename with the catalogue. `language`
+# is added as an alias to the identical entry so `--regions language` (or
+# `region_spec("language")`) resolves it too -- see `_add_region_name_aliases`.
+_add_region_name_aliases(REGIONS)
+
+
 class RegionEntry(NamedTuple):
     """A `REGIONS[name]` value, typed and named, plus the corpus root it resolves against.
 
@@ -579,22 +664,44 @@ def region_spec(name: str) -> RegionEntry:
 # and its data is an image struct rather than two text columns. So it gets its own entry
 # and its own runner rather than being bent into REGIONS.
 VL_REGIONS: dict[str, dict] = {
-    "vl_latent": {
-        "train": "vl/tiny-imagenet/data/train-*.parquet",
-        "probe_eval": "vl/tiny-imagenet/data/valid-*.parquet",
+    "visual": {
+        # OD-4 (g8-visual-faculty-design.md "Operator decisions", row "OD-4 mix"):
+        # tiny-imagenet is 100% BLOCKING as a training source -- `license: []` plus an
+        # ImageNet ToA `extra_gated_prompt` (non-commercial; indemnify copies of
+        # copyrighted images), audited in LICENCE-FOR-OPEN-WEIGHTS.md:364-411, with no
+        # clean fraction to carve out. It is no longer wired below as `train`/
+        # `probe_eval`/`transfer` globs a careless `--regions vl_latent` could hit by
+        # accident. `corpus_source` names the landed, ADMITTED replacement corpus
+        # (recommended: option B, `visual-clean-v1`, Mix B 581280 images, ingest §5.2).
+        # Round-3 admit wired the manifest at `config/mind/visual-clean-v1.json`.
+        # `run_vl_region` still refuses when `corpus_source` is unset (no tiny-imagenet
+        # fallback). parquet `train`/`probe_eval` globs stay None: Mix B is PNG-in-zip.
+        "corpus_source": "visual-clean-v1",
+        "manifest": "config/mind/visual-clean-v1.json",
+        "train": None,
+        "probe_eval": None,
         "columns": ("image", "label"),
-        # cifar100 is a DIFFERENT dataset with different classes, so the probe on it
-        # measures whether the representation transfers rather than memorises. Unlike
-        # `retrieve`'s holdout -- which is a uniform sample of an in-mixture pool, NOT an
-        # out-of-domain fiqa split; see the `SourceSpec` comment above and
-        # docs/design/CORPUS-CONTRACT.md Part 3 -- this probe really does train on one
-        # shard (`train`) and evaluate on an entirely separate one (`transfer`), so it is
-        # actually out-of-domain.
-        "transfer": "vl/cifar100/cifar100/test-*.parquet",
-        "transfer_columns": ("img", "fine_label"),
-        "note": "I-JEPA over 64x64 patches; gated on a linear probe, never on loss",
+        # cifar100 is Tiny Images (CIFAR-100's parent), also BLOCKING as a train source
+        # (LICENCE-FOR-OPEN-WEIGHTS.md:809-817); the g8 sector's OD-4 recommendation is
+        # to replace it too (Quick Draw / Caltech-256 / EuroSAT test) rather than carry
+        # it forward eval-only by default. Left unset for the same reason `train` is.
+        "transfer": None,
+        # Zip-landed Mix B transfer is Fashion t10k PNGs; `_decode_png_stores` labels
+        # from folder names and never reads these columns. Deleted as dead config
+        # (early alpha). Parquet VLPretrainConfig still has image/label defaults.
+        "note": (
+            "I-JEPA over composite-shaped (128x128/8/256) patches; gated on a linear "
+            "probe, never on loss. corpus_source=visual-clean-v1 (OD-4 Mix B, 581280)."
+        ),
     },
 }
+
+# `visual` (nee `vl_latent`, operator naming rule 2026-09-04) is the canonical key
+# above; `vl_latent` is added as an alias to the identical entry -- `--regions
+# vl_latent` and every test written before the rename keep working, and
+# `monkeypatch.setitem(VL_REGIONS["vl_latent"], ...)` mutates the SAME dict `"visual"`
+# also sees. See `_add_region_name_aliases`, defined next to `REGIONS` above.
+_add_region_name_aliases(VL_REGIONS)
 
 
 # The classify corpora are (text, LABEL) rows, not (anchor, positive) text pairs -- see
@@ -670,6 +777,33 @@ def _schema_mismatch(shards: list[str], cols: tuple[str, str]) -> str | None:
     return None
 
 
+def _auxiliary_weights(
+    region: str, token_loss_weight: float | None, decorr_weight: float | None
+) -> tuple[float, float]:
+    """Resolve `(ζ, γ)` for a region: the declared pair unless overridden.
+
+    `None` means "not overridden" and `0.0` means zero, which is the whole point of the
+    signature: `TOKEN_AWARE_REGIONS` used to be the only source, so this runner could not
+    express the auxiliaries-off configuration a pre-registered arm requires, and a round
+    launched through it would have trained the production objective and completed
+    normally. A falsy check (`token_loss_weight or declared`) would reintroduce exactly
+    that bug, since `0.0` is falsy.
+
+    Args:
+        region: Region key.
+        token_loss_weight: Override, or None to keep the declared value.
+        decorr_weight: Override, or None to keep the declared value.
+
+    Returns:
+        `(token_loss_weight, decorr_weight)` as the run will use them.
+    """
+    declared_token, declared_decorr = TOKEN_AWARE_REGIONS.get(region, (0.0, 0.0))
+    return (
+        declared_token if token_loss_weight is None else token_loss_weight,
+        declared_decorr if decorr_weight is None else decorr_weight,
+    )
+
+
 def run_region(
     name: str,
     state: Path,
@@ -683,6 +817,8 @@ def run_region(
     allow_missing: bool = False,
     init_embedding_from: str | None = None,
     seed: int = 0,
+    token_loss_weight: float | None = None,
+    decorr_weight: float | None = None,
 ) -> dict | None:
     """Train one region and return its receipt.
 
@@ -717,17 +853,29 @@ def run_region(
             table for every region, including one `SHARED_EMBEDDING_TABLE_SOURCE` names
             as DESIGNED to inherit one -- intent alone applies nothing.
         seed: Forwarded to `PretrainConfig.seed` -- governs the model's initial weights
-            (`torch.manual_seed(cfg.seed)`), a cap's reservoir sample (`load_pairs`'s
-            `sampling_rng`) and the pre-training pair shuffle (`_random.Random(cfg.seed)`
-            -- see `regions/pretrain.py`'s `pretrain_region`). Default 0 matches
-            `PretrainConfig.seed`'s own default, so omitting `--seed` on the command
-            line trains byte-identically to every run before this parameter existed.
+            (`torch.manual_seed(cfg.seed)`) and the untrained baseline. Held-out
+            membership is `PretrainConfig.split_seed` (default 0) plus the committed
+            split manifest (E0 / G26); this seed must not redraw the eval set. Default 0
+            matches `PretrainConfig.seed`'s own default.
             Recorded in the written receipt at `receipt["config"]["seed"]` (every
             `PretrainConfig` field is folded into `receipt["config"]` via `asdict(cfg)`
             -- already true for every region trained through `pretrain_region`) and
             again at `receipt["untrained_baseline_seed"]` (a dedicated field naming the
             seed the untrained baseline's weights were constructed with) -- this
             parameter is what makes either value something other than always 0.
+        token_loss_weight: Override `TOKEN_AWARE_REGIONS`' `ζ` for this run. `None` (the
+            default) keeps the region's own declared value, so nothing changes for a
+            normal run. `0.0` is a REAL value, not "unset": an experiment whose
+            pre-registration requires the auxiliary terms off (see
+            PREREG-RETRIEVAL-NEGATIVES-2026-09-06 rev 3 section 2.1, where both weights
+            are 0.0 in every arm) could previously not be launched through this runner at
+            all -- it hard-coded `memory`'s 0.1/0.1 -- so an arm started here would have
+            silently trained the production objective and completed looking fine. The
+            weights the loss ACTUALLY used are recorded in the receipt
+            (`objective_weights.measured`) and graded against the pre-registration by
+            `cogsyndelta.eval.prereg` (G40), which is what protects the result no matter
+            which entry point launched it.
+        decorr_weight: Override `TOKEN_AWARE_REGIONS`' `γ` for this run, same contract.
 
     Returns:
         The receipt, or None when the region has no usable sources or `dry` is set.
@@ -856,8 +1004,12 @@ def run_region(
         # default: printing `graded_columns: ["sentence1","sentence2","score"]` for
         # `code`/`retrieve`/`reason`, which have no graded set at all, would misread as
         # those columns being attached to that region.
-        token_loss_weight, decorr_weight = TOKEN_AWARE_REGIONS.get(name, (0.0, 0.0))
+        declared_token, declared_decorr = _auxiliary_weights(name, token_loss_weight, decorr_weight)
         plan = {
+            # NOT canonicalized -- matches exactly what the real (non-dry) run below
+            # writes as `PretrainConfig.region`, which is also deliberately left as
+            # `name` (see that assignment's comment): the dry-run preview must show
+            # what a real run actually does, not a nicer-looking name it does not use.
             "region": name,
             "pair_columns": list(pair_cols),
             "shards": shards,
@@ -869,14 +1021,17 @@ def run_region(
             "lr": lr_for_batch(batch),
             "max_len": resolved_max_len,
             "seed": seed,
+            "split_seed": 0,
+            "order_seed": 0,
             "holdout_pairs": 512,
             "graded_shards": graded_shards,
             "graded_columns": list(graded_cols) if graded_cols is not None else None,
             "graded_name": graded_name,
-            # §4.0's token-aware terms (row W4) -- see TOKEN_AWARE_REGIONS.
-            "token_loss_weight": token_loss_weight,
-            "decorr_weight": decorr_weight,
-            "token_aware": bool(token_loss_weight or decorr_weight),
+            # §4.0's token-aware terms (row W4) -- see TOKEN_AWARE_REGIONS, and
+            # `--token-loss-weight`/`--decorr-weight`, which override them (0.0 included).
+            "token_loss_weight": declared_token,
+            "decorr_weight": declared_decorr,
+            "token_aware": bool(declared_token or declared_decorr),
             # DEC-24 -- see SHARED_EMBEDDING_TABLE_SOURCE. `applied` is what actually
             # happens THIS run (a real path was given), `designed_source` is the intent
             # named regardless of whether one was.
@@ -894,8 +1049,17 @@ def run_region(
     from cogsyndelta.regions import PretrainConfig, pretrain_region
     from cogsyndelta.regions.text_encoder import TextEncoderConfig
 
-    token_loss_weight, decorr_weight = TOKEN_AWARE_REGIONS.get(name, (0.0, 0.0))
+    resolved_token_weight, resolved_decorr_weight = _auxiliary_weights(
+        name, token_loss_weight, decorr_weight
+    )
     cfg = PretrainConfig(
+        # Deliberately NOT canonicalized, unlike the dry-run plan's display above:
+        # `cogsyndelta.regions.pretrain.pretrain_region` derives the checkpoint
+        # directory (`{cfg.region}-checkpoints`) and receipt filename straight from
+        # this value, and changing THAT for an in-flight region would split one
+        # region's history across two directories mid-run. Out of scope for this
+        # rename -- see cogsyndelta.regions.aliases's module docstring for what stays
+        # legacy-spelled on disk.
         region=name,
         pair_columns=pair_cols,
         shards=shards,
@@ -913,6 +1077,9 @@ def run_region(
         # old length, so the encoder's extra positional capacity would never be exercised.
         max_len=resolved_max_len,
         seed=seed,
+        split_seed=0,
+        order_seed=0,
+        require_split_manifest=True,
         holdout_pairs=512,
         eval_every=max(1, steps // 6),
         warmup_steps=max(50, steps // 15),
@@ -931,8 +1098,8 @@ def run_region(
         graded_columns=graded_cols or ("sentence1", "sentence2", "score"),
         graded_name=graded_name or "",
         allow_unfingerprinted_resume=allow_unfingerprinted_resume,
-        token_loss_weight=token_loss_weight,
-        decorr_weight=decorr_weight,
+        token_loss_weight=resolved_token_weight,
+        decorr_weight=resolved_decorr_weight,
         init_embedding_from=init_embedding_from,
     )
     started = time.time()
@@ -1165,21 +1332,85 @@ def run_vl_region(
     spec = VL_REGIONS[name]
     print(f"\n=== {name} — {spec['note']}", flush=True)
 
-    train = _shards(spec["train"])
-    probe_eval = _shards(spec["probe_eval"])
-    transfer = _shards(spec["transfer"])
+    # Fails BEFORE any shard resolution: with `corpus_source` unset, `spec["train"]` is
+    # `None`, not a glob a careless `--regions vl_latent` could resolve into
+    # tiny-imagenet by accident -- see `VisualCorpusUnsetError` and OD-4
+    # (g8-visual-faculty-design.md "Operator decisions").
+    corpus_source = spec.get("corpus_source")
+    if not corpus_source:
+        raise VisualCorpusUnsetError(
+            f"region {name!r} has no admitted visual corpus "
+            f"(VL_REGIONS[{name!r}]['corpus_source'] is unset). tiny-imagenet is 100% "
+            f"BLOCKING (missing ImageNet grant; docs/design/"
+            f"LICENCE-FOR-OPEN-WEIGHTS.md:364-411) and is no longer wired as a fallback "
+            f"-- see OD-4 in /akula-data/session-backup-staging/tools/grok-jobs/"
+            f"g8-visual-faculty-design.md ('Operator decisions' table, row 'OD-4 mix'). "
+            f"Land and admit a visual corpus (recommended: option B, visual-clean-v1, "
+            f"Mix B 581280 images, ingest §5.2), then set VL_REGIONS[{name!r}]['corpus_source'] "
+            f"and its manifest before training this region. "
+            f"Refusing to start."
+        )
+
+    manifest_rel = spec.get("manifest")
+    png_backend = False
+    probe_train: list[str] = []
+    probe_set_names: list[str] = []
+    if manifest_rel:
+        from cogsyndelta.vl.mix_corpus import (
+            MixCorpusError,
+            refuse_unless_manifest_consistent,
+            source_probe_path,
+            source_train_path,
+            train_sources,
+        )
+
+        repo_root = Path(__file__).resolve().parent.parent
+        try:
+            manifest, dry_info = refuse_unless_manifest_consistent(repo_root / str(manifest_rel))
+        except MixCorpusError as exc:
+            raise SystemExit(f"visual corpus refused: {exc}") from exc
+        print(
+            f"    visual-clean-v1  listed_train={dry_info['listed_train']}  "
+            f"fingerprint={dry_info['fingerprint']}  "
+            f"largest_share={dry_info['concentration_largest_share']}",
+            flush=True,
+        )
+        for row in dry_info["sources"]:
+            print(
+                f"    {row['id']:<42} train {row['listed_train']:>7}  "
+                f"probe {row['listed_probe']:>5}",
+                flush=True,
+            )
+        if dry:
+            return dry_info
+        png_backend = True
+        train = [str(source_train_path(manifest, s)) for s in train_sources(manifest)]
+        eurosat = next(s for s in manifest["sources"] if s["id"] == "phelber/eurosat-rgb-128")
+        probe_eval = [str(source_probe_path(manifest, eurosat))]
+        probe_train = [str(source_train_path(manifest, eurosat))]
+        fashion = next(s for s in manifest["sources"] if s["id"] == "zalando/fashion-mnist")
+        fashion_probe = source_probe_path(manifest, fashion)
+        transfer = [str(fashion_probe)] if fashion_probe is not None else []
+        probe_set_names = list(dry_info["probe_sets"])
+        probe_sets = list(manifest.get("probe_sets") or [])
+    else:
+        train = _shards(spec["train"])
+        probe_eval = _shards(spec["probe_eval"])
+        transfer = _shards(spec["transfer"])
+        probe_train = train
+        probe_sets = []
     # Same fail-closed requirement as `run_region` (see RESERVED_FOR_COMPOSE and
     # `ReservedSourceError`): a reserved shard must never train ANY region, and this VL
     # path resolves its own shards independently of `run_region`'s loop, so it needs its
     # own call, ahead of the MISSING check and dry-run's early return below.
-    for label, glob_pat, got in (
-        ("train", spec["train"], train),
-        ("probe_eval", spec["probe_eval"], probe_eval),
-        ("transfer", spec["transfer"], transfer),
-    ):
-        _refuse_reserved_shards(name, glob_pat, got)
+    glob_for = spec.get("train") or spec.get("manifest") or "visual"
     for label, got in (("train", train), ("probe_eval", probe_eval), ("transfer", transfer)):
+        _refuse_reserved_shards(name, str(glob_for), got)
         print(f"    {len(got):>2} shard(s)  {label}", flush=True)
+    required = ("train", train), ("probe_eval", probe_eval)
+    if not png_backend:
+        required = (*required, ("transfer", transfer))
+    for label, got in required:
         if not got:
             print(f"    source MISSING for {label} — skipping {name}", flush=True)
             return None
@@ -1193,15 +1424,15 @@ def run_vl_region(
     cfg = VLPretrainConfig(
         region=name,
         train_shards=train,
-        # The probe trains on labelled pretraining images and is scored on the valid
-        # split, which pretraining never touches.
-        probe_train_shards=train,
+        # Mix B: I-JEPA trains on the seven unlabeled zips; the linear probe trains on
+        # labelled EuroSAT train.zip and is scored on EuroSAT probe.zip (H1).
+        probe_train_shards=probe_train or train,
         probe_eval_shards=probe_eval,
         transfer_shards=transfer,
         image_column=spec["columns"][0],
         label_column=spec["columns"][1],
-        transfer_image_column=spec["transfer_columns"][0],
-        transfer_label_column=spec["transfer_columns"][1],
+        transfer_image_column=(spec.get("transfer_columns") or spec["columns"])[0],
+        transfer_label_column=(spec.get("transfer_columns") or spec["columns"])[1],
         steps=steps,
         batch_size=batch,
         seed=seed,
@@ -1211,9 +1442,20 @@ def run_vl_region(
         jepa=JEPAConfig(),
         out_dir=str(state / "receipts"),
         cache_dir=str(state / "vl-cache"),
+        image_backend="png_zip" if png_backend else "parquet",
+        probe_set_names=probe_set_names,
+        probe_sets=probe_sets,
+        corpus_source=str(manifest["id"]) if png_backend else str(corpus_source),
     )
     started = time.time()
     receipt = pretrain_vl_region(cfg)
+    if receipt.get("probe"):
+        print(
+            f"    probe_peak steps={receipt['steps']} batch={receipt['batch_size']} "
+            f"(no training receipt, no checkpoint, {time.time() - started:.0f}s)",
+            flush=True,
+        )
+        return receipt
     if receipt.get("resumed"):
         print(
             f"    resumed from step {receipt['resumed_from_step']}/{steps} "
@@ -1231,7 +1473,7 @@ def run_vl_region(
     if receipt.get("transfer") and receipt.get("untrained_transfer"):
         tb, th = receipt["untrained_transfer"], receipt["transfer"]
         print(
-            f"    transfer (cifar100)  untrained top1={tb['top1']:.4f}  ->  "
+            f"    transfer ({th.get('name') or 'transfer'})  untrained top1={tb['top1']:.4f}  ->  "
             f"trained top1={th['top1']:.4f}",
             flush=True,
         )
@@ -1463,6 +1705,24 @@ def main() -> int:
             "checkpoint path; naming the design without it trains from a random init."
         ),
     )
+    ap.add_argument(
+        "--token-loss-weight",
+        type=float,
+        default=None,
+        help=(
+            "override the region's declared token-loss weight (ζ). Unset keeps "
+            "TOKEN_AWARE_REGIONS' value; 0.0 turns the term OFF, which a "
+            "pre-registered arm may require (PREREG-RETRIEVAL-NEGATIVES-2026-09-06 "
+            "section 2.1 runs both weights at 0.0 in every arm). Forwarded to "
+            "run_region only."
+        ),
+    )
+    ap.add_argument(
+        "--decorr-weight",
+        type=float,
+        default=None,
+        help="override the region's declared decorrelation weight (γ); see --token-loss-weight.",
+    )
     args = ap.parse_args()
     _require_train_deps(args.dry_run)
 
@@ -1530,6 +1790,8 @@ def main() -> int:
                     allow_missing=args.allow_missing,
                     init_embedding_from=args.init_embedding_from,
                     seed=args.seed,
+                    token_loss_weight=args.token_loss_weight,
+                    decorr_weight=args.decorr_weight,
                 )
         except Exception as exc:
             print(f"  {name}: FAILED — {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)

@@ -279,7 +279,7 @@ def test_the_budget_axes_why_guard_fires_when_the_defaults_claim_is_removed() ->
         for name, merged in _merged_regions(raw).items()
         if _narrows_budget_axes(merged) and not merged.get("budget_axes_why")
     ]
-    assert sorted(offenders) == ["code", "compress", "reason", "retrieve"]
+    assert sorted(offenders) == ["compress", "language", "reason", "retrieve"]
 
 
 # ------------------------------------------- C1: requires must name a stage in the pipeline
@@ -439,6 +439,7 @@ _NOT_CELL_VARS = frozenset(
         "finetune",
         "keep",
         "corpus_fingerprint_pin",
+        "card",  # model-card metadata for scripts/csd-card.py -- see its own tests below
     }
 )
 
@@ -497,7 +498,7 @@ def test_the_template_key_guard_fires_on_an_uninjected_key() -> None:
     checker reports it -- the same shape as publish's real gap."""
     raw = copy.deepcopy(_raw())
     raw["regions"]["defaults"]["commands"]["train"] += " --nonsense {no_such_key}"
-    merged = _merged_regions(raw)["code"]
+    merged = _merged_regions(raw)["language"]
     assert _unresolvable(merged, "train") == {"no_such_key"}
 
 
@@ -570,3 +571,204 @@ def test_the_glob_guard_fires_when_the_receipt_kind_is_renamed() -> None:
         written = rec.write(Path(tmp) / "receipts")
         relative = f"receipts/{written.name}"
     assert not fnmatch.fnmatch(relative, glob)
+
+
+# ================================================== publish.card_command / regions.*.card
+#
+# `scripts/csd-card.py` (via `publish.card_command`) is a SEPARATE tool from the
+# `commands.publish` template (`csd-publish-checkpoint.py`) tested above -- see that
+# script's own module docstring. Its per-region `card:` metadata block must not silently
+# drift from the audited licence table `csd-publish-checkpoint.py`'s own `licence_tier()`
+# actually enforces: this config is descriptive (what a reader/harness sees), that
+# script is enforcing (what a real publish refuses), and the two naming different tiers
+# for the same region would be exactly the kind of provenance falsehood the rest of this
+# repo's card-building code refuses to print.
+
+PUBLISH_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "csd-publish-checkpoint.py"
+
+
+def _load_publish_licence_table() -> dict[str, str]:
+    import importlib.machinery
+    import importlib.util
+    import sys
+
+    loader = importlib.machinery.SourceFileLoader(
+        "csd_publish_checkpoint_for_matrix_test", str(PUBLISH_SCRIPT)
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[loader.name] = mod
+    loader.exec_module(mod)
+    return dict(mod.LICENCE_TIER)
+
+
+CARD_REGIONS = ("language", "compress", "retrieve", "reason", "memory", "visual")
+
+
+def test_every_card_region_declares_full_card_metadata() -> None:
+    raw = _raw()
+    for name in CARD_REGIONS:
+        card = raw["regions"][name].get("card")
+        assert isinstance(card, dict), f"region {name!r} has no 'card' block"
+        assert card.get("language") == "en"
+        assert isinstance(card.get("tags"), list) and card["tags"], (
+            f"region {name!r} card.tags empty"
+        )
+        assert isinstance(card.get("licence_tier"), str) and card["licence_tier"]
+        assert isinstance(card.get("datasets"), list) and card["datasets"], (
+            f"region {name!r} card.datasets empty"
+        )
+
+
+def test_every_card_tags_list_names_its_own_region() -> None:
+    raw = _raw()
+    for name in CARD_REGIONS:
+        tags = raw["regions"][name]["card"]["tags"]
+        assert "cogsyndelta" in tags
+        assert f"region:{name}" in tags
+
+
+def test_card_licence_tier_agrees_with_the_publish_script() -> None:
+    """The config's own `card.licence_tier` must equal what `csd-publish-checkpoint.py`'s
+    `licence_tier()` would actually resolve for that region -- the SAME audited table,
+    not a second, hand-copied one this config could silently drift from.
+    """
+    table = _load_publish_licence_table()
+    raw = _raw()
+    for name in CARD_REGIONS:
+        declared = raw["regions"][name]["card"]["licence_tier"]
+        assert declared == table[name], (
+            f"region {name!r} card.licence_tier={declared!r} disagrees with "
+            f"csd-publish-checkpoint.py's LICENCE_TIER[{name!r}]={table[name]!r}"
+        )
+
+
+# ---------------------------------------------- region rename (naming rule 2026-09-04)
+
+
+def test_language_region_declares_its_legacy_alias_and_specialisation() -> None:
+    """The language centre's row records what it used to be called and what it is
+    specialised on, for a reader of this config -- cogsyndelta.regions.aliases is the
+    logic's one source of truth, this is a legible restatement of it."""
+    region = _raw()["regions"]["language"]
+    assert region["aliases"] == ["code"]
+    assert region["specialisation"] == "code"
+
+
+def test_no_other_region_needs_a_hub_repo_name_override() -> None:
+    """After the Hub rename, only `visual` still overrides (`-vl-jepa`). Language
+    renders `repo_pattern` with the canonical id."""
+    raw = _raw()
+    for name in CARD_REGIONS:
+        if name == "visual":
+            continue
+        assert "hub_repo_name" not in raw["regions"][name]
+
+
+def test_visual_region_declares_its_legacy_alias_and_vl_jepa_hub_repo() -> None:
+    region = _raw()["regions"]["visual"]
+    assert region["aliases"] == ["vl_latent"]
+    assert "corpus_source" not in region
+
+    import importlib.machinery
+    import importlib.util
+    import sys
+
+    publish_script = Path(__file__).resolve().parents[1] / "scripts" / "csd-publish-checkpoint.py"
+    loader = importlib.machinery.SourceFileLoader(
+        "csd_publish_checkpoint_for_visual_hub_repo_test", str(publish_script)
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    pub_mod = importlib.util.module_from_spec(spec)
+    sys.modules[loader.name] = pub_mod
+    loader.exec_module(pub_mod)
+
+    assert region["hub_repo_name"] == pub_mod.default_repo("visual")
+    assert region["hub_repo_name"] == pub_mod.default_repo("vl_latent")
+    assert region["card"]["licence_tier"] == "mit"
+    assert region["hosts"] == ["akula-prime"]
+    assert region["axes"] == {"batch": [128], "seed": [0, 1]}
+    assert len(_cells(_merged_regions(_raw())["visual"])) == 2
+
+
+def test_shipped_config_plans_twenty_three_cells_across_six_card_regions() -> None:
+    """Five text/memory regions (21 cells) plus visual b128 × s{0,1} (2) = 23."""
+    merged = _merged_regions(_raw())
+    assert set(merged) == set(CARD_REGIONS)
+    counts = {name: len(_cells(spec)) for name, spec in merged.items()}
+    assert counts["visual"] == 2
+    assert sum(counts.values()) == 23
+
+
+_ALL_ZERO_SHA = "0" * 40
+
+
+def test_run_code_sha_is_not_the_all_zero_placeholder() -> None:
+    """g37 leaves 40 zeros so Claude can paste the wiring-merge sha at PR time.
+
+    This assertion is designed to fail while the placeholder is in the file; it
+    passes only after that sha is a real 40-hex commit. Do not delete the test
+    to go green -- fill `run.code.sha`.
+    """
+    sha = _raw()["run"]["code"]["sha"]
+    assert isinstance(sha, str) and len(sha) == 40
+    assert set(sha) <= set("0123456789abcdef"), f"run.code.sha is not lowercase hex: {sha!r}"
+    assert sha != _ALL_ZERO_SHA, (
+        "run.code.sha is the all-zero placeholder; CLAUDE FILLS AT PR TIME with the "
+        "visual-wiring merge commit before this PR can merge"
+    )
+
+
+def test_the_card_licence_tier_guard_fires_on_a_diverged_config() -> None:
+    """MUTATION. A config that names a tier the publish script's own table disagrees
+    with must be caught -- reproduced here by comparing a deliberately wrong table
+    entry against this config's real `card.licence_tier`, the same comparison the test
+    above makes, so a real future drift (someone edits one file and not the other) is
+    exactly what this shape catches."""
+    real_table = _load_publish_licence_table()
+    diverged_table = dict(real_table)
+    diverged_table["compress"] = "mit"  # the real tier is cc-by-sa-4.0
+    raw = _raw()
+    declared = raw["regions"]["compress"]["card"]["licence_tier"]
+    assert declared != diverged_table["compress"], (
+        "mutation proof is broken: the diverged table happens to already match the config"
+    )
+
+
+def test_publish_declares_card_command_and_branch_prefix() -> None:
+    raw = _raw()
+    publish = raw["publish"]
+    assert isinstance(publish.get("card_command"), str) and publish["card_command"].strip()
+    assert publish.get("branch_prefix") == "variants/"
+
+
+# card_command's placeholders: cell vars the harness already injects today
+# (region is a cell var; python/pythonpath are HARNESS_INJECTED_KEYS) plus the two
+# harness-round-4 keys this template genuinely needs (`hub_repo`, the ONE PENDING_HUB_KEYS
+# member `commands.publish` also needs) and `out`, which `card_command` is the only
+# template in this config that names (the harness would compute it from the cell dir +
+# a fixed filename, same shape as `train_receipt`/`quantized_path` above).
+CARD_COMMAND_KNOWN_EXTRA_KEYS = frozenset({"hub_repo", "out", "cell_dir"})
+
+
+def test_card_command_needs_only_known_or_pending_keys() -> None:
+    raw = _raw()
+    merged = _merged_regions(raw)["language"]  # any region: card_command is region-generic
+    known = _cell_var_names(merged) | HARNESS_INJECTED_KEYS | CARD_COMMAND_KNOWN_EXTRA_KEYS
+    missing = _placeholders(raw["publish"]["card_command"]) - known
+    assert missing == set(), (
+        f"publish.card_command references keys nothing injects or declares pending: {sorted(missing)}"
+    )
+
+
+def test_the_card_command_key_guard_fires_on_an_uninjected_key() -> None:
+    """MUTATION. Same shape as test_the_template_key_guard_fires_on_an_uninjected_key
+    above, for card_command specifically."""
+    raw = copy.deepcopy(_raw())
+    raw["publish"]["card_command"] += " --nonsense {no_such_key}"
+    merged = _merged_regions(raw)["language"]
+    known = _cell_var_names(merged) | HARNESS_INJECTED_KEYS | CARD_COMMAND_KNOWN_EXTRA_KEYS
+    missing = _placeholders(raw["publish"]["card_command"]) - known
+    assert missing == {"no_such_key"}

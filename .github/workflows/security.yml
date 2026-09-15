@@ -1,292 +1,73 @@
-# Security scanning workflow for CogSynDelta (Private Repository)
-# Includes CodeQL SAST, dependency review, and secret scanning
-#
-# GHAS (GitHub Advanced Security) Requirements:
-# - CodeQL upload to Security tab requires GHAS (set ENABLE_CODEQL_UPLOAD='true')
-# - Dependency Review requires GHAS (set ENABLE_DEPENDENCY_REVIEW='true')
-# - Without GHAS: CodeQL saves SARIF as artifacts, Dependency Review is skipped
-#
-# Repository Variables (Settings > Secrets and variables > Actions > Variables):
-# - ENABLE_CODEQL: 'true' to run CodeQL analysis
-# - ENABLE_CODEQL_UPLOAD: 'true' to upload results (requires GHAS)
-# - ENABLE_DEPENDENCY_REVIEW: 'true' to run dependency review (requires GHAS)
-# - ENABLE_SNYK: 'true' to run Snyk scans (requires SNYK_TOKEN secret)
-
+# Forgejo-executed security gate. GitHub-only products (CodeQL, Dependency Review,
+# Snyk) are a named no-op so they never show as skipped. Artifact upload is gone:
+# job containers cannot reach ROOT_URL:443 (ECONNREFUSED 192.168.1.170:443, then
+# artifact API 500). The merge gate is bandit -ll -ii printed to the log.
 name: Security
 
-# Manual only — no push/pull_request CI triggers
 "on":
   push:
-    branches:
-      - main
-      - dev
-      - develop
+    branches: [main]
   pull_request:
-    branches:
-      - main
-      - dev
-      - develop
   workflow_dispatch:
 
-# Restrict permissions for security
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
-  security-events: write
-  actions: read
 
 env:
-  UV_VERSION: "0.9.21"
-  # Pinned so bandit runs under a known-good interpreter version, mirroring the
-  # mypy pin in ci.yml. See the "Run Bandit" step below for why 3.12 matters.
   BANDIT_VERSION: "1.8.6"
 
 jobs:
-  # CodeQL Static Analysis (SAST)
-  # NOTE: CodeQL analysis runs successfully but upload requires GitHub Advanced Security (GHAS)
-  # For private repos without GHAS, set ENABLE_CODEQL_UPLOAD='false' to skip upload step
-  # Analysis results are saved as artifacts when upload is disabled
-  codeql:
-    name: CodeQL Analysis
-    runs-on: [self-hosted, linux, x64, podman]
-    timeout-minutes: 30
-    # Only run if code scanning is enabled (set ENABLE_CODEQL=true in repo variables)
-    if: ${{ vars.ENABLE_CODEQL == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: python
-          # Use extended queries for more thorough analysis
-          queries: security-extended,security-and-quality
-          # Config for private repo - no code upload
-          config: |
-            paths-ignore:
-              - tests
-              - benchmarks
-              - examples
-              - docs
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:python"
-          # Only upload if GHAS is enabled (requires paid GHAS for private repos)
-          # Set ENABLE_CODEQL_UPLOAD='true' in repo variables if GHAS is available
-          upload: ${{ vars.ENABLE_CODEQL_UPLOAD == 'true' }}
-          # Save SARIF results as artifact when upload is disabled
-          output: sarif-results
-
-      - name: Upload SARIF as artifact (when GHAS upload disabled)
-        if: ${{ vars.ENABLE_CODEQL_UPLOAD != 'true' }}
-        uses: actions/upload-artifact@v3
-        with:
-          name: codeql-sarif-results
-          path: sarif-results
-          retention-days: 30
-
-  # Dependency Review (PR only)
-  # Requires GitHub Advanced Security (paid for private repos)
-  # Enable at: Settings > Security > Code security and analysis > Dependency graph
-  dependency-review:
-    name: Dependency Review
-    runs-on: [self-hosted, linux, x64, podman]
-    # Only run on PRs AND when GHAS is enabled (set ENABLE_DEPENDENCY_REVIEW=true)
-    if: github.event_name == 'pull_request' && vars.ENABLE_DEPENDENCY_REVIEW == 'true'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v4
-        with:
-          # Fail on high/critical vulnerabilities
-          fail-on-severity: high
-          # Allow permissive licenses (deny all others by default)
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0, Unlicense, WTFPL, CC0-1.0, 0BSD
-
-  # Snyk Security Scan (requires SNYK_TOKEN secret)
-  snyk:
-    name: Snyk Security Scan
-    runs-on: [self-hosted, linux, x64, podman]
-    # Only run if SNYK_TOKEN is configured
-    if: ${{ vars.ENABLE_SNYK == 'true' }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Verify uv (baked into job image)
-        run: |
-          # uv is baked into the job image (fleet-ci-base), so nothing is installed
-          # here: no network dependency, and no tar extraction -- which is what forced
-          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
-          # must fail loudly and name the image, not silently skip the step.
-          command -v uv >/dev/null 2>&1 || {
-            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
-          uv --version
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Generate requirements for Snyk
-        run: |
-          # --no-sources: lock pins torch==2.9.1+cu128 from pyproject; PyPI has 2.9.1.
-          uv export --python 3.12 --no-hashes --no-sources > requirements-snyk.txt
-
-      - name: Run Snyk to check for vulnerabilities
-        uses: snyk/actions/python@master
-        continue-on-error: true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --file=requirements-snyk.txt --severity-threshold=high
-
-      - name: Upload Snyk results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: snyk.sarif
-        continue-on-error: true
-
-  # Python-specific security checks (always runs)
-  #
-  # This job carries no `if:` on event_name, so the steps below -- including the
-  # Bandit gate -- already run the identical command on `push` and `pull_request`.
-  # Verified against task 7026 (push, run 8645/job 19150, commit c91364a, PR #16
-  # merge), which the CI inventory logged as "failed on bandit findings
-  # B105/B311x2/B101x24/B404/B607": the job log shows the report-only call (default
-  # LOW/LOW, non-blocking) printing those 41 pre-existing LOW findings as designed,
-  # then the real gate call (-ll -ii) completing with "No issues identified" (0
-  # medium/high) -- reproduced locally against this same tree, same result. The job
-  # log then cuts off mid the following "Run pip-audit" step with no `##[error]`
-  # anywhere in it, unlike the passing pull_request run for the same PR head
-  # (job 19121, run 8632), whose log runs cleanly to "Job succeeded". That is a
-  # job-level crash after Bandit already passed (runner/network/host contention),
-  # not a Bandit or event-conditional defect -- there is nothing to align here.
   python-security:
     name: Python Security Checks
     runs-on: [self-hosted, linux, x64, podman]
-
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Verify uv (baked into job image)
+      - name: Bandit (gate) and pip-audit (notice)
         run: |
-          # uv is baked into the job image (fleet-ci-base), so nothing is installed
-          # here: no network dependency, and no tar extraction -- which is what forced
-          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
-          # must fail loudly and name the image, not silently skip the step.
+          set -euo pipefail
           command -v uv >/dev/null 2>&1 || {
-            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
+            echo "uv missing — job image is not fleet-ci-base" >&2
+            exit 1
+          }
           uv --version
 
-      - name: Set up Python 3.12
-        run: uv python install 3.12
+          echo "== bandit gate (medium+ / medium+ confidence; this exit code is the job) =="
+          if command -v bandit >/dev/null 2>&1; then
+            bandit --version
+            bandit -r src/ -ll -ii
+          else
+            uvx --python 3.12 --from "bandit==${BANDIT_VERSION}" bandit -r src/ -ll -ii
+          fi
 
-      - name: Install security tools
-        run: |
-          uv tool install pip-audit
-
-      # Pinned to 3.12, same reasoning as ci.yml's mypy pin: bandit's AST parser
-      # runs under whichever interpreter invokes it, not under a configurable
-      # target version. A bare `uvx bandit` resolves to the job image's system
-      # python3, which on this fleet is older than the project floor (3.12) and
-      # cannot parse PEP 695 syntax (e.g. `def f[T](...)` in
-      # src/cogsyndelta/corpus.py). Under that older interpreter bandit hits a
-      # "syntax error while parsing AST from file" for corpus.py, logs it only
-      # under -q-suppressed INFO noise, and silently excludes the file from
-      # scanning instead of failing the job — so the file was never actually
-      # checked. Confirmed locally: python 3.11 drops corpus.py with that exact
-      # error; python 3.12 parses and scans it (verified against this repo).
-      - name: Run Bandit security linter
-        run: |
-          set -uo pipefail
-          # Full JSON report (default LOW/LOW thresholds — bandit exits
-          # non-zero whenever *any* finding, including a low-severity one,
-          # matches its threshold, so this call is expected to fail even on a
-          # clean-ish tree and must not abort the step). Printed to the log
-          # AND kept as a step artifact, so findings are visible without
-          # depending on the upload-artifact step below (which is best-effort
-          # — see its comment).
-          #
-          # The runner invokes this script under `bash -e -o pipefail`, and
-          # `set -uo pipefail` above does NOT clear that inherited `-e` — it
-          # only adds `-u`. Without the trailing `|| true`, this call's
-          # expected-non-zero exit (LOW findings, see above) would abort the
-          # step right here under `-e`, and the real gate below would never
-          # run. The `|| true` is scoped to this report-only call; the gate
-          # invocation below stays bare so its exit code is what fails the
-          # job.
-          uvx --python 3.12 --from "bandit==${{ env.BANDIT_VERSION }}" bandit \
-            -r src/ -f json -o bandit-report.json || true
-          echo "== bandit-report.json =="
-          cat bandit-report.json
-          echo
-          # Gate: -ll (medium+ severity), -ii (medium+ confidence). This is the
-          # step that actually fails the job — no `|| echo` swallowing the exit
-          # code. Low-severity/low-confidence findings stay non-blocking by
-          # virtue of the flags, not by catching and discarding a failure.
-          uvx --python 3.12 --from "bandit==${{ env.BANDIT_VERSION }}" bandit \
-            -r src/ -ll -ii
-
-      - name: Run pip-audit for known vulnerabilities
-        run: |
-          # --no-sources drops [tool.uv.sources] pytorch-cu128 so pip-audit
-          # installs torch==2.9.1 from PyPI instead of torch==2.9.1+cu128.
+          echo "== pip-audit (notice only; known unfixed pins, not a merge gate) =="
           uv export --python 3.12 --no-hashes --no-sources > requirements-audit.txt
-          # Informational only (this step), by deliberate choice: three known
-          # findings are pre-existing, upstream-unfixed-at-current-pin issues
-          # the operator has not yet decided to bump for, and turning this
-          # blocking today would make main red on vulnerabilities nobody has
-          # acted on yet, not on anything this change introduced.
-          #   - pygments      PYSEC-2026-2987
-          #   - setuptools    PYSEC-2026-3447 (x2 advisories)
-          # `|| true` guards only the exit code — it never touched pip-audit's
-          # stdout/stderr, so the findings below were already printed to the
-          # log before this change too. What actually changed here: the
-          # previous `|| echo "::notice::..."` is gone. `||` branches on exit
-          # status, not on the command's streams, so that echo never hid
-          # anything either — replacing it with `|| true` only drops the
-          # generic ::notice:: annotation Forgejo rendered alongside the
-          # step; the findings themselves were, and remain, visible by
-          # scrolling this step's log.
-          uv tool run pip-audit -r requirements-audit.txt --desc on || true
+          set +e
+          if command -v pip-audit >/dev/null 2>&1; then
+            pip-audit -r requirements-audit.txt --desc on
+          else
+            uv tool run pip-audit -r requirements-audit.txt --desc on
+          fi
+          audit_st=$?
+          set -e
+          if [ "$audit_st" -ne 0 ]; then
+            echo "NOTICE: pip-audit exited ${audit_st}"
+            echo "known unfixed pins: pygments PYSEC-2026-2987, setuptools PYSEC-2026-3447"
+            echo "Not a merge gate. Gate is bandit -ll -ii above."
+          fi
 
-      - name: Upload security reports
-        uses: actions/upload-artifact@v3
-        if: always()
-        # The artifact endpoint is derived from Forgejo's ROOT_URL
-        # (https://git.vectorweight.com/), which DNS resolves to 192.168.1.170:443 -- an
-        # address job containers cannot reach. Measured from a container with the
-        # runner's exact options:
-        #     container -> 192.168.1.170:443   REFUSED
-        #     container -> 172.32.0.1:3080     OPEN
-        #     homelab   -> 192.168.1.170:443   OPEN
-        # so the upload fails with ECONNREFUSED and a 500, and takes the whole job with
-        # it. This is the same wall that forced registering the runner against
-        # http://172.32.0.1:3080; the artifact path reaches it by a different route.
-        #
-        # continue-on-error because this artifact is bandit-report.json -- a report for a
-        # human, not a gate. The actual checks run above and print their findings to the
-        # log. Failing a security job because a convenience artifact could not be stored
-        # trains people to ignore a red security check, which costs more than the report
-        # is worth.
-        #
-        # The real fix is routing/publishing so containers can reach the TLS edge. That
-        # is a fleet change, not a workflow change, and widening the host firewall to the
-        # edge just to store a report would trade a real boundary for a convenience.
-        continue-on-error: true
-        with:
-          name: security-reports
-          path: |
-            bandit-report.json
-          retention-days: 30
+  github-only:
+    name: GitHub-only checks (not run on Forgejo)
+    runs-on: [self-hosted, linux, x64, podman]
+    timeout-minutes: 2
+    steps:
+      - name: Not run on Forgejo
+        run: |
+          echo "CodeQL, Dependency Review, and Snyk are GitHub Advanced Security / SNYK_TOKEN jobs."
+          echo "This Forgejo runner does not execute them. python-security is the merge gate."

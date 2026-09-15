@@ -1,0 +1,12 @@
+{
+  "algorithm": "csd-batch-order/v1-leftover-then-permute",
+  "batch_size": 256,
+  "corpus_fingerprint": "65a9938192b5040beda5e92eb4078dbc",
+  "first_n": 64,
+  "n_train": 277268,
+  "region": "compress",
+  "schema": "csd-batch-order-manifest/v1",
+  "seed": 0,
+  "sha256": "3346a5abd85652e21584793c6100440c873f6bc65e055169c57a8f0f35a88bd1",
+  "steps": 4000
+}

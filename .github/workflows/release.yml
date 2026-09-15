@@ -1,82 +1,56 @@
 # Release Workflow for CogSynDelta
-# Triggers on merge to main, creates releases with semantic versioning
-# Builds artifacts but does NOT publish to PyPI (requires explicit approval)
-
+#
+# WHY THIS WAS REWRITTEN (2026-09-04)
+# The previous version was GitHub-era python-semantic-release: it pushed a
+# `chore(release)` commit + tag to main *from the workflow itself* (a bot writing
+# straight to a branch this repo now treats as PR-only), used `gh release` (a
+# GitHub-specific CLI with no Forgejo equivalent), and carried a second job that
+# published to ghcr.io (github.com-only; this repo mirrors there as a read-only
+# backup and does not publish packages from it). None of that fits the Forgejo-native
+# flow: `pyproject.toml`'s [tool.commitizen] now owns the version, and a version only
+# ever changes via a `bump:` commit that itself arrives by PR (see
+# docs/CONTRIBUTING.md#release-flow) -- this workflow's job is solely to notice that
+# the version on main has moved, tag it, and publish the Forgejo release + build
+# artifacts. It never bumps anything itself.
+#
+# Tags are the one ref not subject to the branch-PR rule (see .githooks/pre-push and
+# .github/workflows/conventions.yml): pushing `refs/tags/vX.Y.Z` here is exactly the
+# "create the release" act, not a way around the PR-only rule for branches.
+#
+# The `github.server_url != 'https://github.com'` guard exists because this repo mirrors
+# to github.com read-only; a push to main there (from the mirror sync) must not attempt
+# a Forgejo-only release API call.
 name: Release
 
-# Manual only — no push/pull_request CI triggers
 "on":
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run (no actual release)'
+        description: "Dry run (no tag push, no release, no asset upload)"
         required: false
         default: false
         type: boolean
 
-# Prevent concurrent releases
+env:
+  CZ_VERSION: "4.18.0"
+
 concurrency:
   group: release
   cancel-in-progress: false
 
-env:
-  UV_VERSION: "0.9.21"
-
 jobs:
-  # Check if release is needed (skip for docs-only changes)
-  check-release:
-    name: Check if Release Needed
-    runs-on: [self-hosted, linux, x64, podman]
-    outputs:
-      should_release: ${{ steps.check.outputs.should_release }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Check for code changes since last tag
-        id: check
-        run: |
-          # Get last tag
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-
-          if [ -z "$LAST_TAG" ]; then
-            echo "No previous tag found, should release"
-            echo "should_release=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Check if there are code changes (not just docs)
-          CODE_CHANGES=$(git diff --name-only $LAST_TAG HEAD -- \
-            'src/**' \
-            'benchmarks/**' \
-            'tests/**' \
-            'pyproject.toml' \
-            'requirements*.txt' \
-            | wc -l)
-
-          if [ "$CODE_CHANGES" -gt 0 ]; then
-            echo "Code changes detected: $CODE_CHANGES files"
-            echo "should_release=true" >> $GITHUB_OUTPUT
-          else
-            echo "No code changes since $LAST_TAG, skipping release"
-            echo "should_release=false" >> $GITHUB_OUTPUT
-          fi
-
   release:
-    name: Create Release
+    name: Tag and publish release
     runs-on: [self-hosted, linux, x64, podman]
-    needs: check-release
-    if: needs.check-release.outputs.should_release == 'true'
+    if: github.server_url != 'https://github.com'
     permissions:
       contents: write
-      id-token: write
-
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify uv (baked into job image)
         run: |
@@ -88,113 +62,87 @@ jobs:
             echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
           uv --version
 
-      - name: Set up Python 3.12
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync --group dev
-
-      - name: Run tests before release
-        run: uv run pytest tests/ -v
-
-      - name: Install semantic-release
-        run: uv tool install python-semantic-release
-
-      - name: Determine version
+      - name: Read current version
         id: version
         run: |
-          # Get next version from semantic-release
-          NEXT_VERSION=$(uv tool run semantic-release version --print 2>/dev/null || echo "")
-          if [ -z "$NEXT_VERSION" ]; then
-            echo "No version bump needed"
-            echo "new_version=" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          VERSION="$(uvx --from "commitizen==${CZ_VERSION}" cz version -p)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "current version: $VERSION"
+
+      - name: Check whether v${{ steps.version.outputs.version }} is already released
+        id: check
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "already released: v${VERSION} already exists on origin"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Next version: $NEXT_VERSION"
-            echo "new_version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build package
-        if: steps.version.outputs.new_version != ''
+      - name: Dry run
+        if: steps.check.outputs.skip != 'true' && inputs.dry_run == true
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
+          set -euo pipefail
+          echo "dry run: would build, tag v${VERSION}, push the tag, and create the" \
+            "Forgejo release + upload dist/* as assets. Stopping here."
+
+      - name: Build
+        if: steps.check.outputs.skip != 'true' && inputs.dry_run != true
+        run: |
+          set -euo pipefail
           uv build
           ls -la dist/
 
-      - name: Create release (dry run)
-        if: ${{ github.event.inputs.dry_run == 'true' && steps.version.outputs.new_version != '' }}
-        run: |
-          echo "DRY RUN: Would create release v${{ steps.version.outputs.new_version }}"
-          echo "Artifacts:"
-          ls -la dist/
-
-      - name: Create release
-        if: ${{ github.event.inputs.dry_run != 'true' && steps.version.outputs.new_version != '' }}
+      - name: Create and push the release tag
+        if: steps.check.outputs.skip != 'true' && inputs.dry_run != true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="v${{ steps.version.outputs.new_version }}"
+          set -euo pipefail
+          git config user.name "csd-release-bot"
+          git config user.email "noreply@vectorweight.com"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          # Push ONLY the tag -- never main. The tag is not subject to the PR-only
+          # branch rule; a branch push from this workflow would be.
+          git push origin "refs/tags/v${VERSION}"
 
-          # Create git tag
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Run semantic-release to update version files and changelog
-          uv tool run semantic-release version
-
-          # Push changes and tag
-          git push origin main --follow-tags
-
-          # Create GitHub release with artifacts
-          gh release create "$VERSION" \
-            --title "Release $VERSION" \
-            --generate-notes \
-            dist/*.whl \
-            dist/*.tar.gz
-
-      - name: Upload artifacts
-        if: steps.version.outputs.new_version != ''
-        uses: actions/upload-artifact@v3
-        with:
-          name: dist-${{ steps.version.outputs.new_version }}
-          path: dist/
-          retention-days: 90
-
-  # Optional: Upload to private registry (GitHub Packages)
-  publish-to-github-packages:
-    name: Publish to GitHub Packages
-    # ghcr.io only exists on github.com; skip immediately so a Forgejo
-    # workflow_dispatch doesn't burn a runner slot on a doomed publish.
-    runs-on: [self-hosted, linux, x64, podman]
-    needs: release
-    if: ${{ github.event.inputs.dry_run != 'true' && github.server_url == 'https://github.com' }}
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
-        with:
-          pattern: dist-*
-          path: dist/
-          merge-multiple: true
-
-      - name: Verify uv (baked into job image)
-        run: |
-          # uv is baked into the job image (fleet-ci-base), so nothing is installed
-          # here: no network dependency, and no tar extraction -- which is what forced
-          # CAP_CHOWN into the job container. Assert rather than assume: a missing tool
-          # must fail loudly and name the image, not silently skip the step.
-          command -v uv >/dev/null 2>&1 || {
-            echo "uv missing — job image is not fleet-ci-base" >&2; exit 1; }
-          uv --version
-
-      - name: Publish to GitHub Packages
+      - name: Create the Forgejo release and upload assets
+        if: steps.check.outputs.skip != 'true' && inputs.dry_run != true
         env:
-          UV_PUBLISH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_URL: ${{ github.api_url }}
+          REPO: ${{ github.repository }}
         run: |
-          uv publish \
-            --publish-url https://ghcr.io/v2/${{ github.repository_owner }} \
-            dist/*.whl dist/*.tar.gz
-        continue-on-error: true  # Don't fail if packages already exist
+          set -euo pipefail
+
+          notes="$(uvx --from "commitizen==${CZ_VERSION}" cz changelog "$VERSION" --dry-run 2>/dev/null)" || \
+            notes="Release v${VERSION}"
+
+          build_payload='import json, sys; v, n = sys.argv[1], sys.argv[2]; print(json.dumps({"tag_name": f"v{v}", "name": f"v{v}", "body": n, "draft": False, "prerelease": False}))'
+          payload="$(python3 -c "$build_payload" "$VERSION" "$notes")"
+
+          response="$(curl -sS -f -X POST \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "${API_URL}/repos/${REPO}/releases")"
+
+          release_id="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$response")"
+          echo "created release id: $release_id"
+
+          for f in dist/*; do
+            name="$(basename "$f")"
+            echo "uploading asset: $name"
+            curl -sS -f -X POST \
+              -H "Authorization: token ${GITHUB_TOKEN}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@${f}" \
+              "${API_URL}/repos/${REPO}/releases/${release_id}/assets?name=${name}"
+          done
